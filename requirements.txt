@@ -1,0 +1,12 @@
+# Требуется Python >= 3.12
+# Причина: в коде используются f-строки с вложенными кавычками того же типа
+# (PEP 701), например frog_bot.py:12266. На Python 3.11 файл не парсится.
+
+# Используется в коде сейчас:
+python-telegram-bot[job-queue]==20.7   # extra job-queue обязателен: job_queue/run_daily/run_repeating
+aiosqlite==0.19.0
+aiohttp==3.9.5
+psutil==5.9.8
+
+# Новое — для загрузки .env вместо секретов в исходнике (см. AUDIT.md §1):
+python-dotenv==1.0.1

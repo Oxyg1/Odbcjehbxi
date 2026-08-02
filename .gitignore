@@ -1,0 +1,32 @@
+# ── Секреты ───────────────────────────────────────────────
+.env
+.env.local
+*.pem
+*.key
+
+# ── База и логи (данные игроков — не в git) ────────────────
+*.db
+*.db-wal
+*.db-shm
+*.sqlite
+*.sqlite3
+frog_game.db*
+backups/
+*.log
+bot.log*
+
+# ── Python ────────────────────────────────────────────────
+__pycache__/
+*.py[cod]
+*.egg-info/
+.venv/
+venv/
+env/
+.pytest_cache/
+.ruff_cache/
+.mypy_cache/
+
+# ── Прочее ────────────────────────────────────────────────
+.DS_Store
+.idea/
+.vscode/
