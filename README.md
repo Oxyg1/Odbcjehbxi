@@ -31,6 +31,9 @@ payments.sendStarsForm       →  payment
 
 ## Quick start
 
+On a fresh Ubuntu VDS, `scripts/install.sh` installs Docker, clones the repo
+and seeds `.env`/`config.yaml` in one pass — see "Deployment → Docker" below.
+
 ```bash
 git clone <this repo> && cd tgmarket
 python -m venv .venv && . .venv/bin/activate
@@ -151,7 +154,17 @@ mostly buys flood errors.
 
 ### Docker
 
+On a fresh Ubuntu server, one script does the unattended part (installs
+Docker, clones the repo, seeds `.env` with your API credentials):
+
 ```bash
+curl -fsSL https://raw.githubusercontent.com/Oxyg1/Odbcjehbxi/claude/new-session-m867oe/scripts/install.sh | bash
+```
+
+It stops where a human is required — review `config.yaml`, then:
+
+```bash
+cd ~/tgmarket
 docker compose --profile tools run --rm login   # one-time, interactive
 docker compose up -d                            # dry-run by default
 docker compose logs -f
