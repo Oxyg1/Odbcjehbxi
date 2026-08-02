@@ -1,0 +1,39 @@
+# Install to /etc/systemd/system/tgmarket.service, then:
+#   sudo systemctl daemon-reload && sudo systemctl enable --now tgmarket
+#
+# Run `python -m tgmarket login` as the service user FIRST — the unit never
+# prompts, and an unauthorised session exits immediately.
+
+[Unit]
+Description=tgmarket — Telegram Star gift monitor and buyer
+Documentation=https://github.com/your/repo
+After=network-online.target
+Wants=network-online.target
+
+[Service]
+Type=simple
+User=tgmarket
+Group=tgmarket
+WorkingDirectory=/opt/tgmarket
+EnvironmentFile=/opt/tgmarket/.env
+ExecStart=/opt/tgmarket/.venv/bin/python -m tgmarket run
+Restart=on-failure
+
+# Back off hard between restarts. A tight restart loop against a FLOOD_WAIT is
+# exactly how accounts get limited, so never lower these.
+RestartSec=60
+StartLimitIntervalSec=600
+StartLimitBurst=3
+
+# The session file and the spend ledger are the only state worth protecting.
+NoNewPrivileges=true
+PrivateTmp=true
+ProtectSystem=strict
+ProtectHome=true
+ReadWritePaths=/opt/tgmarket/sessions /opt/tgmarket/data
+
+StandardOutput=journal
+StandardError=journal
+
+[Install]
+WantedBy=multi-user.target

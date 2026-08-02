@@ -1,0 +1,87 @@
+# tgmarket configuration.
+#
+# Secrets do NOT belong here — API_ID, API_HASH, the session string, the phone
+# number and the notification bot token are read from the environment (.env).
+# Copy this file to config.yaml and adjust.
+
+telegram:
+  # Session file lives at <session_dir>/<session_name>.session and is a full
+  # login to your account. Keep it off public disks and out of git.
+  session_name: tgmarket
+  session_dir: sessions
+  # Shown in Telegram's "active sessions" list — keep it honest and recognisable.
+  device_model: tgmarket
+  app_version: "1.0"
+
+filters:
+  # Buy nothing over this many Stars. The price is re-checked against the
+  # payment form before payment, so a lot that got more expensive is skipped.
+  max_price: 100
+  min_price: 0
+
+  # Empty list = every gift in the catalogue. Add ids to restrict.
+  gift_ids: []
+  exclude_gift_ids: []
+  # Exact (case-insensitive) title match; empty = any title.
+  titles: []
+
+  limited_only: false        # only limited-edition gifts
+  unlimited_only: false      # only always-available gifts
+  skip_sold_out: true
+  skip_premium_required: true   # skip gifts that need Telegram Premium
+
+  # Supply guards, useful for "rare only" strategies.
+  min_supply: null           # e.g. 1 — smallest acceptable total print run
+  max_supply: null           # e.g. 10000 — largest acceptable total print run
+  min_available: 1           # do not chase lots with fewer than this remaining
+
+  # Secondary market (payments.getResaleStarGifts). It is queried per gift id,
+  # so list the ids you care about; leave disabled to save API calls.
+  include_resale: false
+  resale_gift_ids: []
+  resale_page_limit: 50
+  resale_max_pages: 1
+
+buy:
+  # Nothing is ever paid for while this is true. Flip it (or pass --live) only
+  # once `watch` has shown you the right lots being matched.
+  dry_run: true
+
+  # "me" buys for yourself; otherwise @username or a numeric user id.
+  recipients:
+    - me
+
+  hide_sender_name: false
+  include_upgrade: false     # pay extra so the gift arrives upgradable
+  message: null              # optional note attached to the gift
+
+  budget:
+    # Live mode refuses to start unless at least one of the two totals is set.
+    max_stars_total: 1000        # lifetime ceiling for this state file
+    max_stars_per_cycle: 250     # ceiling per polling cycle
+    max_stars_per_gift: 100      # ceiling for a single lot
+    max_purchases_per_cycle: 1
+    max_purchases_per_gift: 1    # do not buy the same gift id twice
+    min_balance_reserve: 0       # Stars to always leave untouched
+
+runtime:
+  # Seconds between catalogue scans. 60s is the community norm; values below
+  # 15s are rejected because they mostly earn FLOOD_WAIT.
+  poll_interval: 60
+  poll_jitter: 5
+  state_path: data/state.json
+  log_level: INFO
+  log_file: null
+
+  # If Telegram asks for a longer pause than this, stop instead of waiting it
+  # out — a multi-hour FLOOD_WAIT means something is wrong with the strategy.
+  max_flood_wait: 600
+  min_api_interval: 0.75     # seconds enforced between MTProto calls
+  max_retries: 3             # retries for transient/server errors
+
+notify:
+  # Enabled automatically when NOTIFY_BOT_TOKEN and NOTIFY_CHAT_ID are set.
+  enabled: false
+  notify_on_start: true
+  notify_on_match: true
+  notify_on_error: true

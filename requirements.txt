@@ -1,0 +1,6 @@
+telethon>=1.36
+PyYAML>=6.0
+# Optional but recommended on a VPS: C-accelerated MTProto crypto.
+# cryptg>=0.4
+# Needed only for socks5:// / http:// values in TG_PROXY (mtproxy:// works without it).
+# python-socks[asyncio]>=2.4
