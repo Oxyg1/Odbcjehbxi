@@ -1,0 +1,31 @@
+[build-system]
+requires = ["setuptools>=68"]
+build-backend = "setuptools.build_meta"
+
+[project]
+name = "tgmarket"
+version = "1.0.0"
+description = "Autonomous Telegram Star gift market monitor and buyer (MTProto userbot)"
+readme = "README.md"
+requires-python = ">=3.10"
+license = { text = "MIT" }
+dependencies = [
+    "telethon>=1.36",
+    "PyYAML>=6.0",
+]
+
+[project.optional-dependencies]
+socks = ["python-socks[asyncio]>=2.4"]
+fast = ["cryptg>=0.4"]
+dev = ["pytest>=8.0", "pytest-asyncio>=0.23"]
+
+[project.scripts]
+tgmarket = "tgmarket.cli:main"
+
+[tool.setuptools.packages.find]
+where = ["src"]
+
+[tool.pytest.ini_options]
+testpaths = ["tests"]
+asyncio_mode = "auto"
+filterwarnings = ["ignore::DeprecationWarning"]

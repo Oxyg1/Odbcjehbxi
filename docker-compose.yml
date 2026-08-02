@@ -1,0 +1,33 @@
+services:
+  tgmarket:
+    build: .
+    image: tgmarket:latest
+    container_name: tgmarket
+    restart: unless-stopped
+    env_file: .env
+    volumes:
+      - ./config.yaml:/app/config.yaml:ro
+      - ./sessions:/app/sessions
+      - ./data:/app/data
+    # Default is a dry run. Switch to ["run", "--live"] only after `watch`
+    # has shown you the lots you expect.
+    command: ["run"]
+    stop_grace_period: 30s
+    logging:
+      driver: json-file
+      options:
+        max-size: "10m"
+        max-file: "3"
+
+  # One-off interactive login:  docker compose run --rm login
+  login:
+    build: .
+    image: tgmarket:latest
+    env_file: .env
+    volumes:
+      - ./config.yaml:/app/config.yaml:ro
+      - ./sessions:/app/sessions
+    command: ["login"]
+    profiles: ["tools"]
+    stdin_open: true
+    tty: true
