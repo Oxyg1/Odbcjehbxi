@@ -10,6 +10,10 @@
 set -euo pipefail
 
 REPO_URL="${REPO_URL:-https://github.com/Oxyg1/Odbcjehbxi.git}"
+# The project currently lives on this feature branch, not on the repo's
+# default branch (which is still just the original empty template). Update
+# this once the branch is merged.
+REPO_BRANCH="${REPO_BRANCH:-claude/new-session-m867oe}"
 INSTALL_DIR="${INSTALL_DIR:-$HOME/tgmarket}"
 NEED_RELOGIN=0
 
@@ -57,15 +61,30 @@ if ! docker compose version >/dev/null 2>&1; then
   fi
 fi
 
-if [ ! -d "$INSTALL_DIR/.git" ]; then
-  echo "-> Cloning into $INSTALL_DIR"
-  git clone "$REPO_URL" "$INSTALL_DIR"
+if [ -d "$INSTALL_DIR/.git" ]; then
+  echo "-> $INSTALL_DIR already exists, syncing to $REPO_BRANCH"
+  git -C "$INSTALL_DIR" fetch origin "$REPO_BRANCH"
+  git -C "$INSTALL_DIR" checkout "$REPO_BRANCH"
+  git -C "$INSTALL_DIR" reset --hard "origin/$REPO_BRANCH"
 else
-  echo "-> $INSTALL_DIR already exists, skipping clone."
+  echo "-> Cloning $REPO_BRANCH into $INSTALL_DIR"
+  git clone --branch "$REPO_BRANCH" --single-branch "$REPO_URL" "$INSTALL_DIR"
 fi
 cd "$INSTALL_DIR"
 
+if [ ! -f .env.example ]; then
+  echo "ERROR: .env.example missing after clone - wrong branch or a broken checkout." >&2
+  echo "Try: rm -rf '$INSTALL_DIR' and re-run this script." >&2
+  exit 1
+fi
+
 [ -f .env ] || cp .env.example .env
+
+if [ -f config.yaml ] && ! grep -q '^telegram:' config.yaml; then
+  echo "-> existing config.yaml doesn't look like ours (no 'telegram:' section)."
+  echo "   Backing it up to config.yaml.bak and writing a fresh one from config.example.yaml."
+  mv config.yaml config.yaml.bak
+fi
 [ -f config.yaml ] || cp config.example.yaml config.yaml
 
 if ! grep -qE '^TG_API_ID=[0-9]+' .env; then
