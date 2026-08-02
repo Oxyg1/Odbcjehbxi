@@ -27,6 +27,15 @@ Changelog v4.0:
   - Добавлен трекинг потраченных КваКоинов
 """
 
+import sys
+
+if sys.version_info < (3, 12):
+    raise SystemExit(
+        f"Требуется Python 3.12 или новее (сейчас {sys.version_info.major}."
+        f"{sys.version_info.minor}). Код использует f-строки с вложенными "
+        f"кавычками того же типа (PEP 701), на 3.11 файл не парсится."
+    )
+
 import os, asyncio, random, time, math, json, re, sqlite3, html as _html
 import logging
 import logging.handlers
@@ -45,7 +54,7 @@ try:
 
     load_dotenv()
 except ImportError:  # dotenv не установлен — читаем окружение как есть
-    pass
+    logger.exception("<module> failed")
 
 
 class ConfigError(RuntimeError):
@@ -640,7 +649,7 @@ async def _fz_pool_rewards(uid: int, bot) -> None:
                 parse_mode=ParseMode.HTML,
             )
         except Exception:
-            pass
+            logger.exception("_fz_pool_rewards failed")
 
 
 async def _fz_announce_drop(uid: int, bot) -> None:
@@ -967,7 +976,7 @@ async def _fz_free_cube(uid: int, source: str, bot) -> None:
                 parse_mode=ParseMode.HTML,
             )
         except Exception:
-            pass
+            logger.exception("_fz_free_cube failed")
         return
 
     # Ежедневный кубик: только 1 раз в сутки
@@ -1010,7 +1019,7 @@ async def _fz_free_cube(uid: int, source: str, bot) -> None:
     try:
         await bot.send_message(uid, msg, parse_mode=ParseMode.HTML)
     except Exception:
-        pass
+        logger.exception("_fz_free_cube failed")
 
 
 async def _fz_award_quiz_cubes(uid: int, bot) -> None:
@@ -1046,7 +1055,7 @@ async def _fz_award_quiz_cubes(uid: int, bot) -> None:
     try:
         await bot.send_message(uid, msg, parse_mode=ParseMode.HTML)
     except Exception:
-        pass
+        logger.exception("_fz_award_quiz_cubes failed")
 
 
 # ══════════════════════════════════════════════════════════════════════════════
@@ -2537,7 +2546,7 @@ async def _fz_on_callback(update: Update, ctx: ContextTypes.DEFAULT_TYPE) -> Non
                 ]),
             )
         except Exception:
-            pass
+            logger.exception("_fz_on_callback failed")
         return
 
     # ── Меню покупки кубиков ──────────────────────────────────────────────────
@@ -2584,7 +2593,7 @@ async def _fz_on_callback(update: Update, ctx: ContextTypes.DEFAULT_TYPE) -> Non
                 reply_markup=InlineKeyboardMarkup(pkg_rows),
             )
         except Exception:
-            pass
+            logger.exception("_fz_on_callback failed")
         return
 
     # ── Кнопки покупки конкретного пакета → инвойс Stars ─────────────────────
@@ -2740,7 +2749,7 @@ async def _fz_on_callback(update: Update, ctx: ContextTypes.DEFAULT_TYPE) -> Non
                 ]]),
             )
         except Exception:
-            pass
+            logger.exception("_fz_on_callback failed")
         return
 
     # ── Подписка на напоминалку ───────────────────────────────────────────────
@@ -3099,7 +3108,7 @@ async def cmd_resetwar(update: Update, ctx: ContextTypes.DEFAULT_TYPE) -> None:
                     )
                     members_notified += 1
                 except Exception:
-                    pass
+                    logger.exception("cmd_resetwar failed")
 
         # Закрываем ВСЕ стычки не в статусе finished (включая фантомные)
         async with db.execute(
@@ -3135,7 +3144,7 @@ async def cmd_resetwar(update: Update, ctx: ContextTypes.DEFAULT_TYPE) -> None:
                     )
                     members_notified += 1
                 except Exception:
-                    pass
+                    logger.exception("cmd_resetwar failed")
 
         await db.commit()
 
@@ -3364,7 +3373,7 @@ def print(*args, **kwargs):  # noqa: A001
         else:
             logger.info(text)
     except Exception:
-        pass
+        logger.exception("print failed")
 
 logger.info("=" * 60)
 logger.info("🐸 Frog Bot запускается, LOG_FILE=%s, LOG_LEVEL=%s", LOG_FILE, logging.getLevelName(LOG_LEVEL))
@@ -3599,7 +3608,7 @@ class _DBPool:
             try:
                 conn.close()
             except Exception:
-                pass
+                logger.exception("release failed")
             return
         try:
             self._pool.put_nowait(conn)
@@ -3607,7 +3616,7 @@ class _DBPool:
             try:
                 conn.close()
             except Exception:
-                pass
+                logger.exception("release failed")
 
 
 _db_pool = _DBPool(DB_PATH, size=10)
@@ -4594,7 +4603,8 @@ def run_sync_migration():
         "CREATE INDEX IF NOT EXISTS idx_cref_referred ON contest_referrals(referred_id)",
     ]:
         try: cur.execute(idx_sql); conn.commit()
-        except Exception: pass
+        except Exception:
+            logger.exception("run_sync_migration failed")
 
     # Миграция: добавляем tickets_awarded в contest_referrals (если ещё нет)
     try:
@@ -4621,7 +4631,7 @@ def run_sync_migration():
         cur.execute("CREATE INDEX IF NOT EXISTS idx_csp_contest ON contest_skin_progress(contest_id)")
         conn.commit()
     except Exception:
-        pass
+        logger.exception("run_sync_migration failed")
 
     # ── NFT-конкурс по лигам ──────────────────────────────────────────────────
     try:
@@ -4650,7 +4660,7 @@ def run_sync_migration():
             cur.execute(idx_sql)
             conn.commit()
         except Exception:
-            pass
+            logger.exception("run_sync_migration failed")
 
     # Миграция колонки notes в adventures (для существующих БД)
     try:
@@ -4660,7 +4670,7 @@ def run_sync_migration():
             cur.execute("ALTER TABLE adventures ADD COLUMN notes TEXT DEFAULT '{}'")
             conn.commit()
     except Exception:
-        pass
+        logger.exception("run_sync_migration failed")
 
     # ── Экспедиции ───────────────────────────────────────────────────────────
     _gift_log_migration(conn)
@@ -5650,7 +5660,7 @@ def t(key: str, f_or_lang="ru", **kwargs) -> str:
         try:
             val = val.format(**kwargs)
         except (KeyError, ValueError):
-            pass
+            logger.exception("t failed")
     return val
 
 def t_mood(mood: str, f_or_lang="ru") -> str:
@@ -7470,7 +7480,7 @@ async def handle_interactive_event_choice(query, uid: int, event_id: str, choice
         try:
             await bot.send_message(uid, result_msg, parse_mode=ParseMode.HTML)
         except Exception:
-            pass
+            logger.exception("handle_interactive_event_choice failed")
         logger.warning("iev edit_text uid=%s: %s", uid, _e)
 
     logger.info("iev choice uid=%s event=%s choice=%s reward=%s", uid, event_id, choice_key, reward_line)
@@ -8024,7 +8034,7 @@ async def staya_check_upgrade(staya_id: int, bot=None):
                 await bot.send_message(m["user_id"], announce_text, parse_mode=ParseMode.HTML)
             await asyncio.sleep(0.15)
         except Exception:
-            pass
+            logger.exception("staya_check_upgrade failed")
 
     logger.info("staya_upgrade: id=%s level=%s upgrade=%s", staya_id, new_level, upgrade["name"])
 
@@ -8188,27 +8198,8 @@ async def raid_get_cooldown(attacker_uid: int, target_staya_id: int,
     return cd
 
 
-async def raid_get_active_guard(staya_id: int) -> int | None:
-    data = await canteen_get(staya_id)
-    g_uid = data.get("guard_uid", 0)
-    if not g_uid:
-        return None
-    f = await db_get(g_uid)
-    if not f:
-        return None
-    if time.time() - (f.get("last_seen") or 0) > GUARD_ONLINE_WINDOW:
-        return None
-    return g_uid
 
 
-def _raid_calc_steal(target_cauldron: int, has_citadel: bool, has_ancient_bor: bool) -> int:
-    pct = RAID_MAX_STEAL_PCT
-    if has_ancient_bor:
-        pct *= 0.85
-    steal = int(target_cauldron * pct)
-    if has_citadel:
-        steal = min(steal, int(target_cauldron * 0.30))
-    return min(steal, RAID_CAULDRON_MAX_ABS)
 
 
 def _fmt_cd(secs: float) -> str:
@@ -8240,7 +8231,7 @@ async def war_migrate(db: aiosqlite.Connection) -> None:
         try:
             await db.execute(f"ALTER TABLE staya_raids ADD COLUMN {col} {typedef}")
         except Exception:
-            pass
+            logger.exception("war_migrate failed")
 
     new_sk_cols = [
         ("mode",           "TEXT    DEFAULT 'rps'"),
@@ -8253,16 +8244,16 @@ async def war_migrate(db: aiosqlite.Connection) -> None:
         try:
             await db.execute(f"ALTER TABLE staya_skirmishes ADD COLUMN {col} {typedef}")
         except Exception:
-            pass
+            logger.exception("war_migrate failed")
 
     try:
         await db.execute("ALTER TABLE hideseek_events ADD COLUMN prize_text TEXT DEFAULT ''")
     except Exception:
-        pass
+        logger.exception("war_migrate failed")
     try:
         await db.execute("ALTER TABLE skirmish_members ADD COLUMN is_spectator INTEGER DEFAULT 0")
     except Exception:
-        pass
+        logger.exception("war_migrate failed")
 
     await db.execute("""
         CREATE TABLE IF NOT EXISTS war_stats (
@@ -8298,19 +8289,19 @@ async def war_migrate(db: aiosqlite.Connection) -> None:
     try:
         await db.execute("ALTER TABLE skirmish_duels ADD COLUMN live_msg_ids TEXT DEFAULT '{}'")
     except Exception:
-        pass
+        logger.exception("war_migrate failed")
     try:
         await db.execute("ALTER TABLE skirmish_duels ADD COLUMN att_rounds_won INTEGER DEFAULT 0")
     except Exception:
-        pass
+        logger.exception("war_migrate failed")
     try:
         await db.execute("ALTER TABLE skirmish_duels ADD COLUMN def_rounds_won INTEGER DEFAULT 0")
     except Exception:
-        pass
+        logger.exception("war_migrate failed")
     try:
         await db.execute("ALTER TABLE skirmish_duels ADD COLUMN game_state TEXT DEFAULT '{}'")
     except Exception:
-        pass
+        logger.exception("war_migrate failed")
 
     await db.commit()
     print("✅ Миграция war_stats / staya_raids / staya_skirmishes / duel_bets v2 применена")
@@ -8348,7 +8339,7 @@ async def _raid_notify_staya(bot, staya_id: int, text: str,
                 reply_markup=reply_markup,
             )
         except Exception:
-            pass
+            logger.exception("_raid_notify_staya failed")
 
 
 async def _raid_build_vote_text(raid: dict, target: dict, att_staya: dict,
@@ -8435,7 +8426,7 @@ async def _raid_scout_phase(bot, raid_id: int, att_staya: dict, target: dict,
         try:
             await bot.send_message(m["user_id"], scout_text, parse_mode=ParseMode.HTML)
         except Exception:
-            pass
+            logger.exception("_raid_scout_phase failed")
 
     if guard_uid:
         try:
@@ -8451,7 +8442,7 @@ async def _raid_scout_phase(bot, raid_id: int, att_staya: dict, target: dict,
                 ]]),
             )
         except Exception:
-            pass
+            logger.exception("_raid_scout_phase failed")
 
     await asyncio.sleep(RAID_SCOUT_PHASE_SEC)
     await _raid_vote_phase(bot, raid_id, att_staya, target, steal_max)
@@ -8479,7 +8470,7 @@ async def _raid_vote_phase(bot, raid_id: int, att_staya: dict, target: dict,
                 reply_markup=_raid_vote_keyboard(raid_id, False, {}, 0),
             )
         except Exception:
-            pass
+            logger.exception("_raid_vote_phase failed")
     await asyncio.sleep(RAID_VOTE_PHASE_SEC)
     raid = await _raid_get(raid_id)
     if not raid or raid.get("phase") == "finished":
@@ -8572,7 +8563,7 @@ async def _raid_resolve(bot, raid_id: int, chosen: int,
         try:
             await bot.send_message(uid_p, result_text, parse_mode=ParseMode.HTML)
         except Exception:
-            pass
+            logger.exception("_raid_resolve failed")
 
 
 # ══════════════════════════════════════════════════════════════════════════════
@@ -8661,7 +8652,7 @@ async def _sk_broadcast(bot, sk_id: int, text: str, reply_markup=None,
                 reply_markup=reply_markup,
             )
         except Exception:
-            pass
+            logger.exception("_sk_broadcast failed")
 
 skirmish_broadcast = _sk_broadcast
 
@@ -9044,7 +9035,7 @@ async def reaction_run_round(bot, sk_id: int, duel_id: int,
                     f_uid, fire_text, parse_mode=ParseMode.HTML, reply_markup=fire_kb,
                 )
         except Exception:
-            pass
+            logger.exception("reaction_run_round failed")
 
     # Таймаут реакции
     await asyncio.sleep(REACTION_WINDOW)
@@ -9397,7 +9388,7 @@ async def roulette_shoot(bot, sk_id: int, duel: dict, shooter_uid: int,
             try:
                 await bot.send_message(f_uid, click_text, parse_mode=ParseMode.HTML, reply_markup=kb)
             except Exception:
-                pass
+                logger.exception("roulette_shoot failed")
 
 
 # ─────────────────────────────────────────────────────────────────────────────
@@ -9599,7 +9590,7 @@ async def _edit_or_send(bot, uid: int, msg_id: int | None, text: str,
     try:
         await bot.send_message(uid, text, parse_mode=ParseMode.HTML, reply_markup=kb)
     except Exception:
-        pass
+        logger.exception("_edit_or_send failed")
 
 
 async def _send_duel_result(bot, sk_id: int, duel: dict,
@@ -9862,7 +9853,7 @@ async def _bet_payout(bot, duel_id: int, winner_side: str):
                 parse_mode=ParseMode.HTML,
             )
         except Exception:
-            pass
+            logger.exception("_bet_payout failed")
 
     # Уведомляем проигравших
     async with aiosqlite.connect(DB_PATH) as db:
@@ -9888,7 +9879,7 @@ async def _bet_payout(bot, duel_id: int, winner_side: str):
                 parse_mode=ParseMode.HTML,
             )
         except Exception:
-            pass
+            logger.exception("_bet_payout failed")
 
 
 # ─────────────────────────────────────────────────────────────────────────────
@@ -9944,7 +9935,7 @@ async def _sk_start_duel(bot, sk: dict, att_m: dict, def_m: dict,
             )
             live_msg_ids[m_uid] = msg.message_id
         except Exception:
-            pass
+            logger.exception("_sk_start_duel failed")
 
     async with aiosqlite.connect(DB_PATH) as db:
         await db.execute(
@@ -10046,7 +10037,7 @@ async def _sk_start_duel(bot, sk: dict, att_m: dict, def_m: dict,
                 msg = await bot.send_message(uid_d, txt, parse_mode=ParseMode.HTML, reply_markup=kb)
                 live_msg_ids[uid_d] = msg.message_id
             except Exception:
-                pass
+                logger.exception("_sk_start_duel failed")
 
     for m in members:
         m_uid = m["user_id"]
@@ -10089,7 +10080,7 @@ async def _sk_start_duel(bot, sk: dict, att_m: dict, def_m: dict,
                 )
                 live_msg_ids[m_uid] = msg.message_id
             except Exception:
-                pass
+                logger.exception("_sk_start_duel failed")
 
     async with aiosqlite.connect(DB_PATH) as db:
         await db.execute(
@@ -10124,7 +10115,7 @@ async def _sk_duel_timeout(bot, sk_id: int, duel_id: int, deadline: float):
                     await bot.send_message(uid_d, "⏳ <b>Время вышло!</b> Ход сделан автоматически.",
                                            parse_mode=ParseMode.HTML)
                 except Exception:
-                    pass
+                    logger.exception("_sk_duel_timeout failed")
         await _sk_resolve_rps(bot, sk_id, duel, att_c, def_c)
     else:
         att_c = duel["att_choice"] or ""
@@ -10139,7 +10130,7 @@ async def _sk_duel_timeout(bot, sk_id: int, duel_id: int, deadline: float):
                     await bot.send_message(uid_d, "⏳ <b>Время вышло!</b> Ход сделан автоматически.",
                                            parse_mode=ParseMode.HTML)
                 except Exception:
-                    pass
+                    logger.exception("_sk_duel_timeout failed")
         await _sk_resolve_eo(bot, sk_id, duel, att_c, def_c)
 
 
@@ -10187,7 +10178,7 @@ async def _sk_send_round_result(bot, sk_id: int, duel: dict, att_name: str, def_
                 try:
                     await bot.send_message(m_uid, summary, parse_mode=ParseMode.HTML)
                 except Exception:
-                    pass
+                    logger.exception("_sk_send_round_result failed")
     else:
         # Не финальный — бойцам с кнопками, зрителям с поддержкой
         summary_base = (
@@ -10227,7 +10218,7 @@ async def _sk_send_round_result(bot, sk_id: int, duel: dict, att_name: str, def_
                     )
                     live_msg_ids[uid_d] = msg.message_id
                 except Exception:
-                    pass
+                    logger.exception("_sk_send_round_result failed")
 
         for m in members:
             m_uid = m["user_id"]
@@ -10251,7 +10242,7 @@ async def _sk_send_round_result(bot, sk_id: int, duel: dict, att_name: str, def_
                         m_uid, summary_base, parse_mode=ParseMode.HTML, reply_markup=sup_kb,
                     )
                 except Exception:
-                    pass
+                    logger.exception("_sk_send_round_result failed")
 
 
 async def _sk_apply_support(bot, sk_id: int) -> dict[int, int]:
@@ -10777,7 +10768,7 @@ async def cmd_newsdigest(update: Update, ctx: ContextTypes.DEFAULT_TYPE) -> None
         try:
             hours = int(ctx.args[0])
         except ValueError:
-            pass
+            logger.exception("cmd_newsdigest failed")
 
     since = time.time() - hours * 3600
     now   = time.time()
@@ -11102,15 +11093,6 @@ HS_ESCAPE_CHANCE   = 0.70   # вероятность успешного побе
 
 # ── DB-хелперы дружбы ─────────────────────────────────────────────────────────
 
-async def friend_get(uid: int, fid: int) -> dict | None:
-    async with aiosqlite.connect(DB_PATH) as db:
-        db.row_factory = aiosqlite.Row
-        async with db.execute(
-            "SELECT * FROM friendships WHERE user_id=? AND friend_id=?",
-            (uid, fid),
-        ) as c:
-            row = await c.fetchone()
-    return dict(row) if row else None
 
 
 async def skirmish_get_members(skirmish_id: int) -> list[dict]:
@@ -11272,7 +11254,7 @@ async def skirmish_start_all_duels(bot, sk_id: int):
             try:
                 await bot.send_message(uid_d, text, parse_mode=ParseMode.HTML, reply_markup=kb)
             except Exception:
-                pass
+                logger.exception("skirmish_start_all_duels failed")
 
         asyncio.create_task(
             _skirmish_duel_timeout(bot, sk_id, duel_id, now + SKIRMISH_ROUND_TIME)
@@ -11422,7 +11404,7 @@ async def skirmish_broadcast(bot, skirmish_id: int, text: str, reply_markup=None
                                    parse_mode=ParseMode.HTML,
                                    reply_markup=reply_markup)
         except Exception:
-            pass
+            logger.exception("skirmish_broadcast failed")
 
 
 async def skirmish_resolve_duel(bot, skirmish_id: int, duel: dict, winner: str):
@@ -11470,7 +11452,7 @@ async def skirmish_resolve_duel(bot, skirmish_id: int, duel: dict, winner: str):
         try:
             await bot.send_message(uid_d, status_text, parse_mode=ParseMode.HTML)
         except Exception:
-            pass
+            logger.exception("skirmish_resolve_duel failed")
 
     await _skirmish_check_all_done(bot, skirmish_id)
 
@@ -11500,7 +11482,7 @@ async def _skirmish_duel_timeout(bot, skirmish_id: int, duel_id: int, deadline: 
                 try:
                     await bot.send_message(uid_d, "⏳ Время вышло — кубик брошен автоматически! ⚠️ AFK")
                 except Exception:
-                    pass
+                    logger.exception("_skirmish_duel_timeout failed")
         await _skirmish_duel_resolve_dice(bot, skirmish_id, duel, int(att_c), int(def_c))
 
     elif mode == "evenodd":
@@ -11517,7 +11499,7 @@ async def _skirmish_duel_timeout(bot, skirmish_id: int, duel_id: int, deadline: 
                 try:
                     await bot.send_message(uid_d, "⏳ Время вышло — выбор сделан автоматически! ⚠️ AFK")
                 except Exception:
-                    pass
+                    logger.exception("_skirmish_duel_timeout failed")
         async with aiosqlite.connect(DB_PATH) as db:
             await db.execute(
                 "UPDATE skirmish_duels SET att_number=?, def_number=? WHERE id=?",
@@ -11536,7 +11518,7 @@ async def _skirmish_duel_timeout(bot, skirmish_id: int, duel_id: int, deadline: 
                 try:
                     await bot.send_message(uid_d, "⏳ Время вышло — выбор сделан автоматически! ⚠️ AFK")
                 except Exception:
-                    pass
+                    logger.exception("_skirmish_duel_timeout failed")
         await _skirmish_duel_resolve_choices(bot, skirmish_id, duel, att_c, def_c)
 
 
@@ -11631,7 +11613,7 @@ async def _skirmish_duel_resolve_choices(bot, skirmish_id: int, duel: dict,
         try:
             await bot.send_message(uid_d, summary, parse_mode=ParseMode.HTML)
         except Exception:
-            pass
+            logger.exception("_skirmish_duel_resolve_choices failed")
 
     if att_hp <= 0 or def_hp <= 0 or round_num >= 3:
         if att_hp > def_hp:
@@ -11670,7 +11652,7 @@ async def _skirmish_duel_resolve_choices(bot, skirmish_id: int, duel: dict,
             try:
                 await bot.send_message(uid_d, next_text, parse_mode=ParseMode.HTML, reply_markup=kb)
             except Exception:
-                pass
+                logger.exception("_skirmish_duel_resolve_choices failed")
 
 
 async def _skirmish_duel_resolve_dice(bot, skirmish_id: int, duel: dict,
@@ -11714,7 +11696,7 @@ async def _skirmish_duel_resolve_dice(bot, skirmish_id: int, duel: dict,
         try:
             await bot.send_message(uid_d, summary, parse_mode=ParseMode.HTML)
         except Exception:
-            pass
+            logger.exception("_skirmish_duel_resolve_dice failed")
 
     if result == "draw":
         async with aiosqlite.connect(DB_PATH) as db:
@@ -11732,7 +11714,7 @@ async def _skirmish_duel_resolve_dice(bot, skirmish_id: int, duel: dict,
             try:
                 await bot.send_message(uid_d, retry_text, parse_mode=ParseMode.HTML, reply_markup=kb)
             except Exception:
-                pass
+                logger.exception("_skirmish_duel_resolve_dice failed")
         return
 
     if att_hp <= 0 or def_hp <= 0 or round_num >= 3:
@@ -11760,7 +11742,7 @@ async def _skirmish_duel_resolve_dice(bot, skirmish_id: int, duel: dict,
             try:
                 await bot.send_message(uid_d, next_text, parse_mode=ParseMode.HTML, reply_markup=kb)
             except Exception:
-                pass
+                logger.exception("_skirmish_duel_resolve_dice failed")
 
 
 async def skirmish_finish(bot, skirmish_id: int):
@@ -13731,7 +13713,7 @@ async def init_db():
                 await db.execute(idx_sql)
                 await db.commit()
             except Exception:
-                pass
+                logger.exception("init_db failed")
 
         # ── Фриз-ивент ───────────────────────────────────────────────────────
         await freeze_init_db(db)
@@ -14774,7 +14756,7 @@ async def _load_peak_online():
                 parts = raw.split(":")
                 _peak_online[period] = (int(parts[0]), float(parts[1]))
             except Exception:
-                pass
+                logger.exception("_load_peak_online failed")
 
 
 async def _save_peak_online():
@@ -14905,7 +14887,7 @@ async def job_boost_check(ctx: ContextTypes.DEFAULT_TYPE):
                     parse_mode="HTML",
                 )
             except Exception:
-                pass
+                logger.exception("job_boost_check failed")
         return
     # Буст истёк
     await boost_clear()
@@ -14918,7 +14900,7 @@ async def job_boost_check(ctx: ContextTypes.DEFAULT_TYPE):
             parse_mode="HTML",
         )
     except Exception:
-        pass
+        logger.exception("job_boost_check failed")
 
 async def inv_get(uid: int) -> dict:
     async with aiosqlite.connect(DB_PATH) as db:
@@ -15073,7 +15055,7 @@ async def update_trial_progress(uid: int, quest_type: str, amount: int = 1, bot=
                 parse_mode=ParseMode.HTML,
             )
         except Exception:
-            pass
+            logger.exception("update_trial_progress failed")
 
 
 async def complete_trial(uid: int, bot=None):
@@ -15116,7 +15098,7 @@ async def complete_trial(uid: int, bot=None):
                 reply_markup=await main_kb_live(f),
             )
         except Exception:
-            pass
+            logger.exception("complete_trial failed")
 
 
 
@@ -15149,7 +15131,7 @@ async def ach_grant(uid: int, ach_id: str, bot=None) -> bool:
                 parse_mode=ParseMode.HTML,
             )
         except Exception:
-            pass
+            logger.exception("ach_grant failed")
     return True
 
 
@@ -15324,7 +15306,7 @@ async def ach_check(f: dict, bot=None):
                     parse_mode=ParseMode.HTML,
                 )
             except Exception:
-                pass
+                logger.exception("ach_check failed")
 
 
 # ══════════════════════════════════════════
@@ -15915,7 +15897,7 @@ async def show_status(target, f: dict, edit=False, app=None):
         elif hasattr(target, "chat"):
             _is_group = target.chat.type in ("group", "supergroup")
     except Exception:
-        pass
+        logger.exception("show_status failed")
     kb = await main_kb_live(f, is_group=_is_group)
     try:
         if edit and hasattr(target, "edit_message_text"):
@@ -15948,7 +15930,7 @@ async def show_status(target, f: dict, edit=False, app=None):
             # Используем глобальный бот из msg
             pass
     except (BadRequest, Forbidden):
-        pass
+        logger.exception("show_status failed")
 
 
 async def animate(q, text: str):
@@ -16276,7 +16258,7 @@ async def _run_chat_auto_giveaway(chat_id: int, fund: int, ctx):
                 parse_mode=ParseMode.HTML,
             )
         except Exception:
-            pass
+            logger.exception("_run_chat_auto_giveaway failed")
     except Exception as e:
         print(f"⚠️ Auto-giveaway error: {e}")
 
@@ -16419,7 +16401,7 @@ async def vanilla_reply(
         # Планируем удаление ответа
         asyncio.create_task(schedule_delete(ctx.bot, msg.chat_id, msg.message_id, delay))
     except Exception:
-        pass
+        logger.exception("vanilla_reply failed")
 
 
 async def vanilla_redirect(
@@ -16443,7 +16425,7 @@ async def vanilla_redirect(
             pass
         asyncio.create_task(schedule_delete(ctx.bot, msg.chat_id, msg.message_id, 15))
     except Exception:
-        pass
+        logger.exception("vanilla_redirect failed")
 
 
 async def mode_aware_reply(
@@ -16560,7 +16542,7 @@ async def send_feed_sticker(bot, chat_id: int) -> None:
         except Exception:
             pass
     except Exception:
-        pass
+        logger.exception("send_feed_sticker failed")
 
 
 async def send_sleep_sticker(bot, chat_id: int) -> None:
@@ -16575,7 +16557,7 @@ async def send_sleep_sticker(bot, chat_id: int) -> None:
         except Exception:
             pass
     except Exception:
-        pass
+        logger.exception("send_sleep_sticker failed")
 
 
 async def send_wash_sticker(bot, chat_id: int) -> None:
@@ -16590,7 +16572,7 @@ async def send_wash_sticker(bot, chat_id: int) -> None:
         except Exception:
             pass
     except Exception:
-        pass
+        logger.exception("send_wash_sticker failed")
 
 
 async def announce(bot, text: str, reply_markup=None, admin_only=False, delete_after: int = 300,
@@ -16746,7 +16728,7 @@ async def xgift_models_floor(name: str) -> dict[str, float]:
             try:
                 result[n] = float(p)
             except (TypeError, ValueError):
-                pass
+                logger.exception("xgift_models_floor failed")
     return result
 
 
@@ -16924,7 +16906,7 @@ async def maybe_big_win_announce(
         if sent:
             asyncio.create_task(schedule_delete(bot, CHAT_ID, sent.message_id, 120))
     except Exception:
-        pass
+        logger.exception("maybe_big_win_announce failed")
     # Адм-чат
     await admin_notify(bot, f"{player_name} выиграл <b>{amount}🪙</b> в {game_label}{stake_part}", "💰")
 
@@ -17079,7 +17061,7 @@ async def cmd_activate(update: Update, ctx: ContextTypes.DEFAULT_TYPE):
             )
             pc = await partner_chat_get(chat.id)
         except Exception:
-            pass
+            logger.exception("cmd_activate failed")
     if not pc:
         await update.message.reply_text("⚠️ Не удалось зарегистрировать чат. Попробуйте удалить бота и добавить снова.")
         return
@@ -17105,7 +17087,7 @@ async def cmd_activate(update: Update, ctx: ContextTypes.DEFAULT_TYPE):
                 ]]) if bot_link else None,
             )
         except Exception:
-            pass
+            logger.exception("cmd_activate failed")
     else:
         # Полное приветствие
         try:
@@ -17127,7 +17109,7 @@ async def cmd_activate(update: Update, ctx: ContextTypes.DEFAULT_TYPE):
                 ]]) if bot_link else None,
             )
         except Exception:
-            pass
+            logger.exception("cmd_activate failed")
     # Уведомляем главного администратора бота
     chat_mention = f"@{chat.username}" if chat.username else chat_title
     adder_tag = f"@{user.username}" if user.username else he(user.first_name)
@@ -18091,7 +18073,8 @@ async def _handle_chatadmin_callback(q, uid: int, ctx):
                 parse_mode=ParseMode.HTML,
                 reply_markup=InlineKeyboardMarkup([[btn("❌ Отмена", callback_data=f"ca_economy_{cid}")]]),
             )
-        except Exception: pass
+        except Exception:
+            logger.exception("_handle_chatadmin_callback failed")
         return
 
     if d == f"ca_cycle_thresh_{cid}":
@@ -18104,7 +18087,8 @@ async def _handle_chatadmin_callback(q, uid: int, ctx):
                 parse_mode=ParseMode.HTML,
                 reply_markup=InlineKeyboardMarkup([[btn("❌ Отмена", callback_data=f"ca_economy_{cid}")]]),
             )
-        except Exception: pass
+        except Exception:
+            logger.exception("_handle_chatadmin_callback failed")
         return
 
     if d == f"ca_giveaway_now_{cid}":
@@ -18369,7 +18353,7 @@ async def _handle_partnerinfo_callback(q, uid: int, ctx):
             ])
             await q.message.edit_text(text, parse_mode=ParseMode.HTML, reply_markup=kb)
         except Exception:
-            pass
+            logger.exception("_handle_partnerinfo_callback failed")
 
     elif d.startswith("pi_suspend_"):
         async with aiosqlite.connect(DB_PATH) as db:
@@ -18480,7 +18464,7 @@ def _detect_lang(user) -> str:
         if lc.startswith("en"):
             return "en"
     except Exception:
-        pass
+        logger.exception("_detect_lang failed")
     return "ru"
 
 
@@ -18740,7 +18724,7 @@ async def _referral_stage_reward(
                 parse_mode=ParseMode.HTML,
             )
         except Exception:
-            pass
+            logger.exception("_referral_stage_reward failed")
 
 
 async def check_referral_stages(referred_f: dict, bot):
@@ -18796,7 +18780,7 @@ async def check_referral_stages(referred_f: dict, bot):
                         parse_mode=ParseMode.HTML,
                     )
                 except Exception:
-                    pass
+                    logger.exception("check_referral_stages failed")
 
     # ── Конкурс: валидируем тикет при достижении 2-го уровня ─────────────────
     # Тикет засчитывается именно на 2-м уровне — достаточный порог активности
@@ -18867,7 +18851,7 @@ async def cmd_referral(update: Update, ctx: ContextTypes.DEFAULT_TYPE):
                 tg_chat = await ctx.bot.get_chat(referred_id)
                 tg_username = tg_chat.username or None
             except Exception:
-                pass
+                logger.exception("cmd_referral failed")
             ref_data.append((rf, mask, earned, tg_username))
         ref_data.sort(key=lambda x: x[0].get("level", 1), reverse=True)
         for rf, mask, earned, tg_username in ref_data[:20]:
@@ -19005,7 +18989,7 @@ async def make_db_backup(bot=None, notify_admin: bool = False) -> str:
         try:
             os.remove(backups.pop(0))
         except Exception:
-            pass
+            logger.exception("make_db_backup failed")
     size_kb = os.path.getsize(dest) // 1024
     if notify_admin and bot and ADMIN_IDS:
         for aid in ADMIN_IDS:
@@ -19017,7 +19001,7 @@ async def make_db_backup(bot=None, notify_admin: bool = False) -> str:
                     parse_mode=ParseMode.HTML,
                 )
             except Exception:
-                pass
+                logger.exception("make_db_backup failed")
     return dest
 
 
@@ -19058,7 +19042,7 @@ async def cmd_backup(update: Update, ctx: ContextTypes.DEFAULT_TYPE):
         try:
             os.remove(gz_path)
         except Exception:
-            pass
+            logger.exception("cmd_backup failed")
     except Exception as e:
         await msg.edit_text(f"❌ Ошибка бэкапа: {e}")
 
@@ -19112,7 +19096,7 @@ async def show_antibot_panel(message, ctx, edit: bool = False):
     try:
         await fn(text, parse_mode=ParseMode.HTML, reply_markup=kb)
     except Exception:
-        pass
+        logger.exception("show_antibot_panel failed")
 
 
 async def handle_antibot_callback(q, d, uid, ctx):
@@ -19176,7 +19160,8 @@ async def handle_antibot_callback(q, d, uid, ctx):
         buttons.append([InlineKeyboardButton("◀️ Назад", callback_data="aab_refresh")])
         try:
             await q.message.edit_text("\n".join(lines), parse_mode=ParseMode.HTML, reply_markup=InlineKeyboardMarkup(buttons))
-        except Exception: pass
+        except Exception:
+            logger.exception("handle_antibot_callback failed")
         return
 
     if d.startswith("aab_ok_"):
@@ -19272,7 +19257,7 @@ async def handle_antibot_callback(q, d, uid, ctx):
                 reply_markup=InlineKeyboardMarkup(buttons)
             )
         except Exception:
-            pass
+            logger.exception("handle_antibot_callback failed")
         return
 
     if d.startswith("aab_unban_"):
@@ -19294,7 +19279,7 @@ async def handle_antibot_callback(q, d, uid, ctx):
             if m:
                 page_str = str(int(m.group(1)) - 1)
         except Exception:
-            pass
+            logger.exception("handle_antibot_callback failed")
         # Перерисовываем список
         async with aiosqlite.connect(DB_PATH) as db:
             async with db.execute(
@@ -19327,7 +19312,7 @@ async def handle_antibot_callback(q, d, uid, ctx):
                 reply_markup=InlineKeyboardMarkup(buttons2)
             )
         except Exception:
-            pass
+            logger.exception("handle_antibot_callback failed")
         return
 
     # ── Список отклонённых — с возможностью восстановить ────────────────────
@@ -19367,7 +19352,7 @@ async def handle_antibot_callback(q, d, uid, ctx):
             await q.message.edit_text("\n".join(lines), parse_mode=ParseMode.HTML,
                                       reply_markup=InlineKeyboardMarkup(buttons))
         except Exception:
-            pass
+            logger.exception("handle_antibot_callback failed")
         return
 
     if d.startswith("aab_restore_"):
@@ -19398,7 +19383,8 @@ async def handle_antibot_callback(q, d, uid, ctx):
         buttons.append([InlineKeyboardButton("◀️ Назад", callback_data="aab_refresh")])
         try:
             await q.message.edit_text("\n".join(lines) if lines else "Список пуст.", parse_mode=ParseMode.HTML, reply_markup=InlineKeyboardMarkup(buttons))
-        except Exception: pass
+        except Exception:
+            logger.exception("handle_antibot_callback failed")
         return
 
     if d.startswith("aab_untrust_"):
@@ -19523,7 +19509,7 @@ async def handle_antibot_callback(q, d, uid, ctx):
                 parse_mode=ParseMode.HTML, reply_markup=kb
             )
         except Exception:
-            pass
+            logger.exception("handle_antibot_callback failed")
         return
 
     # ── Только откат монет/скинов (без бана) ─────────────────────────────────
@@ -20155,7 +20141,7 @@ async def get_user_risk_full(uid: int) -> dict:
         if row:
             return dict(row)
     except Exception:
-        pass
+        logger.exception("get_user_risk_full failed")
     return {"user_id": uid, "risk_level": 0, "risk_reason": "", "risk_updated": 0, "flags": "{}"}
 
 
@@ -20379,7 +20365,7 @@ async def cmd_adminrisk(update: Update, ctx: ContextTypes.DEFAULT_TYPE) -> None:
             ) as c:
                 receivers_list = await c.fetchall()
     except Exception:
-        pass
+        logger.exception("cmd_adminrisk failed")
 
     def _fmt_user(uid2, fname2, uname2):
         n = fname2 or uname2 or str(uid2)
@@ -20709,7 +20695,7 @@ async def handle_risk_callback(q, d: str, uid: int, ctx) -> None:
                 await db.commit()
             _user_cache.invalidate(target)
         except Exception:
-            pass
+            logger.exception("handle_risk_callback failed")
         await q.answer("✅ Риск сброшен до нормы", show_alert=True)
         return
 
@@ -20938,7 +20924,8 @@ async def cmd_admingiftchain(update: Update, ctx: ContextTypes.DEFAULT_TYPE):
     hours = 72
     if len(args) > 2:
         try: hours = max(1, min(8760, int(args[2])))
-        except ValueError: pass
+        except ValueError:
+            logger.exception("cmd_admingiftchain failed")
 
     since = time.time() - hours * 3600
 
@@ -21175,7 +21162,7 @@ async def _do_rollback(bot_uid: int, hours: int, dry_run: bool, bot) -> str:
                         parse_mode=ParseMode.HTML,
                     )
                 except Exception:
-                    pass
+                    logger.exception("_do_rollback failed")
 
     return "\n".join(report_lines)
 
@@ -21245,7 +21232,7 @@ async def _resolve_staya(staya_arg: str) -> tuple[int | None, str]:
             if row:
                 return row[0], row[1]
         except ValueError:
-            pass
+            logger.exception("_resolve_staya failed")
         # Иначе ищем по названию (регистронезависимо, частичное совпадение)
         async with db.execute(
             "SELECT id, name FROM stayas WHERE lower(name) LIKE lower(?) ORDER BY id LIMIT 5",
@@ -21376,7 +21363,7 @@ async def cmd_adminundo(update: Update, ctx: ContextTypes.DEFAULT_TYPE):
             try:
                 await ctx.bot.send_message(target_uid, f"✅ Администратор вернул тебя в стаю «{he(staya_name)}».", parse_mode=ParseMode.HTML)
             except Exception:
-                pass
+                logger.exception("cmd_adminundo failed")
 
         elif action == "staya_role":
             async with aiosqlite.connect(DB_PATH) as db:
@@ -21502,7 +21489,7 @@ async def cmd_adminundo(update: Update, ctx: ContextTypes.DEFAULT_TYPE):
                 parse_mode=ParseMode.HTML,
             )
         except Exception:
-            pass
+            logger.exception("cmd_adminundo failed")
 
     else:
         await update.message.reply_text(f"❌ Неизвестное действие: <code>{action}</code>\nНапиши /adminundo для справки.", parse_mode=ParseMode.HTML)
@@ -21594,7 +21581,7 @@ async def cmd_start(update: Update, ctx: ContextTypes.DEFAULT_TYPE):
             try:
                 start_source_chat_id = int(arg[5:])
             except Exception:
-                pass
+                logger.exception("cmd_start failed")
         # Реферал: ?start=ref_123456
         elif is_new and arg.startswith("ref_"):
             try:
@@ -21614,9 +21601,9 @@ async def cmd_start(update: Update, ctx: ContextTypes.DEFAULT_TYPE):
                                         parse_mode=ParseMode.HTML,
                                     )
                                 except Exception:
-                                    pass
+                                    logger.exception("cmd_start failed")
                     except Exception:
-                        pass
+                        logger.exception("cmd_start failed")
                 if ref_id != user.id:
                     referrer = await db_get(ref_id)
                     if referrer:
@@ -21629,7 +21616,7 @@ async def cmd_start(update: Update, ctx: ContextTypes.DEFAULT_TYPE):
                         if ref_count < 50000:
                             referrer_id = ref_id
             except Exception:
-                pass
+                logger.exception("cmd_start failed")
 
     # ── Если /start написан прямо в партнёрском чате — владелец чата становится реферером ──
     if is_new and not referrer_id and is_group(update):
@@ -21652,7 +21639,7 @@ async def cmd_start(update: Update, ctx: ContextTypes.DEFAULT_TYPE):
                         if ref_count < 50000:
                             referrer_id = chat_owner_id
         except Exception:
-            pass
+            logger.exception("cmd_start failed")
 
     # Устанавливаем source_chat_id если ещё не задан (при первом входе или новом источнике)
     if start_source_chat_id and not is_new and f:
@@ -21681,7 +21668,7 @@ async def cmd_start(update: Update, ctx: ContextTypes.DEFAULT_TYPE):
                         link_preview_options=LinkPreviewOptions(is_disabled=True),
                     )
             except Exception:
-                pass
+                logger.exception("cmd_start failed")
         # Создаём реферальную запись
         if referrer_id:
             async with aiosqlite.connect(DB_PATH) as db:
@@ -21692,7 +21679,7 @@ async def cmd_start(update: Update, ctx: ContextTypes.DEFAULT_TYPE):
                     )
                     await db.commit()
                 except Exception:
-                    pass
+                    logger.exception("cmd_start failed")
             # ── Конкурс: записываем реферала ─────────────────────────────────
             _active_contest = await _get_active_contest()
             if _active_contest:
@@ -21728,7 +21715,7 @@ async def cmd_start(update: Update, ctx: ContextTypes.DEFAULT_TYPE):
                                 parse_mode=ParseMode.HTML,
                             )
                         except Exception:
-                            pass
+                            logger.exception("cmd_start failed")
             else:
                 # Чисто → выдаём +50 монет рефереру сразу
                 await _referral_stage_reward(referrer_id, user.id, 0, ctx.bot)
@@ -21849,7 +21836,7 @@ async def cmd_start(update: Update, ctx: ContextTypes.DEFAULT_TYPE):
                         await update.message.reply_text("\n".join(lines), parse_mode=ParseMode.HTML, reply_markup=InlineKeyboardMarkup(buttons))
                     return
             except Exception:
-                pass
+                logger.exception("cmd_start failed")
 
         # Deep-link для вступления в ИДУЩУЮ экспедицию: ?start=exp_mid_join_<id>
         if ctx.args and ctx.args[0].startswith("exp_mid_join_"):
@@ -21953,7 +21940,7 @@ async def cmd_frog(update: Update, ctx: ContextTypes.DEFAULT_TYPE):
                 parse_mode=ParseMode.HTML,
             )
         except Exception:
-            pass
+            logger.exception("cmd_frog failed")
 
     f = decay(f)
     await db_save(f)
@@ -21974,7 +21961,7 @@ async def cmd_frog(update: Update, ctx: ContextTypes.DEFAULT_TYPE):
             msg_key = f"{msg.chat.id}_{msg.message_id}"
             ctx.bot_data.setdefault("msg_owner", {})[msg_key] = user.id
     except (BadRequest, Forbidden):
-        pass
+        logger.exception("cmd_frog failed")
 
 
 def _build_top_lines(rows: list[dict], mode: str = "all", user_row: dict = None, user_rank: int = None, user_total: int = None) -> str:
@@ -22538,7 +22525,7 @@ async def cmd_gift(update: Update, ctx: ContextTypes.DEFAULT_TYPE):
             try:
                 if _lk.locked(): _lk.release()
             except RuntimeError:
-                pass
+                logger.exception("_release_gift_lock failed")
         _gift_task.add_done_callback(_release_gift_lock)
 
     # Атомарная проверка и списание через SQL UPDATE с WHERE — единственная защита
@@ -22616,7 +22603,7 @@ async def cmd_gift(update: Update, ctx: ContextTypes.DEFAULT_TYPE):
                 parse_mode=ParseMode.HTML,
             )
     except Exception:
-        pass
+        logger.exception("cmd_gift failed")
     # ── Обновляем квесты и испытание после воскрешения ────────────────────
     await quest_update(user.id, "gift")
     asyncio.create_task(update_trial_progress(user.id, "gift", 1, ctx.bot))
@@ -23202,7 +23189,7 @@ async def cmd_battle(update: Update, ctx: ContextTypes.DEFAULT_TYPE):
             reply_markup=kb,
         )
     except Exception:
-        pass
+        logger.exception("cmd_battle failed")
     ctx.job_queue.run_once(
         lambda c: asyncio.create_task(_expire_battle(battle_id)),
         when=300,
@@ -23415,7 +23402,7 @@ async def cmd_duel(update: Update, ctx: ContextTypes.DEFAULT_TYPE):
             link_preview_options=LinkPreviewOptions(is_disabled=True),
         )
     except Exception:
-        pass
+        logger.exception("cmd_duel failed")
     ctx.job_queue.run_once(
         lambda c: asyncio.create_task(_expire_duel(duel_id)),
         when=86400,
@@ -23663,7 +23650,7 @@ async def cmd_feed(update: Update, ctx: ContextTypes.DEFAULT_TYPE):
                 reply_markup=_feed_notify_kb,
             )
     except Exception:
-        pass
+        logger.exception("cmd_feed failed")
 
 
 # ─── конец cmd_feed ───────────────────────────────────────
@@ -24099,7 +24086,7 @@ async def cmd_nft(update: Update, ctx: ContextTypes.DEFAULT_TYPE):
     try:
         await msg.edit_text("\n".join(lines), parse_mode=ParseMode.HTML)
     except Exception:
-        pass
+        logger.exception("cmd_nft failed")
 
 
 async def cmd_nft_list(update: Update, ctx: ContextTypes.DEFAULT_TYPE):
@@ -24533,7 +24520,7 @@ async def cmd_subscribe(update: Update, ctx: ContextTypes.DEFAULT_TYPE):
                         f"<i>🏠 Вернётся вечером в 18:00 МСК</i>"
                     )
             except Exception:
-                pass
+                logger.exception("cmd_subscribe failed")
 
     await update.message.reply_text(
         f"<tg-emoji emoji-id='5341367834935075028'>🐸</tg-emoji> <b>Подписки</b>\n\n"
@@ -24718,7 +24705,7 @@ async def cmd_adminsubscription(update: Update, ctx: ContextTypes.DEFAULT_TYPE):
                 parse_mode=ParseMode.HTML,
             )
         except Exception:
-            pass
+            logger.exception("cmd_adminsubscription failed")
     elif action in ("nanny", "worker"):
         sub_type = 1 if action == "nanny" else 2
         now_as = time.time()
@@ -24744,7 +24731,7 @@ async def cmd_adminsubscription(update: Update, ctx: ContextTypes.DEFAULT_TYPE):
                 parse_mode=ParseMode.HTML,
             )
         except Exception:
-            pass
+            logger.exception("cmd_adminsubscription failed")
     else:
         await update.message.reply_text("❌ Действие должно быть: nanny / worker / remove")
 
@@ -24983,7 +24970,7 @@ async def show_player_card(
         else:
             await message.reply_text(text, parse_mode=ParseMode.HTML, reply_markup=kb)
     except Exception:
-        pass
+        logger.exception("show_player_card failed")
 
 
 async def cmd_dm(update: Update, ctx: ContextTypes.DEFAULT_TYPE):
@@ -25257,7 +25244,7 @@ async def cmd_admincasino(update: Update, ctx: ContextTypes.DEFAULT_TYPE):
                     parse_mode=ParseMode.HTML,
                 )
             except Exception:
-                pass
+                logger.exception("cmd_admincasino failed")
     elif arg == "on":
         await db_setting("casino_disabled", "0")
         await update.message.reply_text(
@@ -25273,7 +25260,7 @@ async def cmd_admincasino(update: Update, ctx: ContextTypes.DEFAULT_TYPE):
                     parse_mode=ParseMode.HTML,
                 )
             except Exception:
-                pass
+                logger.exception("cmd_admincasino failed")
     else:
         await update.message.reply_text("❌ Укажи <code>on</code> или <code>off</code>", parse_mode=ParseMode.HTML)
 
@@ -25390,7 +25377,7 @@ async def cmd_givestreak(update: Update, ctx: ContextTypes.DEFAULT_TYPE) -> None
             parse_mode=ParseMode.HTML,
         )
     except Exception:
-        pass
+        logger.exception("cmd_givestreak failed")
 
 
 async def cmd_givecoin(update: Update, ctx: ContextTypes.DEFAULT_TYPE):
@@ -25436,7 +25423,7 @@ async def cmd_givecoin(update: Update, ctx: ContextTypes.DEFAULT_TYPE):
             parse_mode=ParseMode.HTML,
         )
     except Exception:
-        pass
+        logger.exception("cmd_givecoin failed")
 
 
 
@@ -25498,7 +25485,7 @@ async def cmd_givexp(update: Update, ctx: ContextTypes.DEFAULT_TYPE):
             parse_mode=ParseMode.HTML,
         )
     except Exception:
-        pass
+        logger.exception("cmd_givexp failed")
 
 
 async def cmd_givecauldron(update: Update, ctx: ContextTypes.DEFAULT_TYPE):
@@ -25626,7 +25613,7 @@ async def cmd_adminrename(update: Update, ctx: ContextTypes.DEFAULT_TYPE):
                 parse_mode=ParseMode.HTML,
             )
         except Exception:
-            pass
+            logger.exception("cmd_adminrename failed")
         return
 
     # ── Переименование стаи ──────────────────────────────────────────────────
@@ -25664,7 +25651,7 @@ async def cmd_adminrename(update: Update, ctx: ContextTypes.DEFAULT_TYPE):
                     parse_mode=ParseMode.HTML,
                 )
             except Exception:
-                pass
+                logger.exception("cmd_adminrename failed")
         return
 
     await update.message.reply_text("❌ Тип должен быть: frog или staya")
@@ -25709,7 +25696,7 @@ async def cmd_giveskin(update: Update, ctx: ContextTypes.DEFAULT_TYPE):
             parse_mode=ParseMode.HTML,
         )
     except Exception:
-        pass
+        logger.exception("cmd_giveskin failed")
 
 
 async def cmd_removeskin(update: Update, ctx: ContextTypes.DEFAULT_TYPE):
@@ -25758,7 +25745,7 @@ async def cmd_removeskin(update: Update, ctx: ContextTypes.DEFAULT_TYPE):
             parse_mode=ParseMode.HTML,
         )
     except Exception:
-        pass
+        logger.exception("cmd_removeskin failed")
 
 
 async def cmd_adminlookup(update: Update, ctx: ContextTypes.DEFAULT_TYPE):
@@ -25833,7 +25820,7 @@ async def cmd_adminplayerlogs(update: Update, ctx: ContextTypes.DEFAULT_TYPE):
         try:
             days = max(1, min(30, int(ctx.args[1])))
         except ValueError:
-            pass
+            logger.exception("cmd_adminplayerlogs failed")
 
     # Ищем игрока
     async with aiosqlite.connect(DB_PATH) as db:
@@ -26226,7 +26213,7 @@ async def cmd_ref_approve(update: Update, ctx: ContextTypes.DEFAULT_TYPE):
             parse_mode=ParseMode.HTML,
         )
     except Exception:
-        pass
+        logger.exception("cmd_ref_approve failed")
     await update.message.reply_text(f"✅ Заявка #{req_id} одобрена. Пользователь уведомлён.")
 
 
@@ -26262,7 +26249,7 @@ async def cmd_ref_decline(update: Update, ctx: ContextTypes.DEFAULT_TYPE):
             parse_mode=ParseMode.HTML,
         )
     except Exception:
-        pass
+        logger.exception("cmd_ref_decline failed")
     await update.message.reply_text(f"❌ Заявка #{req_id} отклонена.")
 
 
@@ -26317,7 +26304,7 @@ async def cmd_chatban(update: Update, ctx: ContextTypes.DEFAULT_TYPE):
             parse_mode=ParseMode.HTML,
         )
     except Exception:
-        pass
+        logger.exception("cmd_chatban failed")
 
 
 async def cmd_chatunban(update: Update, ctx: ContextTypes.DEFAULT_TYPE):
@@ -26364,7 +26351,7 @@ async def cmd_chatunban(update: Update, ctx: ContextTypes.DEFAULT_TYPE):
             parse_mode=ParseMode.HTML,
         )
     except Exception:
-        pass
+        logger.exception("cmd_chatunban failed")
 
 
 async def is_chat_muted(chat_id: int, user_id: int) -> bool:
@@ -26423,7 +26410,7 @@ async def cmd_chatmute(update: Update, ctx: ContextTypes.DEFAULT_TYPE):
                 mute_minutes = int(ctx.args[0])
                 reason_start = 1
             except ValueError:
-                pass
+                logger.exception("cmd_chatmute failed")
         reason = " ".join(ctx.args[reason_start:]) if len(ctx.args) > reason_start else "нарушение правил"
     else:
         mention = ctx.args[0].lstrip("@")
@@ -26434,7 +26421,7 @@ async def cmd_chatmute(update: Update, ctx: ContextTypes.DEFAULT_TYPE):
                 mute_minutes = int(ctx.args[1])
                 reason_start = 2
             except ValueError:
-                pass
+                logger.exception("cmd_chatmute failed")
         reason = " ".join(ctx.args[reason_start:]) if len(ctx.args) > reason_start else "нарушение правил"
         # Поиск по @username или числовому ID
         async with aiosqlite.connect(DB_PATH) as db:
@@ -26478,7 +26465,7 @@ async def cmd_chatmute(update: Update, ctx: ContextTypes.DEFAULT_TYPE):
             parse_mode=ParseMode.HTML,
         )
     except Exception:
-        pass
+        logger.exception("cmd_chatmute failed")
 
 
 async def cmd_chatunmute(update: Update, ctx: ContextTypes.DEFAULT_TYPE):
@@ -26521,7 +26508,7 @@ async def cmd_chatunmute(update: Update, ctx: ContextTypes.DEFAULT_TYPE):
             parse_mode=ParseMode.HTML,
         )
     except Exception:
-        pass
+        logger.exception("cmd_chatunmute failed")
 
 
 async def cmd_chatwarn(update: Update, ctx: ContextTypes.DEFAULT_TYPE):
@@ -26736,7 +26723,7 @@ async def cmd_chatlogs(update: Update, ctx: ContextTypes.DEFAULT_TYPE):
         try:
             limit = max(1, min(50, int(ctx.args[0])))
         except ValueError:
-            pass
+            logger.exception("cmd_chatlogs failed")
 
     async with aiosqlite.connect(DB_PATH) as db:
         async with db.execute(
@@ -26905,7 +26892,7 @@ async def cmd_ban(update: Update, ctx: ContextTypes.DEFAULT_TYPE):
             parse_mode=ParseMode.HTML,
         )
     except Exception:
-        pass
+        logger.exception("cmd_ban failed")
 
 
 async def cmd_unban(update: Update, ctx: ContextTypes.DEFAULT_TYPE):
@@ -26940,7 +26927,7 @@ async def cmd_unban(update: Update, ctx: ContextTypes.DEFAULT_TYPE):
             parse_mode=ParseMode.HTML,
         )
     except Exception:
-        pass
+        logger.exception("cmd_unban failed")
 
 
 async def cmd_lottery(update: Update, ctx: ContextTypes.DEFAULT_TYPE):
@@ -27419,7 +27406,7 @@ async def cmd_portfolio(update: Update, ctx: ContextTypes.DEFAULT_TYPE):
     try:
         await msg.edit_text("\n".join(lines), parse_mode=ParseMode.HTML)
     except Exception:
-        pass
+        logger.exception("cmd_portfolio failed")
 
 
 async def cmd_giftcheck(update: Update, ctx: ContextTypes.DEFAULT_TYPE):
@@ -27473,7 +27460,7 @@ async def cmd_giftcheck(update: Update, ctx: ContextTypes.DEFAULT_TYPE):
                     parse_mode=ParseMode.HTML,
                 )
             except Exception:
-                pass
+                logger.exception("cmd_giftcheck failed")
             return
         owner_xg = gift_xg.get("currentOwner") or gift_xg.get("owner") or {}
         owner_name_xg = owner_xg.get("name") or owner_xg.get("username") or "неизвестно"
@@ -27493,7 +27480,7 @@ async def cmd_giftcheck(update: Update, ctx: ContextTypes.DEFAULT_TYPE):
                 link_preview_options=LinkPreviewOptions(),
             )
         except Exception:
-            pass
+            logger.exception("cmd_giftcheck failed")
         return
 
     # ── Данные гифта ──────────────────────────────────────────────────────────
@@ -27614,7 +27601,7 @@ async def cmd_giftcheck(update: Update, ctx: ContextTypes.DEFAULT_TYPE):
             link_preview_options=LinkPreviewOptions(),
         )
     except Exception:
-        pass
+        logger.exception("cmd_giftcheck failed")
 
 async def cmd_admin_nft_recheck(update: Update, ctx: ContextTypes.DEFAULT_TYPE):
     """
@@ -27870,7 +27857,7 @@ async def cmd_admin_nft_invite(update: Update, ctx: ContextTypes.DEFAULT_TYPE):
     try:
         await update.message.reply_text("\n".join(report_lines), parse_mode="HTML")
     except Exception:
-        pass
+        logger.exception("cmd_admin_nft_invite failed")
 
 async def cmd_giftfloors(update: Update, ctx: ContextTypes.DEFAULT_TYPE):
     """
@@ -27900,7 +27887,7 @@ async def cmd_giftfloors(update: Update, ctx: ContextTypes.DEFAULT_TYPE):
         try:
             ton_usd = float(rate_data.get("usd") or rate_data.get("rate") or 0) or None
         except (TypeError, ValueError):
-            pass
+            logger.exception("cmd_giftfloors failed")
 
     def _best_ton(d: dict) -> float | None:
         """Минимальный флор из {market: nanoton} или {model: {market: nanoton}}."""
@@ -27946,7 +27933,7 @@ async def cmd_giftfloors(update: Update, ctx: ContextTypes.DEFAULT_TYPE):
                     parse_mode=ParseMode.HTML,
                 )
             except Exception:
-                pass
+                logger.exception("cmd_giftfloors failed")
             return
         lines = [f"<b>Флоры · {_html.escape(slug)}</b>\n"]
         if coll_data:
@@ -27955,7 +27942,7 @@ async def cmd_giftfloors(update: Update, ctx: ContextTypes.DEFAULT_TYPE):
                 try:
                     lines.append(f"Флор: <b>{float(floor):.2f} TON</b>")
                 except (TypeError, ValueError):
-                    pass
+                    logger.exception("cmd_giftfloors failed")
         if models_data:
             lines.append("\n<b>Флоры по моделям:</b>")
             for model, price in sorted(models_data.items(), key=lambda x: x[1])[:15]:
@@ -27963,7 +27950,7 @@ async def cmd_giftfloors(update: Update, ctx: ContextTypes.DEFAULT_TYPE):
         try:
             await msg.edit_text("\n".join(lines), parse_mode=ParseMode.HTML)
         except Exception:
-            pass
+            logger.exception("cmd_giftfloors failed")
         return
 
     # ── Разбираем ответ ────────────────────────────────────────────────────────
@@ -28024,7 +28011,7 @@ async def cmd_giftfloors(update: Update, ctx: ContextTypes.DEFAULT_TYPE):
     try:
         await msg.edit_text("\n".join(lines), parse_mode=ParseMode.HTML)
     except Exception:
-        pass
+        logger.exception("cmd_giftfloors failed")
 
 
 # ══════════════════════════════════════════════════════════════════════════════
@@ -29082,7 +29069,7 @@ async def cmd_contest_export(update: Update, ctx: ContextTypes.DEFAULT_TYPE):
             if not name or name == str(uid_p):
                 name = tg.full_name or str(uid_p)
         except Exception:
-            pass
+            logger.exception("cmd_contest_export failed")
         ref_t  = ref_tickets.get(uid_p, 0)
         skin_t = skin_tickets.get(uid_p, 0)
         total  = ref_t + skin_t
@@ -29249,7 +29236,7 @@ async def cmd_contest_winners(update: Update, ctx: ContextTypes.DEFAULT_TYPE):
         try:
             tg_user = await update.get_bot().get_chat(wid)
         except Exception:
-            pass
+            logger.exception("cmd_contest_winners failed")
         uname = (tg_user.username if tg_user and tg_user.username else None)
         name = (rf.get("frog_name") or rf.get("first_name") or str(wid)) if rf else str(wid)
         total_t = ticket_totals.get(wid, 0)
@@ -29336,7 +29323,7 @@ async def cmd_contest_refs(update: Update, ctx: ContextTypes.DEFAULT_TYPE):
             if tg_name:
                 return _html.escape(tg_name)
         except Exception:
-            pass
+            logger.exception("_ref_label failed")
         if rf:
             return _html.escape(rf.get("frog_name") or rf.get("first_name") or str(rid))
         return str(rid)
@@ -29629,6 +29616,2565 @@ async def build_feed_kb(uid: int, f: dict) -> InlineKeyboardMarkup:
     return InlineKeyboardMarkup(rows)
 
 
+# ══════════════════════════════════════════════════════════════════════════════
+# 👑  АДМИН-РОУТЕР — вынесен из on_callback
+#
+# Обрабатывает callback_data с префиксами admin*, ca_, cs_, aab_.
+# Вызывается из on_callback ПОСЛЕ всех проверок прав, поэтому порядок
+# guard-ов сохранён в точности. Возвращает True если callback обработан.
+# ══════════════════════════════════════════════════════════════════════════════
+async def admin_router(q, d: str, uid: int, ctx: ContextTypes.DEFAULT_TYPE) -> bool:
+    if d.startswith("admin_msg_"):
+        if uid not in ADMIN_IDS:
+            await q.answer("Нет доступа!", show_alert=True); return True
+        target_uid_msg = int(d[10:])
+        ctx.user_data[f"admin_msg_{uid}"] = target_uid_msg
+        await q.answer()
+        try:
+            await q.message.edit_text(
+                "✉️ <b>Сообщение игроку от администрации</b>\n\nНапиши текст сообщения:",
+                parse_mode=ParseMode.HTML,
+                reply_markup=InlineKeyboardMarkup([[InlineKeyboardButton("❌ Отмена", callback_data="admin_refresh")]])
+            )
+        except Exception: pass
+        return True
+
+    if d.startswith("admin_ban_toggle_"):
+        if uid not in ADMIN_IDS:
+            await q.answer("Нет доступа!", show_alert=True); return True
+        target_uid_bt = int(d[17:])
+        tf_bt = await db_get(target_uid_bt)
+        if not tf_bt:
+            await q.answer("Игрок не найден!", show_alert=True); return True
+        tf_bt["banned"] = 0 if tf_bt.get("banned") else 1
+        await db_save(tf_bt)
+        status = "забанен 🚫" if tf_bt["banned"] else "разбанен ✅"
+        await q.answer((f"{fname(tf_bt)} {status}")[:200], show_alert=True)
+        return True
+
+    if d == "admin_boost_menu":
+        if uid not in ADMIN_IDS:
+            await q.answer("⛔", show_alert=True)
+            return True
+        await q.answer()
+        active = await boost_is_active()
+        rem = await boost_remaining_secs()
+        h_rem, m_rem = divmod(int(rem) // 60, 60)
+        status_str = (
+            f"✅ Активно — осталось {h_rem}ч {m_rem}м"
+            if active else "⛔ Не активно"
+        )
+        kb_boost = InlineKeyboardMarkup([
+            [
+                InlineKeyboardButton("1 ч",  callback_data="admin_boost_start_1"),
+                InlineKeyboardButton("3 ч",  callback_data="admin_boost_start_3"),
+                InlineKeyboardButton("6 ч",  callback_data="admin_boost_start_6"),
+            ],
+            [
+                InlineKeyboardButton("12 ч", callback_data="admin_boost_start_12"),
+                InlineKeyboardButton("24 ч", callback_data="admin_boost_start_24"),
+            ],
+            [InlineKeyboardButton("⏹ Остановить событие", callback_data="admin_boost_stop")],
+            [InlineKeyboardButton("◀️ Назад", callback_data="admin_events")],
+        ])
+        try:
+            await q.message.edit_text(
+                f"✨ <b>Событие «Золотая лягушка»</b>\n\n"
+                f"Статус: {status_str}\n\n"
+                f"Эффекты:\n"
+                f"  💫 Stars → КваКоины: ×1.5 (1<tg-emoji emoji-id='5341447412089133029'>⭐</tg-emoji>=3<tg-emoji emoji-id='5341524176039615767'>🪙</tg-emoji>)\n"
+                f"  🍀 Легендарки в гаче: ×2\n"
+                f"  🔴 Мифики в гаче: ×2\n\n"
+                f"Выбери длительность для запуска:",
+                parse_mode=ParseMode.HTML,
+                reply_markup=kb_boost,
+            )
+        except Exception:
+            pass
+        return True
+
+    if d.startswith("admin_boost_start_"):
+        if uid not in ADMIN_IDS:
+            await q.answer("⛔", show_alert=True)
+            return True
+        try:
+            hours = int(d.split("_")[-1])
+        except ValueError:
+            return True
+        await boost_set(hours)
+        await db_setting("boost_reminded", "0")
+        await q.answer((f"✨ Золотая лягушка активна на {hours}ч!")[:200], show_alert=True)
+        # Анонс в общий чат
+        try:
+            await ctx.bot.send_message(
+                CHAT_ID,
+                f"✨ <b>Событие «Золотая лягушка» началось!</b>\n\n"
+                f"⏳ Длительность: <b>{hours} ч</b>\n\n"
+                f"💫 Курс Stars повышен: <b>1<tg-emoji emoji-id='5341447412089133029'>⭐</tg-emoji> = 3{coin_emoji()}</b>\n"
+                f"🍀 Шансы на легендарные облики в гаче: <b>×2</b>\n"
+                f"🔴 Шансы на мифические: <b>×2</b>\n\n"
+                f"<i>Скорее в магазин и гачу! <tg-emoji emoji-id='5341367834935075028'>🐸</tg-emoji></i>",
+                parse_mode=ParseMode.HTML,
+            )
+        except Exception:
+            logger.exception("on_callback failed")
+        # ЛС-рассылка
+        async with aiosqlite.connect(DB_PATH) as db:
+            async with db.execute("SELECT user_id FROM frogs WHERE alive=1") as c:
+                uids_boost = [r[0] for r in await c.fetchall()]
+        for buid in uids_boost:
+            try:
+                await ctx.bot.send_message(
+                    buid,
+                    f"✨ <b>Золотая лягушка!</b>\n\n"
+                    f"Сейчас выгодно: 1<tg-emoji emoji-id='5341447412089133029'>⭐</tg-emoji> = 3{coin_emoji()}, леги ×2 в гаче!\n"
+                    f"Событие идёт <b>{hours} ч</b>. Заходи!",
+                    parse_mode=ParseMode.HTML,
+                )
+            except Exception:
+                logger.exception("on_callback failed")
+            await asyncio.sleep(0.05)
+        return True
+
+    if d == "admin_boost_stop":
+        if uid not in ADMIN_IDS:
+            await q.answer("⛔", show_alert=True)
+            return True
+        await boost_clear()
+        await db_setting("boost_reminded", "0")
+        await q.answer("⏹ Событие остановлено.", show_alert=True)
+        try:
+            await ctx.bot.send_message(
+                CHAT_ID,
+                "🌙 <b>Событие «Золотая лягушка» завершено досрочно.</b>\n"
+                "Курсы и шансы вернулись в норму. <tg-emoji emoji-id='5341367834935075028'>🐸</tg-emoji>",
+                parse_mode=ParseMode.HTML,
+            )
+        except Exception:
+            logger.exception("on_callback failed")
+        return True
+
+    if d.startswith("cs_") or d == "cs_close" or d.startswith("ca_") or d == "ca_close":
+        await _handle_chatadmin_callback(q, uid, ctx)
+        return True
+
+    if d.startswith("ca_") or d == "ca_close":
+        await _handle_chatadmin_callback(q, uid, ctx)
+        return True
+
+    if d in ("admin_refresh", "admin_panel") or d == "admin_nft":
+        if uid not in ADMIN_IDS:
+            await q.answer("⛔", show_alert=True)
+            return True
+        if d == "admin_nft":
+            await show_nft_list(q, ctx, 0, edit=True)
+        else:
+            await show_admin_panel(q.message, edit=True, bot_data=ctx.bot_data)
+        await q.answer()
+        return True
+
+    if d == "admin_stats":
+        if uid not in ADMIN_IDS:
+            await q.answer("⛔", show_alert=True)
+            return True
+        now_ts = time.time()
+        day_ago = now_ts - 86400
+        week_ago = now_ts - 7 * 86400
+
+        # Обновляем пиковый онлайн при просмотре статистики
+        _update_peak_online(0)  # текущий подсчёт идёт ниже, пока 0
+
+        async with aiosqlite.connect(DB_PATH) as db:
+            # Везде исключаем забаненых и ботов — они считаются только в своём пункте
+            _REAL = "banned=0 AND is_bot=0"
+            async with db.execute(f"SELECT COUNT(*) FROM frogs WHERE {_REAL}") as c:
+                total = (await c.fetchone())[0]
+            async with db.execute(f"SELECT COUNT(*) FROM frogs WHERE alive=1 AND {_REAL}") as c:
+                alive = (await c.fetchone())[0]
+            async with db.execute(f"SELECT COUNT(*) FROM frogs WHERE alive=0 AND {_REAL}") as c:
+                dead = (await c.fetchone())[0]
+            async with db.execute("SELECT COUNT(*) FROM frogs WHERE banned=1") as c:
+                banned_cnt = (await c.fetchone())[0] or 0
+            async with db.execute(f"SELECT COUNT(*) FROM frogs WHERE born_at>? AND {_REAL}", (day_ago,)) as c:
+                new_24h = (await c.fetchone())[0] or 0
+            async with db.execute(f"SELECT COUNT(*) FROM frogs WHERE born_at>? AND {_REAL}", (week_ago,)) as c:
+                new_7d = (await c.fetchone())[0] or 0
+            async with db.execute(f"SELECT COUNT(*) FROM frogs WHERE (last_feed>? OR last_play>?) AND {_REAL}", (day_ago, day_ago)) as c:
+                active_24h = (await c.fetchone())[0] or 0
+            async with db.execute(f"SELECT COUNT(*) FROM frogs WHERE (last_feed>? OR last_play>?) AND {_REAL}", (week_ago, week_ago)) as c:
+                active_7d = (await c.fetchone())[0] or 0
+            async with db.execute(f"SELECT SUM(coins) FROM frogs WHERE {_REAL}") as c:
+                total_coins = (await c.fetchone())[0] or 0
+            async with db.execute(f"SELECT AVG(coins) FROM frogs WHERE alive=1 AND {_REAL}") as c:
+                avg_coins = (await c.fetchone())[0] or 0
+            async with db.execute(f"SELECT SUM(coins_spent) FROM frogs WHERE {_REAL}") as c:
+                total_spent = (await c.fetchone())[0] or 0
+            async with db.execute(f"SELECT SUM(total_feeds) FROM frogs WHERE {_REAL}") as c:
+                total_feeds = (await c.fetchone())[0] or 0
+            async with db.execute(f"SELECT SUM(total_casino) FROM frogs WHERE {_REAL}") as c:
+                total_casino = (await c.fetchone())[0] or 0
+            async with db.execute(f"SELECT SUM(total_casino_wins) FROM frogs WHERE {_REAL}") as c:
+                total_casino_wins = (await c.fetchone())[0] or 0
+            async with db.execute(f"SELECT SUM(total_duels) FROM frogs WHERE {_REAL}") as c:
+                total_duels = (await c.fetchone())[0] or 0
+            async with db.execute(f"SELECT SUM(total_duel_wins) FROM frogs WHERE {_REAL}") as c:
+                total_duel_wins = (await c.fetchone())[0] or 0
+            async with db.execute(f"SELECT SUM(total_gacha) FROM frogs WHERE {_REAL}") as c:
+                total_gacha = (await c.fetchone())[0] or 0
+            async with db.execute(f"SELECT SUM(total_mosquitoes) FROM frogs WHERE {_REAL}") as c:
+                total_mosquitoes = (await c.fetchone())[0] or 0
+            async with db.execute(f"SELECT SUM(stars_spent) FROM frogs WHERE {_REAL}") as c:
+                total_stars = (await c.fetchone())[0] or 0
+            async with db.execute(f"SELECT MAX(level) FROM frogs WHERE {_REAL}") as c:
+                max_level = (await c.fetchone())[0] or 0
+            async with db.execute(f"SELECT AVG(level) FROM frogs WHERE alive=1 AND {_REAL}") as c:
+                avg_level = (await c.fetchone())[0] or 0
+            async with db.execute("SELECT COUNT(*) FROM nft_frogs WHERE verified=1") as c:
+                nft_ok = (await c.fetchone())[0]
+            async with db.execute("SELECT COUNT(*) FROM nft_frogs WHERE verified=0") as c:
+                nft_pending = (await c.fetchone())[0]
+            async with db.execute("SELECT COUNT(*) FROM gift_log WHERE ts>?", (day_ago,)) as c:
+                gifts_24h = (await c.fetchone())[0] or 0
+            async with db.execute("SELECT SUM(amount) FROM gift_log WHERE ts>?", (day_ago,)) as c:
+                gifts_vol_24h = (await c.fetchone())[0] or 0
+            async with db.execute("SELECT COUNT(*) FROM referrals WHERE joined_at>?", (day_ago,)) as c:
+                refs_24h = (await c.fetchone())[0] or 0
+            async with db.execute("SELECT COUNT(*) FROM referrals") as c:
+                refs_total = (await c.fetchone())[0] or 0
+            async with db.execute("SELECT COUNT(*) FROM lottery_tickets WHERE purchased_at>?", (day_ago,)) as c:
+                lottery_24h = (await c.fetchone())[0] or 0
+            async with db.execute("SELECT COUNT(*) FROM mosquito_events WHERE created_at>?", (day_ago,)) as c:
+                mosquito_events_24h = (await c.fetchone())[0] or 0
+            async with db.execute("SELECT COUNT(*) FROM mosquito_events WHERE caught_by IS NOT NULL AND caught_by != -1") as c:
+                mosquito_caught = (await c.fetchone())[0] or 0
+            async with db.execute(
+                f"SELECT first_name, level FROM frogs WHERE {_REAL} ORDER BY level DESC LIMIT 5"
+            ) as c:
+                top5 = await c.fetchall()
+            async with db.execute(
+                f"SELECT first_name, coins FROM frogs WHERE alive=1 AND {_REAL} ORDER BY coins DESC LIMIT 3"
+            ) as c:
+                top3_rich = await c.fetchall()
+            async with db.execute(
+                f"SELECT first_name, total_gacha FROM frogs WHERE {_REAL} ORDER BY total_gacha DESC LIMIT 3"
+            ) as c:
+                top3_gacha = await c.fetchall()
+            # Топ скинов в коллекциях (только реальные игроки)
+            async with db.execute(
+                f"SELECT c.skin, COUNT(*) as cnt FROM collections c "
+                f"JOIN frogs f ON f.user_id=c.user_id WHERE f.{_REAL} "
+                f"GROUP BY c.skin ORDER BY cnt DESC LIMIT 5"
+            ) as c:
+                top5_skins = await c.fetchall()
+            # ── Статистика языков (без банов и ботов) ──
+            async with db.execute(f"SELECT COUNT(*) FROM frogs WHERE (lang='ru' OR lang IS NULL OR lang='') AND {_REAL}") as c:
+                lang_ru = (await c.fetchone())[0] or 0
+            async with db.execute(f"SELECT COUNT(*) FROM frogs WHERE lang='en' AND {_REAL}") as c:
+                lang_en = (await c.fetchone())[0] or 0
+            async with db.execute(f"SELECT COUNT(*) FROM frogs WHERE lang='zh' AND {_REAL}") as c:
+                lang_zh = (await c.fetchone())[0] or 0
+            # Активные за 7д по языкам
+            async with db.execute(f"SELECT COUNT(*) FROM frogs WHERE (lang='ru' OR lang IS NULL OR lang='') AND (last_feed>? OR last_play>?) AND {_REAL}", (week_ago, week_ago)) as c:
+                lang_ru_active = (await c.fetchone())[0] or 0
+            async with db.execute(f"SELECT COUNT(*) FROM frogs WHERE lang='en' AND (last_feed>? OR last_play>?) AND {_REAL}", (week_ago, week_ago)) as c:
+                lang_en_active = (await c.fetchone())[0] or 0
+            async with db.execute(f"SELECT COUNT(*) FROM frogs WHERE lang='zh' AND (last_feed>? OR last_play>?) AND {_REAL}", (week_ago, week_ago)) as c:
+                lang_zh_active = (await c.fetchone())[0] or 0
+            # ── Статистика застрявших на воскрешении (без банов и ботов) ──
+            async with db.execute(f"SELECT COUNT(*) FROM frogs WHERE alive=0 AND trial_active=0 AND {_REAL}") as c:
+                stuck_dead_notrial = (await c.fetchone())[0] or 0
+            async with db.execute(f"SELECT COUNT(*) FROM frogs WHERE alive=0 AND trial_active=1 AND {_REAL}") as c:
+                stuck_trial = (await c.fetchone())[0] or 0
+            async with db.execute(f"SELECT COUNT(*) FROM frogs WHERE alive=0 AND {_REAL}") as c:
+                total_dead_for_stuck = (await c.fetchone())[0] or 0
+            # Зарегистрировались но никогда не кормили (last_feed=0 и мертвы)
+            async with db.execute(f"SELECT COUNT(*) FROM frogs WHERE alive=0 AND (last_feed IS NULL OR last_feed=0) AND {_REAL}") as c:
+                stuck_never_fed = (await c.fetchone())[0] or 0
+            # Последний раз заходили > 7 дней назад и мертвы
+            async with db.execute(f"SELECT COUNT(*) FROM frogs WHERE alive=0 AND last_seen < ? AND {_REAL}", (week_ago,)) as c:
+                stuck_inactive_7d = (await c.fetchone())[0] or 0
+
+        top_txt = "\n".join(f"  {i+1}. {r[0]} — ур.{r[1]}" for i, r in enumerate(top5))
+        top_rich_txt = "\n".join(f"  {i+1}. {r[0]} — {r[1]:,}🪙" for i, r in enumerate(top3_rich))
+        top_gacha_txt = "\n".join(f"  {i+1}. {r[0]} — {r[1]} круток" for i, r in enumerate(top3_gacha))
+        top_skins_txt = "\n".join(f"  {s[0]}: {s[1]} владельцев" for s in top5_skins)
+        casino_wr = f"{total_casino_wins*100//total_casino}%" if total_casino > 0 else "—"
+        duel_wr = f"{total_duel_wins*100//total_duels}%" if total_duels > 0 else "—"
+
+        def _fmt_peak_stat(period: str) -> str:
+            count, ts = _peak_online.get(period, (0, 0))
+            return str(count) if count > 0 else "—"
+
+        # Язык: визуальный прогресс-бар
+        _lang_total = max(lang_ru + lang_en + lang_zh, 1)
+        def _lang_pct(n): return f"{n*100//_lang_total}%"
+        def _lang_bar(n):
+            filled = round(n / _lang_total * 10)
+            return "█" * filled + "░" * (10 - filled)
+
+        text = (
+            f"📊 <b>Статистика бота</b>\n\n"
+            f"<b>👥 Игроки</b> <i>(без банов и ботов)</i>\n"
+            f"Всего: <b>{total}</b>  |  🐸 Живых: <b>{alive}</b>  |  💀 Мёртвых: <b>{dead}</b>\n"
+            f"🚫 Забанено (отдельно, не в счёт): <b>{banned_cnt}</b>\n"
+            f"Новых за 24ч: <b>{new_24h}</b>  |  за 7д: <b>{new_7d}</b>\n"
+            f"Активных за 24ч: <b>{active_24h}</b>  |  за 7д: <b>{active_7d}</b>\n"
+            f"Макс. уровень: <b>{max_level}</b>  |  Средний: <b>{avg_level:.1f}</b>\n\n"
+            f"<b>🌐 Языки интерфейса</b>\n"
+            f"🇷🇺 Русский:  <code>{_lang_bar(lang_ru)}</code>  <b>{lang_ru}</b> ({_lang_pct(lang_ru)})  активных 7д: {lang_ru_active}\n"
+            f"🇬🇧 English:  <code>{_lang_bar(lang_en)}</code>  <b>{lang_en}</b> ({_lang_pct(lang_en)})  активных 7д: {lang_en_active}\n"
+            f"🇨🇳 中文:      <code>{_lang_bar(lang_zh)}</code>  <b>{lang_zh}</b> ({_lang_pct(lang_zh)})  активных 7д: {lang_zh_active}\n\n"
+            f"<b>📈 Пиковый онлайн (10 мин окно):</b>\n"
+            f"  Сутки: <b>{_fmt_peak_stat('day')}</b>  |  Неделя: <b>{_fmt_peak_stat('week')}</b>  |  Месяц: <b>{_fmt_peak_stat('month')}</b>\n\n"
+            f"<b>🪙 Экономика</b>\n"
+            f"КваКоинов в обороте: <b>{total_coins:,}</b>\n"
+            f"Среднее у живого: <b>{avg_coins:.0f}🪙</b>\n"
+            f"Всего потрачено: <b>{total_spent:,}🪙</b>\n"
+            f"⭐ Stars: <b>{total_stars}</b>\n\n"
+            f"<b>🎮 Активность</b>\n"
+            f"🍎 Кормлений: <b>{total_feeds:,}</b>\n"
+            f"🎰 Гача: <b>{total_gacha:,}</b>\n"
+            f"🎲 Казино: <b>{total_casino:,}</b> (побед: {total_casino_wins:,} / {casino_wr})\n"
+            f"⚔️ Дуэлей: <b>{total_duels:,}</b> (побед: {total_duel_wins:,} / {duel_wr})\n"
+            f"🦟 Комаров поймано: <b>{total_mosquitoes:,}</b>  |  событий 24ч: {mosquito_events_24h}  |  поймано событий: {mosquito_caught}\n"
+            f"🎟 Лотерея за 24ч: <b>{lottery_24h}</b> билетов\n\n"
+            f"<b>🔗 Прочее</b>\n"
+            f"Рефералов: <b>{refs_total}</b> (за 24ч: {refs_24h})\n"
+            f"🎁 Переводов за 24ч: <b>{gifts_24h}</b> ({gifts_vol_24h:,}🪙)\n"
+            f"🪸 NFT: подтверждено {nft_ok}, на проверке {nft_pending}\n\n"
+            f"<b>💀 Застрявшие на воскрешении</b>\n"
+            f"Всего мёртвых: <b>{total_dead_for_stuck}</b>\n"
+            f"  ├ Ждут выбора (без испытания): <b>{stuck_dead_notrial}</b>\n"
+            f"  ├ В испытании (не завершили): <b>{stuck_trial}</b>\n"
+            f"  ├ Никогда не кормили (брошены): <b>{stuck_never_fed}</b>\n"
+            f"  └ Неактивны > 7д (вероятно ушли): <b>{stuck_inactive_7d}</b>\n"
+            f"% от всех игроков: <b>{total_dead_for_stuck*100//max(total,1)}%</b>\n\n"
+            f"<b>🏆 Топ-5 по уровню:</b>\n{top_txt}\n\n"
+            f"<b>💰 Топ-3 богатейших:</b>\n{top_rich_txt}\n\n"
+            f"<b>🎰 Топ-3 по гаче:</b>\n{top_gacha_txt}\n\n"
+            f"<b>👗 Топ-5 популярных скинов:</b>\n{top_skins_txt}"
+        )
+        try:
+            await q.message.edit_text(
+                text,
+                parse_mode=ParseMode.HTML,
+                reply_markup=InlineKeyboardMarkup([
+                    [InlineKeyboardButton("👗 Статистика обликов", callback_data="admin_skin_stats")],
+                    [InlineKeyboardButton("🔍 Поиск по облику", callback_data="admin_skin_browse_")],
+                    [InlineKeyboardButton("💀 Детали застрявших", callback_data="admin_stuck_stats")],
+                    [InlineKeyboardButton("◀️ Назад", callback_data="admin_refresh")],
+                ]),
+            )
+        except Exception:
+            pass
+        await q.answer()
+        return True
+
+    if d.startswith("admin_skin_browse_"):
+        if uid not in ADMIN_IDS:
+            await q.answer("⛔", show_alert=True); return True
+        await q.answer()
+        suffix = d[len("admin_skin_browse_"):]
+
+        # Уровень 1: выбор редкости
+        if suffix == "" or suffix == "back":
+            rarity_order = ["secret", "mythic", "legendary", "epic", "rare", "uncommon", "common"]
+            kb = []
+            for r in rarity_order:
+                icon = R_ICON.get(r, "⚪")
+                name = R_NAME.get(r, r)
+                kb.append([InlineKeyboardButton(f"{icon} {name}", callback_data=f"admin_skin_browse_r_{r}")])
+            kb.append([InlineKeyboardButton("◀️ Назад", callback_data="admin_stats")])
+            try:
+                await q.message.edit_text(
+                    "🔍 <b>Поиск по облику</b>\n\nВыбери редкость:",
+                    parse_mode=ParseMode.HTML,
+                    reply_markup=InlineKeyboardMarkup(kb),
+                )
+            except Exception:
+                pass
+            return True
+
+        # Уровень 2: список обликов выбранной редкости
+        if suffix.startswith("r_") and not suffix.startswith("r_s_"):
+            rarity = suffix[2:]
+            skins_of_rarity = [(sname, sdata) for sname, sdata in SKINS.items()
+                                if sdata.get("rarity") == rarity]
+            skins_of_rarity.sort(key=lambda x: x[0])
+            if not skins_of_rarity:
+                await q.answer("Нет обликов этой редкости.", show_alert=True); return True
+            icon = R_ICON.get(rarity, "⚪")
+            name_r = R_NAME.get(rarity, rarity)
+            kb = []
+            for sname, _ in skins_of_rarity:
+                kb.append([InlineKeyboardButton(
+                    f"{sname}", callback_data=f"admin_skin_browse_r_s_{rarity}|{sname[:40]}"
+                )])
+            kb.append([InlineKeyboardButton("◀️ Назад", callback_data="admin_skin_browse_")])
+            try:
+                await q.message.edit_text(
+                    f"🔍 {icon} <b>{name_r}</b> — выбери облик:",
+                    parse_mode=ParseMode.HTML,
+                    reply_markup=InlineKeyboardMarkup(kb),
+                )
+            except Exception:
+                pass
+            return True
+
+        # Уровень 3: список владельцев выбранного облика
+        if suffix.startswith("r_s_"):
+            parts = suffix[4:].split("|", 1)
+            if len(parts) != 2:
+                await q.answer(); return True
+            rarity, skin_name = parts[0], parts[1]
+            async with aiosqlite.connect(DB_PATH) as _db:
+                _db.row_factory = aiosqlite.Row
+                async with _db.execute(
+                    "SELECT f.user_id, f.first_name, f.username, f.frog_name, f.level, f.alive "
+                    "FROM frogs f "
+                    "JOIN collections c ON c.user_id = f.user_id "
+                    "WHERE c.skin = ? AND c.qty > 0 AND f.banned = 0 "
+                    "ORDER BY f.level DESC LIMIT 50",
+                    (skin_name,)
+                ) as _c:
+                    owners = [dict(r) for r in await _c.fetchall()]
+            icon = R_ICON.get(rarity, "⚪")
+            if not owners:
+                lines = [f"🔍 {icon} <b>{he(skin_name)}</b>\n\n😶 Владельцев не найдено."]
+            else:
+                lines = [f"🔍 {icon} <b>{he(skin_name)}</b> — владельцы ({len(owners)}):\n"]
+                for o in owners:
+                    alive_icon = "🐸" if o["alive"] else "💀"
+                    fname_o = he(o["frog_name"] or o["first_name"] or "?")
+                    uname_o = f"@{o['username']}" if o["username"] else f"ID:{o['user_id']}"
+                    lines.append(f"{alive_icon} <b>{fname_o}</b> ({uname_o}) ур.{o['level']}")
+            kb = [[InlineKeyboardButton("◀️ Назад", callback_data=f"admin_skin_browse_r_{rarity}")]]
+            try:
+                await q.message.edit_text(
+                    "\n".join(lines),
+                    parse_mode=ParseMode.HTML,
+                    reply_markup=InlineKeyboardMarkup(kb),
+                )
+            except Exception:
+                logger.exception("on_callback failed")
+            return True
+
+    if d == "admin_stuck_stats":
+        if uid not in ADMIN_IDS:
+            await q.answer("⛔", show_alert=True)
+            return True
+        await q.answer()
+        week_ago_s = time.time() - 7 * 86400
+        async with aiosqlite.connect(DB_PATH) as db:
+            # Застряли без испытания (просто мертвы и ждут)
+            async with db.execute(
+                "SELECT user_id, first_name, username, coins, level, last_seen "
+                "FROM frogs WHERE alive=0 AND trial_active=0 AND banned=0 AND is_bot=0 "
+                "ORDER BY last_seen DESC LIMIT 20"
+            ) as c:
+                stuck_rows = await c.fetchall()
+            # Застряли в испытании
+            async with db.execute(
+                "SELECT user_id, first_name, username, trial_quests, trial_progress, last_seen "
+                "FROM frogs WHERE alive=0 AND trial_active=1 AND banned=0 AND is_bot=0 "
+                "ORDER BY last_seen DESC LIMIT 10"
+            ) as c:
+                trial_rows = await c.fetchall()
+            # Итого
+            async with db.execute("SELECT COUNT(*) FROM frogs WHERE alive=0 AND banned=0 AND is_bot=0") as c:
+                total_dead = (await c.fetchone())[0] or 0
+            async with db.execute("SELECT COUNT(*) FROM frogs WHERE banned=0 AND is_bot=0") as c:
+                total_players = (await c.fetchone())[0] or 0
+
+        lines = [f"💀 <b>Детали застрявших на воскрешении</b>\n"]
+        lines.append(f"Всего мёртвых: <b>{total_dead}</b> из <b>{total_players}</b> ({total_dead*100//max(total_players,1)}%)\n")
+
+        lines.append("━━━ Без испытания (последние 20) ━━━")
+        if stuck_rows:
+            for r in stuck_rows:
+                uid_r, fname_r, uname_r, coins_r, lvl_r, last_seen_r = r
+                uname_s = f"@{uname_r}" if uname_r else f"ID:{uid_r}"
+                days_ago = int((time.time() - (last_seen_r or 0)) / 86400) if last_seen_r else "?"
+                lines.append(f"• {fname_r} ({uname_s}) ур.{lvl_r} 🪙{coins_r} — был {days_ago}д назад")
+        else:
+            lines.append("  (нет)")
+
+        lines.append("\n━━━ В испытании (последние 10) ━━━")
+        if trial_rows:
+            for r in trial_rows:
+                uid_r, fname_r, uname_r, tq_json, tp_json, last_seen_r = r
+                uname_s = f"@{uname_r}" if uname_r else f"ID:{uid_r}"
+                days_ago = int((time.time() - (last_seen_r or 0)) / 86400) if last_seen_r else "?"
+                try:
+                    tq = json.loads(tq_json or "[]")
+                    tp = json.loads(tp_json or "{}")
+                    done = sum(1 for q2 in tq if tp.get(q2["id"], 0) >= q2["goal"])
+                    total_q = len(tq)
+                    progress_s = f"{done}/{total_q}"
+                except Exception:
+                    progress_s = "?"
+                lines.append(f"• {fname_r} ({uname_s}) прогресс:{progress_s} — был {days_ago}д назад")
+        else:
+            lines.append("  (нет)")
+
+        try:
+            await q.message.edit_text(
+                "\n".join(lines),
+                parse_mode=ParseMode.HTML,
+                reply_markup=InlineKeyboardMarkup([
+                    [InlineKeyboardButton("◀️ Назад", callback_data="admin_stats")],
+                ]),
+            )
+        except Exception:
+            logger.exception("on_callback failed")
+        return True
+
+    if d.startswith("admin_players_") and not d.startswith("admin_players_p_"):
+        if uid not in ADMIN_IDS:
+            await q.answer("⛔", show_alert=True)
+            return True
+        page = int(d.split("_")[-1])
+        per = 8
+        async with aiosqlite.connect(DB_PATH) as db:
+            async with db.execute("SELECT COUNT(*) FROM frogs WHERE is_bot=0") as c:
+                total = (await c.fetchone())[0]
+            async with db.execute(
+                "SELECT user_id, first_name, username, level, coins, alive, banned, is_bot FROM frogs WHERE is_bot=0 ORDER BY level DESC LIMIT ? OFFSET ?",
+                (per, page * per),
+            ) as c:
+                rows = await c.fetchall()
+        import math as _math
+
+        total_pages = max(1, _math.ceil(total / per))
+        text = f"👥 <b>Игроки (стр. {page+1}/{total_pages})</b>\nНажми на игрока — открыть карточку\n💀 = мёртвый  🚫 = забанен\n(Боты скрыты → раздел 🤖 Управление ботами)\n"
+        kb_rows = []
+        for r in rows:
+            alive_icon = "🐸" if r[5] else "💀"
+            ban_icon = " 🚫" if r[6] else ""
+            uname = f"@{r[2]}" if r[2] else f"id{r[0]}"
+            label = f"{alive_icon}{ban_icon} {r[1]} ({uname}) ур.{r[3]}"
+            # Используем простой формат callback без _p чтобы избежать парсинг-баги
+            kb_rows.append(
+                [
+                    InlineKeyboardButton(
+                        label, callback_data=f"admin_pcard_{r[0]}_{page}"
+                    )
+                ]
+            )
+        nav = []
+        if page > 0:
+            nav.append(
+                InlineKeyboardButton("◀️", callback_data=f"admin_players_{page-1}")
+            )
+        if page < total_pages - 1:
+            nav.append(
+                InlineKeyboardButton("▶️", callback_data=f"admin_players_{page+1}")
+            )
+        if nav:
+            kb_rows.append(nav)
+        kb_rows.append(
+            [InlineKeyboardButton("◀️ Назад в панель", callback_data="admin_refresh")]
+        )
+        try:
+            await q.message.edit_text(
+                text,
+                parse_mode=ParseMode.HTML,
+                reply_markup=InlineKeyboardMarkup(kb_rows),
+            )
+        except Exception:
+            pass
+        await q.answer()
+        return True
+
+    if d.startswith("admin_pcard_"):
+        if uid not in ADMIN_IDS:
+            await q.answer("⛔", show_alert=True)
+            return True
+        try:
+            parts_pc = d[len("admin_pcard_"):].split("_")
+            target_uid_pc = int(parts_pc[0])
+            back_page_pc = parts_pc[1] if len(parts_pc) > 1 else "0"
+            back_cb_pc = f"admin_players_{back_page_pc}"
+        except (ValueError, IndexError):
+            await q.answer("Ошибка!", show_alert=True)
+            return True
+        await show_player_card(q.message, target_uid_pc, edit=True, back_cb=back_cb_pc)
+        await q.answer()
+        return True
+
+    if d.startswith("admin_ban_") or d.startswith("admin_unban_"):
+        if uid not in ADMIN_IDS:
+            await q.answer("⛔", show_alert=True)
+            return True
+        is_unban = d.startswith("admin_unban_")
+        target_uid_ban = int(d.split("_")[-1])
+        new_ban = 0 if is_unban else 1
+        async with aiosqlite.connect(DB_PATH) as db:
+            await db.execute(
+                "UPDATE frogs SET banned=? WHERE user_id=?", (new_ban, target_uid_ban)
+            )
+            await db.commit()
+        action_txt = "разбанен" if is_unban else "забанен"
+        await admin_log(uid, "unban" if is_unban else "ban", target_uid_ban)
+        await q.answer((f"✅ Игрок {action_txt}!")[:200], show_alert=True)
+        # Обновить карточку
+        await show_player_card(q.message, target_uid_ban, edit=True)
+        return True
+
+    if d.startswith("admin_markbot_") or d.startswith("admin_unmarkbot_"):
+        if uid not in ADMIN_IDS:
+            await q.answer("⛔", show_alert=True)
+            return True
+        is_unmark = d.startswith("admin_unmarkbot_")
+        target_uid_bot = int(d.split("_")[-1])
+        new_bot = 0 if is_unmark else 1
+        async with aiosqlite.connect(DB_PATH) as db:
+            await db.execute(
+                "UPDATE frogs SET is_bot=? WHERE user_id=?", (new_bot, target_uid_bot)
+            )
+            await db.commit()
+        _user_cache.invalidate(target_uid_bot)
+        action_txt = "снята метка бота" if is_unmark else "помечен как бот (скрыт из топов)"
+        await admin_log(uid, "unmarkbot" if is_unmark else "markbot", target_uid_bot)
+        await q.answer((f"✅ Игрок {action_txt}!")[:200], show_alert=True)
+        await show_player_card(q.message, target_uid_bot, edit=True)
+        return True
+
+    if d.startswith("admin_deleteplayer_") and not d.startswith("admin_deleteplayer_confirm_"):
+        if uid not in ADMIN_IDS:
+            await q.answer("⛔", show_alert=True)
+            return True
+        target_uid_del = int(d.split("_")[-1])
+        p_del = await db_get(target_uid_del)
+        uname_del = f"@{p_del['username']}" if p_del and p_del.get("username") else f"ID:{target_uid_del}"
+        name_del = he(p_del.get("first_name", "?")) if p_del else "?"
+        try:
+            await q.message.edit_text(
+                f"⚠️ <b>Подтверди удаление игрока</b>\n\n"
+                f"👤 <b>{name_del}</b> ({uname_del})\n"
+                f"ID: <code>{target_uid_del}</code>\n\n"
+                f"<b>Будут удалены:</b> запись в frogs, коллекция, достижения, квесты, NFT, дуэли, рефералы, инвентарь.\n\n"
+                f"⚠️ <b>Это действие необратимо!</b>",
+                parse_mode=ParseMode.HTML,
+                reply_markup=InlineKeyboardMarkup([
+                    [
+                        btn("✅ Да, удалить", callback_data=f"admin_deleteplayer_confirm_{target_uid_del}", style="danger"),
+                        btn("❌ Отмена", callback_data=f"admin_pcard_{target_uid_del}_0", style="primary"),
+                    ]
+                ]),
+            )
+        except Exception:
+            pass
+        await q.answer()
+        return True
+
+    if d.startswith("admin_deleteplayer_confirm_"):
+        if uid not in ADMIN_IDS:
+            await q.answer("⛔", show_alert=True)
+            return True
+        target_uid_del = int(d.split("_")[-1])
+        # Сначала отвечаем — иначе Telegram покажет спиннер вечно
+        await q.answer(f"🗑 Удаляю игрока {target_uid_del}…", show_alert=False)
+        _user_cache.invalidate(target_uid_del)
+        try:
+            async with aiosqlite.connect(DB_PATH) as db:
+                await db.execute("DELETE FROM frogs WHERE user_id=?", (target_uid_del,))
+                await db.execute("DELETE FROM collections WHERE user_id=?", (target_uid_del,))
+                await db.execute("DELETE FROM achievements WHERE user_id=?", (target_uid_del,))
+                await db.execute("DELETE FROM daily_quests WHERE user_id=?", (target_uid_del,))
+                await db.execute("DELETE FROM nft_frogs WHERE user_id=?", (target_uid_del,))
+                try:
+                    await db.execute("DELETE FROM duels WHERE challenger_id=? OR target_id=?", (target_uid_del, target_uid_del))
+                except Exception:
+                    logger.exception("on_callback failed")
+                try:
+                    await db.execute("DELETE FROM referrals WHERE referrer_id=? OR referred_id=?", (target_uid_del, target_uid_del))
+                except Exception:
+                    logger.exception("on_callback failed")
+                try:
+                    await db.execute("DELETE FROM shop_inventory WHERE user_id=?", (target_uid_del,))
+                except Exception:
+                    logger.exception("on_callback failed")
+                try:
+                    await db.execute("DELETE FROM lottery_tickets WHERE user_id=?", (target_uid_del,))
+                except Exception:
+                    logger.exception("on_callback failed")
+                try:
+                    await db.execute("DELETE FROM gift_log WHERE sender_id=? OR receiver_id=?", (target_uid_del, target_uid_del))
+                except Exception:
+                    logger.exception("on_callback failed")
+                await db.commit()
+            await admin_log(uid, "delete_player", target_uid_del)
+            try:
+                await q.message.edit_text(
+                    f"🗑 <b>Игрок <code>{target_uid_del}</code> полностью удалён из базы данных.</b>",
+                    parse_mode=ParseMode.HTML,
+                    reply_markup=InlineKeyboardMarkup([
+                        [InlineKeyboardButton("◀️ К списку игроков", callback_data="admin_players_0")]
+                    ]),
+                )
+            except Exception:
+                pass
+        except Exception as e:
+            try:
+                await q.message.edit_text(
+                    f"❌ <b>Ошибка при удалении игрока <code>{target_uid_del}</code>:</b>\n<code>{e}</code>",
+                    parse_mode=ParseMode.HTML,
+                    reply_markup=InlineKeyboardMarkup([
+                        [InlineKeyboardButton("◀️ К списку игроков", callback_data="admin_players_0")]
+                    ]),
+                )
+            except Exception:
+                pass
+        return True
+
+    if d.startswith("admin_bots_"):
+        if uid not in ADMIN_IDS:
+            await q.answer("⛔", show_alert=True)
+            return True
+        page_b = int(d.split("_")[-1])
+        per_b = 8
+        async with aiosqlite.connect(DB_PATH) as db:
+            async with db.execute("SELECT COUNT(*) FROM frogs WHERE is_bot=1") as c:
+                total_b = (await c.fetchone())[0]
+            async with db.execute(
+                "SELECT user_id, first_name, username, level, coins FROM frogs WHERE is_bot=1 ORDER BY user_id DESC LIMIT ? OFFSET ?",
+                (per_b, page_b * per_b),
+            ) as c:
+                rows_b = await c.fetchall()
+        import math as _math
+        total_pages_b = max(1, _math.ceil(total_b / per_b))
+        text_b = (
+            f"🤖 <b>Помеченные боты ({total_b} шт., стр. {page_b+1}/{total_pages_b})</b>\n"
+            f"Боты скрыты из топов /top /topw /topm.\n"
+            f"Нажми на бота — открыть карточку (снять метку или удалить).\n"
+        )
+        kb_rows_b = []
+        for r in rows_b:
+            uname_b = f"@{r[2]}" if r[2] else f"id{r[0]}"
+            label_b = f"🤖 {r[1]} ({uname_b}) ур.{r[3]}"
+            kb_rows_b.append([
+                InlineKeyboardButton(label_b, callback_data=f"admin_pcard_{r[0]}_{page_b}")
+            ])
+        nav_b = []
+        if page_b > 0:
+            nav_b.append(InlineKeyboardButton("◀️", callback_data=f"admin_bots_{page_b-1}"))
+        if page_b < total_pages_b - 1:
+            nav_b.append(InlineKeyboardButton("▶️", callback_data=f"admin_bots_{page_b+1}"))
+        if nav_b:
+            kb_rows_b.append(nav_b)
+        kb_rows_b.append([InlineKeyboardButton("◀️ Назад в панель", callback_data="admin_refresh")])
+        try:
+            await q.message.edit_text(
+                text_b,
+                parse_mode=ParseMode.HTML,
+                reply_markup=InlineKeyboardMarkup(kb_rows_b),
+            )
+        except Exception:
+            pass
+        await q.answer()
+        return True
+
+    if d.startswith("admin_revive_"):
+        if uid not in ADMIN_IDS:
+            await q.answer("⛔", show_alert=True)
+            return True
+        target_uid_rev = int(d.split("_")[-1])
+        p_rev = await db_get(target_uid_rev)
+        if p_rev:
+            p_rev["alive"] = 1
+            p_rev["health"] = 100
+            p_rev["hunger"] = 100
+            p_rev["happiness"] = 100
+            await db_save(p_rev)
+            await admin_log(uid, "revive", target_uid_rev)
+            try:
+                await ctx.bot.send_message(
+                    target_uid_rev,
+                    "💚 <b>Тебя воскресила администрация!</b>\n\nТвоя лягушка снова жива! <tg-emoji emoji-id='5341367834935075028'>🐸</tg-emoji>",
+                    parse_mode=ParseMode.HTML,
+                )
+            except Exception:
+                logger.exception("on_callback failed")
+        await q.answer("💚 Воскрешено!", show_alert=True)
+        await show_player_card(q.message, target_uid_rev, edit=True)
+        return True
+
+    if d.startswith("admin_kill_"):
+        if uid not in ADMIN_IDS:
+            await q.answer("⛔", show_alert=True)
+            return True
+        target_uid_kill = int(d.split("_")[-1])
+        p_kill = await db_get(target_uid_kill)
+        if p_kill:
+            p_kill["alive"] = 0
+            p_kill["health"] = 0
+            p_kill["trial_active"] = 0
+            p_kill["trial_quests"] = "[]"
+            p_kill["trial_progress"] = "{}"
+            await db_save(p_kill)
+            await admin_log(uid, "kill", target_uid_kill)
+            try:
+                await ctx.bot.send_message(
+                    target_uid_kill,
+                    "<tg-emoji emoji-id='5341573078537248907'>💀</tg-emoji> <b>Твоя лягушка была убита администрацией.</b>\n\nИспользуй /revive чтобы воскресить её.",
+                    parse_mode=ParseMode.HTML,
+                )
+            except Exception:
+                logger.exception("on_callback failed")
+        await q.answer("💀 Убито!", show_alert=True)
+        await show_player_card(q.message, target_uid_kill, edit=True)
+        return True
+
+    if d.startswith("admin_logs_uid_"):
+        if uid not in ADMIN_IDS:
+            await q.answer("⛔", show_alert=True)
+            return True
+        target_uid_log = int(d.split("_")[-1])
+        p_log = await db_get(target_uid_log)
+        async with aiosqlite.connect(DB_PATH) as db:
+            db.row_factory = aiosqlite.Row
+            # Берём ВСЕ логи — без лимита, отдаём файлом
+            async with db.execute(
+                "SELECT * FROM admin_logs WHERE target_id=? ORDER BY ts DESC",
+                (target_uid_log,)
+            ) as c:
+                log_rows = await c.fetchall()
+            # Также coin_log
+            async with db.execute(
+                "SELECT amount, reason, ts FROM coin_log WHERE user_id=? ORDER BY ts DESC LIMIT 200",
+                (target_uid_log,)
+            ) as c:
+                coin_rows = await c.fetchall()
+        pname = (p_log.get("frog_name") or p_log.get("first_name") or str(target_uid_log)) if p_log else str(target_uid_log)
+        uname = (f"@{p_log['username']}" if p_log and p_log.get("username") else "") if p_log else ""
+        lines = [
+            f"=== ЛОГИ ИГРОКА {pname} {uname} (ID: {target_uid_log}) ===",
+            f"Экспорт: {datetime.now(timezone.utc).strftime('%Y-%m-%d %H:%M UTC')}",
+            "",
+            "--- ADMIN LOG ---",
+        ]
+        if log_rows:
+            for r in log_rows:
+                ts_str = datetime.fromtimestamp(r["ts"], tz=timezone.utc).strftime("%Y-%m-%d %H:%M:%S")
+                lines.append(f"[{ts_str}] admin={r['admin_id']}  action={r['action']}  details={r.get('details','')}")
+        else:
+            lines.append("(пусто)")
+        lines += ["", "--- COIN LOG (последние 200) ---"]
+        if coin_rows:
+            for r in coin_rows:
+                ts_str = datetime.fromtimestamp(r["ts"], tz=timezone.utc).strftime("%Y-%m-%d %H:%M:%S")
+                sign = "+" if r["amount"] > 0 else ""
+                lines.append(f"[{ts_str}] {sign}{r['amount']}  {r['reason']}")
+        else:
+            lines.append("(пусто)")
+        file_content = "\n".join(lines).encode("utf-8")
+        import io
+        file_obj = io.BytesIO(file_content)
+        file_obj.name = f"logs_{target_uid_log}.txt"
+        await q.answer()
+        try:
+            await q.message.reply_document(
+                document=file_obj,
+                caption=f"📋 Логи игрока <b>{he(pname)}</b> (ID: <code>{target_uid_log}</code>)\n"
+                        f"Admin log: {len(log_rows)} записей | Coin log: {len(coin_rows)} записей",
+                parse_mode=ParseMode.HTML,
+            )
+        except Exception as _le:
+            await q.answer((f"Ошибка отправки файла: {_le}")[:200], show_alert=True)
+        return True
+
+    if d.startswith("admin_reset_cd_"):
+        if uid not in ADMIN_IDS:
+            await q.answer("⛔", show_alert=True)
+            return True
+        target_uid_cd = int(d.split("_")[-1])
+        p_cd = await db_get(target_uid_cd)
+        if p_cd:
+            for cd_key in (
+                "last_feed",
+                "last_play",
+                "last_wash",
+                "last_sleep",
+                "last_pet",
+                "last_guess",
+                "last_casino",
+                "last_daily",
+                "last_expedition",
+            ):
+                p_cd[cd_key] = 0
+            await db_save(p_cd)
+            await admin_log(uid, "reset_cd", target_uid_cd)
+        await q.answer("✅ Кулдауны сброшены!", show_alert=True)
+        await show_player_card(q.message, target_uid_cd, edit=True)
+        return True
+
+    if d.startswith("admin_give_advslot_"):
+        if uid not in ADMIN_IDS:
+            await q.answer("⛔", show_alert=True)
+            return True
+        target_uid_as = int(d.split("_")[-1])
+        p_as = await db_get(target_uid_as)
+        if p_as:
+            p_as["adventure_extra_slots_bought"] = p_as.get("adventure_extra_slots_bought", 0) + 1
+            p_as["adventure_extra_slot"] = 1
+            await db_save(p_as)
+            await admin_log(uid, "give_advslot", target_uid_as)
+            slots = p_as["adventure_extra_slots_bought"]
+            await q.answer((f"✅ Выдан доп. слот похода! Всего куплено: {slots}")[:200], show_alert=True)
+        else:
+            await q.answer("❌ Игрок не найден", show_alert=True)
+        await show_player_card(q.message, target_uid_as, edit=True)
+        return True
+
+    if d.startswith("admin_reset_advcd_"):
+        if uid not in ADMIN_IDS:
+            await q.answer("⛔", show_alert=True)
+            return True
+        target_uid_ra = int(d.split("_")[-1])
+        p_ra = await db_get(target_uid_ra)
+        if p_ra:
+            p_ra["last_expedition"] = 0
+            p_ra["adventure_hours_today"] = 0.0
+            p_ra["adventure_hours_reset"] = 0.0
+            p_ra["adventure_extra_slots_bought"] = 0
+            await db_save(p_ra)
+            await admin_log(uid, "reset_advcd", target_uid_ra)
+            await q.answer("✅ КД похода и экспедиции сброшены! Лимит часов обнулён.", show_alert=True)
+        else:
+            await q.answer("❌ Игрок не найден", show_alert=True)
+        await show_player_card(q.message, target_uid_ra, edit=True)
+        return True
+
+    if d.startswith("admin_coins_p") or d.startswith("admin_coins_m"):
+        if uid not in ADMIN_IDS:
+            await q.answer("⛔", show_alert=True)
+            return True
+        parts_coin = d.split("_")
+        # admin_coins_p100_12345 → direction=p, amount=100, target_uid=12345
+        op = "p" if d.startswith("admin_coins_p") else "m"
+        # Find amount: between op and last _
+        rest = d[len(f"admin_coins_{op}") :]
+        amt_str, sep, tuid_str = rest.partition("_")
+        try:
+            amount_coin = int(amt_str)
+            target_uid_coin = int(tuid_str)
+        except ValueError:
+            await q.answer("Ошибка!", show_alert=True)
+            return True
+        if op == "m":
+            amount_coin = -amount_coin
+        p_coin = await db_get(target_uid_coin)
+        if p_coin:
+            p_coin["coins"] = max(0, p_coin["coins"] + amount_coin)
+            await db_save(p_coin)
+            await admin_log(
+                uid,
+                f"coins_{'+' if amount_coin>=0 else ''}{amount_coin}",
+                target_uid_coin,
+                f"bal→{p_coin['coins']}",
+            )
+        direction = "+" if amount_coin > 0 else ""
+        await q.answer((f"✅ {direction}{amount_coin}{coin_plain()}")[:200], show_alert=True)
+        await show_player_card(q.message, target_uid_coin, edit=True)
+        return True
+
+    if d.startswith("admin_xp_p") or d.startswith("admin_xp_m"):
+        if uid not in ADMIN_IDS:
+            await q.answer("⛔", show_alert=True)
+            return True
+        op_xp = "p" if d.startswith("admin_xp_p") else "m"
+        rest_xp = d[len(f"admin_xp_{op_xp}") :]
+        amt_xp_str, _, tuid_xp_str = rest_xp.partition("_")
+        try:
+            amount_xp = int(amt_xp_str)
+            target_uid_xp = int(tuid_xp_str)
+        except ValueError:
+            await q.answer("Ошибка!", show_alert=True)
+            return True
+        if op_xp == "m":
+            amount_xp = -amount_xp
+        p_xp = await db_get(target_uid_xp)
+        if p_xp:
+            p_xp["xp"] = max(0, p_xp.get("xp", 0) + amount_xp)
+            await levelup(p_xp, ctx.bot)
+            await db_save(p_xp)
+            await admin_log(uid, f"xp_{'+' if amount_xp>=0 else ''}{amount_xp}", target_uid_xp, f"xp→{p_xp['xp']}")
+            try:
+                await ctx.bot.send_message(
+                    target_uid_xp,
+                    f"<tg-emoji emoji-id='5341447412089133029'>⭐</tg-emoji> Администратор {'начислил' if amount_xp >= 0 else 'списал'} <b>{abs(amount_xp)} XP</b>!\n"
+                    f"Текущий опыт: {p_xp['xp']} XP (уровень {p_xp['level']})",
+                    parse_mode=ParseMode.HTML,
+                )
+            except Exception:
+                logger.exception("on_callback failed")
+        direction_xp = "+" if amount_xp > 0 else ""
+        await q.answer((f"✅ {direction_xp}{amount_xp} XP")[:200], show_alert=True)
+        await show_player_card(q.message, target_uid_xp, edit=True)
+        return True
+
+    if d.startswith("admin_setcoins_menu_"):
+        if uid not in ADMIN_IDS:
+            await q.answer("⛔", show_alert=True)
+            return True
+        try:
+            target_uid_sc = int(d[len("admin_setcoins_menu_"):])
+        except ValueError:
+            await q.answer("Ошибка!", show_alert=True)
+            return True
+        p_sc = await db_get(target_uid_sc)
+        current_coins = p_sc["coins"] if p_sc else 0
+        kb_sc = InlineKeyboardMarkup([
+            [
+                InlineKeyboardButton("💰 +500", callback_data=f"admin_coins_p500_{target_uid_sc}"),
+                InlineKeyboardButton("💰 +5000", callback_data=f"admin_coins_p5000_{target_uid_sc}"),
+            ],
+            [
+                InlineKeyboardButton("💰 -500", callback_data=f"admin_coins_m500_{target_uid_sc}"),
+                InlineKeyboardButton("💰 -5000", callback_data=f"admin_coins_m5000_{target_uid_sc}"),
+            ],
+            [InlineKeyboardButton("◀️ Назад", callback_data=f"admin_player_{target_uid_sc}_p0")],
+        ])
+        try:
+            await q.message.edit_text(
+                f"<tg-emoji emoji-id='5341524176039615767'>🪙</tg-emoji> <b>Управление монетами</b>\n"
+                f"Игрок ID: <code>{target_uid_sc}</code>\n"
+                f"Текущий баланс: <b>{current_coins:,}</b> <tg-emoji emoji-id='5341524176039615767'>🪙</tg-emoji>\n\n"
+                f"Выбери действие:",
+                parse_mode=ParseMode.HTML,
+                reply_markup=kb_sc,
+            )
+        except Exception:
+            pass
+        await q.answer()
+        return True
+
+    if d.startswith("admin_takeskin_menu_"):
+        if uid not in ADMIN_IDS:
+            await q.answer("⛔", show_alert=True)
+            return True
+        try:
+            target_uid_ts = int(d[len("admin_takeskin_menu_"):])
+        except ValueError:
+            await q.answer("Ошибка!", show_alert=True)
+            return True
+        # Получаем коллекцию игрока
+        coll_ts = await db_coll(target_uid_ts)
+        if not coll_ts:
+            await q.answer("У игрока нет обликов!", show_alert=True)
+            await show_player_card(q.message, target_uid_ts, edit=True)
+            return True
+        skin_rows_ts = []
+        for skin_ts in sorted(coll_ts)[:12]:  # до 12 скинов
+            s_ts = SKINS.get(skin_ts, {})
+            plain_emoji_ts = s_ts.get("emoji", "🐸")  # plain emoji, не HTML-тег
+            skin_rows_ts.append([InlineKeyboardButton(
+                f"{plain_emoji_ts} {skin_ts[:20]} ({s_ts.get('rarity','?')[:3]})",
+                callback_data=f"admin_takeskin_do_{target_uid_ts}_{skin_ts[:30]}",
+            )])
+        skin_rows_ts.append([InlineKeyboardButton("◀️ Назад", callback_data=f"admin_player_{target_uid_ts}_p0")])
+        try:
+            await q.message.edit_text(
+                f"🗑 <b>Забрать облик</b>\n"
+                f"Игрок ID: <code>{target_uid_ts}</code>\n\n"
+                f"Выбери облик для изъятия (первые 12):",
+                parse_mode=ParseMode.HTML,
+                reply_markup=InlineKeyboardMarkup(skin_rows_ts),
+            )
+        except Exception:
+            pass
+        await q.answer()
+        return True
+
+    if d.startswith("admin_takeskin_do_"):
+        if uid not in ADMIN_IDS:
+            await q.answer("⛔", show_alert=True)
+            return True
+        try:
+            rest_ts = d[len("admin_takeskin_do_"):]
+            parts_ts = rest_ts.split("_", 1)
+            target_uid_tsd = int(parts_ts[0])
+            skin_name_ts = parts_ts[1] if len(parts_ts) > 1 else ""
+        except (ValueError, IndexError):
+            await q.answer("Ошибка!", show_alert=True)
+            return True
+        full_skin_ts = next((s for s in SKINS if s.startswith(skin_name_ts) or s == skin_name_ts), None)
+        if not full_skin_ts:
+            await q.answer((f"Облик не найден: {skin_name_ts}")[:200], show_alert=True)
+            return True
+        async with aiosqlite.connect(DB_PATH) as db:
+            await db.execute(
+                "DELETE FROM collections WHERE user_id=? AND skin=?",
+                (target_uid_tsd, full_skin_ts),
+            )
+            await db.commit()
+        _user_cache.invalidate(target_uid_tsd)
+        # Если это активный облик — сбрасываем на Brownie
+        p_ts = await db_get(target_uid_tsd)
+        if p_ts and p_ts.get("skin") == full_skin_ts:
+            p_ts["skin"] = "Brownie"
+            await db_save(p_ts)
+        await admin_log(uid, f"take_skin_{full_skin_ts}", target_uid_tsd, "")
+        try:
+            await ctx.bot.send_message(
+                target_uid_tsd,
+                f"⚠️ Администратор изъял облик <b>{he(full_skin_ts)}</b> {pemoji(full_skin_ts)} из вашей коллекции.",
+                parse_mode=ParseMode.HTML,
+            )
+        except Exception:
+            logger.exception("on_callback failed")
+        await q.answer((f"✅ Облик {full_skin_ts} изъят!")[:200], show_alert=True)
+        await show_player_card(q.message, target_uid_tsd, edit=True)
+        return True
+
+    if d.startswith("admin_giveitem_menu_"):
+        if uid not in ADMIN_IDS:
+            await q.answer("⛔", show_alert=True)
+            return True
+        try:
+            target_uid_gi = int(d[len("admin_giveitem_menu_"):])
+        except ValueError:
+            await q.answer("Ошибка!", show_alert=True)
+            return True
+        # Показываем меню выбора предмета
+        item_rows = []
+        all_items = list(FOOD.items()) + [("gacha_ticket", {"name": "Тикет гачи", "emoji": "🎟"})]
+        for fid, fdata in all_items:
+            emoji = fdata.get("emoji", "🎁")
+            name = fdata.get("name", fid)
+            item_rows.append([
+                InlineKeyboardButton(f"{emoji} {name} ×1", callback_data=f"admin_giveitem_do_{target_uid_gi}_{fid}_1"),
+                InlineKeyboardButton(f"×5", callback_data=f"admin_giveitem_do_{target_uid_gi}_{fid}_5"),
+                InlineKeyboardButton(f"×10", callback_data=f"admin_giveitem_do_{target_uid_gi}_{fid}_10"),
+            ])
+        item_rows.append([InlineKeyboardButton("◀️ Назад", callback_data=f"admin_give_uid_{target_uid_gi}")])
+        try:
+            await q.message.edit_text(
+                f"🎁 <b>Выдача предмета</b>\nИгрок ID: <code>{target_uid_gi}</code>\n\nВыбери предмет и количество:",
+                parse_mode=ParseMode.HTML,
+                reply_markup=InlineKeyboardMarkup(item_rows),
+            )
+        except Exception:
+            pass
+        return True
+
+    if d.startswith("admin_giveitem_do_"):
+        if uid not in ADMIN_IDS:
+            await q.answer("⛔", show_alert=True)
+            return True
+        try:
+            parts_gi = d[len("admin_giveitem_do_"):].split("_")
+            # format: admin_giveitem_do_<uid>_<item_id>_<qty>
+            # item_id may have underscores but is last before qty
+            target_uid_gid = int(parts_gi[0])
+            qty_gi = int(parts_gi[-1])
+            item_id_gi = "_".join(parts_gi[1:-1])
+        except (ValueError, IndexError):
+            await q.answer("Ошибка!", show_alert=True)
+            return True
+        await inv_add(target_uid_gid, item_id_gi, qty_gi)
+        await admin_log(uid, f"give_item_{item_id_gi}", target_uid_gid, f"qty={qty_gi}")
+        await q.answer((f"✅ Выдано {qty_gi}×{item_id_gi}")[:200], show_alert=True)
+        await show_player_card(q.message, target_uid_gid, edit=True)
+        return True
+
+    if d.startswith("admin_giveskin_menu_"):
+        if uid not in ADMIN_IDS:
+            await q.answer("⛔", show_alert=True)
+            return True
+        try:
+            target_uid_gs = int(d[len("admin_giveskin_menu_"):])
+        except ValueError:
+            await q.answer("Ошибка!", show_alert=True)
+            return True
+        # Пагинация скинов: показываем по 8 штук
+        offset_gs = 0
+        skin_list = [s for s in SKINS.keys() if SKINS[s].get("chance", 0) > 0 or SKINS[s].get("rarity") in ("legendary", "mythic", "secret")]
+        skin_list = sorted(skin_list, key=lambda s: SKINS[s].get("rarity", "common"))
+        skin_rows = []
+        for skin_n in skin_list[offset_gs:offset_gs + 8]:
+            s_data = SKINS[skin_n]
+            skin_rows.append([InlineKeyboardButton(
+                f"{pemoji(skin_n)} {skin_n[:20]} ({s_data.get('rarity','?')[:3]})",
+                callback_data=f"admin_giveskin_do_{target_uid_gs}_{skin_n[:30]}",
+            )])
+        skin_rows.append([InlineKeyboardButton("◀️ Назад", callback_data=f"admin_give_uid_{target_uid_gs}")])
+        try:
+            await q.message.edit_text(
+                f"🎨 <b>Выдача облика</b>\nИгрок ID: <code>{target_uid_gs}</code>\n\nВыбери облик:",
+                parse_mode=ParseMode.HTML,
+                reply_markup=InlineKeyboardMarkup(skin_rows),
+            )
+        except Exception:
+            pass
+        return True
+
+    if d.startswith("admin_giveskin_do_"):
+        if uid not in ADMIN_IDS:
+            await q.answer("⛔", show_alert=True)
+            return True
+        try:
+            rest_gs = d[len("admin_giveskin_do_"):]
+            # format: admin_giveskin_do_<uid>_<skin_name>
+            parts_gs = rest_gs.split("_", 1)
+            target_uid_gsd = int(parts_gs[0])
+            skin_name_gs = parts_gs[1] if len(parts_gs) > 1 else ""
+        except (ValueError, IndexError):
+            await q.answer("Ошибка!", show_alert=True)
+            return True
+        # Найти полное имя скина (может быть обрезано до 30 символов)
+        full_skin_name = next((s for s in SKINS if s.startswith(skin_name_gs) or s == skin_name_gs), None)
+        if not full_skin_name:
+            await q.answer((f"Облик не найден: {skin_name_gs}")[:200], show_alert=True)
+            return True
+        await db_add_skin(target_uid_gsd, full_skin_name)
+        await admin_log(uid, f"give_skin_{full_skin_name}", target_uid_gsd, "")
+        await q.answer((f"✅ Облик {full_skin_name} выдан!")[:200], show_alert=True)
+        # Уведомить игрока
+        try:
+            await ctx.bot.send_message(
+                target_uid_gsd,
+                f"🎁 Администратор выдал вам облик <b>{he(full_skin_name)}</b> {pemoji(full_skin_name)}!\n"
+                f"Надеть: /frog → 👗 Облики",
+                parse_mode=ParseMode.HTML,
+            )
+        except Exception:
+            logger.exception("on_callback failed")
+        await show_player_card(q.message, target_uid_gsd, edit=True)
+        return True
+
+    if d == "admin_dead":
+        if uid not in ADMIN_IDS:
+            await q.answer("⛔", show_alert=True)
+            return True
+        async with aiosqlite.connect(DB_PATH) as db:
+            async with db.execute(
+                "SELECT first_name, username, user_id, level FROM frogs WHERE alive=0 ORDER BY level DESC LIMIT 20"
+            ) as c:
+                rows = await c.fetchall()
+        if not rows:
+            text = "💚 Все лягушки живы!"
+        else:
+            lines = [f"<tg-emoji emoji-id='5341573078537248907'>💀</tg-emoji> <b>Мёртвые лягушки ({len(rows)})</b>\n"]
+            for r in rows:
+                uname = f"@{r[1]}" if r[1] else f"ID:{r[2]}"
+                lines.append(f"<tg-emoji emoji-id='5341573078537248907'>💀</tg-emoji> {r[0]} ({uname}) ур.{r[3]}")
+            text = "\n".join(lines)
+        try:
+            await q.message.edit_text(
+                text,
+                parse_mode=ParseMode.HTML,
+                reply_markup=InlineKeyboardMarkup(
+                    [[InlineKeyboardButton("◀️ Назад", callback_data="admin_refresh")]]
+                ),
+            )
+        except Exception:
+            pass
+        await q.answer()
+        return True
+
+    if d == "admin_search_hint":
+        if uid not in ADMIN_IDS:
+            await q.answer("⛔", show_alert=True)
+            return True
+        await q.answer()
+        try:
+            await q.message.edit_text(
+                "🔍 <b>Поиск игрока</b>\n\n"
+                "Используй команду:\n"
+                "<code>/adminlookup @username</code>\n"
+                "или\n"
+                "<code>/adminlookup 123456789</code> (по ID)\n\n"
+                "<i>Покажет полную информацию об игроке.</i>",
+                parse_mode=ParseMode.HTML,
+                reply_markup=InlineKeyboardMarkup(
+                    [[InlineKeyboardButton("◀️ Назад", callback_data="admin_refresh")]]
+                ),
+            )
+        except Exception:
+            pass
+        return True
+
+    if d == "admin_casino_stats":
+        if uid not in ADMIN_IDS:
+            await q.answer("⛔", show_alert=True)
+            return True
+        now_ts = time.time()
+        day_ago  = now_ts - 86400
+        week_ago = now_ts - 604800
+        async with aiosqlite.connect(DB_PATH) as db:
+            # Общая статистика из frogs
+            async with db.execute(
+                "SELECT SUM(total_casino), SUM(total_casino_wins), SUM(coins_spent), SUM(coins) FROM frogs WHERE is_bot=0"
+            ) as c:
+                row = await c.fetchone()
+            total_games = row[0] or 0
+            total_wins  = row[1] or 0
+            total_spent = row[2] or 0
+            total_balance = row[3] or 0
+
+            # Уникальных игроков казино за сутки / неделю
+            async with db.execute(
+                "SELECT COUNT(DISTINCT user_id) FROM game_logs WHERE game_type='casino' AND ts>=?", (day_ago,)
+            ) as c:
+                active_day = (await c.fetchone())[0] or 0
+            async with db.execute(
+                "SELECT COUNT(DISTINCT user_id) FROM game_logs WHERE game_type='casino' AND ts>=?", (week_ago,)
+            ) as c:
+                active_week = (await c.fetchone())[0] or 0
+
+            # Игры за сутки / неделю
+            async with db.execute(
+                "SELECT COUNT(*), SUM(bet_amount), SUM(win_amount) FROM game_logs WHERE game_type='casino' AND ts>=?", (day_ago,)
+            ) as c:
+                r_day = await c.fetchone()
+            games_day   = r_day[0] or 0
+            bet_day     = r_day[1] or 0
+            win_day     = r_day[2] or 0
+            async with db.execute(
+                "SELECT COUNT(*), SUM(bet_amount), SUM(win_amount) FROM game_logs WHERE game_type='casino' AND ts>=?", (week_ago,)
+            ) as c:
+                r_week = await c.fetchone()
+            games_week  = r_week[0] or 0
+            bet_week    = r_week[1] or 0
+            win_week    = r_week[2] or 0
+
+            # Топ-5 выигрышей всех времён
+            async with db.execute(
+                "SELECT f.first_name, f.username, gl.win_amount, gl.bet_amount "
+                "FROM game_logs gl LEFT JOIN frogs f ON f.user_id=gl.user_id "
+                "WHERE gl.game_type='casino' AND gl.result='win' "
+                "ORDER BY gl.win_amount DESC LIMIT 5"
+            ) as c:
+                top_wins_rows = await c.fetchall()
+
+            # Топ-5 игроков по количеству игр
+            async with db.execute(
+                "SELECT f.first_name, f.username, COUNT(*) as cnt "
+                "FROM game_logs gl LEFT JOIN frogs f ON f.user_id=gl.user_id "
+                "WHERE gl.game_type='casino' "
+                "GROUP BY gl.user_id ORDER BY cnt DESC LIMIT 5"
+            ) as c:
+                top_players_rows = await c.fetchall()
+
+            # Самый большой выигрыш за сутки
+            async with db.execute(
+                "SELECT f.first_name, gl.win_amount FROM game_logs gl "
+                "LEFT JOIN frogs f ON f.user_id=gl.user_id "
+                "WHERE gl.game_type='casino' AND gl.result='win' AND gl.ts>=? "
+                "ORDER BY gl.win_amount DESC LIMIT 1", (day_ago,)
+            ) as c:
+                best_today = await c.fetchone()
+
+        wr = int(total_wins / total_games * 100) if total_games else 0
+        house_profit_day  = bet_day  - win_day
+        house_profit_week = bet_week - win_week
+
+        lines = [
+            "🃏 <b>Статистика казино</b>\n",
+            "📊 <b>Общее (всё время)</b>",
+            f"  Игр: <b>{total_games:,}</b>  │  Побед: <b>{total_wins:,}</b> ({wr}%)",
+            f"  КваКоинов поставлено: <b>{total_spent:,}</b>",
+            f"  КваКоинов в экономике: <b>{total_balance:,}</b>",
+            "",
+            "🕐 <b>За 24 часа</b>",
+            f"  Игр: <b>{games_day:,}</b>  │  Активных игроков: <b>{active_day}</b>",
+            f"  Поставлено: <b>{bet_day:,}</b>  │  Выиграно: <b>{win_day:,}</b>",
+            f"  Доход казино: <b>{'+'if house_profit_day>=0 else ''}{house_profit_day:,}</b>🪙",
+        ]
+        if best_today:
+            name_bt = f"@{best_today[1]}" if best_today[1] else he(best_today[0] or "?")
+            lines.append(f"  🏆 Лучший выигрыш: <b>{best_today[1]:,}</b>🪙 ({name_bt})")
+        lines += [
+            "",
+            "📅 <b>За 7 дней</b>",
+            f"  Игр: <b>{games_week:,}</b>  │  Активных игроков: <b>{active_week}</b>",
+            f"  Поставлено: <b>{bet_week:,}</b>  │  Выиграно: <b>{win_week:,}</b>",
+            f"  Доход казино: <b>{'+'if house_profit_week>=0 else ''}{house_profit_week:,}</b>🪙",
+        ]
+        if top_wins_rows:
+            lines += ["", "💰 <b>Топ-5 выигрышей (всё время)</b>"]
+            for i, r in enumerate(top_wins_rows, 1):
+                nm = f"@{r[1]}" if r[1] else he(r[0] or "?")
+                lines.append(f"  {i}. {nm} — <b>{r[2]:,}</b>🪙 (ставка {r[3]:,})")
+        if top_players_rows:
+            lines += ["", "🎰 <b>Топ-5 по числу игр</b>"]
+            for i, r in enumerate(top_players_rows, 1):
+                nm = f"@{r[1]}" if r[1] else he(r[0] or "?")
+                lines.append(f"  {i}. {nm} — <b>{r[2]:,}</b> игр")
+
+        text = "\n".join(lines)
+        try:
+            await q.message.edit_text(
+                text,
+                parse_mode=ParseMode.HTML,
+                reply_markup=InlineKeyboardMarkup([
+                    [InlineKeyboardButton("🔴 Владельцы мифических обликов", callback_data="admin_mythic_owners")],
+                    [InlineKeyboardButton("◀️ Назад", callback_data="admin_refresh")],
+                ]),
+            )
+        except Exception:
+            pass
+        await q.answer()
+        return True
+
+    if d == "admin_mythic_owners":
+        if uid not in ADMIN_IDS:
+            await q.answer("⛔", show_alert=True)
+            return True
+        # Все мифические обликиу
+        mythic_skin_names = [sname for sname, sdata in SKINS.items() if sdata.get("rarity") == "mythic"]
+        if not mythic_skin_names:
+            await q.answer("Мифических обликов нет в конфиге.", show_alert=True)
+            return True
+        placeholders = ",".join("?" * len(mythic_skin_names))
+        async with aiosqlite.connect(DB_PATH) as db:
+            db.row_factory = aiosqlite.Row
+            # Активный облик
+            async with db.execute(
+                f"SELECT user_id, first_name, username, skin FROM frogs "
+                f"WHERE skin IN ({placeholders}) AND is_bot=0 AND banned=0 "
+                f"ORDER BY skin",
+                mythic_skin_names,
+            ) as c:
+                active_rows = await c.fetchall()
+            # В коллекции (не обязательно активный)
+            async with db.execute(
+                f"SELECT c.user_id, f.first_name, f.username, c.skin "
+                f"FROM collections c LEFT JOIN frogs f ON f.user_id=c.user_id "
+                f"WHERE c.skin IN ({placeholders}) AND (f.is_bot IS NULL OR f.is_bot=0) "
+                f"AND (f.banned IS NULL OR f.banned=0) "
+                f"ORDER BY c.skin",
+                mythic_skin_names,
+            ) as c:
+                owned_rows = await c.fetchall()
+
+        # Построим карту: skin → {uid: (name, active)}
+        from collections import defaultdict
+        skin_map: dict = defaultdict(dict)
+        for r in owned_rows:
+            skin_map[r["skin"]][r["user_id"]] = [r["first_name"] or "?", r["username"] or "", False]
+        for r in active_rows:
+            if r["user_id"] in skin_map[r["skin"]]:
+                skin_map[r["skin"]][r["user_id"]][2] = True
+            else:
+                skin_map[r["skin"]][r["user_id"]] = [r["first_name"] or "?", r["username"] or "", True]
+
+        lines = ["🔴 <b>Владельцы мифических обликов</b>\n"]
+        total_owners = 0
+        for sname in sorted(skin_map.keys()):
+            sdata = SKINS.get(sname, {})
+            emoji = sdata.get("emoji", "🔴")
+            owners = skin_map[sname]
+            total_owners += len(owners)
+            lines.append(f"{emoji} <b>{_html.escape(sname)}</b> — {len(owners)} владельца(ев)")
+            for entry_uid, (frog_fname, uname, is_active) in owners.items():
+                disp = f"@{uname}" if uname else _html.escape(frog_fname)
+                active_mark = " ✅" if is_active else ""
+                lines.append(f"  • {disp} (<code>{entry_uid}</code>){active_mark}")
+        if not lines[1:]:
+            lines.append("Никто ещё не владеет мифическими обликами.")
+        lines.append(f"\n👑 Всего уникальных владельцев: <b>{total_owners}</b>")
+        lines.append("<i>✅ = облик сейчас активен</i>")
+
+        text = "\n".join(lines)
+        # Если текст слишком длинный, обрезаем
+        if len(text) > 4000:
+            text = text[:3950] + "\n<i>... (список обрезан)</i>"
+        try:
+            await q.message.edit_text(
+                text,
+                parse_mode=ParseMode.HTML,
+                reply_markup=InlineKeyboardMarkup([
+                    [InlineKeyboardButton("◀️ Назад к казино", callback_data="admin_casino_stats")],
+                    [InlineKeyboardButton("🏠 Главное меню", callback_data="admin_refresh")],
+                ]),
+            )
+        except Exception:
+            pass
+        await q.answer()
+        return True
+
+    if d == "admin_stickers":
+        if uid not in ADMIN_IDS:
+            await q.answer("⛔", show_alert=True)
+            return True
+        lines = ["🎭 <b>Настройка стикеров действий</b>\n"]
+        lines.append("Текущие индексы PREMIUM_STICKER_IDS для каждого действия:\n")
+        kb_rows = []
+        for action, label in ACTION_STICKER_LABELS.items():
+            custom_val = await db_setting(f"sticker_{action}")
+            current = (
+                custom_val
+                if custom_val
+                else ",".join(str(i) for i in ACTION_STICKERS[action])
+            )
+            lines.append(f"<b>{label}</b>: <code>{current}</code>")
+            kb_rows.append(
+                [
+                    InlineKeyboardButton(
+                        f"✏️ {label}", callback_data=f"admin_sticker_edit_{action}"
+                    )
+                ]
+            )
+        kb_rows.append([InlineKeyboardButton("◀️ Назад", callback_data="admin_refresh")])
+        lines.append(
+            "\n<i>Нажми на действие чтобы изменить индексы.\n"
+            "Индексы 0-49 соответствуют PREMIUM_STICKER_IDS.</i>"
+        )
+        try:
+            await q.message.edit_text(
+                "\n".join(lines),
+                parse_mode=ParseMode.HTML,
+                reply_markup=InlineKeyboardMarkup(kb_rows),
+            )
+        except Exception:
+            logger.exception("on_callback failed")
+        await q.answer()
+        return True
+
+    if d.startswith("admin_sticker_edit_"):
+        if uid not in ADMIN_IDS:
+            await q.answer("⛔", show_alert=True)
+            return True
+        action = d[19:]
+        label = ACTION_STICKER_LABELS.get(action, action)
+        custom_val = await db_setting(f"sticker_{action}")
+        current = (
+            custom_val
+            if custom_val
+            else ",".join(str(i) for i in ACTION_STICKERS.get(action, []))
+        )
+        await q.answer()
+        try:
+            await q.message.edit_text(
+                f"✏️ <b>Редактирование: {label}</b>\n\n"
+                f"Текущие индексы: <code>{current}</code>\n\n"
+                f"Чтобы изменить, используй команду:\n"
+                f"<code>/setsticker {action} 0,1,2,3</code>\n\n"
+                f"Индексы 0-49 соответствуют PREMIUM_STICKER_IDS.\n"
+                f"Всего стикеров: {len(PREMIUM_STICKER_IDS)}",
+                parse_mode=ParseMode.HTML,
+                reply_markup=InlineKeyboardMarkup(
+                    [
+                        [
+                            InlineKeyboardButton(
+                                "◀️ Назад к стикерам", callback_data="admin_stickers"
+                            )
+                        ]
+                    ]
+                ),
+            )
+        except Exception:
+            pass
+        return True
+
+    if d == "admin_referrals":
+        if uid not in ADMIN_IDS:
+            await q.answer("⛔", show_alert=True)
+            return True
+        await q.answer()
+        async with aiosqlite.connect(DB_PATH) as db:
+            async with db.execute("SELECT COUNT(*) FROM referrals") as c:
+                total_refs = (await c.fetchone())[0] or 0
+            async with db.execute("SELECT SUM(rewarded_coins) FROM referrals") as c:
+                total_coins = (await c.fetchone())[0] or 0
+            # Топ-рефереры
+            async with db.execute(
+                "SELECT referrer_id, COUNT(*) as cnt, SUM(rewarded_coins) as earned "
+                "FROM referrals GROUP BY referrer_id ORDER BY cnt DESC LIMIT 15"
+            ) as c:
+                top_refs = await c.fetchall()
+        lines = [
+            f"🔗 <b>Реферальная статистика</b>\n\n"
+            f"Всего рефералов: <b>{total_refs}</b>\n"
+            f"КваКоинов выдано: <b>{total_coins}{coin_emoji()}</b>\n\n"
+            f"<b>Топ-рефереры (🚨 &gt;50 = подозрительно):</b>"
+        ]
+        kb_rows_ref = []
+        for ref_uid, cnt, earned in top_refs:
+            rf = await db_get(ref_uid)
+            name = he(rf["first_name"]) if rf else f"ID:{ref_uid}"
+            uname = f"@{rf['username']}" if rf and rf.get("username") else f"id{ref_uid}"
+            flag = " 🚨" if cnt > 50 else ""
+            lines.append(f"{'⚠️' if cnt > 50 else '👤'} <b>{name}</b> ({uname}) — {cnt} чел., {earned or 0}{coin_emoji()}{flag}")
+            if cnt > 50:
+                kb_rows_ref.append([InlineKeyboardButton(
+                    f"🔍 {name[:20]} ({cnt} реф.)",
+                    callback_data=f"admin_refdetail_{ref_uid}"
+                )])
+        if not kb_rows_ref:
+            lines.append("\n✅ <i>Подозрительных реферальных схем не обнаружено</i>")
+        else:
+            lines.append("\n⚠️ <b>Нажми на подозрительного пользователя для расследования:</b>")
+        kb_rows_ref.append([InlineKeyboardButton("◀️ Назад", callback_data="admin_refresh")])
+        try:
+            await q.message.edit_text(
+                "\n".join(lines),
+                parse_mode=ParseMode.HTML,
+                reply_markup=InlineKeyboardMarkup(kb_rows_ref),
+            )
+        except Exception:
+            logger.exception("on_callback failed")
+        return True
+
+    if d.startswith("admin_refdetail_"):
+        if uid not in ADMIN_IDS:
+            await q.answer("⛔", show_alert=True)
+            return True
+        await q.answer()
+        try:
+            suspect_id = int(d.split("_")[-1])
+        except ValueError:
+            await q.answer("❌ Неверный ID", show_alert=True)
+            return True
+        try:
+            rf = await db_get(suspect_id)
+            name = he(str(rf["first_name"] or f"ID:{suspect_id}")) if rf else f"ID:{suspect_id}"
+            uname = he("@" + rf["username"]) if rf and rf.get("username") else he(f"id{suspect_id}")
+            async with aiosqlite.connect(DB_PATH) as db:
+                async with db.execute(
+                    "SELECT referred_id, joined_at, stage_mask, rewarded_coins FROM referrals WHERE referrer_id=? ORDER BY joined_at DESC",
+                    (suspect_id,)
+                ) as c:
+                    ref_list = await c.fetchall()
+            # NULL-безопасное суммирование
+            total_earned = sum((r[3] or 0) for r in ref_list)
+            # Анализ подозрительных: регистрации < 5 минут между собой
+            suspicious_ids = []
+            prev_ts = 0.0
+            for rr in sorted(ref_list, key=lambda x: (x[1] or 0)):
+                ts = rr[1] or 0
+                diff = ts - prev_ts
+                if prev_ts and diff < 300:
+                    suspicious_ids.append(rr[0])
+                prev_ts = ts
+            lines = [
+                f"🔍 <b>Расследование: {name} ({uname})</b>\n",
+                f"ID: <code>{suspect_id}</code>",
+                f"💰 Баланс: {rf['coins'] if rf else '?'} 🪙",
+                f"👥 Всего рефералов: <b>{len(ref_list)}</b>",
+                f"🪙 Заработано с рефералов: <b>{total_earned} 🪙</b>",
+                f"🤖 Подозрительных (регистрации &lt; 5 мин): <b>{len(suspicious_ids)}</b>\n",
+                f"<b>Последние 20 рефералов:</b>",
+            ]
+            for rr in ref_list[:20]:
+                # NULL-безопасные значения
+                joined_at = rr[1] or 0
+                stage_mask = rr[2] or 0
+                rewarded = rr[3] or 0
+                ts_s = time.strftime("%d.%m %H:%M", time.localtime(joined_at)) if joined_at else "—"
+                mask_s = bin(stage_mask).count("1")
+                flag = " 🤖" if rr[0] in suspicious_ids else ""
+                lines.append(f"• <code>{rr[0]}</code> [{ts_s}] эт.{mask_s} {rewarded} 🪙{flag}")
+            if len(ref_list) > 20:
+                lines.append(f"<i>...и ещё {len(ref_list)-20}</i>")
+            ban_s = rf.get("banned", 0) if rf else 0
+            ban_lbl = "🔓 Разбанить" if ban_s else "🚫 Забанить мошенника"
+            ban_cb = f"admin_unban_{suspect_id}" if ban_s else f"admin_ban_{suspect_id}"
+            kb_det = InlineKeyboardMarkup([
+                [btn(ban_lbl, callback_data=ban_cb, style="danger")],
+                [InlineKeyboardButton(f"🗑 Удалить {len(suspicious_ids)} бот-рефералов", callback_data=f"admin_purge_botrefs_{suspect_id}")],
+                [InlineKeyboardButton(f"💸 Списать реф. монеты ({total_earned})", callback_data=f"admin_strip_refcoins_{suspect_id}")],
+                [InlineKeyboardButton("◀️ Назад к рефералам", callback_data="admin_referrals")],
+            ])
+            await q.message.edit_text("\n".join(lines), parse_mode=ParseMode.HTML, reply_markup=kb_det)
+        except Exception as e:
+            print(f"❌ admin_refdetail error: {e}")
+            try:
+                await q.message.edit_text(
+                    f"❌ <b>Ошибка при загрузке расследования</b>\n\n<code>{_html.escape(str(e))}</code>",
+                    parse_mode=ParseMode.HTML,
+                    reply_markup=InlineKeyboardMarkup(
+                        [[InlineKeyboardButton("◀️ Назад", callback_data="admin_referrals")]]
+                    ),
+                )
+            except Exception:
+                logger.exception("on_callback failed")
+        return True
+
+    if d.startswith("admin_purge_botrefs_"):
+        if uid not in ADMIN_IDS:
+            await q.answer("⛔", show_alert=True)
+            return True
+        try:
+            suspect_id = int(d.split("_")[-1])
+        except ValueError:
+            return True
+        async with aiosqlite.connect(DB_PATH) as db:
+            async with db.execute(
+                "SELECT referred_id, joined_at FROM referrals WHERE referrer_id=? ORDER BY joined_at",
+                (suspect_id,)
+            ) as c:
+                ref_list = await c.fetchall()
+        suspicious_ids = []
+        prev_ts = 0.0
+        for rr in sorted(ref_list, key=lambda x: (x[1] or 0)):
+            ts = rr[1] or 0
+            diff = ts - prev_ts
+            if prev_ts and diff < 300:
+                suspicious_ids.append(rr[0])
+            prev_ts = ts
+        if not suspicious_ids:
+            await q.answer("✅ Бот-рефералов не найдено", show_alert=True)
+            return True
+        async with aiosqlite.connect(DB_PATH) as db:
+            for bot_id in suspicious_ids:
+                await db.execute("DELETE FROM referrals WHERE referrer_id=? AND referred_id=?", (suspect_id, bot_id))
+                await db.execute("UPDATE frogs SET banned=1 WHERE user_id=?", (bot_id,))
+            await db.commit()
+        await q.answer((f"🗑 Удалено {len(suspicious_ids)} бот-рефералов, аккаунты забанены")[:200], show_alert=True)
+        await admin_log(uid, "purge_botrefs", suspect_id, details=f"purged {len(suspicious_ids)} bot referrals")
+        return True
+
+    if d.startswith("admin_strip_refcoins_"):
+        if uid not in ADMIN_IDS:
+            await q.answer("⛔", show_alert=True)
+            return True
+        try:
+            suspect_id = int(d.split("_")[-1])
+        except ValueError:
+            return True
+        async with aiosqlite.connect(DB_PATH) as db:
+            async with db.execute("SELECT SUM(rewarded_coins) FROM referrals WHERE referrer_id=?", (suspect_id,)) as c:
+                earned = (await c.fetchone())[0] or 0
+            # Списываем ровно столько, сколько заработано с рефералов
+            await db.execute("UPDATE frogs SET coins = MAX(0, coins - ?) WHERE user_id=?", (earned, suspect_id))
+            await db.commit()
+        await q.answer((f"💸 Списано {earned} монет с ID:{suspect_id}")[:200], show_alert=True)
+        await admin_log(uid, "strip_refcoins", suspect_id, details=f"stripped {earned} ref coins")
+        return True
+
+    if d == "admin_search_hint":
+        if uid not in ADMIN_IDS:
+            await q.answer("⛔", show_alert=True)
+            return True
+        await q.answer()
+        try:
+            await q.message.edit_text(
+                "🔍 <b>Поиск игрока</b>\n\n"
+                "По username:\n<code>/adminlookup @username</code>\n\n"
+                "По Telegram ID:\n<code>/adminlookup 123456789</code>\n\n"
+                "<i>Откроется карточка игрока с возможностью бана, выдачи монет и сброса КД.</i>",
+                parse_mode=ParseMode.HTML,
+                reply_markup=InlineKeyboardMarkup(
+                    [[InlineKeyboardButton("◀️ Назад", callback_data="admin_refresh")]]
+                ),
+            )
+        except Exception:
+            pass
+        return True
+
+    if d == "admin_rich":
+        if uid not in ADMIN_IDS:
+            await q.answer("⛔", show_alert=True)
+            return True
+        await q.answer()
+        async with aiosqlite.connect(DB_PATH) as db:
+            db.row_factory = aiosqlite.Row
+            async with db.execute(
+                "SELECT user_id, first_name, username, coins, level, banned FROM frogs ORDER BY coins DESC LIMIT 20"
+            ) as c:
+                rich_list = await c.fetchall()
+        medals = ["🥇","🥈","🥉"] + ["💰"] * 17
+        lines = ["💎 <b>Топ-20 богатейших игроков</b>\n"]
+        for i, r in enumerate(rich_list):
+            uname = f"@{r['username']}" if r["username"] else f"id{r['user_id']}"
+            ban_mark = " 🚫" if r["banned"] else ""
+            lines.append(
+                f"{medals[i]} <b>{he(r['first_name'])}</b> ({uname}){ban_mark}\n"
+                f"   <tg-emoji emoji-id='5341524176039615767'>🪙</tg-emoji> {r['coins']:,}  |  ур.{r['level']}  |  <code>{r['user_id']}</code>"
+            )
+        try:
+            await q.message.edit_text(
+                "\n".join(lines),
+                parse_mode=ParseMode.HTML,
+                reply_markup=InlineKeyboardMarkup(
+                    [[InlineKeyboardButton("◀️ Назад", callback_data="admin_refresh")]]
+                ),
+            )
+        except Exception:
+            logger.exception("on_callback failed")
+        return True
+
+    if d == "admin_partner_chats":
+        if uid not in ADMIN_IDS:
+            await q.answer("⛔", show_alert=True)
+            return True
+        await q.answer()
+        chats = await partner_chat_list_active()
+        if not chats:
+            lines = ["🏘 <b>Партнёрские чаты</b>\n\nНет активных партнёрских чатов.\nДобавь бота в группу — она автоматически появится здесь."]
+        else:
+            lines = [f"🏘 <b>Партнёрские чаты ({len(chats)} активных)</b>\n"]
+            for ch in chats:
+                cnt = await partner_chat_count_members(ch["chat_id"])
+                title = he(ch.get("chat_title") or str(ch["chat_id"]))
+                uname = f" (@{ch['chat_username']})" if ch.get("chat_username") else ""
+                added_dt = datetime.fromtimestamp(ch["added_at"], timezone.utc).strftime("%d.%m.%Y") if ch.get("added_at") else "?"
+                lines.append(
+                    f"• <b>{title}</b>{uname}\n"
+                    f"  id: <code>{ch['chat_id']}</code>  |  игроков: <b>{cnt}</b>  |  добавлен: {added_dt}\n"
+                    f"  🔗 <a href=\"{ch.get('bot_link','')}\">Ссылка для игроков</a>"
+                )
+        try:
+            await q.message.edit_text(
+                "\n".join(lines),
+                parse_mode=ParseMode.HTML,
+                reply_markup=InlineKeyboardMarkup(
+                    [[InlineKeyboardButton("◀️ Назад", callback_data="admin_refresh")]]
+                ),
+                link_preview_options=LinkPreviewOptions(is_disabled=True),
+            )
+        except Exception:
+            logger.exception("on_callback failed")
+        return True
+
+    if d == "admin_gifts_0" or d.startswith("admin_gifts_"):
+        if uid not in ADMIN_IDS:
+            await q.answer("⛔", show_alert=True)
+            return True
+        await q.answer()
+        try:
+            offset_g = int(d.split("_")[-1])
+        except (ValueError, IndexError):
+            offset_g = 0
+        async with aiosqlite.connect(DB_PATH) as db:
+            db.row_factory = aiosqlite.Row
+            async with db.execute(
+                "SELECT g.id, g.from_id, g.to_id, g.amount, g.ts, "
+                "f1.first_name as from_name, f1.username as from_uname, "
+                "f2.first_name as to_name, f2.username as to_uname "
+                "FROM gift_log g "
+                "LEFT JOIN frogs f1 ON f1.user_id=g.from_id "
+                "LEFT JOIN frogs f2 ON f2.user_id=g.to_id "
+                "ORDER BY g.ts DESC LIMIT 15 OFFSET ?",
+                (offset_g,)
+            ) as c:
+                gift_rows = await c.fetchall()
+            async with db.execute("SELECT COUNT(*), SUM(amount) FROM gift_log") as c:
+                cnt_g, sum_g = await c.fetchone()
+                cnt_g = cnt_g or 0
+                sum_g = sum_g or 0
+        lines_g = [f"🎁 <b>Переводы /gift</b> (всего: {cnt_g}, сумма: {sum_g:,}{coin_emoji()})\n"]
+        if not gift_rows:
+            lines_g.append("<i>Переводов пока нет</i>")
+        for gr in gift_rows:
+            ts_s = time.strftime("%d.%m %H:%M", time.localtime(gr["ts"]))
+            fn = he(gr["from_name"] or f"id{gr['from_id']}")
+            fu = f"@{gr['from_uname']}" if gr["from_uname"] else f"<code>{gr['from_id']}</code>"
+            tn = he(gr["to_name"] or f"id{gr['to_id']}")
+            tu = f"@{gr['to_uname']}" if gr["to_uname"] else f"<code>{gr['to_id']}</code>"
+            lines_g.append(
+                f"<code>{ts_s}</code> {fn}({fu}) → {tn}({tu}): <b>+{gr['amount']}{coin_emoji()}</b>"
+            )
+        nav_g = []
+        if offset_g > 0:
+            nav_g.append(InlineKeyboardButton("◀️ Новее", callback_data=f"admin_gifts_{max(0, offset_g-15)}"))
+        if offset_g + 15 < cnt_g:
+            nav_g.append(InlineKeyboardButton("▶️ Старее", callback_data=f"admin_gifts_{offset_g+15}"))
+        kb_g_rows = []
+        if nav_g:
+            kb_g_rows.append(nav_g)
+        kb_g_rows.append([InlineKeyboardButton("◀️ Назад", callback_data="admin_refresh")])
+        try:
+            await q.message.edit_text(
+                "\n".join(lines_g),
+                parse_mode=ParseMode.HTML,
+                reply_markup=InlineKeyboardMarkup(kb_g_rows),
+            )
+        except Exception:
+            logger.exception("on_callback failed")
+        return True
+
+    if d == "admin_lottery":
+        if uid not in ADMIN_IDS:
+            await q.answer("⛔", show_alert=True)
+            return True
+        await q.answer()
+        draw_date = lottery_today()
+        async with aiosqlite.connect(DB_PATH) as db:
+            db.row_factory = aiosqlite.Row
+            # Все билеты текущего розыгрыша
+            async with db.execute(
+                "SELECT user_id, COUNT(*) as cnt FROM lottery_tickets "
+                "WHERE draw_date=? GROUP BY user_id ORDER BY cnt DESC",
+                (draw_date,)
+            ) as c:
+                participants = await c.fetchall()
+            async with db.execute(
+                "SELECT COUNT(*) FROM lottery_tickets WHERE draw_date=?", (draw_date,)
+            ) as c:
+                total_tickets = (await c.fetchone())[0] or 0
+
+        pool = total_tickets * LOTTERY_TICKET_COST
+        lines = [
+            f"🎟 <b>Лотерея — панель управления</b>\n",
+            f"📅 Розыгрыш: <b>{draw_date}</b>",
+            f"🎫 Билетов: <b>{total_tickets}</b>  |  💰 Банк: <b>{pool}{coin_emoji()}</b>",
+            f"👥 Участников: <b>{len(participants)}</b>\n",
+        ]
+        if participants:
+            lines.append("<b>Участники (имя в игре — билетов):</b>")
+            for row in participants:
+                p_uid = row["user_id"]
+                p_cnt = row["cnt"]
+                pf = await db_get(p_uid)
+                if pf:
+                    pname = he(pf.get("frog_name") or pf.get("first_name") or f"ID:{p_uid}")
+                else:
+                    pname = f"ID:{p_uid}"
+                lines.append(f"• {pname} — <b>{p_cnt}</b> 🎟")
+        else:
+            lines.append("<i>Билеты ещё не куплены</i>")
+
+        kb_lot = InlineKeyboardMarkup([
+            [InlineKeyboardButton("🎲 Провести розыгрыш сейчас", callback_data="admin_lottery_draw_now")],
+            [InlineKeyboardButton("🗑 Сбросить билеты", callback_data="admin_lottery_reset")],
+            [InlineKeyboardButton("◀️ Назад", callback_data="admin_refresh")],
+        ])
+        try:
+            await q.message.edit_text(
+                "\n".join(lines), parse_mode=ParseMode.HTML, reply_markup=kb_lot
+            )
+        except Exception:
+            logger.exception("on_callback failed")
+        return True
+
+    if d == "admin_lottery_draw_now":
+        if uid not in ADMIN_IDS:
+            await q.answer("⛔", show_alert=True)
+            return True
+        await q.answer("🎲 Розыгрыш запускается...", show_alert=True)
+        asyncio.create_task(job_lottery_draw(ctx))
+        await admin_log(uid, "lottery_draw_now")
+        return True
+
+    if d == "admin_lottery_reset":
+        if uid not in ADMIN_IDS:
+            await q.answer("⛔", show_alert=True)
+            return True
+        draw_date = lottery_today()
+        async with aiosqlite.connect(DB_PATH) as db:
+            async with db.execute(
+                "SELECT COUNT(*) FROM lottery_tickets WHERE draw_date=?", (draw_date,)
+            ) as c:
+                cnt = (await c.fetchone())[0] or 0
+            await db.execute("DELETE FROM lottery_tickets WHERE draw_date=?", (draw_date,))
+            await db.commit()
+        await q.answer((f"🗑 Удалено {cnt} билетов за {draw_date}")[:200], show_alert=True)
+        await admin_log(uid, "lottery_reset", details=f"deleted {cnt} tickets for {draw_date}")
+        # Обновим страницу лотереи
+        kb_lot = InlineKeyboardMarkup([
+            [InlineKeyboardButton("🎲 Провести розыгрыш сейчас", callback_data="admin_lottery_draw_now")],
+            [InlineKeyboardButton("🗑 Сбросить билеты", callback_data="admin_lottery_reset")],
+            [InlineKeyboardButton("◀️ Назад", callback_data="admin_refresh")],
+        ])
+        try:
+            await q.message.edit_text(
+                f"<tg-emoji emoji-id='5341688243790323773'>🎟</tg-emoji> <b>Лотерея — панель управления</b>\n\n"
+                f"📅 Розыгрыш: <b>{draw_date}</b>\n"
+                f"🗑 Билеты сброшены (удалено: {cnt})\n\n"
+                f"<i>Участников нет</i>",
+                parse_mode=ParseMode.HTML,
+                reply_markup=kb_lot,
+            )
+        except Exception:
+            pass
+        return True
+
+    if d == "admin_broadcast":
+        if uid not in ADMIN_IDS:
+            await q.answer("⛔", show_alert=True)
+            return True
+        await q.answer()
+        try:
+            await q.message.edit_text(
+                "📢 <b>Рассылка</b>\n\n"
+                "Отправь текст сообщения командой:\n"
+                "<code>/broadcast Текст сообщения</code>\n\n"
+                "<i>Сообщение получат все активные игроки.</i>",
+                parse_mode=ParseMode.HTML,
+                reply_markup=InlineKeyboardMarkup(
+                    [[InlineKeyboardButton("◀️ Назад", callback_data="admin_refresh")]]
+                ),
+            )
+        except Exception:
+            pass
+        return True
+
+    if d in ("admin_give_coins", "admin_give_skin"):
+        if uid not in ADMIN_IDS:
+            await q.answer("⛔", show_alert=True)
+            return True
+        await q.answer()
+        if d == "admin_give_coins":
+            await q.answer()
+            hint = "Дать КваКоины: <code>/givecoin @username 500</code>"
+        else:
+            hint = "Дать облик: <code>/giveskin @username Brownie</code>"
+        try:
+            await q.message.edit_text(
+                f"🎁 <b>Выдача игрокам</b>\n\n{hint}",
+                parse_mode=ParseMode.HTML,
+                reply_markup=InlineKeyboardMarkup(
+                    [[InlineKeyboardButton("◀️ Назад", callback_data="admin_refresh")]]
+                ),
+            )
+        except Exception:
+            pass
+        return True
+
+    if d == "admin_eco":
+        if uid not in ADMIN_IDS:
+            await q.answer("⛔", show_alert=True)
+            return True
+        await q.answer()
+        # Читаем основные настройки из БД (с дефолтами)
+        async with aiosqlite.connect(DB_PATH) as db:
+            async with db.execute(
+                "SELECT key, value FROM settings WHERE key IN (?,?,?,?,?,?,?,?)",
+                (
+                    "gacha_cost",
+                    "revive_cost",
+                    "heal_cost",
+                    "daily_base",
+                    "casino_jackpot_pool",
+                    "feed_reward",
+                    "play_reward",
+                    "wash_reward",
+                ),
+            ) as c:
+                srows = {r[0]: r[1] for r in await c.fetchall()}
+        total_coins_eco = 0
+        async with aiosqlite.connect(DB_PATH) as db:
+            async with db.execute("SELECT SUM(coins) FROM frogs") as c:
+                total_coins_eco = (await c.fetchone())[0] or 0
+
+        def sv(key, default):
+            return srows.get(key, str(default))
+
+        text_eco = (
+            f"💰 <b>Экономика и цены</b>\n\n"
+            f"🪙 В экономике: <b>{total_coins_eco:,}</b>\n\n"
+            f"<b>Цены (изменить: /setprice ключ значение):</b>\n"
+            f"• gacha_cost = {sv('gacha_cost','50')} (гача)\n"
+            f"• revive_cost = {sv('revive_cost','100')} (воскрешение)\n"
+            f"• heal_cost = {sv('heal_cost','30')} (лечение)\n"
+            f"• daily_base = {sv('daily_base','50')} (ежедневный бонус)\n\n"
+            f"<b>Награды:</b>\n"
+            f"• feed_reward = {sv('feed_reward','10')} (кормление)\n"
+            f"• play_reward = {sv('play_reward','8')} (игра)\n"
+            f"• wash_reward = {sv('wash_reward','5')} (купание)\n\n"
+            f"<b>Казино:</b>\n"
+            f"• Джекпот-пул: {sv('casino_jackpot_pool','0')}{coin_emoji()}\n\n"
+            f"<i>Пример: /setprice gacha_cost 75</i>"
+        )
+        kb_eco = InlineKeyboardMarkup(
+            [
+                [
+                    InlineKeyboardButton(
+                        "📊 Гача-стат", callback_data="admin_casino_stats"
+                    )
+                ],
+                [InlineKeyboardButton("◀️ Назад", callback_data="admin_refresh")],
+            ]
+        )
+        try:
+            await q.message.edit_text(
+                text_eco, parse_mode=ParseMode.HTML, reply_markup=kb_eco
+            )
+        except Exception:
+            pass
+        return True
+
+    if d == "admin_events":
+        if uid not in ADMIN_IDS:
+            await q.answer("⛔", show_alert=True)
+            return True
+        await q.answer()
+        leg = await legend_active()
+        if leg:
+            ends_dt = datetime.utcfromtimestamp(leg["ends_at"] + 3*3600).strftime("%d.%m в %H:%M")
+            goals   = leg["goals"]
+            prog    = leg["progress"]
+            pct_parts = []
+            for action, goal in goals.items():
+                cur = prog.get(action, 0)
+                icon, label = _LEGEND_ACTION_LABELS.get(action, ("▫️", action))
+                pct_parts.append(f"{icon}{cur}/{goal}")
+            leg_status = (
+                f"📜 <b>Легенда активна:</b> {leg['emoji']} {leg['title']}\n"
+                f"Прогресс: {' | '.join(pct_parts)}\n"
+                f"Финал: {ends_dt} МСК"
+            )
+            legend_btns = [
+                [InlineKeyboardButton("🔄 Обновить прогресс в чате", callback_data="admin_legend_update")],
+                [InlineKeyboardButton("🏁 Завершить легенду досрочно", callback_data="admin_legend_finish")],
+                [InlineKeyboardButton("✏️ Изменить цели", callback_data="admin_legend_edit_goals")],
+            ]
+        else:
+            leg_status = "📜 <b>Легенда:</b> не активна"
+            legend_btns = [
+                [InlineKeyboardButton("🚀 Запустить легенду сейчас", callback_data="admin_legend_start")],
+            ]
+
+        text_ev = (
+            f"🎲 <b>Ивенты и события</b>\n\n"
+            f"🦟 Комар: запускается случайно каждые 1–6ч\n"
+            f"🎲 Интерактивные события: каждые 8ч, 30% шанс\n\n"
+            f"{leg_status}\n\n"
+            f"<i>Действия доступны ниже:</i>"
+        )
+        kb_ev = InlineKeyboardMarkup(
+            legend_btns + [
+                [InlineKeyboardButton("🦟 Запустить комара", callback_data="admin_launch_mosquito")],
+                [InlineKeyboardButton("🎲 Разослать интерактивное событие", callback_data="admin_launch_iev")],
+                [InlineKeyboardButton("✨ Золотая лягушка", callback_data="admin_boost_menu")],
+                [InlineKeyboardButton("📢 Рассылка", callback_data="admin_broadcast")],
+                [InlineKeyboardButton("◀️ Назад", callback_data="admin_refresh")],
+            ]
+        )
+        try:
+            await q.message.edit_text(text_ev, parse_mode=ParseMode.HTML, reply_markup=kb_ev)
+        except Exception:
+            pass
+        return True
+
+    if d == "admin_launch_mosquito":
+        if uid not in ADMIN_IDS:
+            await q.answer("⛔", show_alert=True)
+            return True
+        asyncio.create_task(job_mosquito(ctx))
+        await admin_log(uid, "launch_mosquito")
+        await q.answer("🦟 Комар запущен!", show_alert=True)
+        return True
+
+    if d == "admin_launch_iev":
+        if uid not in ADMIN_IDS:
+            await q.answer("⛔", show_alert=True)
+            return True
+        # Сбрасываем КД у всех живых, потом запускаем job_events
+        async with aiosqlite.connect(DB_PATH) as db:
+            await db.execute("UPDATE frogs SET last_interactive_event=0, last_event=0 WHERE alive=1")
+            await db.commit()
+        asyncio.create_task(job_events(ctx))
+        await admin_log(uid, "launch_iev")
+        await q.answer("🎲 Интерактивные события разосланы!", show_alert=True)
+        return True
+
+    if d == "admin_legend_start":
+        if uid not in ADMIN_IDS:
+            await q.answer("⛔", show_alert=True)
+            return True
+        await _legend_start(ctx.bot)
+        await admin_log(uid, "legend_start")
+        await q.answer("📜 Легенда запущена!", show_alert=True)
+        # Обновляем панель
+        try:
+            await q.message.edit_reply_markup(reply_markup=None)
+        except Exception:
+            pass
+        # Перерисовываем admin_events
+        ctx.drop_callback_data = False
+        q.data = "admin_events"
+        return True
+
+    if d == "admin_legend_update":
+        if uid not in ADMIN_IDS:
+            await q.answer("⛔", show_alert=True)
+            return True
+        leg = await legend_active()
+        if leg:
+            await _legend_announce(ctx.bot, leg)
+            await admin_log(uid, "legend_update")
+            await q.answer("🔄 Прогресс обновлён в чате!", show_alert=True)
+        else:
+            await q.answer("Нет активной легенды.", show_alert=True)
+        return True
+
+    if d == "admin_legend_finish":
+        if uid not in ADMIN_IDS:
+            await q.answer("⛔", show_alert=True)
+            return True
+        leg = await legend_active()
+        if leg:
+            await _legend_finish(ctx.bot, leg)
+            await admin_log(uid, "legend_finish")
+            await q.answer("🏁 Легенда завершена!", show_alert=True)
+        else:
+            await q.answer("Нет активной легенды.", show_alert=True)
+        return True
+
+    if d == "admin_legend_edit_goals":
+        if uid not in ADMIN_IDS:
+            await q.answer("⛔", show_alert=True)
+            return True
+        leg = await legend_active()
+        if not leg:
+            await q.answer("Нет активной легенды.", show_alert=True)
+            return True
+        goals_str = " | ".join(f"{a}:{g}" for a, g in leg["goals"].items())
+        await q.answer()
+        try:
+            await q.message.edit_text(
+                f"✏️ <b>Изменить цели легенды</b>\n\n"
+                f"Текущие цели:\n<code>{goals_str}</code>\n\n"
+                f"Отправь новые цели командой:\n"
+                f"<code>/legend_goals feeds:300 washes:50 plays:40</code>\n\n"
+                f"Доступные действия: feeds, washes, plays, heals, sleeps, gacha, casino",
+                parse_mode=ParseMode.HTML,
+                reply_markup=InlineKeyboardMarkup([
+                    [InlineKeyboardButton("◀️ Назад", callback_data="admin_events")]
+                ]),
+            )
+        except Exception:
+            pass
+        return True
+
+    if d == "admin_system":
+        if uid not in ADMIN_IDS:
+            await q.answer("⛔", show_alert=True)
+            return True
+        await q.answer()
+        import os as _os
+
+        db_size = _os.path.getsize(DB_PATH) if _os.path.exists(DB_PATH) else 0
+        db_size_kb = db_size // 1024
+        # Собираем быструю сводку нагрузки для отображения в системной панели
+        try:
+            import psutil as _psu
+            _cpu = _psu.cpu_percent(interval=0.2)
+            _mem = _psu.virtual_memory()
+            _disk = _psu.disk_usage("/")
+            _load_line = (
+                f"🖥 CPU: <b>{_cpu:.1f}%</b>  "
+                f"🧠 RAM: <b>{_mem.percent:.1f}%</b> "
+                f"({_mem.used // 1024**2}/{_mem.total // 1024**2} МБ)  "
+                f"💽 Диск: <b>{_disk.percent:.1f}%</b>"
+            )
+        except ImportError:
+            _load_line = "⚠️ psutil не установлен (<code>pip install psutil</code>)"
+        text_sys = (
+            f"🔧 <b>Системные инструменты</b>\n\n"
+            f"📦 Размер БД: <b>{db_size_kb} КБ</b>\n"
+            f"{_load_line}\n\n"
+            f"<b>Доступные действия:</b>\n"
+            f"• 💾 Бекап — отправит БД в личку\n"
+            f"• 📊 Нагрузка — CPU/RAM/диск + пиковые значения\n"
+            f"• 🔄 Обновить панель\n\n"
+            f"<b>Команды для выдачи игрокам:</b>\n"
+            f"<code>/givecoin @username 500</code>\n"
+            f"<code>/giveskin @username Brownie</code>\n"
+            f"<code>/adminlookup @username</code>\n"
+            f"<code>/setprice key value</code>"
+        )
+        kb_sys = InlineKeyboardMarkup(
+            [
+                [InlineKeyboardButton("💾 Бекап БД", callback_data="admin_backup")],
+                [
+                    InlineKeyboardButton("📊 Статистика", callback_data="admin_stats"),
+                    InlineKeyboardButton("🎭 Стикеры", callback_data="admin_stickers"),
+                ],
+                [
+                    InlineKeyboardButton(
+                        "🔍 Поиск игрока", callback_data="admin_search_hint"
+                    ),
+                    InlineKeyboardButton("💀 Мёртвые", callback_data="admin_dead"),
+                ],
+                [InlineKeyboardButton("🔄 Сбросить топ недели", callback_data="admin_reset_topw")],
+                [InlineKeyboardButton("🟢 Онлайн", callback_data="admin_online")],
+                [InlineKeyboardButton("📈 Нагрузка сервера", callback_data="admin_server_load")],
+                [InlineKeyboardButton("◀️ Назад", callback_data="admin_refresh")],
+            ]
+        )
+        try:
+            await q.message.edit_text(
+                text_sys, parse_mode=ParseMode.HTML, reply_markup=kb_sys
+            )
+        except Exception:
+            pass
+        return True
+
+    if d == "admin_reset_topw":
+        if uid not in ADMIN_IDS:
+            await q.answer("⛔", show_alert=True)
+            return True
+        await q.answer("✅ Топ недели сброшен!", show_alert=True)
+        # Выдаём достижение top_weekly топ-3 ПЕРЕД сбросом
+        try:
+            top3w = await db_top_weekly(3)
+            for _r in top3w:
+                _uid_w = _r.get("user_id")
+                if _uid_w:
+                    await ach_grant(_uid_w, "top_weekly", ctx.bot)
+        except Exception as _e:
+            logger.warning("admin_reset_topw ach_grant error: %s", _e)
+        async with aiosqlite.connect(DB_PATH) as db:
+            await db.execute("UPDATE frogs SET xp_week = 0")
+            await db.commit()
+        await admin_log(uid, "reset_topw")
+        try:
+            await q.message.edit_text(
+                "✅ <b>Топ недели сброшен досрочно.</b>\n\nВсе xp_week обнулены.",
+                parse_mode=ParseMode.HTML,
+                reply_markup=InlineKeyboardMarkup([[InlineKeyboardButton("◀️ Назад", callback_data="admin_system")]]),
+            )
+        except Exception:
+            pass
+        return True
+
+    if d == "admin_online":
+        if uid not in ADMIN_IDS:
+            await q.answer("⛔", show_alert=True)
+            return True
+        await q.answer()
+        global _peak_last_save
+        now_ao = time.time()
+        cutoff_10 = now_ao - 10 * 60
+        cutoff_60 = now_ao - 60 * 60
+        async with aiosqlite.connect(DB_PATH) as db:
+            async with db.execute("SELECT COUNT(*) FROM frogs WHERE last_seen >= ? AND alive=1", (cutoff_10,)) as c:
+                online_10 = (await c.fetchone())[0] or 0
+            async with db.execute("SELECT COUNT(*) FROM frogs WHERE last_seen >= ? AND alive=1", (cutoff_60,)) as c:
+                online_60 = (await c.fetchone())[0] or 0
+            async with db.execute("SELECT COUNT(*) FROM frogs WHERE alive=1") as c:
+                total_alive = (await c.fetchone())[0] or 0
+            async with db.execute("SELECT COUNT(*) FROM frogs") as c:
+                total_all = (await c.fetchone())[0] or 0
+
+        # Обновляем пик
+        _update_peak_online(online_10)
+        if now_ao - _peak_last_save > _PEAK_SAVE_INTERVAL:
+            await _save_peak_online()
+
+        def _fmt_peak(period: str) -> str:
+            count, ts = _peak_online.get(period, (0, 0))
+            if ts == 0:
+                return "—"
+            dt = now_ao - ts
+            if dt < 3600:
+                ago = f"{int(dt//60)}м назад"
+            elif dt < 86400:
+                ago = f"{int(dt//3600)}ч назад"
+            else:
+                ago = f"{int(dt//86400)}д назад"
+            return f"<b>{count}</b> ({ago})"
+
+        try:
+            await q.message.edit_text(
+                f"🟢 <b>Онлайн статистика</b>\n\n"
+                f"🟢 Сейчас (10 мин): <b>{online_10}</b>\n"
+                f"🟡 За час: <b>{online_60}</b>\n"
+                f"<tg-emoji emoji-id='5341367834935075028'>🐸</tg-emoji> Живых: <b>{total_alive}</b>  |  Всего: <b>{total_all}</b>\n\n"
+                f"<b>📈 Пиковый онлайн:</b>\n"
+                f"  За сутки:  {_fmt_peak('day')}\n"
+                f"  За неделю: {_fmt_peak('week')}\n"
+                f"  За месяц:  {_fmt_peak('month')}",
+                parse_mode=ParseMode.HTML,
+                reply_markup=InlineKeyboardMarkup([
+                    [InlineKeyboardButton("🔄 Обновить", callback_data="admin_online")],
+                    [InlineKeyboardButton("◀️ Назад", callback_data="admin_system")],
+                ]),
+            )
+        except Exception:
+            pass
+        return True
+
+    if d == "admin_server_load" or d == "admin_server_load_refresh":
+        if uid not in ADMIN_IDS:
+            await q.answer("⛔", show_alert=True)
+            return True
+        await q.answer()
+        try:
+            import psutil as _psu
+            # CPU — 0.5 сек замер (неблокирующий в asyncio через executor)
+            loop = asyncio.get_event_loop()
+            _cpu_pct = await loop.run_in_executor(None, lambda: _psu.cpu_percent(interval=0.5))
+            _cpu_count = _psu.cpu_count(logical=True)
+            _cpu_freq = _psu.cpu_freq()
+            _freq_str = f"{_cpu_freq.current:.0f} МГц" if _cpu_freq else "—"
+
+            _mem = _psu.virtual_memory()
+            _swap = _psu.swap_memory()
+            _disk = _psu.disk_usage("/")
+
+            # Uptime процесса бота
+            _proc = _psu.Process()
+            _proc_create = _proc.create_time()
+            _uptime_sec = int(time.time() - _proc_create)
+            _uptime_str = (
+                f"{_uptime_sec // 3600}ч {(_uptime_sec % 3600) // 60}м"
+                if _uptime_sec >= 3600
+                else f"{_uptime_sec // 60}м {_uptime_sec % 60}с"
+            )
+            _proc_mem = _proc.memory_info().rss // 1024 ** 2
+
+            # Сетевой трафик
+            _net = _psu.net_io_counters()
+            _net_sent = _net.bytes_sent // 1024 ** 2
+            _net_recv = _net.bytes_recv // 1024 ** 2
+
+            # Пиковые CPU/RAM — храним в bot_data
+            _sl = ctx.bot_data.setdefault("server_load_peak", {
+                "cpu_max": 0.0, "cpu_max_ts": 0,
+                "ram_max": 0.0, "ram_max_ts": 0,
+            })
+            _now_sl = time.time()
+            if _cpu_pct > _sl["cpu_max"]:
+                _sl["cpu_max"] = _cpu_pct
+                _sl["cpu_max_ts"] = _now_sl
+            if _mem.percent > _sl["ram_max"]:
+                _sl["ram_max"] = _mem.percent
+                _sl["ram_max_ts"] = _now_sl
+
+            def _ago(ts):
+                if ts == 0:
+                    return "—"
+                d_ = int(_now_sl - ts)
+                if d_ < 3600:
+                    return f"{d_ // 60}м назад"
+                elif d_ < 86400:
+                    return f"{d_ // 3600}ч назад"
+                return f"{d_ // 86400}д назад"
+
+            text_load = (
+                f"📈 <b>Нагрузка сервера</b>\n\n"
+                f"🖥 <b>CPU</b>\n"
+                f"  Сейчас: <b>{_cpu_pct:.1f}%</b>  ({_cpu_count} ядер, {_freq_str})\n"
+                f"  🔺 Пик:  <b>{_sl['cpu_max']:.1f}%</b> ({_ago(_sl['cpu_max_ts'])})\n\n"
+                f"🧠 <b>RAM</b>\n"
+                f"  Сейчас: <b>{_mem.percent:.1f}%</b>  "
+                f"({_mem.used // 1024**2}/{_mem.total // 1024**2} МБ)\n"
+                f"  🔺 Пик:  <b>{_sl['ram_max']:.1f}%</b> ({_ago(_sl['ram_max_ts'])})\n"
+                f"  SWAP: {_swap.used // 1024**2}/{_swap.total // 1024**2} МБ "
+                f"({_swap.percent:.1f}%)\n\n"
+                f"💽 <b>Диск</b>\n"
+                f"  Занято: <b>{_disk.percent:.1f}%</b>  "
+                f"({_disk.used // 1024**3}/{_disk.total // 1024**3} ГБ)\n\n"
+                f"🤖 <b>Процесс бота</b>\n"
+                f"  Uptime: <b>{_uptime_str}</b>\n"
+                f"  RAM процесса: <b>{_proc_mem} МБ</b>\n\n"
+                f"🌐 <b>Сеть</b>\n"
+                f"  Отправлено: {_net_sent} МБ  |  Получено: {_net_recv} МБ\n\n"
+                f"<i>Пики сбрасываются при перезапуске бота</i>"
+            )
+        except ImportError:
+            text_load = (
+                "⚠️ <b>psutil не установлен</b>\n\n"
+                "Для мониторинга нагрузки выполните:\n"
+                "<code>pip install psutil</code>\n"
+                "и перезапустите бота."
+            )
+        except Exception as _e:
+            text_load = f"❌ Ошибка получения данных: <code>{_html.escape(str(_e))}</code>"
+
+        try:
+            await q.message.edit_text(
+                text_load,
+                parse_mode=ParseMode.HTML,
+                reply_markup=InlineKeyboardMarkup([
+                    [InlineKeyboardButton("🔄 Обновить", callback_data="admin_server_load_refresh")],
+                    [InlineKeyboardButton("◀️ Назад", callback_data="admin_system")],
+                ]),
+            )
+        except Exception:
+            pass
+        return True
+
+    if d == "admin_backup":
+        if uid not in ADMIN_IDS:
+            await q.answer("⛔", show_alert=True)
+            return True
+        await q.answer("⏳ Создаю бекап...", show_alert=False)
+        try:
+            import shutil as _shutil, os as _os, gzip as _gzip
+
+            backup_path = f"/tmp/frog_backup_{int(time.time())}.db"
+            _shutil.copy2(DB_PATH, backup_path)
+            gz_path = backup_path + ".gz"
+            with open(backup_path, "rb") as _f_in, _gzip.open(gz_path, "wb") as _f_out:
+                _f_out.write(_f_in.read())
+            size_kb = _os.path.getsize(backup_path) // 1024
+            gz_size_kb = _os.path.getsize(gz_path) // 1024
+            with open(gz_path, "rb") as bf:
+                await ctx.bot.send_document(
+                    uid,
+                    bf,
+                    filename=f"frog_backup_{int(time.time())}.db.gz",
+                    caption=f"💾 Бекап базы данных\n🕐 {time.strftime('%Y-%m-%d %H:%M:%S')}\n📦 {size_kb} KB → сжато: {gz_size_kb} KB",
+                )
+            _os.remove(backup_path)
+            _os.remove(gz_path)
+            await admin_log(uid, "backup")
+        except Exception as e:
+            await ctx.bot.send_message(uid, f"❌ Ошибка бекапа: {e}")
+        return True
+
+    if d == "admin_logs_view" or d.startswith("admin_logs_view_"):
+        if uid not in ADMIN_IDS:
+            await q.answer("⛔", show_alert=True)
+            return True
+        await q.answer()
+        async with aiosqlite.connect(DB_PATH) as db:
+            db.row_factory = aiosqlite.Row
+            async with db.execute(
+                "SELECT a.admin_id, a.action, a.target_id, a.details, a.ts FROM admin_logs a ORDER BY a.ts DESC LIMIT 500"
+            ) as c:
+                log_rows = await c.fetchall()
+            async with db.execute("SELECT COUNT(*) FROM admin_logs") as c:
+                total_logs = (await c.fetchone())[0] or 0
+        if not log_rows:
+            await q.answer("Логов нет.", show_alert=True)
+            return True
+        import io as _io
+        lines_log = [f"=== ADMIN LOG (последние {len(log_rows)} из {total_logs}) ===",
+                     f"Экспорт: {datetime.now(timezone.utc).strftime('%Y-%m-%d %H:%M UTC')}", ""]
+        for lr in log_rows:
+            ts_str = datetime.fromtimestamp(lr["ts"], tz=timezone.utc).strftime("%Y-%m-%d %H:%M:%S")
+            target_s = f" → uid={lr['target_id']}" if lr["target_id"] else ""
+            det = f" | {lr['details']}" if lr["details"] else ""
+            lines_log.append(f"[{ts_str}] admin={lr['admin_id']}  {lr['action']}{target_s}{det}")
+        bio = _io.BytesIO("\n".join(lines_log).encode("utf-8"))
+        bio.name = "admin_log.txt"
+        try:
+            await q.message.reply_document(
+                document=bio,
+                caption=f"📋 <b>Журнал администратора</b>\n{total_logs} записей, показано {len(log_rows)}",
+                parse_mode=ParseMode.HTML,
+            )
+        except Exception as _e:
+            await q.answer((f"Ошибка: {_e}")[:200], show_alert=True)
+        return True
+
+    if d.startswith("admin_give_uid_"):
+        if uid not in ADMIN_IDS:
+            await q.answer("⛔", show_alert=True)
+            return True
+        target_uid_give = int(d[len("admin_give_uid_") :])
+        await q.answer()
+        try:
+            await q.message.edit_text(
+                f"🎁 <b>Выдача монет игроку (ID {target_uid_give})</b>\n\n"
+                f"<code>/givecoin @username 500</code>\n\n"
+                f"Или используй кнопки в карточке игрока (<tg-emoji emoji-id='5341524176039615767'>🪙</tg-emoji> +100 / +1000 / -100)\n\n"
+                f"<i>Для открытия карточки: /adminlookup {target_uid_give}</i>",
+                parse_mode=ParseMode.HTML,
+                reply_markup=InlineKeyboardMarkup(
+                    [[InlineKeyboardButton("◀️ Назад", callback_data="admin_refresh")]]
+                ),
+            )
+        except Exception:
+            pass
+        return True
+
+    if d.startswith("aab_"):
+        await handle_antibot_callback(q, d, uid, ctx)
+        return True
+    return False
+
+
 async def on_callback(update: Update, ctx: ContextTypes.DEFAULT_TYPE):
     q = update.callback_query
     uid = q.from_user.id
@@ -29640,7 +32186,7 @@ async def on_callback(update: Update, ctx: ContextTypes.DEFAULT_TYPE):
 
     # ── 🐛 DEBUG: логируем все exp_-нажатия ──────────
     if d and d.startswith("exp_"):
-        logger.error(
+        logger.debug(
             "🐛 [EXP DEBUG] on_callback ВХОД: uid=%s d=%s chat_id=%s chat_type=%s msg_id=%s",
             uid, d,
             getattr(getattr(q, "message", None), "chat", {}) and q.message.chat.id,
@@ -29799,7 +32345,7 @@ async def on_callback(update: Update, ctx: ContextTypes.DEFAULT_TYPE):
             owner_uid = ctx.bot_data.get("msg_owner", {}).get(msg_key)
             if owner_uid is not None and owner_uid != uid:
                 if d and d.startswith("exp_"):
-                    logger.error("🐛 [EXP DEBUG] ЗАБЛОКИРОВАНО проверкой владельца: uid=%s owner_uid=%s msg_key=%s", uid, owner_uid, msg_key)
+                    logger.debug("🐛 [EXP DEBUG] ЗАБЛОКИРОВАНО проверкой владельца: uid=%s owner_uid=%s msg_key=%s", uid, owner_uid, msg_key)
                 await q.answer(
                     "Это не твоё меню! Напиши /frog чтобы открыть своё.",
                     show_alert=True,
@@ -29807,18 +32353,18 @@ async def on_callback(update: Update, ctx: ContextTypes.DEFAULT_TYPE):
                 return
 
     if d and d.startswith("exp_"):
-        logger.error("🐛 [EXP DEBUG] is_public=%s is_admin=%s прошли проверку владельца", is_public, is_admin_action)
+        logger.debug("🐛 [EXP DEBUG] is_public=%s is_admin=%s прошли проверку владельца", is_public, is_admin_action)
 
     f = await db_get(uid)
     if not f:
         if d and d.startswith("exp_"):
-            logger.error("🐛 [EXP DEBUG] db_get вернул None для uid=%s — нет лягушки", uid)
+            logger.debug("🐛 [EXP DEBUG] db_get вернул None для uid=%s — нет лягушки", uid)
         await q.answer("Сначала напиши /start!", show_alert=True)
         return
     f = decay(f)
 
     if d and d.startswith("exp_"):
-        logger.error("🐛 [EXP DEBUG] лягушка загружена: alive=%s level=%s last_exp=%s", f.get("alive"), f.get("level"), f.get("last_expedition", 0))
+        logger.debug("🐛 [EXP DEBUG] лягушка загружена: alive=%s level=%s last_exp=%s", f.get("alive"), f.get("level"), f.get("last_expedition", 0))
 
     # ── Лок на финансовые операции ───────────────────────────────────────────
     # Предотвращает откат монет/обликов при двойном нажатии или параллельных запросах.
@@ -29865,7 +32411,7 @@ async def on_callback(update: Update, ctx: ContextTypes.DEFAULT_TYPE):
                     if _lk.locked():
                         _lk.release()
                 except RuntimeError:
-                    pass
+                    logger.exception("_release_user_lock failed")
             _current_task.add_done_callback(_release_user_lock)
         else:
             # Резервный сценарий: нет текущей задачи — принудительно освобождаем
@@ -29876,7 +32422,7 @@ async def on_callback(update: Update, ctx: ContextTypes.DEFAULT_TYPE):
                     if _lk.locked():
                         _lk.release()
                 except RuntimeError:
-                    pass
+                    logger.exception("_safety_release failed")
             asyncio.ensure_future(_safety_release())
 
     # ── Синхронизация username / first_name + last_seen ──────────────────
@@ -30007,7 +32553,7 @@ async def on_callback(update: Update, ctx: ContextTypes.DEFAULT_TYPE):
                 ]]),
             )
         except Exception:
-            pass
+            logger.exception("on_callback failed")
         return
 
     # ── Интерактивные события ─────────────────────────────────────────────────
@@ -30063,7 +32609,7 @@ async def on_callback(update: Update, ctx: ContextTypes.DEFAULT_TYPE):
                 reply_markup=kb_death,
             )
         except Exception:
-            pass
+            logger.exception("on_callback failed")
     elif f.get("_need_warning"):
         f.pop("_need_warning", None)
         await db_save(f)
@@ -30077,7 +32623,7 @@ async def on_callback(update: Update, ctx: ContextTypes.DEFAULT_TYPE):
                 parse_mode=ParseMode.HTML,
             )
         except Exception:
-            pass
+            logger.exception("on_callback failed")
 
     # ── ОГРАНИЧЕНИЯ ДЛЯ МЁРТВОЙ ЛЯГУШКИ ───────────
     if not f["alive"] and not f.get("trial_active", 0):
@@ -30191,7 +32737,7 @@ async def on_callback(update: Update, ctx: ContextTypes.DEFAULT_TYPE):
                     parse_mode=ParseMode.HTML,
                 )
             except Exception:
-                pass
+                logger.exception("on_callback failed")
         try:
             await q.message.edit_text(
                 f"🌿 <b>{fname(f)} вернулась на болото!</b>\n\n"
@@ -30304,7 +32850,7 @@ async def on_callback(update: Update, ctx: ContextTypes.DEFAULT_TYPE):
                 ]]),
             )
         except Exception:
-            pass
+            logger.exception("on_callback failed")
         return
 
 
@@ -30336,7 +32882,7 @@ async def on_callback(update: Update, ctx: ContextTypes.DEFAULT_TYPE):
                 ]]),
             )
         except Exception:
-            pass
+            logger.exception("on_callback failed")
         await q.answer("✅ Испытание обновлено!", show_alert=False)
         return
 
@@ -30966,7 +33512,7 @@ async def on_callback(update: Update, ctx: ContextTypes.DEFAULT_TYPE):
                         partner["coins"] = partner.get("coins", 0) + bond_reward
                         await db_save(partner)
                     except Exception:
-                        pass
+                        logger.exception("on_callback failed")
                     await letopis_add(uid, "friend",
                         f"💚 {fname(f)} и {he(pname)}: {new_streak} дней Болотной Связи!")
                 else:
@@ -31140,7 +33686,7 @@ async def on_callback(update: Update, ctx: ContextTypes.DEFAULT_TYPE):
                     text, parse_mode=ParseMode.HTML, reply_markup=kb, link_preview_options=LinkPreviewOptions(is_disabled=True),
                 )
             except Exception:
-                pass
+                logger.exception("on_callback failed")
         return
 
     # ── ИСПОЛЬЗОВАТЬ ГАЧА-БИЛЕТ ─────────────────────
@@ -31155,7 +33701,7 @@ async def on_callback(update: Update, ctx: ContextTypes.DEFAULT_TYPE):
             dots = "✨ · " * count
             await q.message.edit_text(f"🎰 <b>Крутим ×{count}...</b>\n\n{dots.strip()}", parse_mode=ParseMode.HTML)
         except Exception:
-            pass
+            logger.exception("on_callback failed")
         await asyncio.sleep(2)
         f["coins"] -= total_cost
         f["coins_spent"] = f.get("coins_spent", 0) + total_cost
@@ -31337,7 +33883,7 @@ async def on_callback(update: Update, ctx: ContextTypes.DEFAULT_TYPE):
             await q.message.edit_text("\n".join(lines), parse_mode=ParseMode.HTML, reply_markup=kb,
                                       link_preview_options=LinkPreviewOptions(is_disabled=True))
         except Exception:
-            pass
+            logger.exception("on_callback failed")
         await q.answer(f"🌀 {count:,} круток — готово!")
         return
 
@@ -31514,7 +34060,7 @@ async def on_callback(update: Update, ctx: ContextTypes.DEFAULT_TYPE):
                 link_preview_options=LinkPreviewOptions(is_disabled=True),
             )
         except Exception:
-            pass
+            logger.exception("on_callback failed")
         return
 
     # ── ИНВЕНТАРЬ (облики + NFT) ─────────────
@@ -31692,7 +34238,7 @@ async def on_callback(update: Update, ctx: ContextTypes.DEFAULT_TYPE):
                 link_preview_options=LinkPreviewOptions(is_disabled=True),
             )
         except Exception:
-            pass
+            logger.exception("on_callback failed")
         return
 
     # ── МЕНЮ МАГАЗИНА ──────────────────────────────
@@ -31832,7 +34378,7 @@ async def on_callback(update: Update, ctx: ContextTypes.DEFAULT_TYPE):
         try:
             await q.message.edit_text("\n".join(lines), parse_mode=ParseMode.HTML, reply_markup=kb2)
         except Exception:
-            pass
+            logger.exception("on_callback failed")
         return
 
     if d == "menu_care":
@@ -31859,7 +34405,7 @@ async def on_callback(update: Update, ctx: ContextTypes.DEFAULT_TYPE):
                     reply_markup=care_kb(f),
                 )
             except Exception:
-                pass
+                logger.exception("on_callback failed")
         return
 
     if d == "menu_shop":
@@ -31936,7 +34482,7 @@ async def on_callback(update: Update, ctx: ContextTypes.DEFAULT_TYPE):
                 reply_markup=InlineKeyboardMarkup(kb_rows_m),
             )
         except Exception:
-            pass
+            logger.exception("on_callback failed")
         return
 
     if d.startswith("market_view_"):
@@ -31972,7 +34518,7 @@ async def on_callback(update: Update, ctx: ContextTypes.DEFAULT_TYPE):
                 reply_markup=InlineKeyboardMarkup(kb_v),
             )
         except Exception:
-            pass
+            logger.exception("on_callback failed")
         return
 
     if d.startswith("market_confirm_"):
@@ -32009,7 +34555,7 @@ async def on_callback(update: Update, ctx: ContextTypes.DEFAULT_TYPE):
                     parse_mode=ParseMode.HTML,
                 )
             except Exception:
-                pass
+                logger.exception("on_callback failed")
         # Выдаём облик покупателю
         await db_add_skin(uid, lot_c["skin"])
         try:
@@ -32117,7 +34663,7 @@ async def on_callback(update: Update, ctx: ContextTypes.DEFAULT_TYPE):
                 reply_markup=InlineKeyboardMarkup(kb_my),
             )
         except Exception:
-            pass
+            logger.exception("on_callback failed")
         return
 
     # ── МАГАЗИН ЕДЫ ────────────────────────────────
@@ -32317,7 +34863,7 @@ async def on_callback(update: Update, ctx: ContextTypes.DEFAULT_TYPE):
                             f"<i>🏠 Вернётся в 18:00 МСК</i>"
                         )
                 except Exception:
-                    pass
+                    logger.exception("on_callback failed")
 
         try:
             await q.message.edit_text(
@@ -32532,7 +35078,7 @@ async def on_callback(update: Update, ctx: ContextTypes.DEFAULT_TYPE):
                 reply_markup=InlineKeyboardMarkup(rows),
             )
         except Exception:
-            pass
+            logger.exception("on_callback failed")
         return
 
     # ── КУПИТЬ ЕДУ ─────────────────────────────────
@@ -32589,7 +35135,7 @@ async def on_callback(update: Update, ctx: ContextTypes.DEFAULT_TYPE):
                 reply_markup=InlineKeyboardMarkup(rows),
             )
         except Exception:
-            pass
+            logger.exception("on_callback failed")
         return
 
     # ── МАГАЗИН ОБЛИКОВ ────────────────────────────
@@ -32641,7 +35187,7 @@ async def on_callback(update: Update, ctx: ContextTypes.DEFAULT_TYPE):
                 link_preview_options=LinkPreviewOptions(),
             )
         except Exception:
-            pass
+            logger.exception("on_callback failed")
         return
 
     # ── КУПИТЬ ОБЛИК ───────────────────────────────
@@ -32742,7 +35288,7 @@ async def on_callback(update: Update, ctx: ContextTypes.DEFAULT_TYPE):
                 reply_markup=InlineKeyboardMarkup(rows),
             )
         except Exception:
-            pass
+            logger.exception("on_callback failed")
         return
 
     # ── СКРАФТИТЬ ВСЁ ─────────────────────────────────────────────────────────
@@ -32867,7 +35413,8 @@ async def on_callback(update: Update, ctx: ContextTypes.DEFAULT_TYPE):
                                       link_preview_options=LinkPreviewOptions(is_disabled=True))
         except Exception:
             try: await q.message.reply_text(text, parse_mode=ParseMode.HTML, reply_markup=kb)
-            except Exception: pass
+            except Exception:
+                logger.exception("on_callback failed")
         await q.answer()
         return
 
@@ -32955,7 +35502,8 @@ async def on_callback(update: Update, ctx: ContextTypes.DEFAULT_TYPE):
                                           link_preview_options=LinkPreviewOptions(is_disabled=True))
             except Exception:
                 try: await q.message.reply_text(text, parse_mode=ParseMode.HTML, reply_markup=kb)
-                except Exception: pass
+                except Exception:
+                    logger.exception("on_callback failed")
             return
 
         # ── Обычный крафт с возможным шансом ───────────────────────────────
@@ -32982,7 +35530,8 @@ async def on_callback(update: Update, ctx: ContextTypes.DEFAULT_TYPE):
                                           link_preview_options=LinkPreviewOptions(is_disabled=True))
             except Exception:
                 try: await q.message.reply_text(text, parse_mode=ParseMode.HTML, reply_markup=kb)
-                except Exception: pass
+                except Exception:
+                    logger.exception("on_callback failed")
             return
 
         # Успех
@@ -33022,7 +35571,7 @@ async def on_callback(update: Update, ctx: ContextTypes.DEFAULT_TYPE):
                 await q.message.reply_text(text, parse_mode=ParseMode.HTML, reply_markup=kb,
                                            link_preview_options=LinkPreviewOptions(is_disabled=True))
             except Exception:
-                pass
+                logger.exception("on_callback failed")
         return
 
     # ── СБОРКА МИФИКА ИЗ ОСКОЛКОВ ──────────────────────────────────────────
@@ -33080,7 +35629,7 @@ async def on_callback(update: Update, ctx: ContextTypes.DEFAULT_TYPE):
                 delete_after=300,
             )
         except Exception:
-            pass
+            logger.exception("on_callback failed")
 
         kb = InlineKeyboardMarkup([
             [InlineKeyboardButton(f"✅ Надеть {result_skin}", callback_data=f"equip_{result_skin}")],
@@ -33091,7 +35640,8 @@ async def on_callback(update: Update, ctx: ContextTypes.DEFAULT_TYPE):
                                       link_preview_options=LinkPreviewOptions(is_disabled=True))
         except Exception:
             try: await q.message.reply_text(text, parse_mode=ParseMode.HTML, reply_markup=kb)
-            except Exception: pass
+            except Exception:
+                logger.exception("on_callback failed")
         return
 
     # ── КВЕСТЫ ─────────────────────────────────────
@@ -33136,7 +35686,7 @@ async def on_callback(update: Update, ctx: ContextTypes.DEFAULT_TYPE):
                 reply_markup=InlineKeyboardMarkup(rows),
             )
         except Exception:
-            pass
+            logger.exception("on_callback failed")
         return
 
     # ── ЗАБРАТЬ КВЕСТ ──────────────────────────────
@@ -33218,7 +35768,7 @@ async def on_callback(update: Update, ctx: ContextTypes.DEFAULT_TYPE):
                 reply_markup=InlineKeyboardMarkup(rows),
             )
         except Exception:
-            pass
+            logger.exception("on_callback failed")
         return
 
     # ── МЕНЮ ИГР ───────────────────────────────────
@@ -33486,7 +36036,7 @@ async def on_callback(update: Update, ctx: ContextTypes.DEFAULT_TYPE):
                     ]]),
                 )
             except Exception:
-                pass
+                logger.exception("on_callback failed")
         return
 
     if d == "sgift_admin_reopen":
@@ -34167,7 +36717,7 @@ async def on_callback(update: Update, ctx: ContextTypes.DEFAULT_TYPE):
                     reply_markup=kb_d,
                 )
             except Exception:
-                pass
+                logger.exception("on_callback failed")
         return
 
     if d.startswith("double_take_"):
@@ -34291,7 +36841,7 @@ async def on_callback(update: Update, ctx: ContextTypes.DEFAULT_TYPE):
                         reply_markup=kb_d,
                     )
                 except Exception:
-                    pass
+                    logger.exception("on_callback failed")
         else:
             # Проигрыш
             lost = state["stake"]
@@ -35782,7 +38332,7 @@ async def on_callback(update: Update, ctx: ContextTypes.DEFAULT_TYPE):
                     message_id=gdata_ttt["msg_id"],
                 )
         except Exception:
-            pass
+            logger.exception("on_callback failed")
         await q.answer((f"Вызов отменён, {stake_ttt}🪙 возвращены.")[:200], show_alert=True)
         try:
             await q.message.edit_text(
@@ -35990,7 +38540,7 @@ async def on_callback(update: Update, ctx: ContextTypes.DEFAULT_TYPE):
                     message_id=gdata_t5["msg_id"],
                 )
         except Exception:
-            pass
+            logger.exception("on_callback failed")
         await q.answer((f"Вызов отменён, {stake_t5}🪙 возвращены.")[:200], show_alert=True)
         try:
             await q.message.edit_text(
@@ -36218,7 +38768,7 @@ async def on_callback(update: Update, ctx: ContextTypes.DEFAULT_TYPE):
 
 
     # ── УГАДАЙ ЧИСЛО ───────────────────────────────
-    if d and d.startswith("exp_"): logger.error("🐛 [EXP DEBUG] CHECKPOINT_A ~25824 — код дошёл сюда")
+    if d and d.startswith("exp_"): logger.debug("🐛 [EXP DEBUG] CHECKPOINT_A ~25824 — код дошёл сюда")
     if d == "guess_start":
         now = time.time()
         cd = 10 * 60
@@ -36786,7 +39336,7 @@ async def on_callback(update: Update, ctx: ContextTypes.DEFAULT_TYPE):
             await q.message.edit_text("\n".join(lines), parse_mode=ParseMode.HTML,
                                       reply_markup=InlineKeyboardMarkup(kb_rows))
         except Exception:
-            pass
+            logger.exception("on_callback failed")
         return
 
 
@@ -36934,7 +39484,7 @@ async def on_callback(update: Update, ctx: ContextTypes.DEFAULT_TYPE):
             await q.message.edit_text("\n".join(lines), parse_mode=ParseMode.HTML,
                                       reply_markup=InlineKeyboardMarkup(kb_rows))
         except Exception:
-            pass
+            logger.exception("on_callback failed")
         return
 
     # ── 🔍 Найти игрока ───────────────────────────────────────────────────────
@@ -37015,7 +39565,8 @@ async def on_callback(update: Update, ctx: ContextTypes.DEFAULT_TYPE):
         try:
             await q.message.edit_text("\n".join(lines), parse_mode=ParseMode.HTML,
                                       reply_markup=InlineKeyboardMarkup(kb_rows))
-        except Exception: pass
+        except Exception:
+            logger.exception("on_callback failed")
         return
 
     # ── Просмотр конкретной стаи + подать заявку ─────────────────────────────
@@ -37151,7 +39702,8 @@ async def on_callback(update: Update, ctx: ContextTypes.DEFAULT_TYPE):
         try:
             await q.message.edit_text("\n".join(lines), parse_mode=ParseMode.HTML,
                                       reply_markup=InlineKeyboardMarkup(kb_rows))
-        except Exception: pass
+        except Exception:
+            logger.exception("on_callback failed")
         return
 
     if d.startswith("staya_app_ok_"):
@@ -37184,7 +39736,8 @@ async def on_callback(update: Update, ctx: ContextTypes.DEFAULT_TYPE):
                     f"Добро пожаловать на болото! 🌿",
                     parse_mode=ParseMode.HTML,
                 )
-            except Exception: pass
+            except Exception:
+                logger.exception("on_callback failed")
         await q.answer(f"✅ Принят в стаю!")
         # Обновляем список
         if d.startswith("staya_app"):
@@ -37210,7 +39763,8 @@ async def on_callback(update: Update, ctx: ContextTypes.DEFAULT_TYPE):
                 f"Попробуй другую стаю или создай свою! 🌿",
                 parse_mode=ParseMode.HTML,
             )
-        except Exception: pass
+        except Exception:
+            logger.exception("on_callback failed")
         await q.answer("❌ Заявка отклонена.")
         return
 
@@ -37245,7 +39799,8 @@ async def on_callback(update: Update, ctx: ContextTypes.DEFAULT_TYPE):
                 f"<tg-emoji emoji-id='5341524176039615767'>🪙</tg-emoji> Котёл: {staya['cauldron']}<tg-emoji emoji-id='5341524176039615767'>🪙</tg-emoji>",
                 parse_mode=ParseMode.HTML, reply_markup=kb,
             )
-        except Exception: pass
+        except Exception:
+            logger.exception("on_callback failed")
         return
 
     if d.startswith("staya_join_"):
@@ -37454,7 +40009,7 @@ async def on_callback(update: Update, ctx: ContextTypes.DEFAULT_TYPE):
                     InlineKeyboardButton("◀️ Назад", callback_data="plaza_staya"),
                 ]]))
         except Exception:
-            pass
+            logger.exception("on_callback failed")
         return
 
     # ── 📣 Рассылка Вожака участникам стаи ────────────────────────────────────
@@ -37506,7 +40061,7 @@ async def on_callback(update: Update, ctx: ContextTypes.DEFAULT_TYPE):
                 ]])
             )
         except Exception:
-            pass
+            logger.exception("on_callback failed")
         return
 
     # ── ⚔️ Поход ─────────────────────────────────────────────────────────────
@@ -37591,7 +40146,7 @@ async def on_callback(update: Update, ctx: ContextTypes.DEFAULT_TYPE):
                 reply_markup=InlineKeyboardMarkup(kb_rows)
             )
         except Exception:
-            pass
+            logger.exception("on_callback failed")
         return
 
     # ── 🗺️ Экспедиция из площади ────────────────────────────────────────────
@@ -37765,7 +40320,7 @@ async def on_callback(update: Update, ctx: ContextTypes.DEFAULT_TYPE):
             if sent:
                 ctx.bot_data[f"adv_invite_{uid}"]["msg_id"] = sent.message_id
         except Exception:
-            pass
+            logger.exception("on_callback failed")
         # Показываем отправителю подтверждение с возможностью отмены
         try:
             await q.message.edit_text(
@@ -37832,7 +40387,7 @@ async def on_callback(update: Update, ctx: ContextTypes.DEFAULT_TYPE):
             if sent_fish:
                 ctx.bot_data[f"fish_invite_{uid}"]["msg_id"] = sent_fish.message_id
         except Exception:
-            pass
+            logger.exception("on_callback failed")
         # Показываем отправителю подтверждение с кнопкой отмены
         try:
             await q.message.edit_text(
@@ -37997,7 +40552,7 @@ async def on_callback(update: Update, ctx: ContextTypes.DEFAULT_TYPE):
                 parse_mode=ParseMode.HTML, reply_markup=kb,
             )
         except Exception:
-            pass
+            logger.exception("on_callback failed")
         return
 
     if d.startswith("plaza_bond_break_") or d == "plaza_bond_break":
@@ -38017,7 +40572,7 @@ async def on_callback(update: Update, ctx: ContextTypes.DEFAULT_TYPE):
                         parse_mode=ParseMode.HTML,
                     )
                 except Exception:
-                    pass
+                    logger.exception("on_callback failed")
         try:
             await q.message.edit_text(
                 "💔 Болотная Связь разорвана.",
@@ -38070,7 +40625,7 @@ async def on_callback(update: Update, ctx: ContextTypes.DEFAULT_TYPE):
                 parse_mode=ParseMode.HTML,
             )
         except Exception:
-            pass
+            logger.exception("on_callback failed")
         return
 
     # ── 📖 ДНЕВНИК ─────────────────────────────────────────────────────────────
@@ -38109,7 +40664,7 @@ async def on_callback(update: Update, ctx: ContextTypes.DEFAULT_TYPE):
                 parse_mode=ParseMode.HTML, reply_markup=kb,
             )
         except Exception:
-            pass
+            logger.exception("on_callback failed")
         return
 
     # ── Социальные действия (hug, scratch, wash, praise, lullaby, treat) ─────
@@ -38189,7 +40744,7 @@ async def on_callback(update: Update, ctx: ContextTypes.DEFAULT_TYPE):
                 await ctx.bot.send_message(target_id, receiver_text,
                     parse_mode=ParseMode.HTML, reply_markup=_care_tip_kb)
             except Exception:
-                pass
+                logger.exception("on_callback failed")
         # Обновляем карточку соседа чтобы показать новые кулдауны ✅
         try:
             fr2 = await friend_get(uid, target_id)
@@ -38229,7 +40784,7 @@ async def on_callback(update: Update, ctx: ContextTypes.DEFAULT_TYPE):
                 ])
                 await q.message.edit_reply_markup(reply_markup=kb2)
         except Exception:
-            pass
+            logger.exception("on_callback failed")
         return
 
     # ── Принятие/отклонение похода ────────────────────────
@@ -38317,7 +40872,7 @@ async def on_callback(update: Update, ctx: ContextTypes.DEFAULT_TYPE):
                                 ]]),
                             )
                         except Exception:
-                            pass
+                            logger.exception("on_callback failed")
                     return
         await q.answer("⚔️ Поход начинается!")
         # Обновляем сообщение с приглашением — убираем кнопки
@@ -38401,7 +40956,7 @@ async def on_callback(update: Update, ctx: ContextTypes.DEFAULT_TYPE):
             try:
                 await ctx.bot.send_message(frog_id, start_msg, parse_mode=ParseMode.HTML)
             except Exception:
-                pass
+                logger.exception("on_callback failed")
         await letopis_add(inviter_id, "staya_win", f"⚔️ {inv_name} и {my_name} отправились в поход!")
         return
 
@@ -38443,7 +40998,7 @@ async def on_callback(update: Update, ctx: ContextTypes.DEFAULT_TYPE):
         try:
             await ctx.bot.send_message(inviter_id, f"❌ <b>{he(fname(f))}</b> отказался от похода 😢", parse_mode=ParseMode.HTML)
         except Exception:
-            pass
+            logger.exception("on_callback failed")
         return
 
     if d.startswith("adv_invite_"):
@@ -38476,7 +41031,7 @@ async def on_callback(update: Update, ctx: ContextTypes.DEFAULT_TYPE):
                 parse_mode=ParseMode.HTML,
             )
         except Exception:
-            pass
+            logger.exception("on_callback failed")
         return
 
     # ── Развилка в походе ─────────────────────────────────
@@ -38523,7 +41078,7 @@ async def on_callback(update: Update, ctx: ContextTypes.DEFAULT_TYPE):
                 parse_mode=ParseMode.HTML,
             )
         except Exception:
-            pass
+            logger.exception("on_callback failed")
         try:
             await q.message.edit_text(
                 q.message.text + f"\n\n✅ <b>Твой выбор:</b> {label}",
@@ -38557,7 +41112,7 @@ async def on_callback(update: Update, ctx: ContextTypes.DEFAULT_TYPE):
                             parse_mode=ParseMode.HTML,
                         )
                     except Exception:
-                        pass
+                        logger.exception("on_callback failed")
 
         # ── Малый штраф: roadside_tavern → drink (оба выпили) ─────────────────
         if active_choice_id == "roadside_tavern" and choice_key == "drink":
@@ -38603,7 +41158,7 @@ async def on_callback(update: Update, ctx: ContextTypes.DEFAULT_TYPE):
                     try:
                         await ctx.bot.send_message(_fid, cave_msg, parse_mode=ParseMode.HTML)
                     except Exception:
-                        pass
+                        logger.exception("on_callback failed")
 
         # ── Лорный resolve: roadside_tavern → enter (оба зашли) ───────────────
         if active_choice_id == "roadside_tavern" and choice_key == "enter":
@@ -38637,7 +41192,7 @@ async def on_callback(update: Update, ctx: ContextTypes.DEFAULT_TYPE):
                         await ctx.bot.send_message(_fid, tav_msg,
                             parse_mode=ParseMode.HTML, reply_markup=tip_kb)
                     except Exception:
-                        pass
+                        logger.exception("on_callback failed")
 
         return
 
@@ -38699,7 +41254,7 @@ async def on_callback(update: Update, ctx: ContextTypes.DEFAULT_TYPE):
                     parse_mode=ParseMode.HTML,
                 )
             except Exception:
-                pass
+                logger.exception("on_callback failed")
         await q.answer((f"🪙 +{amount_tip} отправлено {feeder_display}!")[:200], show_alert=True)
         try:
             await q.message.edit_reply_markup(reply_markup=None)
@@ -38781,7 +41336,7 @@ async def on_callback(update: Update, ctx: ContextTypes.DEFAULT_TYPE):
                     parse_mode=ParseMode.HTML,
                 )
             except Exception:
-                pass
+                logger.exception("on_callback failed")
         try:
             await q.message.edit_text("💚 Болотная Связь активирована!")
         except Exception:
@@ -38797,33 +41352,12 @@ async def on_callback(update: Update, ctx: ContextTypes.DEFAULT_TYPE):
         return
 
     # ── admin_msg — написать игроку из adminlookup ──────────────────────────
-    if d.startswith("admin_msg_"):
-        if uid not in ADMIN_IDS:
-            await q.answer("Нет доступа!", show_alert=True); return
-        target_uid_msg = int(d[10:])
-        ctx.user_data[f"admin_msg_{uid}"] = target_uid_msg
-        await q.answer()
-        try:
-            await q.message.edit_text(
-                "✉️ <b>Сообщение игроку от администрации</b>\n\nНапиши текст сообщения:",
-                parse_mode=ParseMode.HTML,
-                reply_markup=InlineKeyboardMarkup([[InlineKeyboardButton("❌ Отмена", callback_data="admin_refresh")]])
-            )
-        except Exception: pass
-        return
+    # ── 👑 Админ-панель: вынесена в admin_router ─────────────────────────────
+    if d and d.startswith(("admin", "ca_", "cs_", "aab_")):
+        if await admin_router(q, d, uid, ctx):
+            return
 
-    if d.startswith("admin_ban_toggle_"):
-        if uid not in ADMIN_IDS:
-            await q.answer("Нет доступа!", show_alert=True); return
-        target_uid_bt = int(d[17:])
-        tf_bt = await db_get(target_uid_bt)
-        if not tf_bt:
-            await q.answer("Игрок не найден!", show_alert=True); return
-        tf_bt["banned"] = 0 if tf_bt.get("banned") else 1
-        await db_save(tf_bt)
-        status = "забанен 🚫" if tf_bt["banned"] else "разбанен ✅"
-        await q.answer((f"{fname(tf_bt)} {status}")[:200], show_alert=True)
-        return
+
 
     # ── Рейтинг стай inline ──────────────────────────────────────────────────
     if d == "staya_top_inline":
@@ -38858,7 +41392,8 @@ async def on_callback(update: Update, ctx: ContextTypes.DEFAULT_TYPE):
                     InlineKeyboardButton("🌿 Моя стая", callback_data="plaza_staya"),
                 ]])
             )
-        except Exception: pass
+        except Exception:
+            logger.exception("on_callback failed")
         return
 
     # ── Удаление из друзей ───────────────────────────────────────────────────
@@ -38973,7 +41508,7 @@ async def on_callback(update: Update, ctx: ContextTypes.DEFAULT_TYPE):
                 parse_mode=ParseMode.HTML, reply_markup=kb,
             )
         except Exception:
-            pass
+            logger.exception("on_callback failed")
         return
 
     if d.startswith("friend_accept_"):
@@ -39007,7 +41542,7 @@ async def on_callback(update: Update, ctx: ContextTypes.DEFAULT_TYPE):
                     parse_mode=ParseMode.HTML,
                 )
             except Exception:
-                pass
+                logger.exception("on_callback failed")
         return
 
     if d.startswith("friend_decline_"):
@@ -39056,7 +41591,7 @@ async def on_callback(update: Update, ctx: ContextTypes.DEFAULT_TYPE):
                 reply_markup=InlineKeyboardMarkup(kb_rows),
             )
         except Exception:
-            pass
+            logger.exception("on_callback failed")
         return
 
     # ── Рыбалка — принять/отклонить ──────────────────
@@ -39133,7 +41668,7 @@ async def on_callback(update: Update, ctx: ContextTypes.DEFAULT_TYPE):
         try:
             await ctx.bot.send_message(inviter_id, result, parse_mode=ParseMode.HTML)
         except Exception:
-            pass
+            logger.exception("on_callback failed")
         return
 
     if d.startswith("fish_cancel_"):
@@ -39172,7 +41707,7 @@ async def on_callback(update: Update, ctx: ContextTypes.DEFAULT_TYPE):
         try:
             await ctx.bot.send_message(inviter_id, f"❌ <b>{he(fname(f))}</b> отказался от рыбалки 🎣", parse_mode=ParseMode.HTML)
         except Exception:
-            pass
+            logger.exception("on_callback failed")
         return
 
     # ── Создание стаи ─────────────────────────────────
@@ -39315,7 +41850,8 @@ async def on_callback(update: Update, ctx: ContextTypes.DEFAULT_TYPE):
                     f"👑 <b>{fname(f)}</b> передал тебе лидерство в стае «{he(staya['name'])}»!\nТы теперь Вожак! <tg-emoji emoji-id='5341367834935075028'>🐸</tg-emoji>",
                     parse_mode=ParseMode.HTML,
                 )
-            except Exception: pass
+            except Exception:
+                logger.exception("on_callback failed")
         return
 
     if d == "staya_disband":
@@ -39741,7 +42277,8 @@ async def on_callback(update: Update, ctx: ContextTypes.DEFAULT_TYPE):
         try:
             await q.message.edit_text("\n".join(lines_mm), parse_mode=ParseMode.HTML,
                                       reply_markup=InlineKeyboardMarkup(kb_mm))
-        except Exception: pass
+        except Exception:
+            logger.exception("on_callback failed")
         return
 
     if d.startswith("staya_member_action_"):
@@ -39789,7 +42326,8 @@ async def on_callback(update: Update, ctx: ContextTypes.DEFAULT_TYPE):
             await ctx.bot.send_message(target_uid_pd,
                 f"{'🦎 Тебя повысили до Старейшины' if is_promote else '🐟 Тебя понизили до Жителя'} "
                 f"в стае «{he(staya['name'])}»!", parse_mode=ParseMode.HTML)
-        except Exception: pass
+        except Exception:
+            logger.exception("on_callback failed")
         return
 
     if d.startswith("staya_kick_"):
@@ -39821,7 +42359,8 @@ async def on_callback(update: Update, ctx: ContextTypes.DEFAULT_TYPE):
             try:
                 await ctx.bot.send_message(target_uid_k,
                     f"😔 Тебя исключили из стаи «{he(staya['name'])}».", parse_mode=ParseMode.HTML)
-            except Exception: pass
+            except Exception:
+                logger.exception("on_callback failed")
         await q.answer(f"🚫 Участник исключён!")
         return
 
@@ -39983,7 +42522,8 @@ async def on_callback(update: Update, ctx: ContextTypes.DEFAULT_TYPE):
                     f"Зарабатывай XP — сейчас выгоднее!",
                     parse_mode=ParseMode.HTML,
                 )
-            except Exception: pass
+            except Exception:
+                logger.exception("on_callback failed")
         await q.answer(f"✅ Бустер активирован!")
         return
 
@@ -40144,7 +42684,7 @@ async def on_callback(update: Update, ctx: ContextTypes.DEFAULT_TYPE):
                 ]]),
             )
         except Exception:
-            pass
+            logger.exception("on_callback failed")
         return
 
     # ── 🔮 ГОРОСКОП ────────────────────────────────────────────────────────────
@@ -40304,107 +42844,8 @@ async def on_callback(update: Update, ctx: ContextTypes.DEFAULT_TYPE):
             pass
         return
 
-    if d == "admin_boost_menu":
-        if uid not in ADMIN_IDS:
-            await q.answer("⛔", show_alert=True)
-            return
-        await q.answer()
-        active = await boost_is_active()
-        rem = await boost_remaining_secs()
-        h_rem, m_rem = divmod(int(rem) // 60, 60)
-        status_str = (
-            f"✅ Активно — осталось {h_rem}ч {m_rem}м"
-            if active else "⛔ Не активно"
-        )
-        kb_boost = InlineKeyboardMarkup([
-            [
-                InlineKeyboardButton("1 ч",  callback_data="admin_boost_start_1"),
-                InlineKeyboardButton("3 ч",  callback_data="admin_boost_start_3"),
-                InlineKeyboardButton("6 ч",  callback_data="admin_boost_start_6"),
-            ],
-            [
-                InlineKeyboardButton("12 ч", callback_data="admin_boost_start_12"),
-                InlineKeyboardButton("24 ч", callback_data="admin_boost_start_24"),
-            ],
-            [InlineKeyboardButton("⏹ Остановить событие", callback_data="admin_boost_stop")],
-            [InlineKeyboardButton("◀️ Назад", callback_data="admin_events")],
-        ])
-        try:
-            await q.message.edit_text(
-                f"✨ <b>Событие «Золотая лягушка»</b>\n\n"
-                f"Статус: {status_str}\n\n"
-                f"Эффекты:\n"
-                f"  💫 Stars → КваКоины: ×1.5 (1<tg-emoji emoji-id='5341447412089133029'>⭐</tg-emoji>=3<tg-emoji emoji-id='5341524176039615767'>🪙</tg-emoji>)\n"
-                f"  🍀 Легендарки в гаче: ×2\n"
-                f"  🔴 Мифики в гаче: ×2\n\n"
-                f"Выбери длительность для запуска:",
-                parse_mode=ParseMode.HTML,
-                reply_markup=kb_boost,
-            )
-        except Exception:
-            pass
-        return
 
-    if d.startswith("admin_boost_start_"):
-        if uid not in ADMIN_IDS:
-            await q.answer("⛔", show_alert=True)
-            return
-        try:
-            hours = int(d.split("_")[-1])
-        except ValueError:
-            return
-        await boost_set(hours)
-        await db_setting("boost_reminded", "0")
-        await q.answer((f"✨ Золотая лягушка активна на {hours}ч!")[:200], show_alert=True)
-        # Анонс в общий чат
-        try:
-            await ctx.bot.send_message(
-                CHAT_ID,
-                f"✨ <b>Событие «Золотая лягушка» началось!</b>\n\n"
-                f"⏳ Длительность: <b>{hours} ч</b>\n\n"
-                f"💫 Курс Stars повышен: <b>1<tg-emoji emoji-id='5341447412089133029'>⭐</tg-emoji> = 3{coin_emoji()}</b>\n"
-                f"🍀 Шансы на легендарные облики в гаче: <b>×2</b>\n"
-                f"🔴 Шансы на мифические: <b>×2</b>\n\n"
-                f"<i>Скорее в магазин и гачу! <tg-emoji emoji-id='5341367834935075028'>🐸</tg-emoji></i>",
-                parse_mode=ParseMode.HTML,
-            )
-        except Exception:
-            pass
-        # ЛС-рассылка
-        async with aiosqlite.connect(DB_PATH) as db:
-            async with db.execute("SELECT user_id FROM frogs WHERE alive=1") as c:
-                uids_boost = [r[0] for r in await c.fetchall()]
-        for buid in uids_boost:
-            try:
-                await ctx.bot.send_message(
-                    buid,
-                    f"✨ <b>Золотая лягушка!</b>\n\n"
-                    f"Сейчас выгодно: 1<tg-emoji emoji-id='5341447412089133029'>⭐</tg-emoji> = 3{coin_emoji()}, леги ×2 в гаче!\n"
-                    f"Событие идёт <b>{hours} ч</b>. Заходи!",
-                    parse_mode=ParseMode.HTML,
-                )
-            except Exception:
-                pass
-            await asyncio.sleep(0.05)
-        return
 
-    if d == "admin_boost_stop":
-        if uid not in ADMIN_IDS:
-            await q.answer("⛔", show_alert=True)
-            return
-        await boost_clear()
-        await db_setting("boost_reminded", "0")
-        await q.answer("⏹ Событие остановлено.", show_alert=True)
-        try:
-            await ctx.bot.send_message(
-                CHAT_ID,
-                "🌙 <b>Событие «Золотая лягушка» завершено досрочно.</b>\n"
-                "Курсы и шансы вернулись в норму. <tg-emoji emoji-id='5341367834935075028'>🐸</tg-emoji>",
-                parse_mode=ParseMode.HTML,
-            )
-        except Exception:
-            pass
-        return
 
     # ════════════════════════════════════════════════
     # 🔥  CALLBACKS ИВЕНТА «ЖЕРТВОПРИНОШЕНИЕ ЭПИКОВ»
@@ -40842,7 +43283,7 @@ async def on_callback(update: Update, ctx: ContextTypes.DEFAULT_TYPE):
                 reply_markup=InlineKeyboardMarkup(btn_rows),
             )
         except Exception:
-            pass
+            logger.exception("on_callback failed")
         return
 
     if d.startswith("funnel_confirm_"):
@@ -40904,7 +43345,7 @@ async def on_callback(update: Update, ctx: ContextTypes.DEFAULT_TYPE):
                 parse_mode=ParseMode.HTML,
             )
         except Exception:
-            pass
+            logger.exception("on_callback failed")
 
         try:
             await q.message.edit_text(
@@ -40919,7 +43360,7 @@ async def on_callback(update: Update, ctx: ContextTypes.DEFAULT_TYPE):
                 ]),
             )
         except Exception:
-            pass
+            logger.exception("on_callback failed")
         return
 
     if d.startswith("funnel_all_"):
@@ -40987,7 +43428,7 @@ async def on_callback(update: Update, ctx: ContextTypes.DEFAULT_TYPE):
                 parse_mode=ParseMode.HTML,
             )
         except Exception:
-            pass
+            logger.exception("on_callback failed")
 
         try:
             await q.message.edit_text(
@@ -41003,7 +43444,7 @@ async def on_callback(update: Update, ctx: ContextTypes.DEFAULT_TYPE):
                 ]),
             )
         except Exception:
-            pass
+            logger.exception("on_callback failed")
         return
 
     # ── ПОМОЩЬ (инлайн) ────────────────────────────────
@@ -41198,7 +43639,7 @@ async def on_callback(update: Update, ctx: ContextTypes.DEFAULT_TYPE):
                     parse_mode=ParseMode.HTML,
                 )
             except Exception:
-                pass
+                logger.exception("on_callback failed")
         await q.answer("✅ Заявка отправлена! Администратор свяжется с тобой.", show_alert=True)
         return
 
@@ -41914,7 +44355,7 @@ async def on_callback(update: Update, ctx: ContextTypes.DEFAULT_TYPE):
                 link_preview_options=LinkPreviewOptions(),
             )
         except Exception:
-            pass
+            logger.exception("on_callback failed")
         # Приглашение в закрытый NFT-клуб
         if NFT_CLUB_CHAT_ID:
             try:
@@ -41957,7 +44398,7 @@ async def on_callback(update: Update, ctx: ContextTypes.DEFAULT_TYPE):
                     f"Если считаете это ошибкой — напишите /nft с правильной ссылкой.",
                 )
             except Exception:
-                pass
+                logger.exception("on_callback failed")
         await q.answer("❌ Отклонено!", show_alert=True)
         try:
             await q.edit_message_reply_markup(reply_markup=None)
@@ -42287,7 +44728,7 @@ async def on_callback(update: Update, ctx: ContextTypes.DEFAULT_TYPE):
                 reply_markup=InlineKeyboardMarkup(kb_rows),
             )
         except Exception:
-            pass
+            logger.exception("on_callback failed")
         return
 
     if d == "toggle_gift_notify":
@@ -42674,7 +45115,7 @@ async def on_callback(update: Update, ctx: ContextTypes.DEFAULT_TYPE):
                     parse_mode=ParseMode.HTML,
                 )
             except Exception:
-                pass
+                logger.exception("on_callback failed")
 
         dice_c = await ctx.bot.send_dice(chat_id=q.message.chat.id, emoji="🎲")
         if is_group_duel:
@@ -42691,7 +45132,7 @@ async def on_callback(update: Update, ctx: ContextTypes.DEFAULT_TYPE):
                     message_id=dice_c.message_id,
                 )
             except Exception:
-                pass
+                logger.exception("on_callback failed")
         await asyncio.sleep(3.5)
 
         # Затем цель
@@ -42711,7 +45152,7 @@ async def on_callback(update: Update, ctx: ContextTypes.DEFAULT_TYPE):
                     schedule_delete(ctx.bot, q.message.chat.id, step2_msg.message_id)
                 )
         except Exception:
-            pass
+            logger.exception("on_callback failed")
         if is_private_duel and duel["challenger_id"] != uid:
             try:
                 await ctx.bot.send_message(
@@ -42720,7 +45161,7 @@ async def on_callback(update: Update, ctx: ContextTypes.DEFAULT_TYPE):
                     parse_mode=ParseMode.HTML,
                 )
             except Exception:
-                pass
+                logger.exception("on_callback failed")
 
         dice_t = await ctx.bot.send_dice(chat_id=q.message.chat.id, emoji="🎲")
         if is_group_duel:
@@ -42737,7 +45178,7 @@ async def on_callback(update: Update, ctx: ContextTypes.DEFAULT_TYPE):
                     message_id=dice_t.message_id,
                 )
             except Exception:
-                pass
+                logger.exception("on_callback failed")
         await asyncio.sleep(3.5)
 
         if roll_c > roll_t:
@@ -42761,7 +45202,7 @@ async def on_callback(update: Update, ctx: ContextTypes.DEFAULT_TYPE):
                 if is_group_duel:
                     asyncio.create_task(schedule_delete(ctx.bot, q.message.chat.id, q.message.message_id))
             except (BadRequest, Forbidden):
-                pass
+                logger.exception("on_callback failed")
             return
         winner["coins"] += duel["stake"]
         loser["coins"] -= duel["stake"]
@@ -42834,14 +45275,14 @@ async def on_callback(update: Update, ctx: ContextTypes.DEFAULT_TYPE):
             if is_group_duel:
                 asyncio.create_task(schedule_delete(ctx.bot, q.message.chat.id, q.message.message_id))
         except (BadRequest, Forbidden):
-            pass
+            logger.exception("on_callback failed")
         # Уведомляем challenger (всегда — в группе это нужно, в ЛС тоже нужно)
         try:
             await ctx.bot.send_message(
                 duel["challenger_id"], result, parse_mode=ParseMode.HTML
             )
         except Exception:
-            pass
+            logger.exception("on_callback failed")
         # ── Анонс крупного выигрыша в дуэли ──────────
         duel_prize = duel["stake"] * 2
         if duel_prize > BIG_WIN_THRESHOLD:
@@ -42856,7 +45297,7 @@ async def on_callback(update: Update, ctx: ContextTypes.DEFAULT_TYPE):
         return
 
     # ── ДУЭЛЬ: ОТКЛОНИТЬ ───────────────────────────
-    if d and d.startswith("exp_"): logger.error("🐛 [EXP DEBUG] CHECKPOINT_B ~32002 — код дошёл сюда")
+    if d and d.startswith("exp_"): logger.debug("🐛 [EXP DEBUG] CHECKPOINT_B ~32002 — код дошёл сюда")
     if d.startswith("duel_decline_"):
         await q.answer()
         duel_id = int(d[13:])
@@ -42870,7 +45311,7 @@ async def on_callback(update: Update, ctx: ContextTypes.DEFAULT_TYPE):
             if q.message.chat.type in ("group", "supergroup"):
                 asyncio.create_task(schedule_delete(ctx.bot, q.message.chat.id, q.message.message_id))
         except Exception:
-            pass
+            logger.exception("on_callback failed")
         return
 
     # ── БАТЛ: ПРИНЯТЬ ──────────────────────────────────
@@ -43005,7 +45446,7 @@ async def on_callback(update: Update, ctx: ContextTypes.DEFAULT_TYPE):
                 )
                 mirror_msg_id = m.message_id
             except Exception:
-                pass
+                logger.exception("on_callback failed")
 
         async def edit_both(text: str, kb=None):
             kwargs = {"parse_mode": ParseMode.HTML}
@@ -43184,7 +45625,7 @@ async def on_callback(update: Update, ctx: ContextTypes.DEFAULT_TYPE):
                     parse_mode=ParseMode.HTML,
                 )
             except Exception:
-                pass
+                logger.exception("on_callback failed")
             try:
                 await ctx.bot.send_message(
                     loser_id,
@@ -43192,7 +45633,7 @@ async def on_callback(update: Update, ctx: ContextTypes.DEFAULT_TYPE):
                     parse_mode=ParseMode.HTML,
                 )
             except Exception:
-                pass
+                logger.exception("on_callback failed")
         return
 
     # ── БАТЛ: ОТКАЗАТЬСЯ ───────────────────────────────
@@ -43350,7 +45791,7 @@ async def on_callback(update: Update, ctx: ContextTypes.DEFAULT_TYPE):
                 reply_markup=kb,
             )
         except (BadRequest, Forbidden):
-            pass
+            logger.exception("on_callback failed")
         await q.answer(f"✅ {q.from_user.first_name} вступил в турнир!")
         return
 
@@ -43473,7 +45914,7 @@ async def on_callback(update: Update, ctx: ContextTypes.DEFAULT_TYPE):
                     reply_markup=tie_kb,
                 )
             except Exception:
-                pass
+                logger.exception("on_callback failed")
             # Отмечаем турнир как tie-pending
             async with aiosqlite.connect(DB_PATH) as db:
                 await db.execute(
@@ -43515,7 +45956,7 @@ async def on_callback(update: Update, ctx: ContextTypes.DEFAULT_TYPE):
                     parse_mode=ParseMode.HTML,
                 )
             except Exception:
-                pass
+                logger.exception("on_callback failed")
             # Уведомляем победителя
             try:
                 await ctx.bot.send_message(
@@ -43524,7 +45965,7 @@ async def on_callback(update: Update, ctx: ContextTypes.DEFAULT_TYPE):
                     parse_mode=ParseMode.HTML,
                 )
             except Exception:
-                pass
+                logger.exception("on_callback failed")
         return
 
     # ── ТУРНИР: РАЗДЕЛИТЬ ПРИЗ ─────────────────────
@@ -43629,7 +46070,7 @@ async def on_callback(update: Update, ctx: ContextTypes.DEFAULT_TYPE):
                 q.message.chat.id, "\n".join(lines), parse_mode=ParseMode.HTML
             )
         except Exception:
-            pass
+            logger.exception("on_callback failed")
         return
 
     # ── ПОИСК ИГРОКА ДЛЯ ДУЭЛИ ────────────────────
@@ -43779,7 +46220,7 @@ async def on_callback(update: Update, ctx: ContextTypes.DEFAULT_TYPE):
                 reply_markup=kb_d,
             )
         except Exception:
-            pass
+            logger.exception("on_callback failed")
         ctx.job_queue.run_once(
             lambda c: asyncio.create_task(_expire_duel(duel_id_d)),
             when=300,
@@ -43920,7 +46361,7 @@ async def on_callback(update: Update, ctx: ContextTypes.DEFAULT_TYPE):
                 reply_markup=kb,
             )
         except Exception:
-            pass
+            logger.exception("on_callback failed")
         ctx.job_queue.run_once(
             lambda c: asyncio.create_task(_expire_battle(battle_id)),
             when=300,
@@ -44060,7 +46501,7 @@ async def on_callback(update: Update, ctx: ContextTypes.DEFAULT_TYPE):
                 reply_markup=kb_b,
             )
         except Exception:
-            pass
+            logger.exception("on_callback failed")
         ctx.job_queue.run_once(
             lambda c: asyncio.create_task(_expire_battle(battle_id_b)),
             when=300,
@@ -44073,9 +46514,6 @@ async def on_callback(update: Update, ctx: ContextTypes.DEFAULT_TYPE):
         return
 
     # ── /chatsettings и /chatadmin колбэки (единая панель) ──────────────
-    if d.startswith("cs_") or d == "cs_close" or d.startswith("ca_") or d == "ca_close":
-        await _handle_chatadmin_callback(q, uid, ctx)
-        return
     if d.startswith("lang_set_"):
         if d == "lang_set_menu":
             # Показываем выбор языка инлайн
@@ -44118,9 +46556,6 @@ async def on_callback(update: Update, ctx: ContextTypes.DEFAULT_TYPE):
         return
 
     # ── /chatadmin колбэки ───────────────────────────────────────────
-    if d.startswith("ca_") or d == "ca_close":
-        await _handle_chatadmin_callback(q, uid, ctx)
-        return
 
     # ── /partnerinfo колбэки (суперадмин) ────────────────────────────
     if d.startswith("pi_"):
@@ -44193,7 +46628,7 @@ async def on_callback(update: Update, ctx: ContextTypes.DEFAULT_TYPE):
                 link_preview_options=LinkPreviewOptions(),
             )
         except Exception:
-            pass
+            logger.exception("on_callback failed")
         # Приглашение в закрытый NFT-клуб
         if NFT_CLUB_CHAT_ID:
             try:
@@ -44234,213 +46669,7 @@ async def on_callback(update: Update, ctx: ContextTypes.DEFAULT_TYPE):
         await show_nft_list(q, ctx, page, edit=True)
         return
     # ── ADMIN PANEL ──────────────────────────────────
-    if d in ("admin_refresh", "admin_panel") or d == "admin_nft":
-        if uid not in ADMIN_IDS:
-            await q.answer("⛔", show_alert=True)
-            return
-        if d == "admin_nft":
-            await show_nft_list(q, ctx, 0, edit=True)
-        else:
-            await show_admin_panel(q.message, edit=True, bot_data=ctx.bot_data)
-        await q.answer()
-        return
 
-    if d == "admin_stats":
-        if uid not in ADMIN_IDS:
-            await q.answer("⛔", show_alert=True)
-            return
-        now_ts = time.time()
-        day_ago = now_ts - 86400
-        week_ago = now_ts - 7 * 86400
-
-        # Обновляем пиковый онлайн при просмотре статистики
-        _update_peak_online(0)  # текущий подсчёт идёт ниже, пока 0
-
-        async with aiosqlite.connect(DB_PATH) as db:
-            # Везде исключаем забаненых и ботов — они считаются только в своём пункте
-            _REAL = "banned=0 AND is_bot=0"
-            async with db.execute(f"SELECT COUNT(*) FROM frogs WHERE {_REAL}") as c:
-                total = (await c.fetchone())[0]
-            async with db.execute(f"SELECT COUNT(*) FROM frogs WHERE alive=1 AND {_REAL}") as c:
-                alive = (await c.fetchone())[0]
-            async with db.execute(f"SELECT COUNT(*) FROM frogs WHERE alive=0 AND {_REAL}") as c:
-                dead = (await c.fetchone())[0]
-            async with db.execute("SELECT COUNT(*) FROM frogs WHERE banned=1") as c:
-                banned_cnt = (await c.fetchone())[0] or 0
-            async with db.execute(f"SELECT COUNT(*) FROM frogs WHERE born_at>? AND {_REAL}", (day_ago,)) as c:
-                new_24h = (await c.fetchone())[0] or 0
-            async with db.execute(f"SELECT COUNT(*) FROM frogs WHERE born_at>? AND {_REAL}", (week_ago,)) as c:
-                new_7d = (await c.fetchone())[0] or 0
-            async with db.execute(f"SELECT COUNT(*) FROM frogs WHERE (last_feed>? OR last_play>?) AND {_REAL}", (day_ago, day_ago)) as c:
-                active_24h = (await c.fetchone())[0] or 0
-            async with db.execute(f"SELECT COUNT(*) FROM frogs WHERE (last_feed>? OR last_play>?) AND {_REAL}", (week_ago, week_ago)) as c:
-                active_7d = (await c.fetchone())[0] or 0
-            async with db.execute(f"SELECT SUM(coins) FROM frogs WHERE {_REAL}") as c:
-                total_coins = (await c.fetchone())[0] or 0
-            async with db.execute(f"SELECT AVG(coins) FROM frogs WHERE alive=1 AND {_REAL}") as c:
-                avg_coins = (await c.fetchone())[0] or 0
-            async with db.execute(f"SELECT SUM(coins_spent) FROM frogs WHERE {_REAL}") as c:
-                total_spent = (await c.fetchone())[0] or 0
-            async with db.execute(f"SELECT SUM(total_feeds) FROM frogs WHERE {_REAL}") as c:
-                total_feeds = (await c.fetchone())[0] or 0
-            async with db.execute(f"SELECT SUM(total_casino) FROM frogs WHERE {_REAL}") as c:
-                total_casino = (await c.fetchone())[0] or 0
-            async with db.execute(f"SELECT SUM(total_casino_wins) FROM frogs WHERE {_REAL}") as c:
-                total_casino_wins = (await c.fetchone())[0] or 0
-            async with db.execute(f"SELECT SUM(total_duels) FROM frogs WHERE {_REAL}") as c:
-                total_duels = (await c.fetchone())[0] or 0
-            async with db.execute(f"SELECT SUM(total_duel_wins) FROM frogs WHERE {_REAL}") as c:
-                total_duel_wins = (await c.fetchone())[0] or 0
-            async with db.execute(f"SELECT SUM(total_gacha) FROM frogs WHERE {_REAL}") as c:
-                total_gacha = (await c.fetchone())[0] or 0
-            async with db.execute(f"SELECT SUM(total_mosquitoes) FROM frogs WHERE {_REAL}") as c:
-                total_mosquitoes = (await c.fetchone())[0] or 0
-            async with db.execute(f"SELECT SUM(stars_spent) FROM frogs WHERE {_REAL}") as c:
-                total_stars = (await c.fetchone())[0] or 0
-            async with db.execute(f"SELECT MAX(level) FROM frogs WHERE {_REAL}") as c:
-                max_level = (await c.fetchone())[0] or 0
-            async with db.execute(f"SELECT AVG(level) FROM frogs WHERE alive=1 AND {_REAL}") as c:
-                avg_level = (await c.fetchone())[0] or 0
-            async with db.execute("SELECT COUNT(*) FROM nft_frogs WHERE verified=1") as c:
-                nft_ok = (await c.fetchone())[0]
-            async with db.execute("SELECT COUNT(*) FROM nft_frogs WHERE verified=0") as c:
-                nft_pending = (await c.fetchone())[0]
-            async with db.execute("SELECT COUNT(*) FROM gift_log WHERE ts>?", (day_ago,)) as c:
-                gifts_24h = (await c.fetchone())[0] or 0
-            async with db.execute("SELECT SUM(amount) FROM gift_log WHERE ts>?", (day_ago,)) as c:
-                gifts_vol_24h = (await c.fetchone())[0] or 0
-            async with db.execute("SELECT COUNT(*) FROM referrals WHERE joined_at>?", (day_ago,)) as c:
-                refs_24h = (await c.fetchone())[0] or 0
-            async with db.execute("SELECT COUNT(*) FROM referrals") as c:
-                refs_total = (await c.fetchone())[0] or 0
-            async with db.execute("SELECT COUNT(*) FROM lottery_tickets WHERE purchased_at>?", (day_ago,)) as c:
-                lottery_24h = (await c.fetchone())[0] or 0
-            async with db.execute("SELECT COUNT(*) FROM mosquito_events WHERE created_at>?", (day_ago,)) as c:
-                mosquito_events_24h = (await c.fetchone())[0] or 0
-            async with db.execute("SELECT COUNT(*) FROM mosquito_events WHERE caught_by IS NOT NULL AND caught_by != -1") as c:
-                mosquito_caught = (await c.fetchone())[0] or 0
-            async with db.execute(
-                f"SELECT first_name, level FROM frogs WHERE {_REAL} ORDER BY level DESC LIMIT 5"
-            ) as c:
-                top5 = await c.fetchall()
-            async with db.execute(
-                f"SELECT first_name, coins FROM frogs WHERE alive=1 AND {_REAL} ORDER BY coins DESC LIMIT 3"
-            ) as c:
-                top3_rich = await c.fetchall()
-            async with db.execute(
-                f"SELECT first_name, total_gacha FROM frogs WHERE {_REAL} ORDER BY total_gacha DESC LIMIT 3"
-            ) as c:
-                top3_gacha = await c.fetchall()
-            # Топ скинов в коллекциях (только реальные игроки)
-            async with db.execute(
-                f"SELECT c.skin, COUNT(*) as cnt FROM collections c "
-                f"JOIN frogs f ON f.user_id=c.user_id WHERE f.{_REAL} "
-                f"GROUP BY c.skin ORDER BY cnt DESC LIMIT 5"
-            ) as c:
-                top5_skins = await c.fetchall()
-            # ── Статистика языков (без банов и ботов) ──
-            async with db.execute(f"SELECT COUNT(*) FROM frogs WHERE (lang='ru' OR lang IS NULL OR lang='') AND {_REAL}") as c:
-                lang_ru = (await c.fetchone())[0] or 0
-            async with db.execute(f"SELECT COUNT(*) FROM frogs WHERE lang='en' AND {_REAL}") as c:
-                lang_en = (await c.fetchone())[0] or 0
-            async with db.execute(f"SELECT COUNT(*) FROM frogs WHERE lang='zh' AND {_REAL}") as c:
-                lang_zh = (await c.fetchone())[0] or 0
-            # Активные за 7д по языкам
-            async with db.execute(f"SELECT COUNT(*) FROM frogs WHERE (lang='ru' OR lang IS NULL OR lang='') AND (last_feed>? OR last_play>?) AND {_REAL}", (week_ago, week_ago)) as c:
-                lang_ru_active = (await c.fetchone())[0] or 0
-            async with db.execute(f"SELECT COUNT(*) FROM frogs WHERE lang='en' AND (last_feed>? OR last_play>?) AND {_REAL}", (week_ago, week_ago)) as c:
-                lang_en_active = (await c.fetchone())[0] or 0
-            async with db.execute(f"SELECT COUNT(*) FROM frogs WHERE lang='zh' AND (last_feed>? OR last_play>?) AND {_REAL}", (week_ago, week_ago)) as c:
-                lang_zh_active = (await c.fetchone())[0] or 0
-            # ── Статистика застрявших на воскрешении (без банов и ботов) ──
-            async with db.execute(f"SELECT COUNT(*) FROM frogs WHERE alive=0 AND trial_active=0 AND {_REAL}") as c:
-                stuck_dead_notrial = (await c.fetchone())[0] or 0
-            async with db.execute(f"SELECT COUNT(*) FROM frogs WHERE alive=0 AND trial_active=1 AND {_REAL}") as c:
-                stuck_trial = (await c.fetchone())[0] or 0
-            async with db.execute(f"SELECT COUNT(*) FROM frogs WHERE alive=0 AND {_REAL}") as c:
-                total_dead_for_stuck = (await c.fetchone())[0] or 0
-            # Зарегистрировались но никогда не кормили (last_feed=0 и мертвы)
-            async with db.execute(f"SELECT COUNT(*) FROM frogs WHERE alive=0 AND (last_feed IS NULL OR last_feed=0) AND {_REAL}") as c:
-                stuck_never_fed = (await c.fetchone())[0] or 0
-            # Последний раз заходили > 7 дней назад и мертвы
-            async with db.execute(f"SELECT COUNT(*) FROM frogs WHERE alive=0 AND last_seen < ? AND {_REAL}", (week_ago,)) as c:
-                stuck_inactive_7d = (await c.fetchone())[0] or 0
-
-        top_txt = "\n".join(f"  {i+1}. {r[0]} — ур.{r[1]}" for i, r in enumerate(top5))
-        top_rich_txt = "\n".join(f"  {i+1}. {r[0]} — {r[1]:,}🪙" for i, r in enumerate(top3_rich))
-        top_gacha_txt = "\n".join(f"  {i+1}. {r[0]} — {r[1]} круток" for i, r in enumerate(top3_gacha))
-        top_skins_txt = "\n".join(f"  {s[0]}: {s[1]} владельцев" for s in top5_skins)
-        casino_wr = f"{total_casino_wins*100//total_casino}%" if total_casino > 0 else "—"
-        duel_wr = f"{total_duel_wins*100//total_duels}%" if total_duels > 0 else "—"
-
-        def _fmt_peak_stat(period: str) -> str:
-            count, ts = _peak_online.get(period, (0, 0))
-            return str(count) if count > 0 else "—"
-
-        # Язык: визуальный прогресс-бар
-        _lang_total = max(lang_ru + lang_en + lang_zh, 1)
-        def _lang_pct(n): return f"{n*100//_lang_total}%"
-        def _lang_bar(n):
-            filled = round(n / _lang_total * 10)
-            return "█" * filled + "░" * (10 - filled)
-
-        text = (
-            f"📊 <b>Статистика бота</b>\n\n"
-            f"<b>👥 Игроки</b> <i>(без банов и ботов)</i>\n"
-            f"Всего: <b>{total}</b>  |  🐸 Живых: <b>{alive}</b>  |  💀 Мёртвых: <b>{dead}</b>\n"
-            f"🚫 Забанено (отдельно, не в счёт): <b>{banned_cnt}</b>\n"
-            f"Новых за 24ч: <b>{new_24h}</b>  |  за 7д: <b>{new_7d}</b>\n"
-            f"Активных за 24ч: <b>{active_24h}</b>  |  за 7д: <b>{active_7d}</b>\n"
-            f"Макс. уровень: <b>{max_level}</b>  |  Средний: <b>{avg_level:.1f}</b>\n\n"
-            f"<b>🌐 Языки интерфейса</b>\n"
-            f"🇷🇺 Русский:  <code>{_lang_bar(lang_ru)}</code>  <b>{lang_ru}</b> ({_lang_pct(lang_ru)})  активных 7д: {lang_ru_active}\n"
-            f"🇬🇧 English:  <code>{_lang_bar(lang_en)}</code>  <b>{lang_en}</b> ({_lang_pct(lang_en)})  активных 7д: {lang_en_active}\n"
-            f"🇨🇳 中文:      <code>{_lang_bar(lang_zh)}</code>  <b>{lang_zh}</b> ({_lang_pct(lang_zh)})  активных 7д: {lang_zh_active}\n\n"
-            f"<b>📈 Пиковый онлайн (10 мин окно):</b>\n"
-            f"  Сутки: <b>{_fmt_peak_stat('day')}</b>  |  Неделя: <b>{_fmt_peak_stat('week')}</b>  |  Месяц: <b>{_fmt_peak_stat('month')}</b>\n\n"
-            f"<b>🪙 Экономика</b>\n"
-            f"КваКоинов в обороте: <b>{total_coins:,}</b>\n"
-            f"Среднее у живого: <b>{avg_coins:.0f}🪙</b>\n"
-            f"Всего потрачено: <b>{total_spent:,}🪙</b>\n"
-            f"⭐ Stars: <b>{total_stars}</b>\n\n"
-            f"<b>🎮 Активность</b>\n"
-            f"🍎 Кормлений: <b>{total_feeds:,}</b>\n"
-            f"🎰 Гача: <b>{total_gacha:,}</b>\n"
-            f"🎲 Казино: <b>{total_casino:,}</b> (побед: {total_casino_wins:,} / {casino_wr})\n"
-            f"⚔️ Дуэлей: <b>{total_duels:,}</b> (побед: {total_duel_wins:,} / {duel_wr})\n"
-            f"🦟 Комаров поймано: <b>{total_mosquitoes:,}</b>  |  событий 24ч: {mosquito_events_24h}  |  поймано событий: {mosquito_caught}\n"
-            f"🎟 Лотерея за 24ч: <b>{lottery_24h}</b> билетов\n\n"
-            f"<b>🔗 Прочее</b>\n"
-            f"Рефералов: <b>{refs_total}</b> (за 24ч: {refs_24h})\n"
-            f"🎁 Переводов за 24ч: <b>{gifts_24h}</b> ({gifts_vol_24h:,}🪙)\n"
-            f"🪸 NFT: подтверждено {nft_ok}, на проверке {nft_pending}\n\n"
-            f"<b>💀 Застрявшие на воскрешении</b>\n"
-            f"Всего мёртвых: <b>{total_dead_for_stuck}</b>\n"
-            f"  ├ Ждут выбора (без испытания): <b>{stuck_dead_notrial}</b>\n"
-            f"  ├ В испытании (не завершили): <b>{stuck_trial}</b>\n"
-            f"  ├ Никогда не кормили (брошены): <b>{stuck_never_fed}</b>\n"
-            f"  └ Неактивны > 7д (вероятно ушли): <b>{stuck_inactive_7d}</b>\n"
-            f"% от всех игроков: <b>{total_dead_for_stuck*100//max(total,1)}%</b>\n\n"
-            f"<b>🏆 Топ-5 по уровню:</b>\n{top_txt}\n\n"
-            f"<b>💰 Топ-3 богатейших:</b>\n{top_rich_txt}\n\n"
-            f"<b>🎰 Топ-3 по гаче:</b>\n{top_gacha_txt}\n\n"
-            f"<b>👗 Топ-5 популярных скинов:</b>\n{top_skins_txt}"
-        )
-        try:
-            await q.message.edit_text(
-                text,
-                parse_mode=ParseMode.HTML,
-                reply_markup=InlineKeyboardMarkup([
-                    [InlineKeyboardButton("👗 Статистика обликов", callback_data="admin_skin_stats")],
-                    [InlineKeyboardButton("🔍 Поиск по облику", callback_data="admin_skin_browse_")],
-                    [InlineKeyboardButton("💀 Детали застрявших", callback_data="admin_stuck_stats")],
-                    [InlineKeyboardButton("◀️ Назад", callback_data="admin_refresh")],
-                ]),
-            )
-        except Exception:
-            pass
-        await q.answer()
-        return
 
     # ── Подтверждение / отмена возвратной рассылки ──────────────────────────
     if d == "broadcast_return_confirm":
@@ -44514,535 +46743,33 @@ async def on_callback(update: Update, ctx: ContextTypes.DEFAULT_TYPE):
                 ]),
             )
         except Exception:
-            pass
+            logger.exception("on_callback failed")
         return
 
     # ── Просмотр обликов по редкости → облик → владельцы ──────────────
-    if d.startswith("admin_skin_browse_"):
-        if uid not in ADMIN_IDS:
-            await q.answer("⛔", show_alert=True); return
-        await q.answer()
-        suffix = d[len("admin_skin_browse_"):]
 
-        # Уровень 1: выбор редкости
-        if suffix == "" or suffix == "back":
-            rarity_order = ["secret", "mythic", "legendary", "epic", "rare", "uncommon", "common"]
-            kb = []
-            for r in rarity_order:
-                icon = R_ICON.get(r, "⚪")
-                name = R_NAME.get(r, r)
-                kb.append([InlineKeyboardButton(f"{icon} {name}", callback_data=f"admin_skin_browse_r_{r}")])
-            kb.append([InlineKeyboardButton("◀️ Назад", callback_data="admin_stats")])
-            try:
-                await q.message.edit_text(
-                    "🔍 <b>Поиск по облику</b>\n\nВыбери редкость:",
-                    parse_mode=ParseMode.HTML,
-                    reply_markup=InlineKeyboardMarkup(kb),
-                )
-            except Exception:
-                pass
-            return
 
-        # Уровень 2: список обликов выбранной редкости
-        if suffix.startswith("r_") and not suffix.startswith("r_s_"):
-            rarity = suffix[2:]
-            skins_of_rarity = [(sname, sdata) for sname, sdata in SKINS.items()
-                                if sdata.get("rarity") == rarity]
-            skins_of_rarity.sort(key=lambda x: x[0])
-            if not skins_of_rarity:
-                await q.answer("Нет обликов этой редкости.", show_alert=True); return
-            icon = R_ICON.get(rarity, "⚪")
-            name_r = R_NAME.get(rarity, rarity)
-            kb = []
-            for sname, _ in skins_of_rarity:
-                kb.append([InlineKeyboardButton(
-                    f"{sname}", callback_data=f"admin_skin_browse_r_s_{rarity}|{sname[:40]}"
-                )])
-            kb.append([InlineKeyboardButton("◀️ Назад", callback_data="admin_skin_browse_")])
-            try:
-                await q.message.edit_text(
-                    f"🔍 {icon} <b>{name_r}</b> — выбери облик:",
-                    parse_mode=ParseMode.HTML,
-                    reply_markup=InlineKeyboardMarkup(kb),
-                )
-            except Exception:
-                pass
-            return
-
-        # Уровень 3: список владельцев выбранного облика
-        if suffix.startswith("r_s_"):
-            parts = suffix[4:].split("|", 1)
-            if len(parts) != 2:
-                await q.answer(); return
-            rarity, skin_name = parts[0], parts[1]
-            async with aiosqlite.connect(DB_PATH) as _db:
-                _db.row_factory = aiosqlite.Row
-                async with _db.execute(
-                    "SELECT f.user_id, f.first_name, f.username, f.frog_name, f.level, f.alive "
-                    "FROM frogs f "
-                    "JOIN collections c ON c.user_id = f.user_id "
-                    "WHERE c.skin = ? AND c.qty > 0 AND f.banned = 0 "
-                    "ORDER BY f.level DESC LIMIT 50",
-                    (skin_name,)
-                ) as _c:
-                    owners = [dict(r) for r in await _c.fetchall()]
-            icon = R_ICON.get(rarity, "⚪")
-            if not owners:
-                lines = [f"🔍 {icon} <b>{he(skin_name)}</b>\n\n😶 Владельцев не найдено."]
-            else:
-                lines = [f"🔍 {icon} <b>{he(skin_name)}</b> — владельцы ({len(owners)}):\n"]
-                for o in owners:
-                    alive_icon = "🐸" if o["alive"] else "💀"
-                    fname_o = he(o["frog_name"] or o["first_name"] or "?")
-                    uname_o = f"@{o['username']}" if o["username"] else f"ID:{o['user_id']}"
-                    lines.append(f"{alive_icon} <b>{fname_o}</b> ({uname_o}) ур.{o['level']}")
-            kb = [[InlineKeyboardButton("◀️ Назад", callback_data=f"admin_skin_browse_r_{rarity}")]]
-            try:
-                await q.message.edit_text(
-                    "\n".join(lines),
-                    parse_mode=ParseMode.HTML,
-                    reply_markup=InlineKeyboardMarkup(kb),
-                )
-            except Exception:
-                pass
-            return
-
-    if d == "admin_stuck_stats":
-        if uid not in ADMIN_IDS:
-            await q.answer("⛔", show_alert=True)
-            return
-        await q.answer()
-        week_ago_s = time.time() - 7 * 86400
-        async with aiosqlite.connect(DB_PATH) as db:
-            # Застряли без испытания (просто мертвы и ждут)
-            async with db.execute(
-                "SELECT user_id, first_name, username, coins, level, last_seen "
-                "FROM frogs WHERE alive=0 AND trial_active=0 AND banned=0 AND is_bot=0 "
-                "ORDER BY last_seen DESC LIMIT 20"
-            ) as c:
-                stuck_rows = await c.fetchall()
-            # Застряли в испытании
-            async with db.execute(
-                "SELECT user_id, first_name, username, trial_quests, trial_progress, last_seen "
-                "FROM frogs WHERE alive=0 AND trial_active=1 AND banned=0 AND is_bot=0 "
-                "ORDER BY last_seen DESC LIMIT 10"
-            ) as c:
-                trial_rows = await c.fetchall()
-            # Итого
-            async with db.execute("SELECT COUNT(*) FROM frogs WHERE alive=0 AND banned=0 AND is_bot=0") as c:
-                total_dead = (await c.fetchone())[0] or 0
-            async with db.execute("SELECT COUNT(*) FROM frogs WHERE banned=0 AND is_bot=0") as c:
-                total_players = (await c.fetchone())[0] or 0
-
-        lines = [f"💀 <b>Детали застрявших на воскрешении</b>\n"]
-        lines.append(f"Всего мёртвых: <b>{total_dead}</b> из <b>{total_players}</b> ({total_dead*100//max(total_players,1)}%)\n")
-
-        lines.append("━━━ Без испытания (последние 20) ━━━")
-        if stuck_rows:
-            for r in stuck_rows:
-                uid_r, fname_r, uname_r, coins_r, lvl_r, last_seen_r = r
-                uname_s = f"@{uname_r}" if uname_r else f"ID:{uid_r}"
-                days_ago = int((time.time() - (last_seen_r or 0)) / 86400) if last_seen_r else "?"
-                lines.append(f"• {fname_r} ({uname_s}) ур.{lvl_r} 🪙{coins_r} — был {days_ago}д назад")
-        else:
-            lines.append("  (нет)")
-
-        lines.append("\n━━━ В испытании (последние 10) ━━━")
-        if trial_rows:
-            for r in trial_rows:
-                uid_r, fname_r, uname_r, tq_json, tp_json, last_seen_r = r
-                uname_s = f"@{uname_r}" if uname_r else f"ID:{uid_r}"
-                days_ago = int((time.time() - (last_seen_r or 0)) / 86400) if last_seen_r else "?"
-                try:
-                    tq = json.loads(tq_json or "[]")
-                    tp = json.loads(tp_json or "{}")
-                    done = sum(1 for q2 in tq if tp.get(q2["id"], 0) >= q2["goal"])
-                    total_q = len(tq)
-                    progress_s = f"{done}/{total_q}"
-                except Exception:
-                    progress_s = "?"
-                lines.append(f"• {fname_r} ({uname_s}) прогресс:{progress_s} — был {days_ago}д назад")
-        else:
-            lines.append("  (нет)")
-
-        try:
-            await q.message.edit_text(
-                "\n".join(lines),
-                parse_mode=ParseMode.HTML,
-                reply_markup=InlineKeyboardMarkup([
-                    [InlineKeyboardButton("◀️ Назад", callback_data="admin_stats")],
-                ]),
-            )
-        except Exception:
-            pass
-        return
-
-    if d.startswith("admin_players_") and not d.startswith("admin_players_p_"):
-        if uid not in ADMIN_IDS:
-            await q.answer("⛔", show_alert=True)
-            return
-        page = int(d.split("_")[-1])
-        per = 8
-        async with aiosqlite.connect(DB_PATH) as db:
-            async with db.execute("SELECT COUNT(*) FROM frogs WHERE is_bot=0") as c:
-                total = (await c.fetchone())[0]
-            async with db.execute(
-                "SELECT user_id, first_name, username, level, coins, alive, banned, is_bot FROM frogs WHERE is_bot=0 ORDER BY level DESC LIMIT ? OFFSET ?",
-                (per, page * per),
-            ) as c:
-                rows = await c.fetchall()
-        import math as _math
-
-        total_pages = max(1, _math.ceil(total / per))
-        text = f"👥 <b>Игроки (стр. {page+1}/{total_pages})</b>\nНажми на игрока — открыть карточку\n💀 = мёртвый  🚫 = забанен\n(Боты скрыты → раздел 🤖 Управление ботами)\n"
-        kb_rows = []
-        for r in rows:
-            alive_icon = "🐸" if r[5] else "💀"
-            ban_icon = " 🚫" if r[6] else ""
-            uname = f"@{r[2]}" if r[2] else f"id{r[0]}"
-            label = f"{alive_icon}{ban_icon} {r[1]} ({uname}) ур.{r[3]}"
-            # Используем простой формат callback без _p чтобы избежать парсинг-баги
-            kb_rows.append(
-                [
-                    InlineKeyboardButton(
-                        label, callback_data=f"admin_pcard_{r[0]}_{page}"
-                    )
-                ]
-            )
-        nav = []
-        if page > 0:
-            nav.append(
-                InlineKeyboardButton("◀️", callback_data=f"admin_players_{page-1}")
-            )
-        if page < total_pages - 1:
-            nav.append(
-                InlineKeyboardButton("▶️", callback_data=f"admin_players_{page+1}")
-            )
-        if nav:
-            kb_rows.append(nav)
-        kb_rows.append(
-            [InlineKeyboardButton("◀️ Назад в панель", callback_data="admin_refresh")]
-        )
-        try:
-            await q.message.edit_text(
-                text,
-                parse_mode=ParseMode.HTML,
-                reply_markup=InlineKeyboardMarkup(kb_rows),
-            )
-        except Exception:
-            pass
-        await q.answer()
-        return
 
     # ── КАРТОЧКА ИГРОКА (новый callback format) ──
-    if d.startswith("admin_pcard_"):
-        if uid not in ADMIN_IDS:
-            await q.answer("⛔", show_alert=True)
-            return
-        try:
-            parts_pc = d[len("admin_pcard_"):].split("_")
-            target_uid_pc = int(parts_pc[0])
-            back_page_pc = parts_pc[1] if len(parts_pc) > 1 else "0"
-            back_cb_pc = f"admin_players_{back_page_pc}"
-        except (ValueError, IndexError):
-            await q.answer("Ошибка!", show_alert=True)
-            return
-        await show_player_card(q.message, target_uid_pc, edit=True, back_cb=back_cb_pc)
-        await q.answer()
-        return
 
     # ── БАН ИГРОКА ──────────────────────────────
-    if d.startswith("admin_ban_") or d.startswith("admin_unban_"):
-        if uid not in ADMIN_IDS:
-            await q.answer("⛔", show_alert=True)
-            return
-        is_unban = d.startswith("admin_unban_")
-        target_uid_ban = int(d.split("_")[-1])
-        new_ban = 0 if is_unban else 1
-        async with aiosqlite.connect(DB_PATH) as db:
-            await db.execute(
-                "UPDATE frogs SET banned=? WHERE user_id=?", (new_ban, target_uid_ban)
-            )
-            await db.commit()
-        action_txt = "разбанен" if is_unban else "забанен"
-        await admin_log(uid, "unban" if is_unban else "ban", target_uid_ban)
-        await q.answer((f"✅ Игрок {action_txt}!")[:200], show_alert=True)
-        # Обновить карточку
-        await show_player_card(q.message, target_uid_ban, edit=True)
-        return
 
     # ── ПОМЕТИТЬ / СНЯТЬ МЕТКУ БОТА ─────────────
-    if d.startswith("admin_markbot_") or d.startswith("admin_unmarkbot_"):
-        if uid not in ADMIN_IDS:
-            await q.answer("⛔", show_alert=True)
-            return
-        is_unmark = d.startswith("admin_unmarkbot_")
-        target_uid_bot = int(d.split("_")[-1])
-        new_bot = 0 if is_unmark else 1
-        async with aiosqlite.connect(DB_PATH) as db:
-            await db.execute(
-                "UPDATE frogs SET is_bot=? WHERE user_id=?", (new_bot, target_uid_bot)
-            )
-            await db.commit()
-        _user_cache.invalidate(target_uid_bot)
-        action_txt = "снята метка бота" if is_unmark else "помечен как бот (скрыт из топов)"
-        await admin_log(uid, "unmarkbot" if is_unmark else "markbot", target_uid_bot)
-        await q.answer((f"✅ Игрок {action_txt}!")[:200], show_alert=True)
-        await show_player_card(q.message, target_uid_bot, edit=True)
-        return
 
     # ── УДАЛИТЬ ИГРОКА (запрос подтверждения) ───
-    if d.startswith("admin_deleteplayer_") and not d.startswith("admin_deleteplayer_confirm_"):
-        if uid not in ADMIN_IDS:
-            await q.answer("⛔", show_alert=True)
-            return
-        target_uid_del = int(d.split("_")[-1])
-        p_del = await db_get(target_uid_del)
-        uname_del = f"@{p_del['username']}" if p_del and p_del.get("username") else f"ID:{target_uid_del}"
-        name_del = he(p_del.get("first_name", "?")) if p_del else "?"
-        try:
-            await q.message.edit_text(
-                f"⚠️ <b>Подтверди удаление игрока</b>\n\n"
-                f"👤 <b>{name_del}</b> ({uname_del})\n"
-                f"ID: <code>{target_uid_del}</code>\n\n"
-                f"<b>Будут удалены:</b> запись в frogs, коллекция, достижения, квесты, NFT, дуэли, рефералы, инвентарь.\n\n"
-                f"⚠️ <b>Это действие необратимо!</b>",
-                parse_mode=ParseMode.HTML,
-                reply_markup=InlineKeyboardMarkup([
-                    [
-                        btn("✅ Да, удалить", callback_data=f"admin_deleteplayer_confirm_{target_uid_del}", style="danger"),
-                        btn("❌ Отмена", callback_data=f"admin_pcard_{target_uid_del}_0", style="primary"),
-                    ]
-                ]),
-            )
-        except Exception:
-            pass
-        await q.answer()
-        return
 
     # ── УДАЛИТЬ ИГРОКА (подтверждено) ───────────
-    if d.startswith("admin_deleteplayer_confirm_"):
-        if uid not in ADMIN_IDS:
-            await q.answer("⛔", show_alert=True)
-            return
-        target_uid_del = int(d.split("_")[-1])
-        # Сначала отвечаем — иначе Telegram покажет спиннер вечно
-        await q.answer(f"🗑 Удаляю игрока {target_uid_del}…", show_alert=False)
-        _user_cache.invalidate(target_uid_del)
-        try:
-            async with aiosqlite.connect(DB_PATH) as db:
-                await db.execute("DELETE FROM frogs WHERE user_id=?", (target_uid_del,))
-                await db.execute("DELETE FROM collections WHERE user_id=?", (target_uid_del,))
-                await db.execute("DELETE FROM achievements WHERE user_id=?", (target_uid_del,))
-                await db.execute("DELETE FROM daily_quests WHERE user_id=?", (target_uid_del,))
-                await db.execute("DELETE FROM nft_frogs WHERE user_id=?", (target_uid_del,))
-                try:
-                    await db.execute("DELETE FROM duels WHERE challenger_id=? OR target_id=?", (target_uid_del, target_uid_del))
-                except Exception:
-                    pass
-                try:
-                    await db.execute("DELETE FROM referrals WHERE referrer_id=? OR referred_id=?", (target_uid_del, target_uid_del))
-                except Exception:
-                    pass
-                try:
-                    await db.execute("DELETE FROM shop_inventory WHERE user_id=?", (target_uid_del,))
-                except Exception:
-                    pass
-                try:
-                    await db.execute("DELETE FROM lottery_tickets WHERE user_id=?", (target_uid_del,))
-                except Exception:
-                    pass
-                try:
-                    await db.execute("DELETE FROM gift_log WHERE sender_id=? OR receiver_id=?", (target_uid_del, target_uid_del))
-                except Exception:
-                    pass
-                await db.commit()
-            await admin_log(uid, "delete_player", target_uid_del)
-            try:
-                await q.message.edit_text(
-                    f"🗑 <b>Игрок <code>{target_uid_del}</code> полностью удалён из базы данных.</b>",
-                    parse_mode=ParseMode.HTML,
-                    reply_markup=InlineKeyboardMarkup([
-                        [InlineKeyboardButton("◀️ К списку игроков", callback_data="admin_players_0")]
-                    ]),
-                )
-            except Exception:
-                pass
-        except Exception as e:
-            try:
-                await q.message.edit_text(
-                    f"❌ <b>Ошибка при удалении игрока <code>{target_uid_del}</code>:</b>\n<code>{e}</code>",
-                    parse_mode=ParseMode.HTML,
-                    reply_markup=InlineKeyboardMarkup([
-                        [InlineKeyboardButton("◀️ К списку игроков", callback_data="admin_players_0")]
-                    ]),
-                )
-            except Exception:
-                pass
-        return
 
     # ── СПИСОК БОТОВ ────────────────────────────
-    if d.startswith("admin_bots_"):
-        if uid not in ADMIN_IDS:
-            await q.answer("⛔", show_alert=True)
-            return
-        page_b = int(d.split("_")[-1])
-        per_b = 8
-        async with aiosqlite.connect(DB_PATH) as db:
-            async with db.execute("SELECT COUNT(*) FROM frogs WHERE is_bot=1") as c:
-                total_b = (await c.fetchone())[0]
-            async with db.execute(
-                "SELECT user_id, first_name, username, level, coins FROM frogs WHERE is_bot=1 ORDER BY user_id DESC LIMIT ? OFFSET ?",
-                (per_b, page_b * per_b),
-            ) as c:
-                rows_b = await c.fetchall()
-        import math as _math
-        total_pages_b = max(1, _math.ceil(total_b / per_b))
-        text_b = (
-            f"🤖 <b>Помеченные боты ({total_b} шт., стр. {page_b+1}/{total_pages_b})</b>\n"
-            f"Боты скрыты из топов /top /topw /topm.\n"
-            f"Нажми на бота — открыть карточку (снять метку или удалить).\n"
-        )
-        kb_rows_b = []
-        for r in rows_b:
-            uname_b = f"@{r[2]}" if r[2] else f"id{r[0]}"
-            label_b = f"🤖 {r[1]} ({uname_b}) ур.{r[3]}"
-            kb_rows_b.append([
-                InlineKeyboardButton(label_b, callback_data=f"admin_pcard_{r[0]}_{page_b}")
-            ])
-        nav_b = []
-        if page_b > 0:
-            nav_b.append(InlineKeyboardButton("◀️", callback_data=f"admin_bots_{page_b-1}"))
-        if page_b < total_pages_b - 1:
-            nav_b.append(InlineKeyboardButton("▶️", callback_data=f"admin_bots_{page_b+1}"))
-        if nav_b:
-            kb_rows_b.append(nav_b)
-        kb_rows_b.append([InlineKeyboardButton("◀️ Назад в панель", callback_data="admin_refresh")])
-        try:
-            await q.message.edit_text(
-                text_b,
-                parse_mode=ParseMode.HTML,
-                reply_markup=InlineKeyboardMarkup(kb_rows_b),
-            )
-        except Exception:
-            pass
-        await q.answer()
-        return
 
 
-    if d.startswith("admin_revive_"):
-        if uid not in ADMIN_IDS:
-            await q.answer("⛔", show_alert=True)
-            return
-        target_uid_rev = int(d.split("_")[-1])
-        p_rev = await db_get(target_uid_rev)
-        if p_rev:
-            p_rev["alive"] = 1
-            p_rev["health"] = 100
-            p_rev["hunger"] = 100
-            p_rev["happiness"] = 100
-            await db_save(p_rev)
-            await admin_log(uid, "revive", target_uid_rev)
-            try:
-                await ctx.bot.send_message(
-                    target_uid_rev,
-                    "💚 <b>Тебя воскресила администрация!</b>\n\nТвоя лягушка снова жива! <tg-emoji emoji-id='5341367834935075028'>🐸</tg-emoji>",
-                    parse_mode=ParseMode.HTML,
-                )
-            except Exception:
-                pass
-        await q.answer("💚 Воскрешено!", show_alert=True)
-        await show_player_card(q.message, target_uid_rev, edit=True)
-        return
 
     # ── УБИТЬ ЛЯГУШКУ (АДМИН) ───────────────────
-    if d.startswith("admin_kill_"):
-        if uid not in ADMIN_IDS:
-            await q.answer("⛔", show_alert=True)
-            return
-        target_uid_kill = int(d.split("_")[-1])
-        p_kill = await db_get(target_uid_kill)
-        if p_kill:
-            p_kill["alive"] = 0
-            p_kill["health"] = 0
-            p_kill["trial_active"] = 0
-            p_kill["trial_quests"] = "[]"
-            p_kill["trial_progress"] = "{}"
-            await db_save(p_kill)
-            await admin_log(uid, "kill", target_uid_kill)
-            try:
-                await ctx.bot.send_message(
-                    target_uid_kill,
-                    "<tg-emoji emoji-id='5341573078537248907'>💀</tg-emoji> <b>Твоя лягушка была убита администрацией.</b>\n\nИспользуй /revive чтобы воскресить её.",
-                    parse_mode=ParseMode.HTML,
-                )
-            except Exception:
-                pass
-        await q.answer("💀 Убито!", show_alert=True)
-        await show_player_card(q.message, target_uid_kill, edit=True)
-        return
 
     # ── ЛОГИ КОНКРЕТНОГО ИГРОКА ─────────────────
-    if d.startswith("admin_logs_uid_"):
-        if uid not in ADMIN_IDS:
-            await q.answer("⛔", show_alert=True)
-            return
-        target_uid_log = int(d.split("_")[-1])
-        p_log = await db_get(target_uid_log)
-        async with aiosqlite.connect(DB_PATH) as db:
-            db.row_factory = aiosqlite.Row
-            # Берём ВСЕ логи — без лимита, отдаём файлом
-            async with db.execute(
-                "SELECT * FROM admin_logs WHERE target_id=? ORDER BY ts DESC",
-                (target_uid_log,)
-            ) as c:
-                log_rows = await c.fetchall()
-            # Также coin_log
-            async with db.execute(
-                "SELECT amount, reason, ts FROM coin_log WHERE user_id=? ORDER BY ts DESC LIMIT 200",
-                (target_uid_log,)
-            ) as c:
-                coin_rows = await c.fetchall()
-        pname = (p_log.get("frog_name") or p_log.get("first_name") or str(target_uid_log)) if p_log else str(target_uid_log)
-        uname = (f"@{p_log['username']}" if p_log and p_log.get("username") else "") if p_log else ""
-        lines = [
-            f"=== ЛОГИ ИГРОКА {pname} {uname} (ID: {target_uid_log}) ===",
-            f"Экспорт: {datetime.now(timezone.utc).strftime('%Y-%m-%d %H:%M UTC')}",
-            "",
-            "--- ADMIN LOG ---",
-        ]
-        if log_rows:
-            for r in log_rows:
-                ts_str = datetime.fromtimestamp(r["ts"], tz=timezone.utc).strftime("%Y-%m-%d %H:%M:%S")
-                lines.append(f"[{ts_str}] admin={r['admin_id']}  action={r['action']}  details={r.get('details','')}")
-        else:
-            lines.append("(пусто)")
-        lines += ["", "--- COIN LOG (последние 200) ---"]
-        if coin_rows:
-            for r in coin_rows:
-                ts_str = datetime.fromtimestamp(r["ts"], tz=timezone.utc).strftime("%Y-%m-%d %H:%M:%S")
-                sign = "+" if r["amount"] > 0 else ""
-                lines.append(f"[{ts_str}] {sign}{r['amount']}  {r['reason']}")
-        else:
-            lines.append("(пусто)")
-        file_content = "\n".join(lines).encode("utf-8")
-        import io
-        file_obj = io.BytesIO(file_content)
-        file_obj.name = f"logs_{target_uid_log}.txt"
-        await q.answer()
-        try:
-            await q.message.reply_document(
-                document=file_obj,
-                caption=f"📋 Логи игрока <b>{he(pname)}</b> (ID: <code>{target_uid_log}</code>)\n"
-                        f"Admin log: {len(log_rows)} записей | Coin log: {len(coin_rows)} записей",
-                parse_mode=ParseMode.HTML,
-            )
-        except Exception as _le:
-            await q.answer((f"Ошибка отправки файла: {_le}")[:200], show_alert=True)
-        return
 
     # ── ЗАМОРОЗКА ПЕРЕВОДОВ — решение админа ─────────────
-    if d and d.startswith("exp_"): logger.error("🐛 [EXP DEBUG] CHECKPOINT_D ~34061 — код дошёл сюда")
+    if d and d.startswith("exp_"): logger.debug("🐛 [EXP DEBUG] CHECKPOINT_D ~34061 — код дошёл сюда")
     if d.startswith("gift_unfreeze_") or d.startswith("gift_keepfreeze_"):
         if uid not in ADMIN_IDS:
             await q.answer("⛔", show_alert=True)
@@ -45087,256 +46814,20 @@ async def on_callback(update: Update, ctx: ContextTypes.DEFAULT_TYPE):
         return
 
     # ── СБРОС КУЛДАУНОВ ─────────────────────────
-    if d.startswith("admin_reset_cd_"):
-        if uid not in ADMIN_IDS:
-            await q.answer("⛔", show_alert=True)
-            return
-        target_uid_cd = int(d.split("_")[-1])
-        p_cd = await db_get(target_uid_cd)
-        if p_cd:
-            for cd_key in (
-                "last_feed",
-                "last_play",
-                "last_wash",
-                "last_sleep",
-                "last_pet",
-                "last_guess",
-                "last_casino",
-                "last_daily",
-                "last_expedition",
-            ):
-                p_cd[cd_key] = 0
-            await db_save(p_cd)
-            await admin_log(uid, "reset_cd", target_uid_cd)
-        await q.answer("✅ Кулдауны сброшены!", show_alert=True)
-        await show_player_card(q.message, target_uid_cd, edit=True)
-        return
 
     # ── ВЫДАТЬ ДОП. СЛОТ ПОХОДА ──────────────────────────
-    if d.startswith("admin_give_advslot_"):
-        if uid not in ADMIN_IDS:
-            await q.answer("⛔", show_alert=True)
-            return
-        target_uid_as = int(d.split("_")[-1])
-        p_as = await db_get(target_uid_as)
-        if p_as:
-            p_as["adventure_extra_slots_bought"] = p_as.get("adventure_extra_slots_bought", 0) + 1
-            p_as["adventure_extra_slot"] = 1
-            await db_save(p_as)
-            await admin_log(uid, "give_advslot", target_uid_as)
-            slots = p_as["adventure_extra_slots_bought"]
-            await q.answer((f"✅ Выдан доп. слот похода! Всего куплено: {slots}")[:200], show_alert=True)
-        else:
-            await q.answer("❌ Игрок не найден", show_alert=True)
-        await show_player_card(q.message, target_uid_as, edit=True)
-        return
 
     # ── СБРОСИТЬ КД ПОХОДА И ЭКСПЕДИЦИИ ──────────────────────────
-    if d.startswith("admin_reset_advcd_"):
-        if uid not in ADMIN_IDS:
-            await q.answer("⛔", show_alert=True)
-            return
-        target_uid_ra = int(d.split("_")[-1])
-        p_ra = await db_get(target_uid_ra)
-        if p_ra:
-            p_ra["last_expedition"] = 0
-            p_ra["adventure_hours_today"] = 0.0
-            p_ra["adventure_hours_reset"] = 0.0
-            p_ra["adventure_extra_slots_bought"] = 0
-            await db_save(p_ra)
-            await admin_log(uid, "reset_advcd", target_uid_ra)
-            await q.answer("✅ КД похода и экспедиции сброшены! Лимит часов обнулён.", show_alert=True)
-        else:
-            await q.answer("❌ Игрок не найден", show_alert=True)
-        await show_player_card(q.message, target_uid_ra, edit=True)
-        return
 
     # ── ИЗМЕНЕНИЕ МОНЕТ ──────────────────────────
-    if d.startswith("admin_coins_p") or d.startswith("admin_coins_m"):
-        if uid not in ADMIN_IDS:
-            await q.answer("⛔", show_alert=True)
-            return
-        parts_coin = d.split("_")
-        # admin_coins_p100_12345 → direction=p, amount=100, target_uid=12345
-        op = "p" if d.startswith("admin_coins_p") else "m"
-        # Find amount: between op and last _
-        rest = d[len(f"admin_coins_{op}") :]
-        amt_str, sep, tuid_str = rest.partition("_")
-        try:
-            amount_coin = int(amt_str)
-            target_uid_coin = int(tuid_str)
-        except ValueError:
-            await q.answer("Ошибка!", show_alert=True)
-            return
-        if op == "m":
-            amount_coin = -amount_coin
-        p_coin = await db_get(target_uid_coin)
-        if p_coin:
-            p_coin["coins"] = max(0, p_coin["coins"] + amount_coin)
-            await db_save(p_coin)
-            await admin_log(
-                uid,
-                f"coins_{'+' if amount_coin>=0 else ''}{amount_coin}",
-                target_uid_coin,
-                f"bal→{p_coin['coins']}",
-            )
-        direction = "+" if amount_coin > 0 else ""
-        await q.answer((f"✅ {direction}{amount_coin}{coin_plain()}")[:200], show_alert=True)
-        await show_player_card(q.message, target_uid_coin, edit=True)
-        return
 
     # ── ИЗМЕНЕНИЕ XP ───────────────────────────
-    if d.startswith("admin_xp_p") or d.startswith("admin_xp_m"):
-        if uid not in ADMIN_IDS:
-            await q.answer("⛔", show_alert=True)
-            return
-        op_xp = "p" if d.startswith("admin_xp_p") else "m"
-        rest_xp = d[len(f"admin_xp_{op_xp}") :]
-        amt_xp_str, _, tuid_xp_str = rest_xp.partition("_")
-        try:
-            amount_xp = int(amt_xp_str)
-            target_uid_xp = int(tuid_xp_str)
-        except ValueError:
-            await q.answer("Ошибка!", show_alert=True)
-            return
-        if op_xp == "m":
-            amount_xp = -amount_xp
-        p_xp = await db_get(target_uid_xp)
-        if p_xp:
-            p_xp["xp"] = max(0, p_xp.get("xp", 0) + amount_xp)
-            await levelup(p_xp, ctx.bot)
-            await db_save(p_xp)
-            await admin_log(uid, f"xp_{'+' if amount_xp>=0 else ''}{amount_xp}", target_uid_xp, f"xp→{p_xp['xp']}")
-            try:
-                await ctx.bot.send_message(
-                    target_uid_xp,
-                    f"<tg-emoji emoji-id='5341447412089133029'>⭐</tg-emoji> Администратор {'начислил' if amount_xp >= 0 else 'списал'} <b>{abs(amount_xp)} XP</b>!\n"
-                    f"Текущий опыт: {p_xp['xp']} XP (уровень {p_xp['level']})",
-                    parse_mode=ParseMode.HTML,
-                )
-            except Exception:
-                pass
-        direction_xp = "+" if amount_xp > 0 else ""
-        await q.answer((f"✅ {direction_xp}{amount_xp} XP")[:200], show_alert=True)
-        await show_player_card(q.message, target_uid_xp, edit=True)
-        return
 
     # ── УСТАНОВИТЬ МОНЕТЫ (меню ввода) ─────────
-    if d.startswith("admin_setcoins_menu_"):
-        if uid not in ADMIN_IDS:
-            await q.answer("⛔", show_alert=True)
-            return
-        try:
-            target_uid_sc = int(d[len("admin_setcoins_menu_"):])
-        except ValueError:
-            await q.answer("Ошибка!", show_alert=True)
-            return
-        p_sc = await db_get(target_uid_sc)
-        current_coins = p_sc["coins"] if p_sc else 0
-        kb_sc = InlineKeyboardMarkup([
-            [
-                InlineKeyboardButton("💰 +500", callback_data=f"admin_coins_p500_{target_uid_sc}"),
-                InlineKeyboardButton("💰 +5000", callback_data=f"admin_coins_p5000_{target_uid_sc}"),
-            ],
-            [
-                InlineKeyboardButton("💰 -500", callback_data=f"admin_coins_m500_{target_uid_sc}"),
-                InlineKeyboardButton("💰 -5000", callback_data=f"admin_coins_m5000_{target_uid_sc}"),
-            ],
-            [InlineKeyboardButton("◀️ Назад", callback_data=f"admin_player_{target_uid_sc}_p0")],
-        ])
-        try:
-            await q.message.edit_text(
-                f"<tg-emoji emoji-id='5341524176039615767'>🪙</tg-emoji> <b>Управление монетами</b>\n"
-                f"Игрок ID: <code>{target_uid_sc}</code>\n"
-                f"Текущий баланс: <b>{current_coins:,}</b> <tg-emoji emoji-id='5341524176039615767'>🪙</tg-emoji>\n\n"
-                f"Выбери действие:",
-                parse_mode=ParseMode.HTML,
-                reply_markup=kb_sc,
-            )
-        except Exception:
-            pass
-        await q.answer()
-        return
 
     # ── ЗАБРАТЬ ОБЛИК — МЕНЮ ───────────────────
-    if d.startswith("admin_takeskin_menu_"):
-        if uid not in ADMIN_IDS:
-            await q.answer("⛔", show_alert=True)
-            return
-        try:
-            target_uid_ts = int(d[len("admin_takeskin_menu_"):])
-        except ValueError:
-            await q.answer("Ошибка!", show_alert=True)
-            return
-        # Получаем коллекцию игрока
-        coll_ts = await db_coll(target_uid_ts)
-        if not coll_ts:
-            await q.answer("У игрока нет обликов!", show_alert=True)
-            await show_player_card(q.message, target_uid_ts, edit=True)
-            return
-        skin_rows_ts = []
-        for skin_ts in sorted(coll_ts)[:12]:  # до 12 скинов
-            s_ts = SKINS.get(skin_ts, {})
-            plain_emoji_ts = s_ts.get("emoji", "🐸")  # plain emoji, не HTML-тег
-            skin_rows_ts.append([InlineKeyboardButton(
-                f"{plain_emoji_ts} {skin_ts[:20]} ({s_ts.get('rarity','?')[:3]})",
-                callback_data=f"admin_takeskin_do_{target_uid_ts}_{skin_ts[:30]}",
-            )])
-        skin_rows_ts.append([InlineKeyboardButton("◀️ Назад", callback_data=f"admin_player_{target_uid_ts}_p0")])
-        try:
-            await q.message.edit_text(
-                f"🗑 <b>Забрать облик</b>\n"
-                f"Игрок ID: <code>{target_uid_ts}</code>\n\n"
-                f"Выбери облик для изъятия (первые 12):",
-                parse_mode=ParseMode.HTML,
-                reply_markup=InlineKeyboardMarkup(skin_rows_ts),
-            )
-        except Exception:
-            pass
-        await q.answer()
-        return
 
     # ── ЗАБРАТЬ ОБЛИК — ДЕЙСТВИЕ ───────────────
-    if d.startswith("admin_takeskin_do_"):
-        if uid not in ADMIN_IDS:
-            await q.answer("⛔", show_alert=True)
-            return
-        try:
-            rest_ts = d[len("admin_takeskin_do_"):]
-            parts_ts = rest_ts.split("_", 1)
-            target_uid_tsd = int(parts_ts[0])
-            skin_name_ts = parts_ts[1] if len(parts_ts) > 1 else ""
-        except (ValueError, IndexError):
-            await q.answer("Ошибка!", show_alert=True)
-            return
-        full_skin_ts = next((s for s in SKINS if s.startswith(skin_name_ts) or s == skin_name_ts), None)
-        if not full_skin_ts:
-            await q.answer((f"Облик не найден: {skin_name_ts}")[:200], show_alert=True)
-            return
-        async with aiosqlite.connect(DB_PATH) as db:
-            await db.execute(
-                "DELETE FROM collections WHERE user_id=? AND skin=?",
-                (target_uid_tsd, full_skin_ts),
-            )
-            await db.commit()
-        _user_cache.invalidate(target_uid_tsd)
-        # Если это активный облик — сбрасываем на Brownie
-        p_ts = await db_get(target_uid_tsd)
-        if p_ts and p_ts.get("skin") == full_skin_ts:
-            p_ts["skin"] = "Brownie"
-            await db_save(p_ts)
-        await admin_log(uid, f"take_skin_{full_skin_ts}", target_uid_tsd, "")
-        try:
-            await ctx.bot.send_message(
-                target_uid_tsd,
-                f"⚠️ Администратор изъял облик <b>{he(full_skin_ts)}</b> {pemoji(full_skin_ts)} из вашей коллекции.",
-                parse_mode=ParseMode.HTML,
-            )
-        except Exception:
-            pass
-        await q.answer((f"✅ Облик {full_skin_ts} изъят!")[:200], show_alert=True)
-        await show_player_card(q.message, target_uid_tsd, edit=True)
-        return
 
     # ── ADMIN: НФТ ПЕРЕПРОВЕРКА — оставить или забрать скин ────────────
     if d.startswith("nft_recheck_keep_"):
@@ -45403,7 +46894,7 @@ async def on_callback(update: Update, ctx: ContextTypes.DEFAULT_TYPE):
                     parse_mode=ParseMode.HTML,
                 )
             except Exception:
-                pass
+                logger.exception("on_callback failed")
             await q.answer((f"✅ Облик {skin_to_remove} изъят, НФТ деверифицирован.")[:200], show_alert=True)
         else:
             await q.answer("✅ НФТ деверифицирован (облик не найден).", show_alert=True)
@@ -45414,124 +46905,12 @@ async def on_callback(update: Update, ctx: ContextTypes.DEFAULT_TYPE):
         return
 
     # ── ADMIN: ВЫДАТЬ ПРЕДМЕТ — МЕНЮ ────────────────────────
-    if d.startswith("admin_giveitem_menu_"):
-        if uid not in ADMIN_IDS:
-            await q.answer("⛔", show_alert=True)
-            return
-        try:
-            target_uid_gi = int(d[len("admin_giveitem_menu_"):])
-        except ValueError:
-            await q.answer("Ошибка!", show_alert=True)
-            return
-        # Показываем меню выбора предмета
-        item_rows = []
-        all_items = list(FOOD.items()) + [("gacha_ticket", {"name": "Тикет гачи", "emoji": "🎟"})]
-        for fid, fdata in all_items:
-            emoji = fdata.get("emoji", "🎁")
-            name = fdata.get("name", fid)
-            item_rows.append([
-                InlineKeyboardButton(f"{emoji} {name} ×1", callback_data=f"admin_giveitem_do_{target_uid_gi}_{fid}_1"),
-                InlineKeyboardButton(f"×5", callback_data=f"admin_giveitem_do_{target_uid_gi}_{fid}_5"),
-                InlineKeyboardButton(f"×10", callback_data=f"admin_giveitem_do_{target_uid_gi}_{fid}_10"),
-            ])
-        item_rows.append([InlineKeyboardButton("◀️ Назад", callback_data=f"admin_give_uid_{target_uid_gi}")])
-        try:
-            await q.message.edit_text(
-                f"🎁 <b>Выдача предмета</b>\nИгрок ID: <code>{target_uid_gi}</code>\n\nВыбери предмет и количество:",
-                parse_mode=ParseMode.HTML,
-                reply_markup=InlineKeyboardMarkup(item_rows),
-            )
-        except Exception:
-            pass
-        return
 
     # ── ADMIN: ВЫДАТЬ ПРЕДМЕТ — ДЕЙСТВИЕ ────────────────────
-    if d.startswith("admin_giveitem_do_"):
-        if uid not in ADMIN_IDS:
-            await q.answer("⛔", show_alert=True)
-            return
-        try:
-            parts_gi = d[len("admin_giveitem_do_"):].split("_")
-            # format: admin_giveitem_do_<uid>_<item_id>_<qty>
-            # item_id may have underscores but is last before qty
-            target_uid_gid = int(parts_gi[0])
-            qty_gi = int(parts_gi[-1])
-            item_id_gi = "_".join(parts_gi[1:-1])
-        except (ValueError, IndexError):
-            await q.answer("Ошибка!", show_alert=True)
-            return
-        await inv_add(target_uid_gid, item_id_gi, qty_gi)
-        await admin_log(uid, f"give_item_{item_id_gi}", target_uid_gid, f"qty={qty_gi}")
-        await q.answer((f"✅ Выдано {qty_gi}×{item_id_gi}")[:200], show_alert=True)
-        await show_player_card(q.message, target_uid_gid, edit=True)
-        return
 
     # ── ADMIN: ВЫДАТЬ ОБЛИК — МЕНЮ ──────────────────────────
-    if d.startswith("admin_giveskin_menu_"):
-        if uid not in ADMIN_IDS:
-            await q.answer("⛔", show_alert=True)
-            return
-        try:
-            target_uid_gs = int(d[len("admin_giveskin_menu_"):])
-        except ValueError:
-            await q.answer("Ошибка!", show_alert=True)
-            return
-        # Пагинация скинов: показываем по 8 штук
-        offset_gs = 0
-        skin_list = [s for s in SKINS.keys() if SKINS[s].get("chance", 0) > 0 or SKINS[s].get("rarity") in ("legendary", "mythic", "secret")]
-        skin_list = sorted(skin_list, key=lambda s: SKINS[s].get("rarity", "common"))
-        skin_rows = []
-        for skin_n in skin_list[offset_gs:offset_gs + 8]:
-            s_data = SKINS[skin_n]
-            skin_rows.append([InlineKeyboardButton(
-                f"{pemoji(skin_n)} {skin_n[:20]} ({s_data.get('rarity','?')[:3]})",
-                callback_data=f"admin_giveskin_do_{target_uid_gs}_{skin_n[:30]}",
-            )])
-        skin_rows.append([InlineKeyboardButton("◀️ Назад", callback_data=f"admin_give_uid_{target_uid_gs}")])
-        try:
-            await q.message.edit_text(
-                f"🎨 <b>Выдача облика</b>\nИгрок ID: <code>{target_uid_gs}</code>\n\nВыбери облик:",
-                parse_mode=ParseMode.HTML,
-                reply_markup=InlineKeyboardMarkup(skin_rows),
-            )
-        except Exception:
-            pass
-        return
 
     # ── ADMIN: ВЫДАТЬ ОБЛИК — ДЕЙСТВИЕ ──────────────────────
-    if d.startswith("admin_giveskin_do_"):
-        if uid not in ADMIN_IDS:
-            await q.answer("⛔", show_alert=True)
-            return
-        try:
-            rest_gs = d[len("admin_giveskin_do_"):]
-            # format: admin_giveskin_do_<uid>_<skin_name>
-            parts_gs = rest_gs.split("_", 1)
-            target_uid_gsd = int(parts_gs[0])
-            skin_name_gs = parts_gs[1] if len(parts_gs) > 1 else ""
-        except (ValueError, IndexError):
-            await q.answer("Ошибка!", show_alert=True)
-            return
-        # Найти полное имя скина (может быть обрезано до 30 символов)
-        full_skin_name = next((s for s in SKINS if s.startswith(skin_name_gs) or s == skin_name_gs), None)
-        if not full_skin_name:
-            await q.answer((f"Облик не найден: {skin_name_gs}")[:200], show_alert=True)
-            return
-        await db_add_skin(target_uid_gsd, full_skin_name)
-        await admin_log(uid, f"give_skin_{full_skin_name}", target_uid_gsd, "")
-        await q.answer((f"✅ Облик {full_skin_name} выдан!")[:200], show_alert=True)
-        # Уведомить игрока
-        try:
-            await ctx.bot.send_message(
-                target_uid_gsd,
-                f"🎁 Администратор выдал вам облик <b>{he(full_skin_name)}</b> {pemoji(full_skin_name)}!\n"
-                f"Надеть: /frog → 👗 Облики",
-                parse_mode=ParseMode.HTML,
-            )
-        except Exception:
-            pass
-        await show_player_card(q.message, target_uid_gsd, edit=True)
-        return
 
     # ── РОЗЫГРЫШ (GIVEAWAY): УЧАСТИЕ ─────────────────────
     if d.startswith("giveaway_join_"):
@@ -45614,857 +46993,32 @@ async def on_callback(update: Update, ctx: ContextTypes.DEFAULT_TYPE):
         await finalize_giveaway(gid, ctx)
         return
 
-    if d == "admin_dead":
-        if uid not in ADMIN_IDS:
-            await q.answer("⛔", show_alert=True)
-            return
-        async with aiosqlite.connect(DB_PATH) as db:
-            async with db.execute(
-                "SELECT first_name, username, user_id, level FROM frogs WHERE alive=0 ORDER BY level DESC LIMIT 20"
-            ) as c:
-                rows = await c.fetchall()
-        if not rows:
-            text = "💚 Все лягушки живы!"
-        else:
-            lines = [f"<tg-emoji emoji-id='5341573078537248907'>💀</tg-emoji> <b>Мёртвые лягушки ({len(rows)})</b>\n"]
-            for r in rows:
-                uname = f"@{r[1]}" if r[1] else f"ID:{r[2]}"
-                lines.append(f"<tg-emoji emoji-id='5341573078537248907'>💀</tg-emoji> {r[0]} ({uname}) ур.{r[3]}")
-            text = "\n".join(lines)
-        try:
-            await q.message.edit_text(
-                text,
-                parse_mode=ParseMode.HTML,
-                reply_markup=InlineKeyboardMarkup(
-                    [[InlineKeyboardButton("◀️ Назад", callback_data="admin_refresh")]]
-                ),
-            )
-        except Exception:
-            pass
-        await q.answer()
-        return
 
-    if d == "admin_search_hint":
-        if uid not in ADMIN_IDS:
-            await q.answer("⛔", show_alert=True)
-            return
-        await q.answer()
-        try:
-            await q.message.edit_text(
-                "🔍 <b>Поиск игрока</b>\n\n"
-                "Используй команду:\n"
-                "<code>/adminlookup @username</code>\n"
-                "или\n"
-                "<code>/adminlookup 123456789</code> (по ID)\n\n"
-                "<i>Покажет полную информацию об игроке.</i>",
-                parse_mode=ParseMode.HTML,
-                reply_markup=InlineKeyboardMarkup(
-                    [[InlineKeyboardButton("◀️ Назад", callback_data="admin_refresh")]]
-                ),
-            )
-        except Exception:
-            pass
-        return
 
-    if d == "admin_casino_stats":
-        if uid not in ADMIN_IDS:
-            await q.answer("⛔", show_alert=True)
-            return
-        now_ts = time.time()
-        day_ago  = now_ts - 86400
-        week_ago = now_ts - 604800
-        async with aiosqlite.connect(DB_PATH) as db:
-            # Общая статистика из frogs
-            async with db.execute(
-                "SELECT SUM(total_casino), SUM(total_casino_wins), SUM(coins_spent), SUM(coins) FROM frogs WHERE is_bot=0"
-            ) as c:
-                row = await c.fetchone()
-            total_games = row[0] or 0
-            total_wins  = row[1] or 0
-            total_spent = row[2] or 0
-            total_balance = row[3] or 0
 
-            # Уникальных игроков казино за сутки / неделю
-            async with db.execute(
-                "SELECT COUNT(DISTINCT user_id) FROM game_logs WHERE game_type='casino' AND ts>=?", (day_ago,)
-            ) as c:
-                active_day = (await c.fetchone())[0] or 0
-            async with db.execute(
-                "SELECT COUNT(DISTINCT user_id) FROM game_logs WHERE game_type='casino' AND ts>=?", (week_ago,)
-            ) as c:
-                active_week = (await c.fetchone())[0] or 0
 
-            # Игры за сутки / неделю
-            async with db.execute(
-                "SELECT COUNT(*), SUM(bet_amount), SUM(win_amount) FROM game_logs WHERE game_type='casino' AND ts>=?", (day_ago,)
-            ) as c:
-                r_day = await c.fetchone()
-            games_day   = r_day[0] or 0
-            bet_day     = r_day[1] or 0
-            win_day     = r_day[2] or 0
-            async with db.execute(
-                "SELECT COUNT(*), SUM(bet_amount), SUM(win_amount) FROM game_logs WHERE game_type='casino' AND ts>=?", (week_ago,)
-            ) as c:
-                r_week = await c.fetchone()
-            games_week  = r_week[0] or 0
-            bet_week    = r_week[1] or 0
-            win_week    = r_week[2] or 0
 
-            # Топ-5 выигрышей всех времён
-            async with db.execute(
-                "SELECT f.first_name, f.username, gl.win_amount, gl.bet_amount "
-                "FROM game_logs gl LEFT JOIN frogs f ON f.user_id=gl.user_id "
-                "WHERE gl.game_type='casino' AND gl.result='win' "
-                "ORDER BY gl.win_amount DESC LIMIT 5"
-            ) as c:
-                top_wins_rows = await c.fetchall()
 
-            # Топ-5 игроков по количеству игр
-            async with db.execute(
-                "SELECT f.first_name, f.username, COUNT(*) as cnt "
-                "FROM game_logs gl LEFT JOIN frogs f ON f.user_id=gl.user_id "
-                "WHERE gl.game_type='casino' "
-                "GROUP BY gl.user_id ORDER BY cnt DESC LIMIT 5"
-            ) as c:
-                top_players_rows = await c.fetchall()
 
-            # Самый большой выигрыш за сутки
-            async with db.execute(
-                "SELECT f.first_name, gl.win_amount FROM game_logs gl "
-                "LEFT JOIN frogs f ON f.user_id=gl.user_id "
-                "WHERE gl.game_type='casino' AND gl.result='win' AND gl.ts>=? "
-                "ORDER BY gl.win_amount DESC LIMIT 1", (day_ago,)
-            ) as c:
-                best_today = await c.fetchone()
 
-        wr = int(total_wins / total_games * 100) if total_games else 0
-        house_profit_day  = bet_day  - win_day
-        house_profit_week = bet_week - win_week
 
-        lines = [
-            "🃏 <b>Статистика казино</b>\n",
-            "📊 <b>Общее (всё время)</b>",
-            f"  Игр: <b>{total_games:,}</b>  │  Побед: <b>{total_wins:,}</b> ({wr}%)",
-            f"  КваКоинов поставлено: <b>{total_spent:,}</b>",
-            f"  КваКоинов в экономике: <b>{total_balance:,}</b>",
-            "",
-            "🕐 <b>За 24 часа</b>",
-            f"  Игр: <b>{games_day:,}</b>  │  Активных игроков: <b>{active_day}</b>",
-            f"  Поставлено: <b>{bet_day:,}</b>  │  Выиграно: <b>{win_day:,}</b>",
-            f"  Доход казино: <b>{'+'if house_profit_day>=0 else ''}{house_profit_day:,}</b>🪙",
-        ]
-        if best_today:
-            name_bt = f"@{best_today[1]}" if best_today[1] else he(best_today[0] or "?")
-            lines.append(f"  🏆 Лучший выигрыш: <b>{best_today[1]:,}</b>🪙 ({name_bt})")
-        lines += [
-            "",
-            "📅 <b>За 7 дней</b>",
-            f"  Игр: <b>{games_week:,}</b>  │  Активных игроков: <b>{active_week}</b>",
-            f"  Поставлено: <b>{bet_week:,}</b>  │  Выиграно: <b>{win_week:,}</b>",
-            f"  Доход казино: <b>{'+'if house_profit_week>=0 else ''}{house_profit_week:,}</b>🪙",
-        ]
-        if top_wins_rows:
-            lines += ["", "💰 <b>Топ-5 выигрышей (всё время)</b>"]
-            for i, r in enumerate(top_wins_rows, 1):
-                nm = f"@{r[1]}" if r[1] else he(r[0] or "?")
-                lines.append(f"  {i}. {nm} — <b>{r[2]:,}</b>🪙 (ставка {r[3]:,})")
-        if top_players_rows:
-            lines += ["", "🎰 <b>Топ-5 по числу игр</b>"]
-            for i, r in enumerate(top_players_rows, 1):
-                nm = f"@{r[1]}" if r[1] else he(r[0] or "?")
-                lines.append(f"  {i}. {nm} — <b>{r[2]:,}</b> игр")
-
-        text = "\n".join(lines)
-        try:
-            await q.message.edit_text(
-                text,
-                parse_mode=ParseMode.HTML,
-                reply_markup=InlineKeyboardMarkup([
-                    [InlineKeyboardButton("🔴 Владельцы мифических обликов", callback_data="admin_mythic_owners")],
-                    [InlineKeyboardButton("◀️ Назад", callback_data="admin_refresh")],
-                ]),
-            )
-        except Exception:
-            pass
-        await q.answer()
-        return
-
-    if d == "admin_mythic_owners":
-        if uid not in ADMIN_IDS:
-            await q.answer("⛔", show_alert=True)
-            return
-        # Все мифические обликиу
-        mythic_skin_names = [sname for sname, sdata in SKINS.items() if sdata.get("rarity") == "mythic"]
-        if not mythic_skin_names:
-            await q.answer("Мифических обликов нет в конфиге.", show_alert=True)
-            return
-        placeholders = ",".join("?" * len(mythic_skin_names))
-        async with aiosqlite.connect(DB_PATH) as db:
-            db.row_factory = aiosqlite.Row
-            # Активный облик
-            async with db.execute(
-                f"SELECT user_id, first_name, username, skin FROM frogs "
-                f"WHERE skin IN ({placeholders}) AND is_bot=0 AND banned=0 "
-                f"ORDER BY skin",
-                mythic_skin_names,
-            ) as c:
-                active_rows = await c.fetchall()
-            # В коллекции (не обязательно активный)
-            async with db.execute(
-                f"SELECT c.user_id, f.first_name, f.username, c.skin "
-                f"FROM collections c LEFT JOIN frogs f ON f.user_id=c.user_id "
-                f"WHERE c.skin IN ({placeholders}) AND (f.is_bot IS NULL OR f.is_bot=0) "
-                f"AND (f.banned IS NULL OR f.banned=0) "
-                f"ORDER BY c.skin",
-                mythic_skin_names,
-            ) as c:
-                owned_rows = await c.fetchall()
-
-        # Построим карту: skin → {uid: (name, active)}
-        from collections import defaultdict
-        skin_map: dict = defaultdict(dict)
-        for r in owned_rows:
-            skin_map[r["skin"]][r["user_id"]] = [r["first_name"] or "?", r["username"] or "", False]
-        for r in active_rows:
-            if r["user_id"] in skin_map[r["skin"]]:
-                skin_map[r["skin"]][r["user_id"]][2] = True
-            else:
-                skin_map[r["skin"]][r["user_id"]] = [r["first_name"] or "?", r["username"] or "", True]
-
-        lines = ["🔴 <b>Владельцы мифических обликов</b>\n"]
-        total_owners = 0
-        for sname in sorted(skin_map.keys()):
-            sdata = SKINS.get(sname, {})
-            emoji = sdata.get("emoji", "🔴")
-            owners = skin_map[sname]
-            total_owners += len(owners)
-            lines.append(f"{emoji} <b>{_html.escape(sname)}</b> — {len(owners)} владельца(ев)")
-            for entry_uid, (frog_fname, uname, is_active) in owners.items():
-                disp = f"@{uname}" if uname else _html.escape(frog_fname)
-                active_mark = " ✅" if is_active else ""
-                lines.append(f"  • {disp} (<code>{entry_uid}</code>){active_mark}")
-        if not lines[1:]:
-            lines.append("Никто ещё не владеет мифическими обликами.")
-        lines.append(f"\n👑 Всего уникальных владельцев: <b>{total_owners}</b>")
-        lines.append("<i>✅ = облик сейчас активен</i>")
-
-        text = "\n".join(lines)
-        # Если текст слишком длинный, обрезаем
-        if len(text) > 4000:
-            text = text[:3950] + "\n<i>... (список обрезан)</i>"
-        try:
-            await q.message.edit_text(
-                text,
-                parse_mode=ParseMode.HTML,
-                reply_markup=InlineKeyboardMarkup([
-                    [InlineKeyboardButton("◀️ Назад к казино", callback_data="admin_casino_stats")],
-                    [InlineKeyboardButton("🏠 Главное меню", callback_data="admin_refresh")],
-                ]),
-            )
-        except Exception:
-            pass
-        await q.answer()
-        return
-
-    if d == "admin_stickers":
-        if uid not in ADMIN_IDS:
-            await q.answer("⛔", show_alert=True)
-            return
-        lines = ["🎭 <b>Настройка стикеров действий</b>\n"]
-        lines.append("Текущие индексы PREMIUM_STICKER_IDS для каждого действия:\n")
-        kb_rows = []
-        for action, label in ACTION_STICKER_LABELS.items():
-            custom_val = await db_setting(f"sticker_{action}")
-            current = (
-                custom_val
-                if custom_val
-                else ",".join(str(i) for i in ACTION_STICKERS[action])
-            )
-            lines.append(f"<b>{label}</b>: <code>{current}</code>")
-            kb_rows.append(
-                [
-                    InlineKeyboardButton(
-                        f"✏️ {label}", callback_data=f"admin_sticker_edit_{action}"
-                    )
-                ]
-            )
-        kb_rows.append([InlineKeyboardButton("◀️ Назад", callback_data="admin_refresh")])
-        lines.append(
-            "\n<i>Нажми на действие чтобы изменить индексы.\n"
-            "Индексы 0-49 соответствуют PREMIUM_STICKER_IDS.</i>"
-        )
-        try:
-            await q.message.edit_text(
-                "\n".join(lines),
-                parse_mode=ParseMode.HTML,
-                reply_markup=InlineKeyboardMarkup(kb_rows),
-            )
-        except Exception:
-            pass
-        await q.answer()
-        return
-
-    if d.startswith("admin_sticker_edit_"):
-        if uid not in ADMIN_IDS:
-            await q.answer("⛔", show_alert=True)
-            return
-        action = d[19:]
-        label = ACTION_STICKER_LABELS.get(action, action)
-        custom_val = await db_setting(f"sticker_{action}")
-        current = (
-            custom_val
-            if custom_val
-            else ",".join(str(i) for i in ACTION_STICKERS.get(action, []))
-        )
-        await q.answer()
-        try:
-            await q.message.edit_text(
-                f"✏️ <b>Редактирование: {label}</b>\n\n"
-                f"Текущие индексы: <code>{current}</code>\n\n"
-                f"Чтобы изменить, используй команду:\n"
-                f"<code>/setsticker {action} 0,1,2,3</code>\n\n"
-                f"Индексы 0-49 соответствуют PREMIUM_STICKER_IDS.\n"
-                f"Всего стикеров: {len(PREMIUM_STICKER_IDS)}",
-                parse_mode=ParseMode.HTML,
-                reply_markup=InlineKeyboardMarkup(
-                    [
-                        [
-                            InlineKeyboardButton(
-                                "◀️ Назад к стикерам", callback_data="admin_stickers"
-                            )
-                        ]
-                    ]
-                ),
-            )
-        except Exception:
-            pass
-        return
-
-    if d == "admin_referrals":
-        if uid not in ADMIN_IDS:
-            await q.answer("⛔", show_alert=True)
-            return
-        await q.answer()
-        async with aiosqlite.connect(DB_PATH) as db:
-            async with db.execute("SELECT COUNT(*) FROM referrals") as c:
-                total_refs = (await c.fetchone())[0] or 0
-            async with db.execute("SELECT SUM(rewarded_coins) FROM referrals") as c:
-                total_coins = (await c.fetchone())[0] or 0
-            # Топ-рефереры
-            async with db.execute(
-                "SELECT referrer_id, COUNT(*) as cnt, SUM(rewarded_coins) as earned "
-                "FROM referrals GROUP BY referrer_id ORDER BY cnt DESC LIMIT 15"
-            ) as c:
-                top_refs = await c.fetchall()
-        lines = [
-            f"🔗 <b>Реферальная статистика</b>\n\n"
-            f"Всего рефералов: <b>{total_refs}</b>\n"
-            f"КваКоинов выдано: <b>{total_coins}{coin_emoji()}</b>\n\n"
-            f"<b>Топ-рефереры (🚨 &gt;50 = подозрительно):</b>"
-        ]
-        kb_rows_ref = []
-        for ref_uid, cnt, earned in top_refs:
-            rf = await db_get(ref_uid)
-            name = he(rf["first_name"]) if rf else f"ID:{ref_uid}"
-            uname = f"@{rf['username']}" if rf and rf.get("username") else f"id{ref_uid}"
-            flag = " 🚨" if cnt > 50 else ""
-            lines.append(f"{'⚠️' if cnt > 50 else '👤'} <b>{name}</b> ({uname}) — {cnt} чел., {earned or 0}{coin_emoji()}{flag}")
-            if cnt > 50:
-                kb_rows_ref.append([InlineKeyboardButton(
-                    f"🔍 {name[:20]} ({cnt} реф.)",
-                    callback_data=f"admin_refdetail_{ref_uid}"
-                )])
-        if not kb_rows_ref:
-            lines.append("\n✅ <i>Подозрительных реферальных схем не обнаружено</i>")
-        else:
-            lines.append("\n⚠️ <b>Нажми на подозрительного пользователя для расследования:</b>")
-        kb_rows_ref.append([InlineKeyboardButton("◀️ Назад", callback_data="admin_refresh")])
-        try:
-            await q.message.edit_text(
-                "\n".join(lines),
-                parse_mode=ParseMode.HTML,
-                reply_markup=InlineKeyboardMarkup(kb_rows_ref),
-            )
-        except Exception:
-            pass
-        return
-
-    if d.startswith("admin_refdetail_"):
-        if uid not in ADMIN_IDS:
-            await q.answer("⛔", show_alert=True)
-            return
-        await q.answer()
-        try:
-            suspect_id = int(d.split("_")[-1])
-        except ValueError:
-            await q.answer("❌ Неверный ID", show_alert=True)
-            return
-        try:
-            rf = await db_get(suspect_id)
-            name = he(str(rf["first_name"] or f"ID:{suspect_id}")) if rf else f"ID:{suspect_id}"
-            uname = he("@" + rf["username"]) if rf and rf.get("username") else he(f"id{suspect_id}")
-            async with aiosqlite.connect(DB_PATH) as db:
-                async with db.execute(
-                    "SELECT referred_id, joined_at, stage_mask, rewarded_coins FROM referrals WHERE referrer_id=? ORDER BY joined_at DESC",
-                    (suspect_id,)
-                ) as c:
-                    ref_list = await c.fetchall()
-            # NULL-безопасное суммирование
-            total_earned = sum((r[3] or 0) for r in ref_list)
-            # Анализ подозрительных: регистрации < 5 минут между собой
-            suspicious_ids = []
-            prev_ts = 0.0
-            for rr in sorted(ref_list, key=lambda x: (x[1] or 0)):
-                ts = rr[1] or 0
-                diff = ts - prev_ts
-                if prev_ts and diff < 300:
-                    suspicious_ids.append(rr[0])
-                prev_ts = ts
-            lines = [
-                f"🔍 <b>Расследование: {name} ({uname})</b>\n",
-                f"ID: <code>{suspect_id}</code>",
-                f"💰 Баланс: {rf['coins'] if rf else '?'} 🪙",
-                f"👥 Всего рефералов: <b>{len(ref_list)}</b>",
-                f"🪙 Заработано с рефералов: <b>{total_earned} 🪙</b>",
-                f"🤖 Подозрительных (регистрации &lt; 5 мин): <b>{len(suspicious_ids)}</b>\n",
-                f"<b>Последние 20 рефералов:</b>",
-            ]
-            for rr in ref_list[:20]:
-                # NULL-безопасные значения
-                joined_at = rr[1] or 0
-                stage_mask = rr[2] or 0
-                rewarded = rr[3] or 0
-                ts_s = time.strftime("%d.%m %H:%M", time.localtime(joined_at)) if joined_at else "—"
-                mask_s = bin(stage_mask).count("1")
-                flag = " 🤖" if rr[0] in suspicious_ids else ""
-                lines.append(f"• <code>{rr[0]}</code> [{ts_s}] эт.{mask_s} {rewarded} 🪙{flag}")
-            if len(ref_list) > 20:
-                lines.append(f"<i>...и ещё {len(ref_list)-20}</i>")
-            ban_s = rf.get("banned", 0) if rf else 0
-            ban_lbl = "🔓 Разбанить" if ban_s else "🚫 Забанить мошенника"
-            ban_cb = f"admin_unban_{suspect_id}" if ban_s else f"admin_ban_{suspect_id}"
-            kb_det = InlineKeyboardMarkup([
-                [btn(ban_lbl, callback_data=ban_cb, style="danger")],
-                [InlineKeyboardButton(f"🗑 Удалить {len(suspicious_ids)} бот-рефералов", callback_data=f"admin_purge_botrefs_{suspect_id}")],
-                [InlineKeyboardButton(f"💸 Списать реф. монеты ({total_earned})", callback_data=f"admin_strip_refcoins_{suspect_id}")],
-                [InlineKeyboardButton("◀️ Назад к рефералам", callback_data="admin_referrals")],
-            ])
-            await q.message.edit_text("\n".join(lines), parse_mode=ParseMode.HTML, reply_markup=kb_det)
-        except Exception as e:
-            print(f"❌ admin_refdetail error: {e}")
-            try:
-                await q.message.edit_text(
-                    f"❌ <b>Ошибка при загрузке расследования</b>\n\n<code>{_html.escape(str(e))}</code>",
-                    parse_mode=ParseMode.HTML,
-                    reply_markup=InlineKeyboardMarkup(
-                        [[InlineKeyboardButton("◀️ Назад", callback_data="admin_referrals")]]
-                    ),
-                )
-            except Exception:
-                pass
-        return
-
-    if d.startswith("admin_purge_botrefs_"):
-        if uid not in ADMIN_IDS:
-            await q.answer("⛔", show_alert=True)
-            return
-        try:
-            suspect_id = int(d.split("_")[-1])
-        except ValueError:
-            return
-        async with aiosqlite.connect(DB_PATH) as db:
-            async with db.execute(
-                "SELECT referred_id, joined_at FROM referrals WHERE referrer_id=? ORDER BY joined_at",
-                (suspect_id,)
-            ) as c:
-                ref_list = await c.fetchall()
-        suspicious_ids = []
-        prev_ts = 0.0
-        for rr in sorted(ref_list, key=lambda x: (x[1] or 0)):
-            ts = rr[1] or 0
-            diff = ts - prev_ts
-            if prev_ts and diff < 300:
-                suspicious_ids.append(rr[0])
-            prev_ts = ts
-        if not suspicious_ids:
-            await q.answer("✅ Бот-рефералов не найдено", show_alert=True)
-            return
-        async with aiosqlite.connect(DB_PATH) as db:
-            for bot_id in suspicious_ids:
-                await db.execute("DELETE FROM referrals WHERE referrer_id=? AND referred_id=?", (suspect_id, bot_id))
-                await db.execute("UPDATE frogs SET banned=1 WHERE user_id=?", (bot_id,))
-            await db.commit()
-        await q.answer((f"🗑 Удалено {len(suspicious_ids)} бот-рефералов, аккаунты забанены")[:200], show_alert=True)
-        await admin_log(uid, "purge_botrefs", suspect_id, details=f"purged {len(suspicious_ids)} bot referrals")
-        return
-
-    if d.startswith("admin_strip_refcoins_"):
-        if uid not in ADMIN_IDS:
-            await q.answer("⛔", show_alert=True)
-            return
-        try:
-            suspect_id = int(d.split("_")[-1])
-        except ValueError:
-            return
-        async with aiosqlite.connect(DB_PATH) as db:
-            async with db.execute("SELECT SUM(rewarded_coins) FROM referrals WHERE referrer_id=?", (suspect_id,)) as c:
-                earned = (await c.fetchone())[0] or 0
-            # Списываем ровно столько, сколько заработано с рефералов
-            await db.execute("UPDATE frogs SET coins = MAX(0, coins - ?) WHERE user_id=?", (earned, suspect_id))
-            await db.commit()
-        await q.answer((f"💸 Списано {earned} монет с ID:{suspect_id}")[:200], show_alert=True)
-        await admin_log(uid, "strip_refcoins", suspect_id, details=f"stripped {earned} ref coins")
-        return
 
 
     # ── ПОИСК ИГРОКА ───────────────────────────────────
-    if d == "admin_search_hint":
-        if uid not in ADMIN_IDS:
-            await q.answer("⛔", show_alert=True)
-            return
-        await q.answer()
-        try:
-            await q.message.edit_text(
-                "🔍 <b>Поиск игрока</b>\n\n"
-                "По username:\n<code>/adminlookup @username</code>\n\n"
-                "По Telegram ID:\n<code>/adminlookup 123456789</code>\n\n"
-                "<i>Откроется карточка игрока с возможностью бана, выдачи монет и сброса КД.</i>",
-                parse_mode=ParseMode.HTML,
-                reply_markup=InlineKeyboardMarkup(
-                    [[InlineKeyboardButton("◀️ Назад", callback_data="admin_refresh")]]
-                ),
-            )
-        except Exception:
-            pass
-        return
 
     # ── ТОП БОГАЧИ ─────────────────────────────────────
-    if d == "admin_rich":
-        if uid not in ADMIN_IDS:
-            await q.answer("⛔", show_alert=True)
-            return
-        await q.answer()
-        async with aiosqlite.connect(DB_PATH) as db:
-            db.row_factory = aiosqlite.Row
-            async with db.execute(
-                "SELECT user_id, first_name, username, coins, level, banned FROM frogs ORDER BY coins DESC LIMIT 20"
-            ) as c:
-                rich_list = await c.fetchall()
-        medals = ["🥇","🥈","🥉"] + ["💰"] * 17
-        lines = ["💎 <b>Топ-20 богатейших игроков</b>\n"]
-        for i, r in enumerate(rich_list):
-            uname = f"@{r['username']}" if r["username"] else f"id{r['user_id']}"
-            ban_mark = " 🚫" if r["banned"] else ""
-            lines.append(
-                f"{medals[i]} <b>{he(r['first_name'])}</b> ({uname}){ban_mark}\n"
-                f"   <tg-emoji emoji-id='5341524176039615767'>🪙</tg-emoji> {r['coins']:,}  |  ур.{r['level']}  |  <code>{r['user_id']}</code>"
-            )
-        try:
-            await q.message.edit_text(
-                "\n".join(lines),
-                parse_mode=ParseMode.HTML,
-                reply_markup=InlineKeyboardMarkup(
-                    [[InlineKeyboardButton("◀️ Назад", callback_data="admin_refresh")]]
-                ),
-            )
-        except Exception:
-            pass
-        return
 
     # ── ПАРТНЁРСКИЕ ЧАТЫ ──────────────────────────────
-    if d == "admin_partner_chats":
-        if uid not in ADMIN_IDS:
-            await q.answer("⛔", show_alert=True)
-            return
-        await q.answer()
-        chats = await partner_chat_list_active()
-        if not chats:
-            lines = ["🏘 <b>Партнёрские чаты</b>\n\nНет активных партнёрских чатов.\nДобавь бота в группу — она автоматически появится здесь."]
-        else:
-            lines = [f"🏘 <b>Партнёрские чаты ({len(chats)} активных)</b>\n"]
-            for ch in chats:
-                cnt = await partner_chat_count_members(ch["chat_id"])
-                title = he(ch.get("chat_title") or str(ch["chat_id"]))
-                uname = f" (@{ch['chat_username']})" if ch.get("chat_username") else ""
-                added_dt = datetime.fromtimestamp(ch["added_at"], timezone.utc).strftime("%d.%m.%Y") if ch.get("added_at") else "?"
-                lines.append(
-                    f"• <b>{title}</b>{uname}\n"
-                    f"  id: <code>{ch['chat_id']}</code>  |  игроков: <b>{cnt}</b>  |  добавлен: {added_dt}\n"
-                    f"  🔗 <a href=\"{ch.get('bot_link','')}\">Ссылка для игроков</a>"
-                )
-        try:
-            await q.message.edit_text(
-                "\n".join(lines),
-                parse_mode=ParseMode.HTML,
-                reply_markup=InlineKeyboardMarkup(
-                    [[InlineKeyboardButton("◀️ Назад", callback_data="admin_refresh")]]
-                ),
-                link_preview_options=LinkPreviewOptions(is_disabled=True),
-            )
-        except Exception:
-            pass
-        return
 
     # ── ПЕРЕВОДЫ /gift ──────────────────────────────────
-    if d == "admin_gifts_0" or d.startswith("admin_gifts_"):
-        if uid not in ADMIN_IDS:
-            await q.answer("⛔", show_alert=True)
-            return
-        await q.answer()
-        try:
-            offset_g = int(d.split("_")[-1])
-        except (ValueError, IndexError):
-            offset_g = 0
-        async with aiosqlite.connect(DB_PATH) as db:
-            db.row_factory = aiosqlite.Row
-            async with db.execute(
-                "SELECT g.id, g.from_id, g.to_id, g.amount, g.ts, "
-                "f1.first_name as from_name, f1.username as from_uname, "
-                "f2.first_name as to_name, f2.username as to_uname "
-                "FROM gift_log g "
-                "LEFT JOIN frogs f1 ON f1.user_id=g.from_id "
-                "LEFT JOIN frogs f2 ON f2.user_id=g.to_id "
-                "ORDER BY g.ts DESC LIMIT 15 OFFSET ?",
-                (offset_g,)
-            ) as c:
-                gift_rows = await c.fetchall()
-            async with db.execute("SELECT COUNT(*), SUM(amount) FROM gift_log") as c:
-                cnt_g, sum_g = await c.fetchone()
-                cnt_g = cnt_g or 0
-                sum_g = sum_g or 0
-        lines_g = [f"🎁 <b>Переводы /gift</b> (всего: {cnt_g}, сумма: {sum_g:,}{coin_emoji()})\n"]
-        if not gift_rows:
-            lines_g.append("<i>Переводов пока нет</i>")
-        for gr in gift_rows:
-            ts_s = time.strftime("%d.%m %H:%M", time.localtime(gr["ts"]))
-            fn = he(gr["from_name"] or f"id{gr['from_id']}")
-            fu = f"@{gr['from_uname']}" if gr["from_uname"] else f"<code>{gr['from_id']}</code>"
-            tn = he(gr["to_name"] or f"id{gr['to_id']}")
-            tu = f"@{gr['to_uname']}" if gr["to_uname"] else f"<code>{gr['to_id']}</code>"
-            lines_g.append(
-                f"<code>{ts_s}</code> {fn}({fu}) → {tn}({tu}): <b>+{gr['amount']}{coin_emoji()}</b>"
-            )
-        nav_g = []
-        if offset_g > 0:
-            nav_g.append(InlineKeyboardButton("◀️ Новее", callback_data=f"admin_gifts_{max(0, offset_g-15)}"))
-        if offset_g + 15 < cnt_g:
-            nav_g.append(InlineKeyboardButton("▶️ Старее", callback_data=f"admin_gifts_{offset_g+15}"))
-        kb_g_rows = []
-        if nav_g:
-            kb_g_rows.append(nav_g)
-        kb_g_rows.append([InlineKeyboardButton("◀️ Назад", callback_data="admin_refresh")])
-        try:
-            await q.message.edit_text(
-                "\n".join(lines_g),
-                parse_mode=ParseMode.HTML,
-                reply_markup=InlineKeyboardMarkup(kb_g_rows),
-            )
-        except Exception:
-            pass
-        return
 
     # ── ЛОТЕРЕЯ (АДМИН) ──────────────────────────────────
-    if d == "admin_lottery":
-        if uid not in ADMIN_IDS:
-            await q.answer("⛔", show_alert=True)
-            return
-        await q.answer()
-        draw_date = lottery_today()
-        async with aiosqlite.connect(DB_PATH) as db:
-            db.row_factory = aiosqlite.Row
-            # Все билеты текущего розыгрыша
-            async with db.execute(
-                "SELECT user_id, COUNT(*) as cnt FROM lottery_tickets "
-                "WHERE draw_date=? GROUP BY user_id ORDER BY cnt DESC",
-                (draw_date,)
-            ) as c:
-                participants = await c.fetchall()
-            async with db.execute(
-                "SELECT COUNT(*) FROM lottery_tickets WHERE draw_date=?", (draw_date,)
-            ) as c:
-                total_tickets = (await c.fetchone())[0] or 0
 
-        pool = total_tickets * LOTTERY_TICKET_COST
-        lines = [
-            f"🎟 <b>Лотерея — панель управления</b>\n",
-            f"📅 Розыгрыш: <b>{draw_date}</b>",
-            f"🎫 Билетов: <b>{total_tickets}</b>  |  💰 Банк: <b>{pool}{coin_emoji()}</b>",
-            f"👥 Участников: <b>{len(participants)}</b>\n",
-        ]
-        if participants:
-            lines.append("<b>Участники (имя в игре — билетов):</b>")
-            for row in participants:
-                p_uid = row["user_id"]
-                p_cnt = row["cnt"]
-                pf = await db_get(p_uid)
-                if pf:
-                    pname = he(pf.get("frog_name") or pf.get("first_name") or f"ID:{p_uid}")
-                else:
-                    pname = f"ID:{p_uid}"
-                lines.append(f"• {pname} — <b>{p_cnt}</b> 🎟")
-        else:
-            lines.append("<i>Билеты ещё не куплены</i>")
 
-        kb_lot = InlineKeyboardMarkup([
-            [InlineKeyboardButton("🎲 Провести розыгрыш сейчас", callback_data="admin_lottery_draw_now")],
-            [InlineKeyboardButton("🗑 Сбросить билеты", callback_data="admin_lottery_reset")],
-            [InlineKeyboardButton("◀️ Назад", callback_data="admin_refresh")],
-        ])
-        try:
-            await q.message.edit_text(
-                "\n".join(lines), parse_mode=ParseMode.HTML, reply_markup=kb_lot
-            )
-        except Exception:
-            pass
-        return
 
-    if d == "admin_lottery_draw_now":
-        if uid not in ADMIN_IDS:
-            await q.answer("⛔", show_alert=True)
-            return
-        await q.answer("🎲 Розыгрыш запускается...", show_alert=True)
-        asyncio.create_task(job_lottery_draw(ctx))
-        await admin_log(uid, "lottery_draw_now")
-        return
 
-    if d == "admin_lottery_reset":
-        if uid not in ADMIN_IDS:
-            await q.answer("⛔", show_alert=True)
-            return
-        draw_date = lottery_today()
-        async with aiosqlite.connect(DB_PATH) as db:
-            async with db.execute(
-                "SELECT COUNT(*) FROM lottery_tickets WHERE draw_date=?", (draw_date,)
-            ) as c:
-                cnt = (await c.fetchone())[0] or 0
-            await db.execute("DELETE FROM lottery_tickets WHERE draw_date=?", (draw_date,))
-            await db.commit()
-        await q.answer((f"🗑 Удалено {cnt} билетов за {draw_date}")[:200], show_alert=True)
-        await admin_log(uid, "lottery_reset", details=f"deleted {cnt} tickets for {draw_date}")
-        # Обновим страницу лотереи
-        kb_lot = InlineKeyboardMarkup([
-            [InlineKeyboardButton("🎲 Провести розыгрыш сейчас", callback_data="admin_lottery_draw_now")],
-            [InlineKeyboardButton("🗑 Сбросить билеты", callback_data="admin_lottery_reset")],
-            [InlineKeyboardButton("◀️ Назад", callback_data="admin_refresh")],
-        ])
-        try:
-            await q.message.edit_text(
-                f"<tg-emoji emoji-id='5341688243790323773'>🎟</tg-emoji> <b>Лотерея — панель управления</b>\n\n"
-                f"📅 Розыгрыш: <b>{draw_date}</b>\n"
-                f"🗑 Билеты сброшены (удалено: {cnt})\n\n"
-                f"<i>Участников нет</i>",
-                parse_mode=ParseMode.HTML,
-                reply_markup=kb_lot,
-            )
-        except Exception:
-            pass
-        return
-
-    if d == "admin_broadcast":
-        if uid not in ADMIN_IDS:
-            await q.answer("⛔", show_alert=True)
-            return
-        await q.answer()
-        try:
-            await q.message.edit_text(
-                "📢 <b>Рассылка</b>\n\n"
-                "Отправь текст сообщения командой:\n"
-                "<code>/broadcast Текст сообщения</code>\n\n"
-                "<i>Сообщение получат все активные игроки.</i>",
-                parse_mode=ParseMode.HTML,
-                reply_markup=InlineKeyboardMarkup(
-                    [[InlineKeyboardButton("◀️ Назад", callback_data="admin_refresh")]]
-                ),
-            )
-        except Exception:
-            pass
-        return
-
-    if d in ("admin_give_coins", "admin_give_skin"):
-        if uid not in ADMIN_IDS:
-            await q.answer("⛔", show_alert=True)
-            return
-        await q.answer()
-        if d == "admin_give_coins":
-            await q.answer()
-            hint = "Дать КваКоины: <code>/givecoin @username 500</code>"
-        else:
-            hint = "Дать облик: <code>/giveskin @username Brownie</code>"
-        try:
-            await q.message.edit_text(
-                f"🎁 <b>Выдача игрокам</b>\n\n{hint}",
-                parse_mode=ParseMode.HTML,
-                reply_markup=InlineKeyboardMarkup(
-                    [[InlineKeyboardButton("◀️ Назад", callback_data="admin_refresh")]]
-                ),
-            )
-        except Exception:
-            pass
-        return
 
     # ── ЭКОНОМИКА ────────────────────────────────
-    if d == "admin_eco":
-        if uid not in ADMIN_IDS:
-            await q.answer("⛔", show_alert=True)
-            return
-        await q.answer()
-        # Читаем основные настройки из БД (с дефолтами)
-        async with aiosqlite.connect(DB_PATH) as db:
-            async with db.execute(
-                "SELECT key, value FROM settings WHERE key IN (?,?,?,?,?,?,?,?)",
-                (
-                    "gacha_cost",
-                    "revive_cost",
-                    "heal_cost",
-                    "daily_base",
-                    "casino_jackpot_pool",
-                    "feed_reward",
-                    "play_reward",
-                    "wash_reward",
-                ),
-            ) as c:
-                srows = {r[0]: r[1] for r in await c.fetchall()}
-        total_coins_eco = 0
-        async with aiosqlite.connect(DB_PATH) as db:
-            async with db.execute("SELECT SUM(coins) FROM frogs") as c:
-                total_coins_eco = (await c.fetchone())[0] or 0
-
-        def sv(key, default):
-            return srows.get(key, str(default))
-
-        text_eco = (
-            f"💰 <b>Экономика и цены</b>\n\n"
-            f"🪙 В экономике: <b>{total_coins_eco:,}</b>\n\n"
-            f"<b>Цены (изменить: /setprice ключ значение):</b>\n"
-            f"• gacha_cost = {sv('gacha_cost','50')} (гача)\n"
-            f"• revive_cost = {sv('revive_cost','100')} (воскрешение)\n"
-            f"• heal_cost = {sv('heal_cost','30')} (лечение)\n"
-            f"• daily_base = {sv('daily_base','50')} (ежедневный бонус)\n\n"
-            f"<b>Награды:</b>\n"
-            f"• feed_reward = {sv('feed_reward','10')} (кормление)\n"
-            f"• play_reward = {sv('play_reward','8')} (игра)\n"
-            f"• wash_reward = {sv('wash_reward','5')} (купание)\n\n"
-            f"<b>Казино:</b>\n"
-            f"• Джекпот-пул: {sv('casino_jackpot_pool','0')}{coin_emoji()}\n\n"
-            f"<i>Пример: /setprice gacha_cost 75</i>"
-        )
-        kb_eco = InlineKeyboardMarkup(
-            [
-                [
-                    InlineKeyboardButton(
-                        "📊 Гача-стат", callback_data="admin_casino_stats"
-                    )
-                ],
-                [InlineKeyboardButton("◀️ Назад", callback_data="admin_refresh")],
-            ]
-        )
-        try:
-            await q.message.edit_text(
-                text_eco, parse_mode=ParseMode.HTML, reply_markup=kb_eco
-            )
-        except Exception:
-            pass
-        return
 
     # ── ADMIN EXP EVENT (тест событий экспедиции) ────────────────────────────
     if d.startswith("aee_"):
@@ -46476,470 +47030,24 @@ async def on_callback(update: Update, ctx: ContextTypes.DEFAULT_TYPE):
         return
 
     # ── ИВЕНТЫ ───────────────────────────────────
-    if d == "admin_events":
-        if uid not in ADMIN_IDS:
-            await q.answer("⛔", show_alert=True)
-            return
-        await q.answer()
-        leg = await legend_active()
-        if leg:
-            ends_dt = datetime.utcfromtimestamp(leg["ends_at"] + 3*3600).strftime("%d.%m в %H:%M")
-            goals   = leg["goals"]
-            prog    = leg["progress"]
-            pct_parts = []
-            for action, goal in goals.items():
-                cur = prog.get(action, 0)
-                icon, label = _LEGEND_ACTION_LABELS.get(action, ("▫️", action))
-                pct_parts.append(f"{icon}{cur}/{goal}")
-            leg_status = (
-                f"📜 <b>Легенда активна:</b> {leg['emoji']} {leg['title']}\n"
-                f"Прогресс: {' | '.join(pct_parts)}\n"
-                f"Финал: {ends_dt} МСК"
-            )
-            legend_btns = [
-                [InlineKeyboardButton("🔄 Обновить прогресс в чате", callback_data="admin_legend_update")],
-                [InlineKeyboardButton("🏁 Завершить легенду досрочно", callback_data="admin_legend_finish")],
-                [InlineKeyboardButton("✏️ Изменить цели", callback_data="admin_legend_edit_goals")],
-            ]
-        else:
-            leg_status = "📜 <b>Легенда:</b> не активна"
-            legend_btns = [
-                [InlineKeyboardButton("🚀 Запустить легенду сейчас", callback_data="admin_legend_start")],
-            ]
 
-        text_ev = (
-            f"🎲 <b>Ивенты и события</b>\n\n"
-            f"🦟 Комар: запускается случайно каждые 1–6ч\n"
-            f"🎲 Интерактивные события: каждые 8ч, 30% шанс\n\n"
-            f"{leg_status}\n\n"
-            f"<i>Действия доступны ниже:</i>"
-        )
-        kb_ev = InlineKeyboardMarkup(
-            legend_btns + [
-                [InlineKeyboardButton("🦟 Запустить комара", callback_data="admin_launch_mosquito")],
-                [InlineKeyboardButton("🎲 Разослать интерактивное событие", callback_data="admin_launch_iev")],
-                [InlineKeyboardButton("✨ Золотая лягушка", callback_data="admin_boost_menu")],
-                [InlineKeyboardButton("📢 Рассылка", callback_data="admin_broadcast")],
-                [InlineKeyboardButton("◀️ Назад", callback_data="admin_refresh")],
-            ]
-        )
-        try:
-            await q.message.edit_text(text_ev, parse_mode=ParseMode.HTML, reply_markup=kb_ev)
-        except Exception:
-            pass
-        return
 
-    if d == "admin_launch_mosquito":
-        if uid not in ADMIN_IDS:
-            await q.answer("⛔", show_alert=True)
-            return
-        asyncio.create_task(job_mosquito(ctx))
-        await admin_log(uid, "launch_mosquito")
-        await q.answer("🦟 Комар запущен!", show_alert=True)
-        return
 
-    if d == "admin_launch_iev":
-        if uid not in ADMIN_IDS:
-            await q.answer("⛔", show_alert=True)
-            return
-        # Сбрасываем КД у всех живых, потом запускаем job_events
-        async with aiosqlite.connect(DB_PATH) as db:
-            await db.execute("UPDATE frogs SET last_interactive_event=0, last_event=0 WHERE alive=1")
-            await db.commit()
-        asyncio.create_task(job_events(ctx))
-        await admin_log(uid, "launch_iev")
-        await q.answer("🎲 Интерактивные события разосланы!", show_alert=True)
-        return
 
-    if d == "admin_legend_start":
-        if uid not in ADMIN_IDS:
-            await q.answer("⛔", show_alert=True)
-            return
-        await _legend_start(ctx.bot)
-        await admin_log(uid, "legend_start")
-        await q.answer("📜 Легенда запущена!", show_alert=True)
-        # Обновляем панель
-        try:
-            await q.message.edit_reply_markup(reply_markup=None)
-        except Exception:
-            pass
-        # Перерисовываем admin_events
-        ctx.drop_callback_data = False
-        q.data = "admin_events"
-        return
 
-    if d == "admin_legend_update":
-        if uid not in ADMIN_IDS:
-            await q.answer("⛔", show_alert=True)
-            return
-        leg = await legend_active()
-        if leg:
-            await _legend_announce(ctx.bot, leg)
-            await admin_log(uid, "legend_update")
-            await q.answer("🔄 Прогресс обновлён в чате!", show_alert=True)
-        else:
-            await q.answer("Нет активной легенды.", show_alert=True)
-        return
 
-    if d == "admin_legend_finish":
-        if uid not in ADMIN_IDS:
-            await q.answer("⛔", show_alert=True)
-            return
-        leg = await legend_active()
-        if leg:
-            await _legend_finish(ctx.bot, leg)
-            await admin_log(uid, "legend_finish")
-            await q.answer("🏁 Легенда завершена!", show_alert=True)
-        else:
-            await q.answer("Нет активной легенды.", show_alert=True)
-        return
-
-    if d == "admin_legend_edit_goals":
-        if uid not in ADMIN_IDS:
-            await q.answer("⛔", show_alert=True)
-            return
-        leg = await legend_active()
-        if not leg:
-            await q.answer("Нет активной легенды.", show_alert=True)
-            return
-        goals_str = " | ".join(f"{a}:{g}" for a, g in leg["goals"].items())
-        await q.answer()
-        try:
-            await q.message.edit_text(
-                f"✏️ <b>Изменить цели легенды</b>\n\n"
-                f"Текущие цели:\n<code>{goals_str}</code>\n\n"
-                f"Отправь новые цели командой:\n"
-                f"<code>/legend_goals feeds:300 washes:50 plays:40</code>\n\n"
-                f"Доступные действия: feeds, washes, plays, heals, sleeps, gacha, casino",
-                parse_mode=ParseMode.HTML,
-                reply_markup=InlineKeyboardMarkup([
-                    [InlineKeyboardButton("◀️ Назад", callback_data="admin_events")]
-                ]),
-            )
-        except Exception:
-            pass
-        return
 
     # ── СИСТЕМА ─────────────────────────────────
-    if d == "admin_system":
-        if uid not in ADMIN_IDS:
-            await q.answer("⛔", show_alert=True)
-            return
-        await q.answer()
-        import os as _os
-
-        db_size = _os.path.getsize(DB_PATH) if _os.path.exists(DB_PATH) else 0
-        db_size_kb = db_size // 1024
-        # Собираем быструю сводку нагрузки для отображения в системной панели
-        try:
-            import psutil as _psu
-            _cpu = _psu.cpu_percent(interval=0.2)
-            _mem = _psu.virtual_memory()
-            _disk = _psu.disk_usage("/")
-            _load_line = (
-                f"🖥 CPU: <b>{_cpu:.1f}%</b>  "
-                f"🧠 RAM: <b>{_mem.percent:.1f}%</b> "
-                f"({_mem.used // 1024**2}/{_mem.total // 1024**2} МБ)  "
-                f"💽 Диск: <b>{_disk.percent:.1f}%</b>"
-            )
-        except ImportError:
-            _load_line = "⚠️ psutil не установлен (<code>pip install psutil</code>)"
-        text_sys = (
-            f"🔧 <b>Системные инструменты</b>\n\n"
-            f"📦 Размер БД: <b>{db_size_kb} КБ</b>\n"
-            f"{_load_line}\n\n"
-            f"<b>Доступные действия:</b>\n"
-            f"• 💾 Бекап — отправит БД в личку\n"
-            f"• 📊 Нагрузка — CPU/RAM/диск + пиковые значения\n"
-            f"• 🔄 Обновить панель\n\n"
-            f"<b>Команды для выдачи игрокам:</b>\n"
-            f"<code>/givecoin @username 500</code>\n"
-            f"<code>/giveskin @username Brownie</code>\n"
-            f"<code>/adminlookup @username</code>\n"
-            f"<code>/setprice key value</code>"
-        )
-        kb_sys = InlineKeyboardMarkup(
-            [
-                [InlineKeyboardButton("💾 Бекап БД", callback_data="admin_backup")],
-                [
-                    InlineKeyboardButton("📊 Статистика", callback_data="admin_stats"),
-                    InlineKeyboardButton("🎭 Стикеры", callback_data="admin_stickers"),
-                ],
-                [
-                    InlineKeyboardButton(
-                        "🔍 Поиск игрока", callback_data="admin_search_hint"
-                    ),
-                    InlineKeyboardButton("💀 Мёртвые", callback_data="admin_dead"),
-                ],
-                [InlineKeyboardButton("🔄 Сбросить топ недели", callback_data="admin_reset_topw")],
-                [InlineKeyboardButton("🟢 Онлайн", callback_data="admin_online")],
-                [InlineKeyboardButton("📈 Нагрузка сервера", callback_data="admin_server_load")],
-                [InlineKeyboardButton("◀️ Назад", callback_data="admin_refresh")],
-            ]
-        )
-        try:
-            await q.message.edit_text(
-                text_sys, parse_mode=ParseMode.HTML, reply_markup=kb_sys
-            )
-        except Exception:
-            pass
-        return
 
     # ── СБРОС ТОПА НЕДЕЛИ (ДОСРОЧНО) ─────────────
-    if d == "admin_reset_topw":
-        if uid not in ADMIN_IDS:
-            await q.answer("⛔", show_alert=True)
-            return
-        await q.answer("✅ Топ недели сброшен!", show_alert=True)
-        # Выдаём достижение top_weekly топ-3 ПЕРЕД сбросом
-        try:
-            top3w = await db_top_weekly(3)
-            for _r in top3w:
-                _uid_w = _r.get("user_id")
-                if _uid_w:
-                    await ach_grant(_uid_w, "top_weekly", bot)
-        except Exception as _e:
-            logger.warning("admin_reset_topw ach_grant error: %s", _e)
-        async with aiosqlite.connect(DB_PATH) as db:
-            await db.execute("UPDATE frogs SET xp_week = 0")
-            await db.commit()
-        await admin_log(uid, "reset_topw")
-        try:
-            await q.message.edit_text(
-                "✅ <b>Топ недели сброшен досрочно.</b>\n\nВсе xp_week обнулены.",
-                parse_mode=ParseMode.HTML,
-                reply_markup=InlineKeyboardMarkup([[InlineKeyboardButton("◀️ Назад", callback_data="admin_system")]]),
-            )
-        except Exception:
-            pass
-        return
 
     # ── ОНЛАЙН СТАТИСТИКА ───────────────────────
-    if d == "admin_online":
-        if uid not in ADMIN_IDS:
-            await q.answer("⛔", show_alert=True)
-            return
-        await q.answer()
-        global _peak_last_save
-        now_ao = time.time()
-        cutoff_10 = now_ao - 10 * 60
-        cutoff_60 = now_ao - 60 * 60
-        async with aiosqlite.connect(DB_PATH) as db:
-            async with db.execute("SELECT COUNT(*) FROM frogs WHERE last_seen >= ? AND alive=1", (cutoff_10,)) as c:
-                online_10 = (await c.fetchone())[0] or 0
-            async with db.execute("SELECT COUNT(*) FROM frogs WHERE last_seen >= ? AND alive=1", (cutoff_60,)) as c:
-                online_60 = (await c.fetchone())[0] or 0
-            async with db.execute("SELECT COUNT(*) FROM frogs WHERE alive=1") as c:
-                total_alive = (await c.fetchone())[0] or 0
-            async with db.execute("SELECT COUNT(*) FROM frogs") as c:
-                total_all = (await c.fetchone())[0] or 0
-
-        # Обновляем пик
-        _update_peak_online(online_10)
-        if now_ao - _peak_last_save > _PEAK_SAVE_INTERVAL:
-            await _save_peak_online()
-
-        def _fmt_peak(period: str) -> str:
-            count, ts = _peak_online.get(period, (0, 0))
-            if ts == 0:
-                return "—"
-            dt = now_ao - ts
-            if dt < 3600:
-                ago = f"{int(dt//60)}м назад"
-            elif dt < 86400:
-                ago = f"{int(dt//3600)}ч назад"
-            else:
-                ago = f"{int(dt//86400)}д назад"
-            return f"<b>{count}</b> ({ago})"
-
-        try:
-            await q.message.edit_text(
-                f"🟢 <b>Онлайн статистика</b>\n\n"
-                f"🟢 Сейчас (10 мин): <b>{online_10}</b>\n"
-                f"🟡 За час: <b>{online_60}</b>\n"
-                f"<tg-emoji emoji-id='5341367834935075028'>🐸</tg-emoji> Живых: <b>{total_alive}</b>  |  Всего: <b>{total_all}</b>\n\n"
-                f"<b>📈 Пиковый онлайн:</b>\n"
-                f"  За сутки:  {_fmt_peak('day')}\n"
-                f"  За неделю: {_fmt_peak('week')}\n"
-                f"  За месяц:  {_fmt_peak('month')}",
-                parse_mode=ParseMode.HTML,
-                reply_markup=InlineKeyboardMarkup([
-                    [InlineKeyboardButton("🔄 Обновить", callback_data="admin_online")],
-                    [InlineKeyboardButton("◀️ Назад", callback_data="admin_system")],
-                ]),
-            )
-        except Exception:
-            pass
-        return
 
     # ── НАГРУЗКА СЕРВЕРА ─────────────────────────────────
-    if d == "admin_server_load" or d == "admin_server_load_refresh":
-        if uid not in ADMIN_IDS:
-            await q.answer("⛔", show_alert=True)
-            return
-        await q.answer()
-        try:
-            import psutil as _psu
-            # CPU — 0.5 сек замер (неблокирующий в asyncio через executor)
-            loop = asyncio.get_event_loop()
-            _cpu_pct = await loop.run_in_executor(None, lambda: _psu.cpu_percent(interval=0.5))
-            _cpu_count = _psu.cpu_count(logical=True)
-            _cpu_freq = _psu.cpu_freq()
-            _freq_str = f"{_cpu_freq.current:.0f} МГц" if _cpu_freq else "—"
-
-            _mem = _psu.virtual_memory()
-            _swap = _psu.swap_memory()
-            _disk = _psu.disk_usage("/")
-
-            # Uptime процесса бота
-            _proc = _psu.Process()
-            _proc_create = _proc.create_time()
-            _uptime_sec = int(time.time() - _proc_create)
-            _uptime_str = (
-                f"{_uptime_sec // 3600}ч {(_uptime_sec % 3600) // 60}м"
-                if _uptime_sec >= 3600
-                else f"{_uptime_sec // 60}м {_uptime_sec % 60}с"
-            )
-            _proc_mem = _proc.memory_info().rss // 1024 ** 2
-
-            # Сетевой трафик
-            _net = _psu.net_io_counters()
-            _net_sent = _net.bytes_sent // 1024 ** 2
-            _net_recv = _net.bytes_recv // 1024 ** 2
-
-            # Пиковые CPU/RAM — храним в bot_data
-            _sl = ctx.bot_data.setdefault("server_load_peak", {
-                "cpu_max": 0.0, "cpu_max_ts": 0,
-                "ram_max": 0.0, "ram_max_ts": 0,
-            })
-            _now_sl = time.time()
-            if _cpu_pct > _sl["cpu_max"]:
-                _sl["cpu_max"] = _cpu_pct
-                _sl["cpu_max_ts"] = _now_sl
-            if _mem.percent > _sl["ram_max"]:
-                _sl["ram_max"] = _mem.percent
-                _sl["ram_max_ts"] = _now_sl
-
-            def _ago(ts):
-                if ts == 0:
-                    return "—"
-                d_ = int(_now_sl - ts)
-                if d_ < 3600:
-                    return f"{d_ // 60}м назад"
-                elif d_ < 86400:
-                    return f"{d_ // 3600}ч назад"
-                return f"{d_ // 86400}д назад"
-
-            text_load = (
-                f"📈 <b>Нагрузка сервера</b>\n\n"
-                f"🖥 <b>CPU</b>\n"
-                f"  Сейчас: <b>{_cpu_pct:.1f}%</b>  ({_cpu_count} ядер, {_freq_str})\n"
-                f"  🔺 Пик:  <b>{_sl['cpu_max']:.1f}%</b> ({_ago(_sl['cpu_max_ts'])})\n\n"
-                f"🧠 <b>RAM</b>\n"
-                f"  Сейчас: <b>{_mem.percent:.1f}%</b>  "
-                f"({_mem.used // 1024**2}/{_mem.total // 1024**2} МБ)\n"
-                f"  🔺 Пик:  <b>{_sl['ram_max']:.1f}%</b> ({_ago(_sl['ram_max_ts'])})\n"
-                f"  SWAP: {_swap.used // 1024**2}/{_swap.total // 1024**2} МБ "
-                f"({_swap.percent:.1f}%)\n\n"
-                f"💽 <b>Диск</b>\n"
-                f"  Занято: <b>{_disk.percent:.1f}%</b>  "
-                f"({_disk.used // 1024**3}/{_disk.total // 1024**3} ГБ)\n\n"
-                f"🤖 <b>Процесс бота</b>\n"
-                f"  Uptime: <b>{_uptime_str}</b>\n"
-                f"  RAM процесса: <b>{_proc_mem} МБ</b>\n\n"
-                f"🌐 <b>Сеть</b>\n"
-                f"  Отправлено: {_net_sent} МБ  |  Получено: {_net_recv} МБ\n\n"
-                f"<i>Пики сбрасываются при перезапуске бота</i>"
-            )
-        except ImportError:
-            text_load = (
-                "⚠️ <b>psutil не установлен</b>\n\n"
-                "Для мониторинга нагрузки выполните:\n"
-                "<code>pip install psutil</code>\n"
-                "и перезапустите бота."
-            )
-        except Exception as _e:
-            text_load = f"❌ Ошибка получения данных: <code>{_html.escape(str(_e))}</code>"
-
-        try:
-            await q.message.edit_text(
-                text_load,
-                parse_mode=ParseMode.HTML,
-                reply_markup=InlineKeyboardMarkup([
-                    [InlineKeyboardButton("🔄 Обновить", callback_data="admin_server_load_refresh")],
-                    [InlineKeyboardButton("◀️ Назад", callback_data="admin_system")],
-                ]),
-            )
-        except Exception:
-            pass
-        return
 
     # ── БЕКАП БД ─────────────────────────────────
-    if d == "admin_backup":
-        if uid not in ADMIN_IDS:
-            await q.answer("⛔", show_alert=True)
-            return
-        await q.answer("⏳ Создаю бекап...", show_alert=False)
-        try:
-            import shutil as _shutil, os as _os, gzip as _gzip
-
-            backup_path = f"/tmp/frog_backup_{int(time.time())}.db"
-            _shutil.copy2(DB_PATH, backup_path)
-            gz_path = backup_path + ".gz"
-            with open(backup_path, "rb") as _f_in, _gzip.open(gz_path, "wb") as _f_out:
-                _f_out.write(_f_in.read())
-            size_kb = _os.path.getsize(backup_path) // 1024
-            gz_size_kb = _os.path.getsize(gz_path) // 1024
-            with open(gz_path, "rb") as bf:
-                await ctx.bot.send_document(
-                    uid,
-                    bf,
-                    filename=f"frog_backup_{int(time.time())}.db.gz",
-                    caption=f"💾 Бекап базы данных\n🕐 {time.strftime('%Y-%m-%d %H:%M:%S')}\n📦 {size_kb} KB → сжато: {gz_size_kb} KB",
-                )
-            _os.remove(backup_path)
-            _os.remove(gz_path)
-            await admin_log(uid, "backup")
-        except Exception as e:
-            await ctx.bot.send_message(uid, f"❌ Ошибка бекапа: {e}")
-        return
 
     # ── ЛОГИ АДМИНИСТРАТОРА ──────────────────────
-    if d == "admin_logs_view" or d.startswith("admin_logs_view_"):
-        if uid not in ADMIN_IDS:
-            await q.answer("⛔", show_alert=True)
-            return
-        await q.answer()
-        async with aiosqlite.connect(DB_PATH) as db:
-            db.row_factory = aiosqlite.Row
-            async with db.execute(
-                "SELECT a.admin_id, a.action, a.target_id, a.details, a.ts FROM admin_logs a ORDER BY a.ts DESC LIMIT 500"
-            ) as c:
-                log_rows = await c.fetchall()
-            async with db.execute("SELECT COUNT(*) FROM admin_logs") as c:
-                total_logs = (await c.fetchone())[0] or 0
-        if not log_rows:
-            await q.answer("Логов нет.", show_alert=True)
-            return
-        import io as _io
-        lines_log = [f"=== ADMIN LOG (последние {len(log_rows)} из {total_logs}) ===",
-                     f"Экспорт: {datetime.now(timezone.utc).strftime('%Y-%m-%d %H:%M UTC')}", ""]
-        for lr in log_rows:
-            ts_str = datetime.fromtimestamp(lr["ts"], tz=timezone.utc).strftime("%Y-%m-%d %H:%M:%S")
-            target_s = f" → uid={lr['target_id']}" if lr["target_id"] else ""
-            det = f" | {lr['details']}" if lr["details"] else ""
-            lines_log.append(f"[{ts_str}] admin={lr['admin_id']}  {lr['action']}{target_s}{det}")
-        bio = _io.BytesIO("\n".join(lines_log).encode("utf-8"))
-        bio.name = "admin_log.txt"
-        try:
-            await q.message.reply_document(
-                document=bio,
-                caption=f"📋 <b>Журнал администратора</b>\n{total_logs} записей, показано {len(log_rows)}",
-                parse_mode=ParseMode.HTML,
-            )
-        except Exception as _e:
-            await q.answer((f"Ошибка: {_e}")[:200], show_alert=True)
-        return
 
     # ── ЛОТЕРЕЯ: КУПИТЬ БИЛЕТ ───────────────────────
     if d.startswith("lottery_buy_") or d == "lottery_refresh":
@@ -47029,29 +47137,9 @@ async def on_callback(update: Update, ctx: ContextTypes.DEFAULT_TYPE):
             pass
         return
 
-    if d.startswith("admin_give_uid_"):
-        if uid not in ADMIN_IDS:
-            await q.answer("⛔", show_alert=True)
-            return
-        target_uid_give = int(d[len("admin_give_uid_") :])
-        await q.answer()
-        try:
-            await q.message.edit_text(
-                f"🎁 <b>Выдача монет игроку (ID {target_uid_give})</b>\n\n"
-                f"<code>/givecoin @username 500</code>\n\n"
-                f"Или используй кнопки в карточке игрока (<tg-emoji emoji-id='5341524176039615767'>🪙</tg-emoji> +100 / +1000 / -100)\n\n"
-                f"<i>Для открытия карточки: /adminlookup {target_uid_give}</i>",
-                parse_mode=ParseMode.HTML,
-                reply_markup=InlineKeyboardMarkup(
-                    [[InlineKeyboardButton("◀️ Назад", callback_data="admin_refresh")]]
-                ),
-            )
-        except Exception:
-            pass
-        return
 
     # ── ПОЙМАТЬ КОМАРА ──────────────────────────────
-    if d and d.startswith("exp_"): logger.error("🐛 [EXP DEBUG] CHECKPOINT_E ~35908 — код дошёл сюда")
+    if d and d.startswith("exp_"): logger.debug("🐛 [EXP DEBUG] CHECKPOINT_E ~35908 — код дошёл сюда")
     if d.startswith("mosquito_"):
         eid = int(d.split("_")[-1])
 
@@ -47285,7 +47373,7 @@ async def on_callback(update: Update, ctx: ContextTypes.DEFAULT_TYPE):
                     parse_mode=ParseMode.HTML,
                 )
             except Exception:
-                pass
+                logger.exception("on_callback failed")
             _MOSQUITO_LOCKS.pop(eid, None)
         return
 
@@ -47311,7 +47399,7 @@ async def on_callback(update: Update, ctx: ContextTypes.DEFAULT_TYPE):
                     parse_mode=ParseMode.HTML,
                 )
             except Exception:
-                pass
+                logger.exception("on_callback failed")
         return
 
     # ── Прощальная церемония: бесплатное воскрешение ──────────────
@@ -47358,7 +47446,7 @@ async def on_callback(update: Update, ctx: ContextTypes.DEFAULT_TYPE):
                 parse_mode=ParseMode.HTML,
             )
         except Exception:
-            pass
+            logger.exception("on_callback failed")
         return
 
     # ── Шашки ────────────────────────────────────────────────────────────────
@@ -47401,9 +47489,6 @@ async def on_callback(update: Update, ctx: ContextTypes.DEFAULT_TYPE):
     # ── Прятки ───────────────────────────────────────────────────────────────
 
     # ── Антинакрут-панель ────────────────────────────────────────────────────
-    if d.startswith("aab_"):
-        await handle_antibot_callback(q, d, uid, ctx)
-        return
 
     # ── Риск-профиль кнопки ──────────────────────────────────────────────────
     if d.startswith("risk_"):
@@ -47503,7 +47588,7 @@ async def on_callback(update: Update, ctx: ContextTypes.DEFAULT_TYPE):
                         parse_mode=ParseMode.HTML,
                     )
                 except Exception:
-                    pass
+                    logger.exception("on_callback failed")
         logger.info("kva_retry roll: uid=%s roll=%s/%s won=%s", uid, _roll, NFT_KVA_TOTAL, _roll == NFT_KVA_TOTAL)
         # Записываем статистику повторного ква
         try:
@@ -47557,11 +47642,11 @@ async def on_callback(update: Update, ctx: ContextTypes.DEFAULT_TYPE):
         return
 
     if d.startswith("exp_"):
-        logger.error("🐛 [EXP DEBUG] передаём в exp_handle_callback: uid=%s d=%s alive=%s level=%s",
+        logger.debug("🐛 [EXP DEBUG] передаём в exp_handle_callback: uid=%s d=%s alive=%s level=%s",
                     uid, d, f.get("alive"), f.get("level"))
     _exp_handled = await exp_handle_callback(q, uid, d, ctx)
     if d.startswith("exp_"):
-        logger.error("🐛 [EXP DEBUG] exp_handle_callback вернул: %s", _exp_handled)
+        logger.debug("🐛 [EXP DEBUG] exp_handle_callback вернул: %s", _exp_handled)
     if _exp_handled:
         return
 
@@ -47611,7 +47696,7 @@ async def successful_payment(update: Update, ctx: ContextTypes.DEFAULT_TYPE):
             try:
                 await ctx.bot.send_message(referrer_id, notify_text, parse_mode=ParseMode.HTML)
             except Exception:
-                pass
+                logger.exception("_pay_ref_commission failed")
 
     # ── Подписки (Болотная Няня / Трудяга) ────────────────
     # ── Воскрешение за Stars ──────────────────────────────────
@@ -47711,7 +47796,7 @@ async def successful_payment(update: Update, ctx: ContextTypes.DEFAULT_TYPE):
                         parse_mode=ParseMode.HTML,
                     )
                 except Exception:
-                    pass
+                    logger.exception("successful_payment failed")
         # Уведомление в ADMIN_CHAT_ID
         _uname_10 = f"@{user.username}" if user.username else f"<a href='tg://user?id={user.id}'>{user.first_name}</a>"
         try:
@@ -47808,7 +47893,7 @@ async def successful_payment(update: Update, ctx: ContextTypes.DEFAULT_TYPE):
                         parse_mode=ParseMode.HTML,
                     )
                 except Exception:
-                    pass
+                    logger.exception("successful_payment failed")
         _retry_markup_stars = InlineKeyboardMarkup([
             [btn(f"{NFT_KVA_STARS} Stars", callback_data="kva_retry_stars", icon_id="6028338546736107668"),
              btn(f"{NFT_KVA_STARS * 10} Stars ×10", callback_data="kva_retry_stars_10", icon_id="6028338546736107668")],
@@ -48162,7 +48247,7 @@ async def on_message(update: Update, ctx: ContextTypes.DEFAULT_TYPE):
                         parse_mode=ParseMode.HTML,
                     )
                 except Exception:
-                    pass
+                    logger.exception("on_message failed")
         else:
             await update.message.reply_text(
                 f"❌ Неверно. Попробуй ещё раз:\n\n"
@@ -48218,7 +48303,7 @@ async def on_message(update: Update, ctx: ContextTypes.DEFAULT_TYPE):
                 try:
                     await update.message.reply_text("🔇 Вы заморожены в этом чате и не можете использовать команды бота.")
                 except Exception:
-                    pass
+                    logger.exception("on_message failed")
                 return
 
     # ── Проверка чёрного списка команд чата ──────────────
@@ -48358,7 +48443,7 @@ async def on_message(update: Update, ctx: ContextTypes.DEFAULT_TYPE):
                                 parse_mode=ParseMode.HTML,
                             )
                         except Exception:
-                            pass
+                            logger.exception("on_message failed")
                     else:
                         try:
                             await ctx.bot.send_message(
@@ -48369,7 +48454,7 @@ async def on_message(update: Update, ctx: ContextTypes.DEFAULT_TYPE):
                                 parse_mode=ParseMode.HTML,
                             )
                         except Exception:
-                            pass
+                            logger.exception("on_message failed")
 
     # ── Команда /report ─────────────────────────────────
     if user and is_group(update) and text.startswith("/report"):
@@ -48399,7 +48484,7 @@ async def on_message(update: Update, ctx: ContextTypes.DEFAULT_TYPE):
                 await ctx.bot.send_message(aid, report_txt, parse_mode=ParseMode.HTML)
                 sent = True
             except Exception:
-                pass
+                logger.exception("on_message failed")
         try:
             resp = await update.message.reply_text(
                 "✅ Репорт отправлен администраторам." if sent else
@@ -48409,7 +48494,7 @@ async def on_message(update: Update, ctx: ContextTypes.DEFAULT_TYPE):
             await resp.delete()
             await update.message.delete()
         except Exception:
-            pass
+            logger.exception("on_message failed")
         return
 
     # ── Обновляем last_seen ──────────────────────────
@@ -48730,7 +48815,8 @@ async def on_message(update: Update, ctx: ContextTypes.DEFAULT_TYPE):
                         InlineKeyboardButton("📬 Заявки", callback_data="staya_applications")
                     ]])
                 )
-            except Exception: pass
+            except Exception:
+                logger.exception("on_message failed")
         return
 
     # ── Поиск игрока (Болотная Площадь) ──────────────────────────────────────
@@ -48919,7 +49005,7 @@ async def on_message(update: Update, ctx: ContextTypes.DEFAULT_TYPE):
                             parse_mode=ParseMode.HTML, reply_markup=_kb,
                         )
                     except Exception:
-                        pass
+                        logger.exception("on_message failed")
                 return
             else:
                 if reply_target_id:
@@ -49041,7 +49127,7 @@ async def on_message(update: Update, ctx: ContextTypes.DEFAULT_TYPE):
                     sent_bc += 1
                     await asyncio.sleep(0.1)
                 except Exception:
-                    pass
+                    logger.exception("on_message failed")
             await update.message.reply_text(
                 f"✅ Рассылка отправлена <b>{sent_bc}</b> участникам.",
                 parse_mode=ParseMode.HTML
@@ -49128,7 +49214,7 @@ async def on_message(update: Update, ctx: ContextTypes.DEFAULT_TYPE):
                     parse_mode=ParseMode.HTML,
                 )
             except Exception:
-                pass
+                logger.exception("on_message failed")
             await update.message.reply_text(
                 "✅ Спасибо! Твоё сообщение отправлено администраторам 🐸",
             )
@@ -49166,7 +49252,7 @@ async def on_message(update: Update, ctx: ContextTypes.DEFAULT_TYPE):
                 if _react_s.get("show_reactions", 1):
                     await update.message.react([ReactionTypeEmoji("🕯️")])
             except Exception:
-                pass
+                logger.exception("on_message failed")
         return
 
 
@@ -49343,7 +49429,7 @@ async def on_message(update: Update, ctx: ContextTypes.DEFAULT_TYPE):
                             parse_mode=ParseMode.HTML,
                         )
                     except Exception:
-                        pass
+                        logger.exception("on_message failed")
                     # Проверяем — если оба бросили
                     active_duel[col] = str(dice_val)
                     other_col = "def_choice" if role == "att" else "att_choice"
@@ -49590,7 +49676,7 @@ async def on_message(update: Update, ctx: ContextTypes.DEFAULT_TYPE):
                 parse_mode=ParseMode.HTML,
             )
         except Exception:
-            pass
+            logger.exception("on_message failed")
         return
     if _is_friz_text and f and await _fz_active():
         now_friz = time.time()
@@ -49610,7 +49696,7 @@ async def on_message(update: Update, ctx: ContextTypes.DEFAULT_TYPE):
                     parse_mode=ParseMode.HTML,
                 )
             except Exception:
-                pass
+                logger.exception("on_message failed")
             return
 
         # Атомарный апдейт КД (используем поле last_kva — общее с ква)
@@ -49670,7 +49756,7 @@ async def on_message(update: Update, ctx: ContextTypes.DEFAULT_TYPE):
                             schedule_delete(_friz_bot, _friz_chat_id, update.message.message_id, _friz_delay)
                         )
                 except Exception:
-                    pass
+                    logger.exception("on_message failed")
         return
 
     if _has_kva:
@@ -49681,7 +49767,7 @@ async def on_message(update: Update, ctx: ContextTypes.DEFAULT_TYPE):
                     parse_mode=ParseMode.HTML,
                 )
             except Exception:
-                pass
+                logger.exception("on_message failed")
             return
         now = time.time()
         _KVA_CD_BASE = 30 * 60  # базовые 30 минут
@@ -49705,7 +49791,7 @@ async def on_message(update: Update, ctx: ContextTypes.DEFAULT_TYPE):
                     parse_mode=ParseMode.HTML,
                 )
             except Exception:
-                pass
+                logger.exception("on_message failed")
             return
         # ── Антидюп: атомарный UPDATE с проверкой кулдауна прямо в БД ──────────
         # Если бот завис и получил несколько "ква" одновременно — все читают
@@ -49756,7 +49842,7 @@ async def on_message(update: Update, ctx: ContextTypes.DEFAULT_TYPE):
                             other_uid  = _krow["user_id"]
                             other_name = he(_krow["frog_name"] or _krow["first_name"] or "подруга")
                 except Exception:
-                    pass
+                    logger.exception("on_message failed")
 
         # ── Ква-ответ — короткие болотные зарисовки ──────────────────────
         _KVA_SOLO = [
@@ -49861,7 +49947,7 @@ async def on_message(update: Update, ctx: ContextTypes.DEFAULT_TYPE):
                             parse_mode=ParseMode.HTML,
                         )
                     except Exception:
-                        pass
+                        logger.exception("on_message failed")
 
             # ── Пасхальный подарок при броске ровно 500 ─────────────────────
             if _roll == 500:
@@ -49971,7 +50057,7 @@ async def on_message(update: Update, ctx: ContextTypes.DEFAULT_TYPE):
                                 schedule_delete(_kva_bot, _kva_chat_id, update.message.message_id, _kva_delay)
                             )
                     except Exception:
-                        pass
+                        logger.exception("on_message failed")
 
         return
 
@@ -50387,9 +50473,9 @@ async def _legend_start(bot, legend_data: dict | None = None) -> dict | None:
         try:
             await bot.send_message(uid_dm, dm_text, parse_mode=ParseMode.HTML)
         except (Forbidden, BadRequest):
-            pass
+            logger.exception("_legend_start failed")
         except Exception:
-            pass
+            logger.exception("_legend_start failed")
         await asyncio.sleep(0.05)
 
     logger.info("legend_start: id=%s title=%s players_notified=%s", leg_id, legend_data["title"], len(all_uids))
@@ -50505,9 +50591,9 @@ async def _legend_finish(bot, leg: dict):
             )
             await bot.send_message(uid_r, personal_text, parse_mode=ParseMode.HTML)
         except (Forbidden, BadRequest):
-            pass
+            logger.exception("_legend_finish failed")
         except Exception:
-            pass
+            logger.exception("_legend_finish failed")
         # Достижения: все участники победившей легенды + топ-1 вкладчик
         if win:
             try:
@@ -50517,7 +50603,7 @@ async def _legend_finish(bot, leg: dict):
                     await db_save(frog_r)
                     await check_achievements(frog_r, bot)
             except Exception:
-                pass
+                logger.exception("_legend_finish failed")
             if i == 0:
                 await ach_grant(uid_r, "legend_top1", bot)
         await asyncio.sleep(0.05)
@@ -50614,7 +50700,7 @@ async def job_staya_events(ctx: ContextTypes.DEFAULT_TYPE):
                     )
                     await asyncio.sleep(0.3)
                 except Exception:
-                    pass
+                    logger.exception("job_staya_events failed")
 
             logger.info("staya_event: staya_id=%s event=%s", staya["id"], ev_data["id"])
         except Exception as _e:
@@ -50671,7 +50757,7 @@ async def job_staya_resolve_single(ev_id: int, bot):
                 await bot.send_message(m["user_id"], outcome, parse_mode=ParseMode.HTML)
                 await asyncio.sleep(0.2)
             except Exception:
-                pass
+                logger.exception("job_staya_resolve_single failed")
         if winner_choice.get("win"):
             await letopis_add(staya["creator_id"], "staya_win",
                               f"🏆 Стая «{staya['name']}» победила в событии!")
@@ -50761,7 +50847,7 @@ async def job_staya_resolve(ctx: ContextTypes.DEFAULT_TYPE):
                     await _work_send_safe(ctx.bot, m["user_id"], outcome, parse_mode=ParseMode.HTML)
                     await asyncio.sleep(0.3)
                 except Exception:
-                    pass
+                    logger.exception("job_staya_resolve failed")
 
             # Летопись
             if winner_choice.get("win"):
@@ -50806,7 +50892,7 @@ async def job_friend_check(ctx: ContextTypes.DEFAULT_TYPE):
                 parse_mode=ParseMode.HTML,
             )
         except Exception:
-            pass
+            logger.exception("job_friend_check failed")
         await asyncio.sleep(0.5)
 
 
@@ -50880,7 +50966,7 @@ async def resolve_tavern(adv_id: int, u1_name: str, u2_name: str) -> tuple[str, 
         try:
             notes = json.loads(row[0])
         except Exception:
-            pass
+            logger.exception("resolve_tavern failed")
 
     found_requil = notes.get("found_requil", False)
 
@@ -50957,7 +51043,7 @@ async def job_adventure_tick(ctx: ContextTypes.DEFAULT_TYPE):
                                     parse_mode=ParseMode.HTML,
                                 )
                             except Exception:
-                                pass
+                                logger.exception("job_adventure_tick failed")
                     logger.info("Хард-таймаут похода id=%s: завершён, reward=%s", adv_id, _t_reward)
                 except Exception as _te:
                     logger.error("Хард-таймаут похода id=%s: ошибка: %s", adv_id, _te)
@@ -50985,7 +51071,7 @@ async def job_adventure_tick(ctx: ContextTypes.DEFAULT_TYPE):
                 try:
                     _adv_notes = json.loads(adv.get("notes") or "{}")
                 except Exception:
-                    pass
+                    logger.exception("job_adventure_tick failed")
                 bonus += _adv_notes.get("extra_bonus", 0)
                 result_lines = []
                 for cp in choice_plan:
@@ -51040,7 +51126,7 @@ async def job_adventure_tick(ctx: ContextTypes.DEFAULT_TYPE):
                     try:
                         await ctx.bot.send_message(frog_id, final_msg, parse_mode=ParseMode.HTML)
                     except Exception:
-                        pass
+                        logger.exception("job_adventure_tick failed")
 
                 async with aiosqlite.connect(DB_PATH) as db:
                     await db.execute("UPDATE adventures SET finished=1 WHERE id=?", (adv_id,))
@@ -51082,7 +51168,7 @@ async def job_adventure_tick(ctx: ContextTypes.DEFAULT_TYPE):
                                 parse_mode=ParseMode.HTML, reply_markup=kb,
                             )
                         except Exception:
-                            pass
+                            logger.exception("job_adventure_tick failed")
                     await adv_add_log(adv_id, f"🎲 Развилка: {ch_data['id']}")
                     break  # одна развилка за тик
 
@@ -51123,7 +51209,7 @@ async def job_adventure_tick(ctx: ContextTypes.DEFAULT_TYPE):
                                 InlineKeyboardButton("📜 Все события", callback_data="adv_status"),
                             ]]))
                     except Exception:
-                        pass
+                        logger.exception("job_adventure_tick failed")
 
         except Exception as _e:
             logger.warning("adv tick id=%s: %s", adv_id, _e)
@@ -51386,7 +51472,7 @@ async def job_tutorial_nudge(ctx: ContextTypes.DEFAULT_TYPE):
                 ]]),
             )
         except Exception:
-            pass
+            logger.exception("job_tutorial_nudge failed")
         await asyncio.sleep(0.05)
 
 
@@ -51536,7 +51622,7 @@ async def job_reminders(ctx: ContextTypes.DEFAULT_TYPE):
             f["last_remind"] = now
             updated_frogs.append(f)
         except (Forbidden, Exception):
-            pass
+            logger.exception("job_reminders failed")
         await asyncio.sleep(0.05)
 
     if updated_frogs:
@@ -51681,7 +51767,7 @@ async def job_mosquito(ctx: ContextTypes.DEFAULT_TYPE):
                     cf["coins"] += 10
                     await db_save(cf)
             except Exception:
-                pass
+                logger.exception("_consolation_one failed")
 
         await asyncio.gather(*[_consolation_one(r) for r in consolation_ids])
 
@@ -51711,7 +51797,7 @@ async def job_mosquito(ctx: ContextTypes.DEFAULT_TYPE):
                 parse_mode=ParseMode.HTML,
             )
         except Exception:
-            pass
+            logger.exception("job_mosquito failed")
     else:
         # Анонс результатов в общий чат ТОЛЬКО если не все были пойманы в течение игры
         # (если все поймали до таймаута — callback уже отправил итог)
@@ -51728,7 +51814,7 @@ async def job_mosquito(ctx: ContextTypes.DEFAULT_TYPE):
                     parse_mode=ParseMode.HTML,
                 )
             except Exception:
-                pass
+                logger.exception("job_mosquito failed")
 
         # Синхронно обновляем все личные сообщения финальным результатом
         final_text_caught = f"🦟 <b>Комара поймали!</b>\n\n{caught_lines}"
@@ -51807,7 +51893,7 @@ async def job_background_decay(ctx: ContextTypes.DEFAULT_TYPE):
                     )
                     warned += 1
                 except Exception:
-                    pass
+                    logger.exception("job_background_decay failed")
             # Мягкий намёк на Няню при низком голоде (<20%) — не чаще раза в сутки
             _hunger_nudge_key = f"last_nanny_nudge_{uid_dec}"
             _has_sub = f.get("subscription_until", 0) > now and f.get("subscription_type", 0) >= 1
@@ -51829,7 +51915,7 @@ async def job_background_decay(ctx: ContextTypes.DEFAULT_TYPE):
                         ]])
                     )
                 except Exception:
-                    pass
+                    logger.exception("job_background_decay failed")
             # Уведомление о смерти
             if f.get("_just_died"):
                 f.pop("_just_died", None)
@@ -51863,7 +51949,7 @@ async def job_background_decay(ctx: ContextTypes.DEFAULT_TYPE):
                         reply_markup=death_kb,
                     )
                 except Exception:
-                    pass
+                    logger.exception("job_background_decay failed")
         except Exception as _e:
             logger.warning("job_background_decay uid=%s: %s", uid_dec, _e)
 
@@ -51912,7 +51998,7 @@ async def grant_trial(uid: int, sub_type: int, days: int, bot=None, reason: str 
                 msg += "\n🏪 <i>Квакуся собирает корзинку — первый выход на рынок уже сегодня!</i>"
             await bot.send_message(uid, msg, parse_mode=ParseMode.HTML)
         except Exception:
-            pass
+            logger.exception("grant_trial failed")
     return True
 
 
@@ -52890,7 +52976,7 @@ async def job_lottery_draw(ctx: ContextTypes.DEFAULT_TYPE):
                 )
             await ctx.bot.send_message(p_uid, msg, parse_mode=ParseMode.HTML)
         except Exception:
-            pass
+            logger.exception("job_lottery_draw failed")
 
 
 async def job_league_week(ctx: ContextTypes.DEFAULT_TYPE):
@@ -53242,7 +53328,7 @@ async def post_init(app: Application):
                                     parse_mode="HTML",
                                 )
                             except Exception:
-                                pass
+                                logger.exception("post_init failed")
                     async with aiosqlite.connect(DB_PATH) as _afdb:
                         await _afdb.execute(
                             "UPDATE adventures SET finished=1 WHERE id=?", (_sa["id"],)
@@ -53717,7 +53803,7 @@ async def _sacrifice_finish(event_id: int, bot, chat_id: int):
                 parse_mode=ParseMode.HTML,
             )
         except Exception:
-            pass
+            logger.exception("_sacrifice_finish failed")
         return
 
     total_bank = ev["total_bank"]
@@ -53785,7 +53871,7 @@ async def _sacrifice_finish(event_id: int, bot, chat_id: int):
             parse_mode=ParseMode.HTML,
         )
     except Exception:
-        pass
+        logger.exception("_sacrifice_finish failed")
 
     # ЛС победителю
     try:
@@ -53797,7 +53883,7 @@ async def _sacrifice_finish(event_id: int, bot, chat_id: int):
             parse_mode=ParseMode.HTML,
         )
     except Exception:
-        pass
+        logger.exception("_sacrifice_finish failed")
     # Анонс крупного выигрыша ивента
     if winner_prize > BIG_WIN_THRESHOLD:
         asyncio.create_task(maybe_big_win_announce(
@@ -53819,7 +53905,7 @@ async def _sacrifice_finish(event_id: int, bot, chat_id: int):
             )
             await asyncio.sleep(0.05)
         except Exception:
-            pass
+            logger.exception("_sacrifice_finish failed")
 
 
 async def _sacrifice_reminder_job(ctx: ContextTypes.DEFAULT_TYPE):
@@ -53842,7 +53928,7 @@ async def _sacrifice_reminder_job(ctx: ContextTypes.DEFAULT_TYPE):
             parse_mode=ParseMode.HTML,
         )
     except Exception:
-        pass
+        logger.exception("_sacrifice_reminder_job failed")
 
 
 async def _sacrifice_finish_job(ctx: ContextTypes.DEFAULT_TYPE):
@@ -53875,7 +53961,7 @@ async def cmd_sacrifice_start(update: Update, ctx: ContextTypes.DEFAULT_TYPE):
         try:
             hours = max(1, min(72, int(ctx.args[0])))
         except ValueError:
-            pass
+            logger.exception("cmd_sacrifice_start failed")
 
     now = time.time()
     end_time = now + hours * 3600
@@ -53948,7 +54034,7 @@ async def cmd_sacrifice_start(update: Update, ctx: ContextTypes.DEFAULT_TYPE):
             )
             sent += 1
         except Exception:
-            pass
+            logger.exception("cmd_sacrifice_start failed")
         await asyncio.sleep(0.05)
 
     await update.message.reply_text(f"📢 Уведомление отправлено {sent} игрокам.")
@@ -54015,7 +54101,7 @@ async def cmd_funnel_start(update: Update, ctx: ContextTypes.DEFAULT_TYPE):
         try:
             hours = max(1, min(168, int(ctx.args[0])))
         except ValueError:
-            pass
+            logger.exception("cmd_funnel_start failed")
 
     now = time.time()
     end_time = now + hours * 3600
@@ -54065,7 +54151,7 @@ async def cmd_funnel_start(update: Update, ctx: ContextTypes.DEFAULT_TYPE):
             )
             sent += 1
         except Exception:
-            pass
+            logger.exception("cmd_funnel_start failed")
         await asyncio.sleep(0.05)
     await update.message.reply_text(f"📢 Уведомление отправлено {sent} игрокам.")
 
@@ -54140,7 +54226,7 @@ async def cmd_pgiveaway(update: Update, ctx: ContextTypes.DEFAULT_TYPE):
         _cm = await ctx.bot.get_chat_member(update.effective_chat.id, user.id)
         _is_chat_admin = _cm.status in ("administrator", "creator")
     except Exception:
-        pass
+        logger.exception("cmd_pgiveaway failed")
     if user.id not in ADMIN_IDS and not _is_chat_admin:
         await update.message.reply_text(
             "❌ Текстовые розыгрыши могут создавать только администраторы чата."
@@ -54319,7 +54405,7 @@ async def farewell_phase2(ctx: ContextTypes.DEFAULT_TYPE):
         )
         fw["candle_msg_id"] = msg.message_id
     except Exception:
-        pass
+        logger.exception("farewell_phase2 failed")
 
     ctx.job_queue.run_once(
         farewell_phase3,
@@ -54341,7 +54427,7 @@ async def farewell_phase3(ctx: ContextTypes.DEFAULT_TYPE):
     candles: dict[int, str] = fw.get("candles", {})
 
     # ── Книга памяти ──────────────────────────────
-    if d and d.startswith("exp_"): logger.error("🐛 [EXP DEBUG] CHECKPOINT_C ~41859 — код дошёл сюда")
+    if d and d.startswith("exp_"): logger.debug("🐛 [EXP DEBUG] CHECKPOINT_C ~41859 — код дошёл сюда")
     memory_lines = ""
     if memories:
         sample = random.sample(memories, min(len(memories), 7))
@@ -54366,7 +54452,7 @@ async def farewell_phase3(ctx: ContextTypes.DEFAULT_TYPE):
     try:
         await ctx.bot.send_message(chat_id, book_text, parse_mode=ParseMode.HTML)
     except Exception:
-        pass
+        logger.exception("farewell_phase3 failed")
 
     # ── Награды участникам ────────────────────────
     rewarded_uids: set[int] = set()
@@ -54379,7 +54465,7 @@ async def farewell_phase3(ctx: ContextTypes.DEFAULT_TYPE):
             await inv_add(ruid, "tear_of_swamp", 1)
             await ach_grant(ruid, "farewell_witness", ctx.bot)
         except Exception:
-            pass
+            logger.exception("farewell_phase3 failed")
 
     if rewarded_uids:
         try:
@@ -54390,7 +54476,7 @@ async def farewell_phase3(ctx: ContextTypes.DEFAULT_TYPE):
                 parse_mode=ParseMode.HTML,
             )
         except Exception:
-            pass
+            logger.exception("farewell_phase3 failed")
 
     # Очищаем состояние
     ctx.bot_data.pop("farewell", None)
@@ -54770,7 +54856,7 @@ async def cmd_m(update: Update, ctx: ContextTypes.DEFAULT_TYPE):
             parse_mode=ParseMode.HTML,
         )
     except Exception:
-        pass
+        logger.exception("cmd_m failed")
     # Уведомляем админов
     await admin_notify(
         ctx.bot,
@@ -54982,7 +55068,7 @@ async def cmd_s(update: Update, ctx: ContextTypes.DEFAULT_TYPE):
                 await ctx.bot.send_message(r_uid, header_txt, parse_mode=ParseMode.HTML)
             sent_count += 1
         except Exception:
-            pass
+            logger.exception("cmd_s failed")
 
     # Логируем в БД
     async with aiosqlite.connect(DB_PATH) as db:
@@ -55011,12 +55097,12 @@ async def cmd_s(update: Update, ctx: ContextTypes.DEFAULT_TYPE):
                 parse_mode=ParseMode.HTML,
             )
         except Exception:
-            pass
+            logger.exception("cmd_s failed")
         try:
             if msg.photo or msg.animation or msg.sticker or msg.video:
                 await msg.forward(ADMIN_CHAT_ID)
         except Exception:
-            pass
+            logger.exception("cmd_s failed")
 
     if not recipients:
         await msg.reply_text(
@@ -55175,7 +55261,7 @@ async def cmd_givesub(update: Update, ctx: ContextTypes.DEFAULT_TYPE):
             parse_mode=ParseMode.HTML,
         )
     except Exception:
-        pass
+        logger.exception("cmd_givesub failed")
     logger.info("givesub: admin=%s target=%s type=%s days=%s", user.id, target_id, sub_type, days)
 
 
@@ -55255,7 +55341,7 @@ async def cmd_fix_adventure(update: Update, ctx: ContextTypes.DEFAULT_TYPE):
             parse_mode=ParseMode.HTML,
         )
     except Exception:
-        pass
+        logger.exception("cmd_fix_adventure failed")
 
     await update.message.reply_text(
         f"✅ <b>{_html.escape(str(target_name))}</b> разблокирован(а).\n"
@@ -55339,7 +55425,7 @@ async def cmd_fix_adventures_all(update: Update, ctx: ContextTypes.DEFAULT_TYPE)
             )
             notified += 1
         except Exception:
-            pass
+            logger.exception("cmd_fix_adventures_all failed")
 
     await status_msg.edit_text(
         f"✅ <b>Готово!</b>\n\n"
@@ -55793,7 +55879,7 @@ async def cmd_add_soseda(update: Update, ctx: ContextTypes.DEFAULT_TYPE):
             reply_markup=kb,
         )
     except Exception:
-        pass
+        logger.exception("cmd_add_soseda failed")
 
 
 async def cmd_gift_friend(update: Update, ctx: ContextTypes.DEFAULT_TYPE):
@@ -55900,7 +55986,7 @@ async def cmd_gift_friend(update: Update, ctx: ContextTypes.DEFAULT_TYPE):
                     ]])
                 )
             except Exception:
-                pass
+                logger.exception("cmd_gift_friend failed")
         await update.message.reply_text("🚫 Подозрительная активность. Переводы временно заморожены.")
         return
     # Добавляем в трекер только если прошли проверку
@@ -55932,7 +56018,7 @@ async def cmd_gift_friend(update: Update, ctx: ContextTypes.DEFAULT_TYPE):
             parse_mode=ParseMode.HTML,
         )
     except Exception:
-        pass
+        logger.exception("cmd_gift_friend failed")
     # ── Уведомление администратору о переводе ──────────────────────────
     if ADMIN_CHAT_ID:
         try:
@@ -55948,7 +56034,7 @@ async def cmd_gift_friend(update: Update, ctx: ContextTypes.DEFAULT_TYPE):
                 parse_mode=ParseMode.HTML,
             )
         except Exception:
-            pass
+            logger.exception("cmd_gift_friend failed")
     # XP дружбе
     await friend_add_xp(user.id, target_id, 5)
     await friend_add_xp(target_id, user.id, 3)
@@ -59653,7 +59739,7 @@ async def _exp_broadcast(bot, exp_id: int, text: str, reply_markup=None,
                 reply_markup=reply_markup,
             )
         except Exception:
-            pass
+            logger.exception("_exp_broadcast failed")
 
 
 def _sup(m: dict) -> dict:
@@ -60580,7 +60666,7 @@ async def _handle_member_death(bot, exp: dict, m: dict, f: dict, cause: str):
         try:
             await bot.send_message(sm["user_id"], death_msg, parse_mode=ParseMode.HTML)
         except Exception:
-            pass
+            logger.exception("_handle_member_death failed")
     logger.info("expedition member dead: exp=%s user=%s cause=%s", exp_id, m["user_id"], cause)
 
 
@@ -60869,7 +60955,7 @@ async def _exp_resolve_vote(bot, exp: dict, ev: dict):
                     parse_mode=ParseMode.HTML,
                 )
             except Exception:
-                pass
+                logger.exception("_exp_resolve_vote failed")
 
     # ── Обработка sacrifice_victim: урон выбранной жертве ────────────────
     if sacrifice_victim_m is not None:
@@ -60908,7 +60994,7 @@ async def _exp_resolve_vote(bot, exp: dict, ev: dict):
                         parse_mode=ParseMode.HTML,
                     )
                 except Exception:
-                    pass
+                    logger.exception("_exp_resolve_vote failed")
 
             # Анонс всем кто пожертвован
             await _exp_broadcast(
@@ -61048,7 +61134,7 @@ async def _exp_finish(bot, exp: dict, force_wipe: bool = False):
         try:
             await bot.send_message(m["user_id"], personal_text, parse_mode=ParseMode.HTML)
         except Exception:
-            pass
+            logger.exception("_exp_finish failed")
 
         stats_list.append({
             "user_id": m["user_id"],
@@ -61431,7 +61517,7 @@ async def job_canteen_tick(ctx: ContextTypes.DEFAULT_TYPE):
                                 parse_mode=ParseMode.HTML,
                             )
                         except Exception:
-                            pass
+                            logger.exception("job_canteen_tick failed")
                         break
 
             # Feed happiness (если голод в норме, но счастье низкое)
@@ -61468,7 +61554,7 @@ async def job_canteen_tick(ctx: ContextTypes.DEFAULT_TYPE):
                                 parse_mode=ParseMode.HTML,
                             )
                         except Exception:
-                            pass
+                            logger.exception("job_canteen_tick failed")
                         break
 
             if food_changed and (fed or happiness < CANTEEN_HAPPINESS_THRESHOLD):
@@ -61553,7 +61639,7 @@ async def job_expedition_tick(ctx: ContextTypes.DEFAULT_TYPE):
                                     await db_save(_hmf)
                         await _hdb.commit()
                 except Exception:
-                    pass
+                    logger.exception("job_expedition_tick failed")
 
     # ── Обработать активные ────────────────────────────────────────
     for exp in active_exps:
@@ -61915,48 +62001,48 @@ async def exp_handle_callback(q, uid: int, d: str,
         """Безопасный edit — при неудаче fallback на reply_text."""
         try:
             await q.edit_message_text(text, reply_markup=markup, **kw)
-            logger.error("🐛 [EXP DEBUG] _edit OK: d=%s", d)
+            logger.debug("🐛 [EXP DEBUG] _edit OK: d=%s", d)
         except Exception as _e:
-            logger.error("🐛 [EXP DEBUG] _edit FAILED (edit_message_text): %s | d=%s | msg_id=%s chat_id=%s",
+            logger.debug("🐛 [EXP DEBUG] _edit FAILED (edit_message_text): %s | d=%s | msg_id=%s chat_id=%s",
                            _e, d,
                            getattr(getattr(q, "message", None), "message_id", "?"),
                            getattr(getattr(getattr(q, "message", None), "chat", None), "id", "?"))
             # Fallback: отправляем новое сообщение
             try:
                 await q.message.reply_text(text, reply_markup=markup, **kw)
-                logger.error("🐛 [EXP DEBUG] _edit fallback reply_text OK: d=%s", d)
+                logger.debug("🐛 [EXP DEBUG] _edit fallback reply_text OK: d=%s", d)
             except Exception as _e2:
-                logger.error("🐛 [EXP DEBUG] _edit fallback reply_text FAILED: %s | d=%s", _e2, d)
+                logger.debug("🐛 [EXP DEBUG] _edit fallback reply_text FAILED: %s | d=%s", _e2, d)
 
     # ── Создать комнату ───────────────────────────────────────────
     if d.startswith("exp_create_"):
         biome_key = d.removeprefix("exp_create_")
-        logger.error("🐛 [EXP DEBUG] exp_create_: biome_key=%s known=%s", biome_key, biome_key in EXP_BIOMES)
+        logger.debug("🐛 [EXP DEBUG] exp_create_: biome_key=%s known=%s", biome_key, biome_key in EXP_BIOMES)
         if biome_key not in EXP_BIOMES:
             await q.answer("Неизвестный биом.", show_alert=True)
             return True
         bc = EXP_BIOMES[biome_key]
         if f.get("level", 1) < bc["min_level"]:
-            logger.error("🐛 [EXP DEBUG] exp_create_: level too low %s < %s", f.get("level"), bc["min_level"])
+            logger.debug("🐛 [EXP DEBUG] exp_create_: level too low %s < %s", f.get("level"), bc["min_level"])
             await q.answer((f"Нужен уровень {bc['min_level']}!")[:200], show_alert=True)
             return True
         if not f.get("alive"):
-            logger.error("🐛 [EXP DEBUG] exp_create_: frog dead")
+            logger.debug("🐛 [EXP DEBUG] exp_create_: frog dead")
             await q.answer("Мёртвая лягушка не может идти в экспедицию!", show_alert=True)
             return True
         active = await _exp_get_user_active(uid)
-        logger.error("🐛 [EXP DEBUG] exp_create_: active_expedition=%s", active)
+        logger.debug("🐛 [EXP DEBUG] exp_create_: active_expedition=%s", active)
         if active:
             await q.answer("Ты уже в экспедиции!", show_alert=True)
             return True
         today_start = time.time() - (time.time() % 86400)
-        logger.error("🐛 [EXP DEBUG] exp_create_: last_exp=%s today_start=%s cooldown=%s",
+        logger.debug("🐛 [EXP DEBUG] exp_create_: last_exp=%s today_start=%s cooldown=%s",
                      f.get("last_expedition", 0), today_start,
                      f.get("last_expedition", 0) >= today_start)
         if f.get("last_expedition", 0) >= today_start:
             await q.answer("Экспедиция уже была сегодня!", show_alert=True)
             return True
-        logger.error("🐛 [EXP DEBUG] exp_create_: все проверки пройдены, показываем экран кол-ва игроков")
+        logger.debug("🐛 [EXP DEBUG] exp_create_: все проверки пройдены, показываем экран кол-ва игроков")
 
         # Показать выбор параметров
         text = (
@@ -61975,11 +62061,11 @@ async def exp_handle_callback(q, uid: int, d: str,
              for i in range(5, 7)],
             [btn("◀️ Назад", callback_data="exp_back_menu")],
         ]
-        logger.error("🐛 [EXP DEBUG] exp_create_: вызываем q.answer() и _edit, biome=%s", biome_key)
+        logger.debug("🐛 [EXP DEBUG] exp_create_: вызываем q.answer() и _edit, biome=%s", biome_key)
         await q.answer()
-        logger.error("🐛 [EXP DEBUG] exp_create_: q.answer() выполнен, вызываем _edit")
+        logger.debug("🐛 [EXP DEBUG] exp_create_: q.answer() выполнен, вызываем _edit")
         await _edit(text, InlineKeyboardMarkup(buttons), parse_mode=ParseMode.HTML)
-        logger.error("🐛 [EXP DEBUG] exp_create_: _edit выполнен, возвращаем True")
+        logger.debug("🐛 [EXP DEBUG] exp_create_: _edit выполнен, возвращаем True")
         return True
 
     # ── Выбрать кол-во игроков → выбрать время сбора ─────────────
@@ -62138,7 +62224,7 @@ async def exp_handle_callback(q, uid: int, d: str,
             await q.edit_message_text("\n".join(lines), parse_mode=ParseMode.HTML,
                                       reply_markup=InlineKeyboardMarkup(buttons))
         except Exception:
-            pass
+            logger.exception("exp_handle_callback failed")
         await q.answer()
         return True
 
@@ -62258,7 +62344,7 @@ async def exp_handle_callback(q, uid: int, d: str,
                 )
                 await db.commit()
         except Exception:
-            pass
+            logger.exception("exp_handle_callback failed")
 
         await q.edit_message_text(lobby_text, parse_mode=ParseMode.HTML, reply_markup=lobby_kb)
         await q.answer("✅ Экспедиция создана!")
@@ -62472,14 +62558,14 @@ async def exp_handle_callback(q, uid: int, d: str,
                     if sm["user_id"] != uid:
                         invite_uids.add(sm["user_id"])
             except Exception:
-                pass
+                logger.exception("exp_handle_callback failed")
         # Соседи (bond_with)
         try:
             bonds = await get_user_bonds(uid)
             for b in bonds:
                 invite_uids.add(b["partner_id"])
         except Exception:
-            pass
+            logger.exception("exp_handle_callback failed")
 
         try:
             _bot_me2 = await ctx.bot.get_me()
@@ -62915,7 +63001,7 @@ async def exp_handle_callback(q, uid: int, d: str,
                             parse_mode=ParseMode.HTML,
                         )
                     except Exception:
-                        pass
+                        logger.exception("exp_handle_callback failed")
                     # Обновить предателя
                     m["betrayal_done"] = 1
                     m["coins_gained"] = m.get("coins_gained", 0) + stolen
@@ -63183,7 +63269,7 @@ async def exp_handle_callback(q, uid: int, d: str,
                     f"({bc_kick_name}).\nТы выбыл из группы.",
                 )
             except Exception:
-                pass
+                logger.exception("exp_handle_callback failed")
             await q.answer((f"✅ {target_name} исключён из экспедиции!")[:200], show_alert=True)
         else:
             await q.answer(f"🗳️ Твой голос учтён! {n_votes}/{needed} нужно для кика.", show_alert=False)
@@ -63661,7 +63747,7 @@ async def _war_callbacks_v2(q, d: str, uid: int, f: dict, ctx) -> bool:
                 reply_markup=InlineKeyboardMarkup(kb),
             )
         except Exception:
-            pass
+            logger.exception("_war_callbacks_v2 failed")
         return True
 
     # Статистика войны
@@ -63996,7 +64082,7 @@ async def _war_callbacks_v2(q, d: str, uid: int, f: dict, ctx) -> bool:
                         reply_markup=new_kb if not p_voted else None,
                     )
                 except Exception:
-                    pass
+                    logger.exception("_war_callbacks_v2 failed")
         return True
 
     # ════════════════════════════════
@@ -64193,7 +64279,7 @@ async def _war_callbacks_v2(q, d: str, uid: int, f: dict, ctx) -> bool:
                 )
                 _gather_msg_ids[str(m["user_id"])] = _sent.message_id
             except Exception:
-                pass
+                logger.exception("_war_callbacks_v2 failed")
 
         await q.answer("Стычка объявлена!")
         try:
@@ -64714,7 +64800,8 @@ async def _war_callbacks_v2(q, d: str, uid: int, f: dict, ctx) -> bool:
                 await _edit_or_send(bot, fresh_b2["def_uid"], live_ids_b2.get(fresh_b2["def_uid"]),
                     f"⚡ {he(att_name_b2)} заявил: <b>{opp_decl_def}</b>\nВеришь?",
                     bluff_believe_keyboard(duel_id_b2, "def"))
-            except Exception: pass
+            except Exception:
+                logger.exception("_war_callbacks_v2 failed")
         return True
 
     # 7. Блеф — ответ (верю/не верю)
@@ -65097,7 +65184,7 @@ async def _war_callbacks(q, d, uid, f, ctx):
                 reply_markup=InlineKeyboardMarkup(kb),
             )
         except Exception:
-            pass
+            logger.exception("_war_callbacks failed")
         return True
 
     if d.startswith("canteen_dep_"):
@@ -65215,7 +65302,7 @@ async def _war_callbacks(q, d, uid, f, ctx):
                 reply_markup=InlineKeyboardMarkup(kb),
             )
         except Exception:
-            pass
+            logger.exception("_war_callbacks failed")
         return True
 
     if d.startswith("canteen_wdraw_"):
@@ -65284,7 +65371,7 @@ async def _war_callbacks(q, d, uid, f, ctx):
                 reply_markup=InlineKeyboardMarkup(kb_war),
             )
         except Exception:
-            pass
+            logger.exception("_war_callbacks failed")
         return True
 
     # ══════════════════════════════════════════
@@ -65420,9 +65507,9 @@ async def _war_callbacks(q, d, uid, f, ctx):
             try:
                 await q.message.reply_text(text_pick, parse_mode=ParseMode.HTML, reply_markup=kb_pick)
             except Exception:
-                pass
+                logger.exception("_war_callbacks failed")
         except Exception:
-            pass
+            logger.exception("_war_callbacks failed")
         return True
 
     if d.startswith("raid_go_"):
@@ -65492,7 +65579,7 @@ async def _war_callbacks(q, d, uid, f, ctx):
                     ]]),
                 )
             except Exception:
-                pass
+                logger.exception("_war_callbacks failed")
 
         has_citadel = target.get("level", 1) >= 13
         has_ancient_bor = target.get("level", 1) >= 8
@@ -65624,7 +65711,7 @@ async def _war_callbacks(q, d, uid, f, ctx):
                             parse_mode=ParseMode.HTML,
                         )
                     except Exception:
-                        pass
+                        logger.exception("_notify_raid_success failed")
                 await asyncio.gather(*[_notify_raid_success(m) for m in members_t])
         else:
             # ПРОВАЛ
@@ -65659,7 +65746,7 @@ async def _war_callbacks(q, d, uid, f, ctx):
                             parse_mode=ParseMode.HTML,
                         )
                     except Exception:
-                        pass
+                        logger.exception("_notify_raid_fail failed")
                 await asyncio.gather(*[_notify_raid_fail(m) for m in members_t])
 
         await q.answer()
@@ -65821,7 +65908,7 @@ async def _war_callbacks(q, d, uid, f, ctx):
                             parse_mode=ParseMode.HTML,
                         )
                     except Exception:
-                        pass
+                        logger.exception("_war_callbacks failed")
             await q.answer("🐉 Дракон атаковал! Авто-победа.", show_alert=True)
             try:
                 await q.message.edit_text(
@@ -65877,7 +65964,7 @@ async def _war_callbacks(q, d, uid, f, ctx):
                     ]]),
                 )
             except Exception:
-                pass
+                logger.exception("_notify_skirmish failed")
         await asyncio.gather(*[_notify_skirmish(m) for m in all_members])
 
         await q.answer("Стычка объявлена!")
@@ -66050,7 +66137,7 @@ async def _war_callbacks(q, d, uid, f, ctx):
                 reply_markup=kb_eo,
             )
         except Exception:
-            pass
+            logger.exception("_war_callbacks failed")
         return True
 
     # ── Чёт-нечет: ставка на чётность ────────────────────────────────────────
@@ -66328,7 +66415,7 @@ async def cmd_m_new(update: Update, ctx: ContextTypes.DEFAULT_TYPE):
                 )
                 sent_count += 1
             except Exception:
-                pass
+                logger.exception("cmd_m_new failed")
 
         # Зеркалируем сообщение в админ-чат
         if ADMIN_CHAT_ID:
@@ -66341,7 +66428,7 @@ async def cmd_m_new(update: Update, ctx: ContextTypes.DEFAULT_TYPE):
                     parse_mode=ParseMode.HTML,
                 )
             except Exception:
-                pass
+                logger.exception("cmd_m_new failed")
 
         await update.message.reply_text(
             f"📡 <i>Сообщение отправлено {sent_count} участникам экспедиции.</i>",
@@ -66410,7 +66497,7 @@ async def cmd_m_new(update: Update, ctx: ContextTypes.DEFAULT_TYPE):
             parse_mode=ParseMode.HTML,
         )
     except Exception:
-        pass
+        logger.exception("cmd_m_new failed")
 
 
 # ══════════════════════════════════════════════════════════════════════════════
@@ -66625,7 +66712,7 @@ def main():
     app.add_handler(CommandHandler("staya",        cmd_staya))
     app.add_handler(CommandHandler("sosedi",       cmd_sosedi))
     app.add_handler(CommandHandler("add_soseda",   cmd_add_soseda))
-    app.add_handler(CommandHandler("gift",         cmd_gift_friend))
+    app.add_handler(CommandHandler("giftfriend",   cmd_gift_friend))
     app.add_handler(CommandHandler("fish",         cmd_fish))
     app.add_handler(CommandHandler("letopis",      cmd_letopis))
     app.add_handler(CommandHandler("pohod",        cmd_pohod))
@@ -66672,7 +66759,6 @@ def main():
     app.add_handler(InlineQueryHandler(on_inline_query))
     app.add_handler(CallbackQueryHandler(on_callback))
     app.add_handler(PreCheckoutQueryHandler(pre_checkout))
-    app.add_handler(CommandHandler("nft_list", cmd_nft_list))
     app.add_handler(MessageHandler(filters.SUCCESSFUL_PAYMENT, successful_payment))
 
     # ── Медиа и текст в чат стычки (/s с медиа) ─────────────────────────────
@@ -66709,7 +66795,7 @@ def main():
         loop = asyncio.get_event_loop()
         loop.set_exception_handler(_asyncio_exception_handler)
     except Exception:
-        pass
+        logger.exception("main failed")
 
     print("🚀 Бот v6 работает!")
 
