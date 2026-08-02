@@ -50127,7 +50127,43 @@ async def job_events(ctx: ContextTypes.DEFAULT_TYPE):
 # ══════════════════════════════════════════════════════════════════════════════
 
 # ── Банк легенд ───────────────────────────────────────────────────────────────
+#
+# Размер целей: ориентир — недельная активность сообщества.
+# По данным на 2026-08: ~235 игроков активны за 7 дней, гача ~1550 круток
+# в неделю, казино ~330 игр. Цель должна закрываться за 2–4 дня нормальной
+# игры, иначе легенда либо провалится, либо закроется за час.
+# Цели активной легенды правятся на лету: /legend_goals feeds:400 gacha:300
 LEGEND_POOL: list[dict] = [
+    {
+        # Легенда возвращения — запускать вручную: /legend_start болото
+        "title": "Болото просыпается",
+        "emoji": "🌅",
+        "story": (
+            "Болото долго спало. Туман стоял такой густой, что не было видно "
+            "и соседней кочки, а старый шаман Ква-Ква всё бормотал: «Рано, рано...»\n\n"
+            "Сегодня утром туман начал расходиться. Первой квакнула самая упрямая "
+            "лягушка — та, что не ушла с болота даже когда стало тихо. За ней вторая. "
+            "Потом третья.\n\n"
+            "Шаман говорит: чтобы болото проснулось до конца, нужно снова наполнить "
+            "его жизнью. Кормить, мыть, играть — всё как раньше. "
+            "Болото просыпается только когда на нём шумно."
+        ),
+        "goals": {"feeds": 400, "washes": 100, "gacha": 300},
+        "win_text": (
+            "🌅 Туман разошёлся окончательно!\n\n"
+            "Болото гудит, как в старые времена: кто-то квакает, кто-то плещется, "
+            "кто-то уже поспорил из-за кувшинки. Шаман Ква-Ква довольно щурится: "
+            "«Ну вот. Я же говорил — надо было просто подождать упрямых».\n\n"
+            "<i>Спасибо, что не ушли. Болото это запомнит.</i>"
+        ),
+        "lose_text": (
+            "🌅 Туман поредел, но до конца не разошёлся.\n\n"
+            "Шаман Ква-Ква не расстроился: «Болото просыпается медленно. "
+            "Значит, разбудим в следующий раз — я никуда не тороплюсь».\n\n"
+            "<i>Мы тоже никуда не уходим.</i>"
+        ),
+        "win_coins": 300, "win_xp": 150,
+    },
     {
         "title": "Вулкан Мок-Мок просыпается!",
         "emoji": "🌋",
@@ -54791,6 +54827,58 @@ async def cmd_legend_goals(update: Update, ctx: ContextTypes.DEFAULT_TYPE):
     goals_str = " | ".join(f"{a}:{g}" for a, g in new_goals.items())
     await update.message.reply_text(
         f"✅ Цели обновлены: <code>{goals_str}</code>",
+        parse_mode=ParseMode.HTML,
+    )
+
+
+async def cmd_legend_start(update: Update, ctx: ContextTypes.DEFAULT_TYPE):
+    """
+    /legend_start [часть названия] — запустить конкретную легенду из LEGEND_POOL.
+    Без аргумента показывает список. Кнопка в админке запускает случайную,
+    а эта команда нужна когда легенда приурочена к событию (например, к анонсу).
+    """
+    user = update.effective_user
+    if user.id not in ADMIN_IDS:
+        return
+
+    query = " ".join(ctx.args).strip().lower() if ctx.args else ""
+    if not query:
+        lines = ["📜 <b>Легенды в банке:</b>\n"]
+        for i, l in enumerate(LEGEND_POOL, 1):
+            goals = " ".join(f"{a}:{g}" for a, g in l["goals"].items())
+            lines.append(f"{i}. {l['emoji']} <b>{he(l['title'])}</b>\n    <code>{goals}</code>")
+        lines.append("\nЗапуск: <code>/legend_start болото</code>")
+        await update.message.reply_text("\n".join(lines), parse_mode=ParseMode.HTML)
+        return
+
+    matches = [l for l in LEGEND_POOL if query in l["title"].lower()]
+    if not matches:
+        await update.message.reply_text(
+            f"❌ Не нашёл легенду по запросу «{he(query)}». /legend_start без аргументов — список."
+        )
+        return
+    if len(matches) > 1:
+        titles = "\n".join(f"• {he(l['title'])}" for l in matches)
+        await update.message.reply_text(
+            f"⚠️ Под запрос подходят несколько:\n{titles}\n\nУточни запрос.",
+            parse_mode=ParseMode.HTML,
+        )
+        return
+
+    chosen = matches[0]
+    prev = await legend_active()
+    leg = await _legend_start(ctx.bot, chosen)
+    if not leg:
+        await update.message.reply_text("❌ Не удалось запустить легенду — смотри bot.log.")
+        return
+
+    await admin_log(user.id, "legend_start_manual", details=chosen["title"])
+    goals_str = " | ".join(f"{a}:{g}" for a, g in chosen["goals"].items())
+    warn = "\n\n⚠️ Предыдущая легенда была закрыта." if prev else ""
+    await update.message.reply_text(
+        f"✅ Запущена: {chosen['emoji']} <b>{he(chosen['title'])}</b>\n"
+        f"Цели: <code>{goals_str}</code>\n\n"
+        f"Правка целей на лету: <code>/legend_goals ...</code>{warn}",
         parse_mode=ParseMode.HTML,
     )
 
@@ -66702,6 +66790,7 @@ def main():
             else cmd_broadcast(u, c),
     ))
     app.add_handler(CommandHandler("legend_goals", cmd_legend_goals))
+    app.add_handler(CommandHandler("legend_start", cmd_legend_start))
     app.add_handler(CommandHandler("adminexpev",   cmd_adminexpev))
     app.add_handler(CommandHandler("fix_workers",  cmd_fix_workers))
     app.add_handler(CommandHandler("fix_adventure",      cmd_fix_adventure))
