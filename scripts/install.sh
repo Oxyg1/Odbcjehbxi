@@ -15,15 +15,46 @@ NEED_RELOGIN=0
 
 echo "== tgmarket installer =="
 
-if ! command -v docker >/dev/null 2>&1; then
-  echo "-> Docker not found, installing (docker.io + compose plugin)..."
+if ! command -v git >/dev/null 2>&1; then
+  echo "-> git not found, installing..."
   sudo apt-get update -y
-  sudo apt-get install -y docker.io docker-compose-plugin git
+  sudo apt-get install -y git
+fi
+
+# Ubuntu's own archives only carry the old `docker.io` engine and no
+# docker-compose-plugin at all, so `apt-get install docker.io
+# docker-compose-plugin` fails atomically (apt refuses to install anything
+# from the command if any one package name can't be resolved). Docker's own
+# convenience script sets up their apt repo and installs a matched
+# engine + compose + buildx in one go, which is what actually works here.
+if ! command -v docker >/dev/null 2>&1; then
+  echo "-> Docker not found, installing via get.docker.com..."
+  curl -fsSL https://get.docker.com | sudo sh
   sudo systemctl enable --now docker
-  sudo usermod -aG docker "$USER"
-  NEED_RELOGIN=1
+  if [ -n "${SUDO_USER:-}" ]; then
+    sudo usermod -aG docker "$SUDO_USER"
+    NEED_RELOGIN=1
+  elif [ "$(id -u)" != "0" ]; then
+    sudo usermod -aG docker "$USER"
+    NEED_RELOGIN=1
+  fi
+  # root itself doesn't need the docker group and needs no re-login.
 else
   echo "-> Docker already present."
+fi
+
+if ! docker compose version >/dev/null 2>&1; then
+  echo "-> docker compose plugin missing, installing..."
+  sudo apt-get update -y
+  if ! sudo apt-get install -y docker-compose-plugin; then
+    echo "-> not available via apt, fetching the plugin binary directly"
+    plugin_dir="/usr/local/lib/docker/cli-plugins"
+    sudo mkdir -p "$plugin_dir"
+    arch="$(uname -m)"
+    sudo curl -fsSL "https://github.com/docker/compose/releases/latest/download/docker-compose-linux-${arch}" \
+      -o "$plugin_dir/docker-compose"
+    sudo chmod +x "$plugin_dir/docker-compose"
+  fi
 fi
 
 if [ ! -d "$INSTALL_DIR/.git" ]; then
