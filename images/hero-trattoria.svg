@@ -1,0 +1,26 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 1920 1080" width="1920" height="1080" role="img" aria-label="Зал траттории Pro Italia">
+  <defs>
+    <linearGradient id="bg" x1="0" y1="0" x2="1" y2="1">
+      <stop offset="0" stop-color="#6E1F1F"/>
+      <stop offset=".55" stop-color="#8B2E2E"/>
+      <stop offset="1" stop-color="#3A2018"/>
+    </linearGradient>
+    <radialGradient id="glow" cx=".5" cy=".42" r=".55">
+      <stop offset="0" stop-color="#E8B96A" stop-opacity=".28"/>
+      <stop offset="1" stop-color="#E8B96A" stop-opacity="0"/>
+    </radialGradient>
+    <pattern id="dots" width="42" height="42" patternUnits="userSpaceOnUse">
+      <circle cx="7" cy="7" r="1.8" fill="#ffffff" opacity=".08"/>
+    </pattern>
+  </defs>
+  <rect width="1920" height="1080" fill="url(#bg)"/>
+  <rect width="1920" height="1080" fill="url(#dots)"/>
+  <rect width="1920" height="1080" fill="url(#glow)"/>
+  <g opacity=".07" fill="none" stroke="#FAF6F0" stroke-width="4">
+    <circle cx="960" cy="540" r="270"/>
+    <circle cx="960" cy="540" r="390"/>
+    <circle cx="960" cy="540" r="510"/>
+  </g>
+  <text x="1840" y="1012" font-family="Arial, Helvetica, sans-serif" font-size="26" letter-spacing="6"
+        text-anchor="end" fill="#FAF6F0" opacity=".22">ПЛЕЙСХОЛДЕР — ЗАМЕНИТЕ НА ФОТО ЗАЛА</text>
+</svg>

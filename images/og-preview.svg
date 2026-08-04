@@ -1,0 +1,21 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 1200 630" width="1200" height="630" role="img" aria-label="Pro Italia · Калуга">
+  <defs>
+    <linearGradient id="bg" x1="0" y1="0" x2="1" y2="1">
+      <stop offset="0" stop-color="#8B2E2E"/>
+      <stop offset="1" stop-color="#4A5D3A"/>
+    </linearGradient>
+    <pattern id="dots" width="34" height="34" patternUnits="userSpaceOnUse">
+      <circle cx="6" cy="6" r="1.6" fill="#ffffff" opacity=".13"/>
+    </pattern>
+  </defs>
+  <rect width="1200" height="630" fill="url(#bg)"/>
+  <rect width="1200" height="630" fill="url(#dots)"/>
+  <g opacity=".16" fill="none" stroke="#FAF6F0" stroke-width="3">
+    <circle cx="600" cy="315" r="157"/>
+    <circle cx="600" cy="315" r="210"/>
+  </g>
+  <g font-family="Georgia, 'Times New Roman', serif" text-anchor="middle" fill="#FAF6F0">
+    <text x="600" y="333" font-size="54" letter-spacing="1">Pro Italia · Калуга</text>
+    <text x="600" y="383" font-size="26" opacity=".75" font-family="Arial, Helvetica, sans-serif" letter-spacing="3">OG-ПРЕВЬЮ 1200×630</text>
+  </g>
+</svg>
