@@ -385,7 +385,77 @@
     }
   }
 
-  /* ---------- 7. Мелочи ---------- */
+  /* ---------- 7. Статус «сейчас открыто» ----------
+     Считаем по московскому времени, чтобы гость из другого часового пояса
+     видел корректный статус. Расписание — в минутах от начала суток;
+     закрытие в 00:00 = 1440 (конец тех же суток, ночного перехода нет). */
+  var SCHEDULE = [
+    { open: 9 * 60, close: 23 * 60 },  // воскресенье
+    { open: 8 * 60, close: 23 * 60 },  // понедельник
+    { open: 8 * 60, close: 23 * 60 },  // вторник
+    { open: 8 * 60, close: 23 * 60 },  // среда
+    { open: 8 * 60, close: 23 * 60 },  // четверг
+    { open: 8 * 60, close: 24 * 60 },  // пятница
+    { open: 9 * 60, close: 24 * 60 }   // суббота
+  ];
+
+  function formatTime(minutes) {
+    var h = Math.floor(minutes / 60) % 24;
+    var m = minutes % 60;
+    return (h < 10 ? '0' : '') + h + ':' + (m < 10 ? '0' : '') + m;
+  }
+
+  function getMoscowTime() {
+    try {
+      var parts = new Intl.DateTimeFormat('en-GB', {
+        timeZone: 'Europe/Moscow',
+        weekday: 'short',
+        hour: '2-digit',
+        minute: '2-digit',
+        hour12: false
+      }).formatToParts(new Date());
+
+      var map = {};
+      parts.forEach(function (part) { map[part.type] = part.value; });
+
+      var days = { Sun: 0, Mon: 1, Tue: 2, Wed: 3, Thu: 4, Fri: 5, Sat: 6 };
+      var day = days[map.weekday];
+      if (day === undefined) return null;
+
+      return { day: day, minutes: (parseInt(map.hour, 10) % 24) * 60 + parseInt(map.minute, 10) };
+    } catch (e) {
+      return null; // Intl без поддержки таймзон — просто не показываем статус
+    }
+  }
+
+  var statusBox = document.getElementById('workStatus');
+
+  function updateWorkStatus() {
+    if (!statusBox) return;
+    var now = getMoscowTime();
+    if (!now) return;
+
+    var today = SCHEDULE[now.day];
+    var isOpen = now.minutes >= today.open && now.minutes < today.close;
+    var text;
+
+    if (isOpen) {
+      text = 'Сейчас открыто · до ' + formatTime(today.close);
+    } else if (now.minutes < today.open) {
+      text = 'Сейчас закрыто · откроем сегодня в ' + formatTime(today.open);
+    } else {
+      text = 'Сейчас закрыто · откроем завтра в ' + formatTime(SCHEDULE[(now.day + 1) % 7].open);
+    }
+
+    statusBox.textContent = text;
+    statusBox.classList.toggle('is-closed', !isOpen);
+    statusBox.hidden = false;
+  }
+
+  updateWorkStatus();
+  window.setInterval(updateWorkStatus, 60000);
+
+  /* ---------- 8. Мелочи ---------- */
   var yearEl = document.getElementById('year');
   if (yearEl) yearEl.textContent = String(new Date().getFullYear());
 })();

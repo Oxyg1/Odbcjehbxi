@@ -200,6 +200,8 @@ h1, h2, h3 {
 }
 .btn--ghost:hover { color: var(--wine); border-color: var(--wine); background: var(--white); }
 
+.btn--eda { --btn-bg: var(--gold); color: #3A2A05; font-weight: 600; }
+.btn--eda:hover { --btn-bg: #DDB63A; color: #3A2A05; }
 .btn--wa { --btn-bg: #25D366; color: #06331a; font-weight: 600; }
 .btn--wa:hover { --btn-bg: #1fbb59; color: #06331a; }
 .btn--tg { --btn-bg: #2AABEE; color: #042a3d; font-weight: 600; }
@@ -880,6 +882,52 @@ h1, h2, h3 {
   font-family: var(--font-display);
   font-size: 21px;
 }
+/* График работы по дням + статус «сейчас открыто» */
+.hours {
+  margin: 0;
+  padding: 0;
+  list-style: none;
+  font-family: var(--font-text);
+  font-size: 15.5px;
+}
+.hours li {
+  display: flex;
+  align-items: baseline;
+  justify-content: space-between;
+  gap: 16px;
+  padding: 3px 0;
+  max-width: 320px;
+}
+.hours li span:first-child { color: var(--ink-soft); }
+.hours li span:last-child { font-variant-numeric: tabular-nums; }
+
+.work-status {
+  display: inline-flex;
+  align-items: center;
+  gap: 8px;
+  margin: 12px 0 0;
+  padding: 6px 14px 6px 12px;
+  border-radius: 999px;
+  background: rgba(74, 93, 58, .1);
+  color: var(--olive);
+  font-family: var(--font-text);
+  font-size: 14px;
+  font-weight: 500;
+}
+.work-status::before {
+  content: "";
+  width: 8px;
+  height: 8px;
+  border-radius: 50%;
+  background: currentColor;
+  box-shadow: 0 0 0 3px rgba(74, 93, 58, .18);
+}
+.work-status.is-closed {
+  background: rgba(139, 46, 46, .09);
+  color: var(--wine);
+}
+.work-status.is-closed::before { box-shadow: 0 0 0 3px rgba(139, 46, 46, .15); }
+
 .contacts__socials { display: flex; gap: 10px; }
 .contacts__socials a {
   display: inline-flex;

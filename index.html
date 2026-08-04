@@ -82,7 +82,7 @@
     <img class="hero__bg" src="images/hero-trattoria.svg" alt="Зал траттории Pro Italia в Калуге" width="1920" height="1080" fetchpriority="high">
     <div class="hero__overlay" aria-hidden="true"></div>
     <div class="container hero__content">
-      <p class="hero__eyebrow">Траттория в центре Калуги · с 2019 года</p>
+      <p class="hero__eyebrow">Траттория в центре Калуги</p>
       <h1 class="hero__title">Входите как друзья,<br>уходите как семья!</h1>
       <p class="hero__sub">
         Пицца на тонком тесте из настоящей сицилийской дровяной печи, паста собственного
@@ -90,7 +90,6 @@
       </p>
       <div class="hero__actions">
         <a class="btn btn--primary btn--lg" href="#booking">Забронировать столик</a>
-        <!-- Замените href на реальную ссылку доставки (сайт/Яндекс.Еда) -->
         <a class="btn btn--outline btn--lg" href="#delivery">Заказать доставку</a>
       </div>
       <ul class="hero__badges">
@@ -174,7 +173,7 @@
 
       <ul class="chips reveal" aria-label="Возможности ресторана">
         <li class="chip">Летняя терраса</li>
-        <li class="chip">Завтраки с 8:00</li>
+        <li class="chip">Завтраки каждый день</li>
         <li class="chip">Бизнес-ланч 420 ₽</li>
         <li class="chip">Кофе с собой</li>
         <li class="chip">Бесплатный Wi-Fi</li>
@@ -491,12 +490,18 @@
         <p class="section__eyebrow section__eyebrow--light">Доставка и навынос</p>
         <h2 class="section__title">Италия <span class="accent accent--gold">до вашей двери</span></h2>
         <p>
-          Привезём пиццу и пасту горячими: собственные курьеры по Калуге, а также
-          Яндекс.Еда и Delivery Club. Можно забрать самим — кофе с собой готовим за пару минут.
+          Привезём пиццу и пасту горячими: собственные курьеры по Калуге и доставка
+          Яндекс.Еды. Можно забрать самим — кофе с собой готовим за пару минут.
         </p>
-        <p class="delivery__aggregators">Работаем с <strong>Яндекс.Еда</strong> и <strong>Delivery&nbsp;Club</strong></p>
+        <p class="delivery__aggregators">Быстрее всего — заказ на <strong>Яндекс.Еде</strong>, там же полное меню доставки</p>
       </div>
       <div class="delivery__actions">
+        <a class="btn btn--eda" href="https://eda.yandex.ru/offline_place/9606b459de5545deb624e858a92520e8" target="_blank" rel="noopener">
+          <svg viewBox="0 0 24 24" width="20" height="20" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true">
+            <path d="M3 11h18M5 11a7 7 0 0 1 14 0M4 15h16M6.5 19h11"/>
+          </svg>
+          <span>Заказать на Яндекс.Еде</span>
+        </a>
         <a class="btn btn--wa" href="https://wa.me/79106002221" target="_blank" rel="noopener" aria-label="Написать в WhatsApp">
           <svg viewBox="0 0 24 24" width="20" height="20" fill="currentColor" aria-hidden="true">
             <path d="M12.04 2C6.6 2 2.2 6.4 2.2 11.84c0 1.9.53 3.68 1.45 5.2L2 22l5.1-1.6a9.8 9.8 0 0 0 4.94 1.32h.01c5.43 0 9.84-4.4 9.84-9.84S17.47 2 12.04 2Zm5.75 13.98c-.24.68-1.4 1.3-1.94 1.35-.5.05-.98.23-3.3-.7-2.78-1.1-4.54-3.94-4.68-4.13-.13-.2-1.11-1.48-1.11-2.82 0-1.35.7-2 .95-2.28.25-.27.55-.34.73-.34.18 0 .37 0 .53.01.17.01.4-.06.62.48.24.57.8 1.97.87 2.11.07.14.12.3.02.49-.1.19-.15.3-.29.47-.15.16-.3.37-.43.5-.14.13-.29.28-.13.55.17.27.74 1.22 1.59 1.98 1.1.98 2.02 1.28 2.29 1.42.27.14.43.12.59-.07.16-.2.68-.8.87-1.07.18-.27.36-.22.61-.13.25.09 1.6.76 1.87.9.27.13.45.2.52.31.07.12.07.66-.17 1.34Z"/>
@@ -539,8 +544,16 @@
             </div>
             <div>
               <dt>Часы работы</dt>
-              <!-- TODO: уточнить у клиента время закрытия и подставить сюда -->
-              <dd>Ежедневно с 8:00</dd>
+              <dd>
+                <ul class="hours">
+                  <li><span>Пн — Чт</span><span>08:00 — 23:00</span></li>
+                  <li><span>Пятница</span><span>08:00 — 00:00</span></li>
+                  <li><span>Суббота</span><span>09:00 — 00:00</span></li>
+                  <li><span>Воскресенье</span><span>09:00 — 23:00</span></li>
+                </ul>
+                <!-- Статус подставляется скриптом по московскому времени -->
+                <p class="work-status" id="workStatus" hidden></p>
+              </dd>
             </div>
             <div>
               <dt>Мессенджеры</dt>
@@ -599,7 +612,7 @@
       <h3>Контакты</h3>
       <p>г. Калуга, ул. Ленина, 86</p>
       <p><a href="tel:+79106002221">+7 (910) 600-22-21</a></p>
-      <p>Ежедневно с 8:00</p>
+      <p class="footer__muted">Пн–Чт 08:00–23:00 · Пт 08:00–00:00<br>Сб 09:00–00:00 · Вс 09:00–23:00</p>
     </div>
 
     <div class="footer__col">
@@ -636,9 +649,7 @@
   <button class="lightbox__nav lightbox__nav--next" id="lightboxNext" type="button" aria-label="Следующее фото">&#8250;</button>
 </div>
 
-<!-- Микроразметка для поисковиков.
-     Часы работы не указаны намеренно — добавьте openingHoursSpecification,
-     когда клиент подтвердит время закрытия. -->
+<!-- Микроразметка для поисковиков -->
 <script type="application/ld+json">
 {
   "@context": "https://schema.org",
@@ -661,9 +672,36 @@
     "reviewCount": "1725",
     "bestRating": "5"
   },
+  "openingHoursSpecification": [
+    {
+      "@type": "OpeningHoursSpecification",
+      "dayOfWeek": ["Monday", "Tuesday", "Wednesday", "Thursday"],
+      "opens": "08:00",
+      "closes": "23:00"
+    },
+    {
+      "@type": "OpeningHoursSpecification",
+      "dayOfWeek": "Friday",
+      "opens": "08:00",
+      "closes": "00:00"
+    },
+    {
+      "@type": "OpeningHoursSpecification",
+      "dayOfWeek": "Saturday",
+      "opens": "09:00",
+      "closes": "00:00"
+    },
+    {
+      "@type": "OpeningHoursSpecification",
+      "dayOfWeek": "Sunday",
+      "opens": "09:00",
+      "closes": "23:00"
+    }
+  ],
   "sameAs": [
     "https://vk.ru/proitalia_trattoria",
-    "https://yandex.ru/maps/org/pro_italiya/74968518353/"
+    "https://yandex.ru/maps/org/pro_italiya/74968518353/",
+    "https://eda.yandex.ru/offline_place/9606b459de5545deb624e858a92520e8"
   ],
   "acceptsReservations": "True"
 }
