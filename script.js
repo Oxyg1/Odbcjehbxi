@@ -38,7 +38,6 @@
     burger.setAttribute('aria-expanded', 'false');
     burger.setAttribute('aria-label', 'Открыть меню');
     document.body.classList.remove('is-locked');
-    updateHeader(); // возвращаем прозрачный хедер, если мы наверху страницы
   }
 
   function toggleNav() {
@@ -48,9 +47,6 @@
     burger.setAttribute('aria-expanded', String(willOpen));
     burger.setAttribute('aria-label', willOpen ? 'Закрыть меню' : 'Открыть меню');
     document.body.classList.toggle('is-locked', willOpen);
-    // Панель меню светлая, поэтому логотип и бургер переключаем в тёмную тему
-    if (willOpen) header.classList.add('is-scrolled');
-    else updateHeader();
   }
 
   if (burger) burger.addEventListener('click', toggleNav);

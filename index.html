@@ -40,14 +40,27 @@
 <!-- ==================== HEADER ==================== -->
 <header class="header" id="header">
   <div class="container header__inner">
-    <a class="logo" href="#hero" aria-label="Pro Italia — на главную">
+    <!-- ЗАМЕНА ЛОГОТИПА: когда заказчик пришлёт фирменный знак в векторе,
+         замените всё содержимое ссылки одной строкой:
+         <img class="logo__img" src="images/logo.svg" alt="Про Италия — траттория" width="150" height="46">
+         Стиль .logo__img уже описан в styles.css, больше ничего править не нужно. -->
+    <a class="logo" href="#hero" aria-label="Про Италия — на главную">
       <span class="logo__mark" aria-hidden="true">
-        <svg viewBox="0 0 24 24" width="22" height="22" fill="none" stroke="currentColor" stroke-width="1.6" stroke-linecap="round">
-          <path d="M12 2.5c3.6 2.6 5.5 5.6 5.5 8.7 0 3.6-2.5 6.3-5.5 6.3s-5.5-2.7-5.5-6.3c0-3.1 1.9-6.1 5.5-8.7Z"/>
-          <path d="M12 8.5v13"/>
+        <svg viewBox="0 0 34 24" width="30" height="21" fill="none" aria-hidden="true">
+          <path d="M2 21C8 18 13 13.5 17 7.5 21 13.5 26 18 32 21" stroke="currentColor" stroke-width="1.3" stroke-linecap="round"/>
+          <g fill="currentColor" opacity=".9">
+            <ellipse cx="9" cy="14.6" rx="4" ry="1.9" transform="rotate(-38 9 14.6)"/>
+            <ellipse cx="25" cy="14.6" rx="4" ry="1.9" transform="rotate(38 25 14.6)"/>
+            <ellipse cx="14.4" cy="8.6" rx="3.6" ry="1.8" transform="rotate(-24 14.4 8.6)"/>
+            <ellipse cx="19.6" cy="8.6" rx="3.6" ry="1.8" transform="rotate(24 19.6 8.6)"/>
+            <circle cx="17" cy="4.2" r="1.9"/>
+          </g>
         </svg>
       </span>
-      <span class="logo__text">Pro <em>Italia</em></span>
+      <span class="logo__text">
+        <span class="logo__name">Про Италия</span>
+        <span class="logo__sub">траттория</span>
+      </span>
     </a>
 
     <nav class="nav" id="nav" aria-label="Основная навигация">
@@ -79,28 +92,28 @@
 
   <!-- ==================== HERO ==================== -->
   <section class="hero" id="hero">
-    <img class="hero__bg" src="images/hero-trattoria.svg" alt="Зал траттории Pro Italia в Калуге" width="1920" height="1080" fetchpriority="high">
-    <div class="hero__overlay" aria-hidden="true"></div>
-    <div class="container hero__content">
-      <p class="hero__eyebrow">Траттория в центре Калуги</p>
-      <h1 class="hero__title">Входите как друзья,<br>уходите как семья!</h1>
-      <p class="hero__sub">
-        Пицца на тонком тесте из настоящей сицилийской дровяной печи, паста собственного
-        производства и домашнее тепло — на улице Ленина, 86.
-      </p>
-      <div class="hero__actions">
-        <a class="btn btn--primary btn--lg" href="#booking">Забронировать столик</a>
-        <a class="btn btn--outline btn--lg" href="#delivery">Заказать доставку</a>
+    <div class="hero__content">
+      <div class="hero__inner">
+        <p class="hero__eyebrow">Траттория в центре Калуги</p>
+        <h1 class="hero__title">Входите как друзья,<br>уходите как семья!</h1>
+        <p class="hero__sub">
+          Паста собственного производства, пицца из сицилийской дровяной печи
+          и авторская кухня со свежим трюфелем — на улице Ленина, 86.
+        </p>
+        <div class="hero__actions">
+          <a class="btn btn--primary btn--lg" href="#booking">Забронировать столик</a>
+          <a class="btn btn--outline btn--lg" href="#delivery">Заказать доставку</a>
+        </div>
+        <ul class="hero__badges">
+          <li><strong>5.0</strong> на Яндекс.Картах</li>
+          <li>1725 оценок</li>
+          <li>«Хорошее место 2026»</li>
+        </ul>
       </div>
-      <ul class="hero__badges">
-        <li><strong>5.0</strong> на Яндекс.Картах</li>
-        <li>1725 оценок</li>
-        <li>«Хорошее место 2026»</li>
-      </ul>
     </div>
-    <a class="hero__scroll" href="#about" aria-label="Прокрутить к разделу «О ресторане»">
-      <span></span>
-    </a>
+    <div class="hero__media">
+      <img src="images/hero-trattoria.svg" alt="Зал траттории «Про Италия» в Калуге" width="1000" height="1200" fetchpriority="high">
+    </div>
   </section>
 
   <!-- ==================== О РЕСТОРАНЕ ==================== -->
@@ -111,22 +124,22 @@
           <p class="section__eyebrow">О ресторане</p>
           <h2 class="section__title">Маленькая Италия <span class="accent">на Ленина, 86</span></h2>
           <p>
-            «Pro Italia» — траттория, а не парадный ресторан. Здесь пахнет дровами и тестом,
-            гостей встречают по имени, а за соседним столом обязательно кто-то празднует.
-            Это гастропроект сети «ПРО», выросший из простой идеи: кормить так, как кормят дома
-            в итальянской семье — щедро, вкусно и без пафоса.
+            «Про Италия» — траттория в исходном смысле слова: место, куда приходят как к своим.
+            Гостей здесь узнают в лицо, за соседним столом обязательно кто-то празднует,
+            а хозяйничает над всем этим гастропроект сети «ПРО».
           </p>
           <p>
-            Основа кухни — настоящая сицилийская дровяная печь. В ней за пару минут
-            рождается пицца на тонком тесте с тем самым дымком и хрустящим краем.
-            Пасту мы делаем сами, из твёрдых сортов пшеницы: замешиваем и режем каждый день,
-            поэтому она не бывает вчерашней.
+            При этом кухня у нас совсем не простая. Пасту раскатываем сами из твёрдых сортов
+            пшеницы — каждый день, поэтому вчерашней она не бывает. Пиццу печём в сицилийской
+            дровяной печи: тонкое тесто, живой огонь, хрустящий край. А рядом в меню —
+            осьминог по-флорентийски, трио из тартаров, тальятелле со свежим трюфелем
+            и стейк из лосося под соусом сливочный унаги.
           </p>
           <p>
             Утром у нас завтракают: по будням с 8:00 до 12:00, в выходные — с 9:00 до 12:00.
-            Днём берут бизнес-ланч, вечером занимают летнюю террасу и остаются до последнего
-            эспрессо. Приходите одни, вдвоём, семьёй или большой шумной компанией — место
-            найдётся для всех.
+            Днём берут бизнес-ланч, вечером открывают винную карту и занимают летнюю террасу
+            до последнего эспрессо. Приходите одни, вдвоём, семьёй или большой шумной
+            компанией — место найдётся для всех.
           </p>
         </div>
 
@@ -191,11 +204,12 @@
         <p class="section__eyebrow">Меню</p>
         <h2 class="section__title">Что мы готовим <span class="accent">каждый день</span></h2>
         <p class="section__lead">
-          Несколько блюд, за которыми к нам возвращаются. Полная карта — супы, паста,
-          горячее, десерты и напитки — в основном меню.
+          Сначала — то, что заказывают чаще всего, ниже — за чем приходят специально.
+          Полная карта с пастой, ризотто, горячим, вином и коктейлями — в основном меню.
         </p>
       </div>
 
+      <h3 class="menu__group">Хиты</h3>
       <div class="menu__grid">
         <article class="card reveal">
           <div class="card__media">
@@ -282,6 +296,53 @@
               Сытно и быстро — успеете вернуться в офис.
             </p>
             <div class="card__meta"><span class="card__weight">Пн–Пт, 12:00–16:00</span><span class="card__price">420 ₽</span></div>
+          </div>
+        </article>
+      </div>
+
+      <h3 class="menu__group menu__group--second">Авторская кухня</h3>
+      <div class="menu__grid">
+        <article class="card reveal">
+          <div class="card__media">
+            <img src="images/menu-spaghetti-limoncello.svg" alt="Спагетти Лимончелло с лангустинами и пармезаном" width="800" height="600" loading="lazy">
+          </div>
+          <div class="card__body">
+            <h4 class="card__title">Спагетти Лимончелло</h4>
+            <p class="card__desc">Лангустины, базилик и пармезан</p>
+            <div class="card__meta"><span class="card__weight">230 г</span><span class="card__price">790 ₽</span></div>
+          </div>
+        </article>
+
+        <article class="card reveal">
+          <div class="card__media">
+            <img src="images/menu-tartare-trio.svg" alt="Трио из тартаров: тунец, лосось и снежный краб" width="800" height="600" loading="lazy">
+          </div>
+          <div class="card__body">
+            <h4 class="card__title">Трио из тартаров</h4>
+            <p class="card__desc">Тунец, лосось и снежный краб с соусом вителло в авокадо</p>
+            <div class="card__meta"><span class="card__weight">230 г</span><span class="card__price">890 ₽</span></div>
+          </div>
+        </article>
+
+        <article class="card reveal">
+          <div class="card__media">
+            <img src="images/menu-tagliatelle.svg" alt="Тальятелле с осьминогом и свежим трюфелем" width="800" height="600" loading="lazy">
+          </div>
+          <div class="card__body">
+            <h4 class="card__title">Тальятелле с трюфелем</h4>
+            <p class="card__desc">Осьминог, печёный перец, соус Алла Дьявола, страчателла и свежий трюфель</p>
+            <div class="card__meta"><span class="card__weight">230 г</span><span class="card__price">850 ₽</span></div>
+          </div>
+        </article>
+
+        <article class="card reveal">
+          <div class="card__media">
+            <img src="images/menu-octopus.svg" alt="Осьминог по-флорентийски с молодым картофелем" width="800" height="600" loading="lazy">
+          </div>
+          <div class="card__body">
+            <h4 class="card__title">Осьминог по-флорентийски</h4>
+            <p class="card__desc">Молодой картофель, оливки, томаты черри и сельдерей на подушке из томатного соуса</p>
+            <div class="card__meta"><span class="card__weight">280 г</span><span class="card__price">1100 ₽</span></div>
           </div>
         </article>
       </div>
@@ -613,7 +674,10 @@
 <footer class="footer">
   <div class="container footer__inner">
     <div class="footer__brand">
-      <span class="logo__text logo__text--footer">Pro <em>Italia</em></span>
+      <span class="logo__text logo__text--footer">
+        <span class="logo__name">Про Италия</span>
+        <span class="logo__sub">траттория</span>
+      </span>
       <p>Входите как друзья, уходите как семья!</p>
       <p class="footer__muted">Гастропроект сети «ПРО»</p>
     </div>
