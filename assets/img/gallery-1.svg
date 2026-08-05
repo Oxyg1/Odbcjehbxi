@@ -1,0 +1,16 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 620 440" width="620" height="440" role="img" aria-label="Зал и дровяная печь">
+  <defs>
+    <linearGradient id="gb1" x1="0" y1="0" x2="1" y2="1"><stop offset="0" stop-color="#3E2617"/><stop offset="1" stop-color="#8A3E1E"/></linearGradient>
+    <radialGradient id="gg1" cx="50%" cy="30%" r="65%"><stop offset="0" stop-color="#F0C878" stop-opacity=".22"/><stop offset="1" stop-color="#F0C878" stop-opacity="0"/></radialGradient>
+    <filter id="gn1"><feTurbulence type="fractalNoise" baseFrequency="0.8" numOctaves="3"/><feColorMatrix type="saturate" values="0"/></filter>
+  </defs>
+  <rect width="620" height="440" fill="url(#gb1)"/>
+  <rect width="620" height="440" fill="url(#gg1)"/>
+  
+      <path d="M300 420V250a90 90 0 0 1 180 0v170Z" fill="#1B1109" opacity=".8"/>
+      <path d="M330 420V262a60 60 0 0 1 120 0v158Z" fill="#D9633C" opacity=".55"/>
+      <path d="M356 420c0-40 20-52 20-76 0 24 22 30 22 56 0 12-8 20-20 20s-22-8-22 0Z" fill="#F2B05A" opacity=".9"/>
+      <rect x="240" y="420" width="300" height="16" rx="6" fill="#C9A26B" opacity=".5"/>
+      <g stroke="#C9A26B" stroke-width="2" fill="none" opacity=".35"><path d="M120 436V300M180 436V330"/></g>
+  <rect width="620" height="440" filter="url(#gn1)" opacity=".07"/>
+</svg>

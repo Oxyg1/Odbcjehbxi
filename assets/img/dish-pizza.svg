@@ -1,0 +1,25 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 480 360" width="480" height="360" role="img" aria-label="Иллюстрация блюда">
+  <defs>
+    <linearGradient id="bg-pizza" x1="0" y1="0" x2="1" y2="1">
+      <stop offset="0" stop-color="#3A2317"/><stop offset="1" stop-color="#7A3A1E"/>
+    </linearGradient>
+    <radialGradient id="gl-pizza" cx="50%" cy="38%" r="62%">
+      <stop offset="0" stop-color="#E8A05B" stop-opacity=".24"/><stop offset="1" stop-color="#E8A05B" stop-opacity="0"/>
+    </radialGradient>
+    <filter id="gr-pizza"><feTurbulence type="fractalNoise" baseFrequency="0.8" numOctaves="3"/><feColorMatrix type="saturate" values="0"/></filter>
+  </defs>
+  <rect width="480" height="360" fill="url(#bg-pizza)"/>
+  <rect width="480" height="360" fill="url(#gl-pizza)"/>
+  <g>
+      <circle cx="240" cy="190" r="112" fill="none" stroke="#E8C79B" stroke-width="2.5" opacity=".85"/>
+      <circle cx="240" cy="190" r="96" fill="none" stroke="#E8C79B" stroke-width="1.2" opacity=".45"/>
+      <path d="M240 94 L240 286 M144 190 L336 190 M172 122 L308 258 M308 122 L172 258"
+            stroke="#E8C79B" stroke-width="1.2" opacity=".3"/>
+      <circle cx="205" cy="152" r="12" fill="#D9633C" opacity=".9"/>
+      <circle cx="282" cy="176" r="10" fill="#D9633C" opacity=".9"/>
+      <circle cx="222" cy="232" r="11" fill="#D9633C" opacity=".9"/>
+      <circle cx="278" cy="238" r="8" fill="#D9633C" opacity=".9"/>
+      <circle cx="192" cy="212" r="7" fill="#8FA36A" opacity=".95"/>
+      <circle cx="258" cy="128" r="6" fill="#8FA36A" opacity=".95"/></g>
+  <rect width="480" height="360" filter="url(#gr-pizza)" opacity=".07"/>
+</svg>

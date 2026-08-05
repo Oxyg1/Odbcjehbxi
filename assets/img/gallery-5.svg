@@ -1,0 +1,17 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 620 440" width="620" height="440" role="img" aria-label="Десерты">
+  <defs>
+    <linearGradient id="gb5" x1="0" y1="0" x2="1" y2="1"><stop offset="0" stop-color="#2A1C1B"/><stop offset="1" stop-color="#7A4231"/></linearGradient>
+    <radialGradient id="gg5" cx="50%" cy="30%" r="65%"><stop offset="0" stop-color="#F0C878" stop-opacity=".22"/><stop offset="1" stop-color="#F0C878" stop-opacity="0"/></radialGradient>
+    <filter id="gn5"><feTurbulence type="fractalNoise" baseFrequency="0.8" numOctaves="3"/><feColorMatrix type="saturate" values="0"/></filter>
+  </defs>
+  <rect width="620" height="440" fill="url(#gb5)"/>
+  <rect width="620" height="440" fill="url(#gg5)"/>
+  
+      <rect x="200" y="170" width="220" height="150" rx="12" fill="none" stroke="#F0C9A6" stroke-width="3" opacity=".8"/>
+      <rect x="200" y="170" width="220" height="38" rx="12" fill="#F0C9A6" opacity=".3"/>
+      <rect x="200" y="216" width="220" height="34" fill="#C08457" opacity=".45"/>
+      <rect x="200" y="258" width="220" height="34" fill="#F0C9A6" opacity=".22"/>
+      <g fill="#5A3524" opacity=".6"><circle cx="250" cy="188" r="5"/><circle cx="310" cy="192" r="4"/><circle cx="372" cy="186" r="5"/></g>
+      <ellipse cx="310" cy="352" rx="160" ry="22" fill="#C9A26B" opacity=".2"/>
+  <rect width="620" height="440" filter="url(#gn5)" opacity=".07"/>
+</svg>

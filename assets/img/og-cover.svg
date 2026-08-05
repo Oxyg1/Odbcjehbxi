@@ -1,0 +1,16 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 1200 630" width="1200" height="630">
+  <defs>
+    <linearGradient id="ob" x1="0" y1="0" x2="1" y2="1"><stop offset="0" stop-color="#20180F"/><stop offset=".55" stop-color="#14100D"/><stop offset="1" stop-color="#0E0B09"/></linearGradient>
+    <radialGradient id="og" cx="78%" cy="18%" r="62%"><stop offset="0" stop-color="#C4562F" stop-opacity=".45"/><stop offset="1" stop-color="#C4562F" stop-opacity="0"/></radialGradient>
+  </defs>
+  <rect width="1200" height="630" fill="url(#ob)"/>
+  <rect width="1200" height="630" fill="url(#og)"/>
+  <g fill="none" stroke="#D6A756" stroke-width="2" opacity=".2" transform="translate(770 60) scale(.62)">
+    <path d="M60 700V300a120 120 0 0 1 240 0v400"/><path d="M340 700V240a140 140 0 0 1 280 0v460"/><path d="M20 700h600"/>
+  </g>
+  <text x="90" y="250" font-family="Georgia, serif" font-size="94" font-weight="700" fill="#FBF7F0" letter-spacing="2">PRO ITALIA</text>
+  <text x="94" y="322" font-family="Georgia, serif" font-size="52" font-style="italic" fill="#D6A756">Trattoria</text>
+  <rect x="90" y="376" width="120" height="2" fill="#C4562F"/>
+  <text x="90" y="438" font-family="Helvetica, Arial, sans-serif" font-size="30" fill="#B9AB99">Дровяная печь · паста ручной работы · завтраки с 8:00</text>
+  <text x="90" y="500" font-family="Helvetica, Arial, sans-serif" font-size="27" font-weight="700" fill="#FBF7F0">Калуга, ул. Ленина, 86 · +7 (910) 600-22-21</text>
+</svg>

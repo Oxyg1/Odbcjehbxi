@@ -1,0 +1,22 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 480 360" width="480" height="360" role="img" aria-label="Иллюстрация блюда">
+  <defs>
+    <linearGradient id="bg-salad" x1="0" y1="0" x2="1" y2="1">
+      <stop offset="0" stop-color="#22301E"/><stop offset="1" stop-color="#4C6B36"/>
+    </linearGradient>
+    <radialGradient id="gl-salad" cx="50%" cy="38%" r="62%">
+      <stop offset="0" stop-color="#DDEAC0" stop-opacity=".24"/><stop offset="1" stop-color="#DDEAC0" stop-opacity="0"/>
+    </radialGradient>
+    <filter id="gr-salad"><feTurbulence type="fractalNoise" baseFrequency="0.8" numOctaves="3"/><feColorMatrix type="saturate" values="0"/></filter>
+  </defs>
+  <rect width="480" height="360" fill="url(#bg-salad)"/>
+  <rect width="480" height="360" fill="url(#gl-salad)"/>
+  <g>
+      <ellipse cx="240" cy="206" rx="128" ry="76" fill="none" stroke="#DDEAC0" stroke-width="2.5" opacity=".8"/>
+      <path d="M176 206c14-30 40-44 64-44s50 14 64 44" fill="none" stroke="#DDEAC0" stroke-width="1.2" opacity=".4"/>
+      <path d="M190 208c10-24 26-34 40-30 12 4 12 22-2 32-14 10-32 8-38-2Z" fill="#7FA155" opacity=".85"/>
+      <path d="M252 200c12-20 32-26 44-16 9 8 2 26-14 32-15 5-28-4-30-16Z" fill="#7FA155" opacity=".7"/>
+      <circle cx="222" cy="230" r="12" fill="#C9573F" opacity=".85"/>
+      <circle cx="268" cy="234" r="9" fill="#C9573F" opacity=".7"/>
+      <circle cx="240" cy="180" r="14" fill="#F4EFE2" opacity=".9"/></g>
+  <rect width="480" height="360" filter="url(#gr-salad)" opacity=".07"/>
+</svg>

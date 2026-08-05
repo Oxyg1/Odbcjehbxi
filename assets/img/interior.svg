@@ -1,0 +1,46 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 600 800" width="600" height="800" role="img" aria-label="Зал ресторана">
+  <defs>
+    <linearGradient id="iv" x1="0" y1="0" x2="0" y2="1">
+      <stop offset="0" stop-color="#3B2A1C"/><stop offset=".55" stop-color="#241A12"/><stop offset="1" stop-color="#15100B"/>
+    </linearGradient>
+    <radialGradient id="iw" cx="50%" cy="26%" r="55%">
+      <stop offset="0" stop-color="#E9B267" stop-opacity=".5"/><stop offset="1" stop-color="#E9B267" stop-opacity="0"/>
+    </radialGradient>
+    <filter id="ig"><feTurbulence type="fractalNoise" baseFrequency="0.8" numOctaves="3"/><feColorMatrix type="saturate" values="0"/></filter>
+  </defs>
+  <rect width="600" height="800" fill="url(#iv)"/>
+  <rect width="600" height="800" fill="url(#iw)"/>
+  <!-- окна-арки -->
+  <g fill="none" stroke="#C9A26B" stroke-width="2" opacity=".5">
+    <path d="M96 470V300a64 64 0 0 1 128 0v170Z"/>
+    <path d="M376 470V300a64 64 0 0 1 128 0v170Z"/>
+    <path d="M160 236v234M440 236v234"/>
+  </g>
+  <!-- подвесные лампы -->
+  <g stroke="#D6A756" stroke-width="1.6" opacity=".75">
+    <path d="M300 0v128M210 0v96M390 0v96"/>
+  </g>
+  <g fill="#F0C878" opacity=".9">
+    <ellipse cx="300" cy="140" rx="30" ry="14"/>
+    <ellipse cx="210" cy="106" rx="22" ry="10"/>
+    <ellipse cx="390" cy="106" rx="22" ry="10"/>
+  </g>
+  <g fill="#F0C878" opacity=".14">
+    <path d="M300 140 240 300h120Z"/><path d="M210 106 168 240h84Z"/><path d="M390 106 348 240h84Z"/>
+  </g>
+  <!-- стол -->
+  <rect x="70" y="560" width="460" height="14" rx="7" fill="#7A5334" opacity=".85"/>
+  <rect x="70" y="574" width="460" height="200" fill="#2A1D13" opacity=".7"/>
+  <!-- сервировка -->
+  <g opacity=".9">
+    <ellipse cx="190" cy="548" rx="52" ry="17" fill="#F4EFE2" opacity=".82"/>
+    <ellipse cx="410" cy="548" rx="52" ry="17" fill="#F4EFE2" opacity=".82"/>
+    <ellipse cx="300" cy="540" rx="34" ry="11" fill="#C9573F" opacity=".75"/>
+  </g>
+  <!-- бокалы -->
+  <g stroke="#EFE4CE" stroke-width="2" fill="none" opacity=".7">
+    <path d="M258 490c0 16 8 24 8 34v22M250 490h32c0 20-8 28-16 28s-16-8-16-28ZM252 546h28"/>
+    <path d="M350 490c0 16 8 24 8 34v22M342 490h32c0 20-8 28-16 28s-16-8-16-28ZM344 546h28"/>
+  </g>
+  <rect width="600" height="800" filter="url(#ig)" opacity=".08"/>
+</svg>

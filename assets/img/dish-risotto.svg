@@ -1,0 +1,27 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 480 360" width="480" height="360" role="img" aria-label="Иллюстрация блюда">
+  <defs>
+    <linearGradient id="bg-risotto" x1="0" y1="0" x2="1" y2="1">
+      <stop offset="0" stop-color="#2B2617"/><stop offset="1" stop-color="#665C23"/>
+    </linearGradient>
+    <radialGradient id="gl-risotto" cx="50%" cy="38%" r="62%">
+      <stop offset="0" stop-color="#EDD79C" stop-opacity=".24"/><stop offset="1" stop-color="#EDD79C" stop-opacity="0"/>
+    </radialGradient>
+    <filter id="gr-risotto"><feTurbulence type="fractalNoise" baseFrequency="0.8" numOctaves="3"/><feColorMatrix type="saturate" values="0"/></filter>
+  </defs>
+  <rect width="480" height="360" fill="url(#bg-risotto)"/>
+  <rect width="480" height="360" fill="url(#gl-risotto)"/>
+  <g>
+      <ellipse cx="240" cy="206" rx="130" ry="78" fill="none" stroke="#EDD79C" stroke-width="2.5" opacity=".8"/>
+      <ellipse cx="240" cy="204" rx="88" ry="48" fill="#EDD79C" opacity=".16"/>
+      <g fill="#F2E2B6" opacity=".85">
+        <ellipse cx="208" cy="196" rx="7" ry="4" transform="rotate(-18 208 196)"/>
+        <ellipse cx="232" cy="188" rx="7" ry="4" transform="rotate(12 232 188)"/>
+        <ellipse cx="258" cy="198" rx="7" ry="4" transform="rotate(-8 258 198)"/>
+        <ellipse cx="220" cy="212" rx="7" ry="4" transform="rotate(22 220 212)"/>
+        <ellipse cx="252" cy="216" rx="7" ry="4" transform="rotate(-24 252 216)"/>
+        <ellipse cx="278" cy="208" rx="7" ry="4" transform="rotate(6 278 208)"/>
+      </g>
+      <path d="M186 176c8-14 22-18 32-10 8 7 4 20-8 24-11 4-20-4-24-14Z" fill="#B5834A" opacity=".8"/>
+      <circle cx="286" cy="186" r="8" fill="#8FA36A" opacity=".85"/></g>
+  <rect width="480" height="360" filter="url(#gr-risotto)" opacity=".07"/>
+</svg>

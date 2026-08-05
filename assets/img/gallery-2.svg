@@ -1,0 +1,17 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 620 440" width="620" height="440" role="img" aria-label="Паста ручной работы">
+  <defs>
+    <linearGradient id="gb2" x1="0" y1="0" x2="1" y2="1"><stop offset="0" stop-color="#2E2415"/><stop offset="1" stop-color="#7A5F24"/></linearGradient>
+    <radialGradient id="gg2" cx="50%" cy="30%" r="65%"><stop offset="0" stop-color="#F0C878" stop-opacity=".22"/><stop offset="1" stop-color="#F0C878" stop-opacity="0"/></radialGradient>
+    <filter id="gn2"><feTurbulence type="fractalNoise" baseFrequency="0.8" numOctaves="3"/><feColorMatrix type="saturate" values="0"/></filter>
+  </defs>
+  <rect width="620" height="440" fill="url(#gb2)"/>
+  <rect width="620" height="440" fill="url(#gg2)"/>
+  
+      <g stroke="#F0CB84" stroke-width="5" stroke-linecap="round" opacity=".85" fill="none">
+        <path d="M180 200c60-40 200-40 260 0"/><path d="M170 234c70-44 220-44 280 0"/>
+        <path d="M180 268c60-38 200-38 260 0"/><path d="M196 302c50-32 168-32 218 0"/>
+      </g>
+      <rect x="150" y="150" width="320" height="14" rx="7" fill="#C9A26B" opacity=".5"/>
+      <ellipse cx="310" cy="360" rx="150" ry="24" fill="#C9A26B" opacity=".2"/>
+  <rect width="620" height="440" filter="url(#gn2)" opacity=".07"/>
+</svg>

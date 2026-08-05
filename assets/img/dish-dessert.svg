@@ -1,0 +1,24 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 480 360" width="480" height="360" role="img" aria-label="Иллюстрация блюда">
+  <defs>
+    <linearGradient id="bg-dessert" x1="0" y1="0" x2="1" y2="1">
+      <stop offset="0" stop-color="#2A1C1B"/><stop offset="1" stop-color="#6B3B2E"/>
+    </linearGradient>
+    <radialGradient id="gl-dessert" cx="50%" cy="38%" r="62%">
+      <stop offset="0" stop-color="#F0C9A6" stop-opacity=".24"/><stop offset="1" stop-color="#F0C9A6" stop-opacity="0"/>
+    </radialGradient>
+    <filter id="gr-dessert"><feTurbulence type="fractalNoise" baseFrequency="0.8" numOctaves="3"/><feColorMatrix type="saturate" values="0"/></filter>
+  </defs>
+  <rect width="480" height="360" fill="url(#bg-dessert)"/>
+  <rect width="480" height="360" fill="url(#gl-dessert)"/>
+  <g>
+      <rect x="164" y="150" width="152" height="104" rx="10" fill="none" stroke="#F0C9A6" stroke-width="2.5" opacity=".8"/>
+      <rect x="164" y="150" width="152" height="26" rx="10" fill="#F0C9A6" opacity=".28"/>
+      <rect x="164" y="182" width="152" height="22" fill="#C08457" opacity=".45"/>
+      <rect x="164" y="210" width="152" height="22" fill="#F0C9A6" opacity=".2"/>
+      <path d="M164 254h152" stroke="#F0C9A6" stroke-width="2.5" opacity=".8"/>
+      <circle cx="200" cy="163" r="4" fill="#5A3524" opacity=".7"/>
+      <circle cx="240" cy="167" r="3" fill="#5A3524" opacity=".7"/>
+      <circle cx="282" cy="162" r="4" fill="#5A3524" opacity=".7"/>
+      <path d="M240 128c0 10-8 14-8 22" fill="none" stroke="#F0C9A6" stroke-width="2" opacity=".5" stroke-linecap="round"/></g>
+  <rect width="480" height="360" filter="url(#gr-dessert)" opacity=".07"/>
+</svg>

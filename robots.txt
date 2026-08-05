@@ -1,0 +1,7 @@
+User-agent: *
+Allow: /
+Disallow: /privacy.html
+Disallow: /404.html
+
+Sitemap: https://proitalia.pro/sitemap.xml
+Host: https://proitalia.pro

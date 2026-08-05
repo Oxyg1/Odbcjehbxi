@@ -1,0 +1,21 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 480 360" width="480" height="360" role="img" aria-label="Иллюстрация блюда">
+  <defs>
+    <linearGradient id="bg-antipasti" x1="0" y1="0" x2="1" y2="1">
+      <stop offset="0" stop-color="#331F1A"/><stop offset="1" stop-color="#7A2E28"/>
+    </linearGradient>
+    <radialGradient id="gl-antipasti" cx="50%" cy="38%" r="62%">
+      <stop offset="0" stop-color="#EBBE8E" stop-opacity=".24"/><stop offset="1" stop-color="#EBBE8E" stop-opacity="0"/>
+    </radialGradient>
+    <filter id="gr-antipasti"><feTurbulence type="fractalNoise" baseFrequency="0.8" numOctaves="3"/><feColorMatrix type="saturate" values="0"/></filter>
+  </defs>
+  <rect width="480" height="360" fill="url(#bg-antipasti)"/>
+  <rect width="480" height="360" fill="url(#gl-antipasti)"/>
+  <g>
+      <ellipse cx="240" cy="204" rx="130" ry="78" fill="none" stroke="#EBBE8E" stroke-width="2.5" opacity=".8"/>
+      <path d="M150 196c26-34 58-46 90-46s64 12 90 46" fill="none" stroke="#EBBE8E" stroke-width="1.2" opacity=".4"/>
+      <path d="M182 200c14-16 30-22 44-16 12 5 14 18 6 26-10 10-38 6-50-10Z" fill="#C9573F" opacity=".85"/>
+      <path d="M246 196c16-14 34-16 46-8 10 7 8 20-2 26-13 8-36 0-44-18Z" fill="#C9573F" opacity=".7"/>
+      <path d="M200 232c18-8 40-10 58-4" fill="none" stroke="#8FA36A" stroke-width="3.5" stroke-linecap="round" opacity=".9"/>
+      <circle cx="286" cy="228" r="7" fill="#8FA36A" opacity=".85"/></g>
+  <rect width="480" height="360" filter="url(#gr-antipasti)" opacity=".07"/>
+</svg>
