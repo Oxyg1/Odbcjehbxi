@@ -238,6 +238,13 @@
       });
     }
 
+    // Ссылка на политику лежит внутри <label> — без этого клик по ней
+    // заодно переключал бы галочку согласия
+    var consentLink = form.querySelector('.checkbox a');
+    if (consentLink) {
+      consentLink.addEventListener('click', function (e) { e.stopPropagation(); });
+    }
+
     function setError(field, message) {
       var wrapper = field.closest('.field') || field.closest('.checkbox');
       var errorEl = document.getElementById(field.id + '-error');

@@ -478,7 +478,11 @@
 
         <label class="checkbox">
           <input type="checkbox" id="consent" name="consent" required>
-          <span>Согласен(а) на обработку персональных данных <span aria-hidden="true">*</span></span>
+          <span>
+            Согласен(а) на обработку персональных данных в соответствии с
+            <a href="privacy.html" target="_blank" rel="noopener">политикой обработки</a>
+            <span aria-hidden="true">*</span>
+          </span>
         </label>
         <p class="field__error" id="consent-error" role="alert"></p>
 
@@ -640,7 +644,10 @@
 
   <div class="container footer__bottom">
     <p>© <span id="year">2026</span> Траттория «Pro Italia», Калуга. Все права защищены.</p>
-    <a class="footer__top" href="#hero">Наверх ↑</a>
+    <nav class="footer__legal" aria-label="Правовая информация">
+      <a href="privacy.html">Политика обработки персональных данных</a>
+      <a class="footer__top" href="#hero">Наверх ↑</a>
+    </nav>
   </div>
 </footer>
 

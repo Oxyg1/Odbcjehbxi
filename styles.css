@@ -109,6 +109,9 @@ h1, h2, h3 {
   line-height: 1.15;
   margin: 0 0 .5em;
   letter-spacing: -.01em;
+  /* Playfair по умолчанию даёт старостильные цифры — «2026» и «5.0»
+     прыгали по высоте. Заголовкам нужны прописные */
+  font-variant-numeric: lining-nums;
 }
 
 .section__head {
@@ -484,12 +487,17 @@ h1, h2, h3 {
   list-style: none;
 }
 .chip {
+  display: flex;
+  align-items: center;
+  justify-content: center;
   padding: 9px 18px;
   border: 1px solid var(--line);
   border-radius: 999px;
   background: var(--white);
   font-size: 14px;
+  line-height: 1.3;
   color: var(--ink-soft);
+  text-align: center;
 }
 
 /* ---------- 7. Меню ---------- */
@@ -546,6 +554,7 @@ h1, h2, h3 {
   font-weight: 600;
   color: var(--wine);
   white-space: nowrap;
+  font-variant-numeric: lining-nums tabular-nums;
 }
 .card--promo {
   background: linear-gradient(150deg, var(--olive), #3A492E);
@@ -671,6 +680,7 @@ h1, h2, h3 {
   font-size: 42px;
   line-height: 1;
   color: var(--wine);
+  font-variant-numeric: lining-nums;
 }
 .stars { display: inline-flex; gap: 2px; }
 .stars svg { width: 20px; height: 20px; fill: var(--gold); }
@@ -1012,6 +1022,115 @@ h1, h2, h3 {
   color: rgba(250, 246, 240, .55);
 }
 .footer__bottom p { margin: 0; }
+.footer__legal {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 10px 26px;
+}
+
+/* ---------- 13a. Правовые страницы (политика ПДн) ---------- */
+.legal-page { background: var(--cream-deep); }
+.legal-header { position: sticky; }
+
+.legal {
+  padding: calc(var(--header-h) + clamp(36px, 6vw, 64px)) 0 clamp(56px, 7vw, 90px);
+}
+.legal__inner {
+  width: min(760px, 100% - 48px);
+  margin-inline: auto;
+  padding: clamp(28px, 4vw, 52px);
+  background: var(--white);
+  border: 1px solid var(--line);
+  border-radius: var(--radius-lg);
+  box-shadow: var(--shadow);
+}
+.legal .section__eyebrow { display: block; }
+.legal .section__eyebrow::after { left: 0; transform: none; }
+
+.legal__title {
+  font-size: clamp(27px, 4.4vw, 40px);
+  margin: 0 0 12px;
+}
+.legal__meta {
+  margin: 0 0 28px;
+  font-size: 14px;
+  color: var(--ink-soft);
+}
+
+.legal__notice {
+  margin: 0 0 32px;
+  padding: 16px 20px;
+  border-left: 3px solid var(--gold);
+  border-radius: 0 var(--radius) var(--radius) 0;
+  background: rgba(201, 162, 39, .09);
+  font-size: 14.5px;
+  line-height: 1.55;
+}
+
+.legal__section { margin-bottom: 34px; }
+.legal__section:last-of-type { margin-bottom: 0; }
+.legal__section h2 {
+  font-size: clamp(20px, 2.6vw, 24px);
+  margin: 0 0 14px;
+  padding-bottom: 10px;
+  border-bottom: 1px solid var(--line);
+}
+.legal__section p { margin: 0 0 14px; color: var(--ink-soft); font-size: 16px; }
+.legal__section p:last-child { margin-bottom: 0; }
+.legal__section strong { color: var(--ink); }
+
+.legal__list { margin: 0 0 14px; padding: 0; list-style: none; }
+.legal__list li {
+  position: relative;
+  padding: 0 0 10px 22px;
+  color: var(--ink-soft);
+  font-size: 16px;
+}
+.legal__list li::before {
+  content: "";
+  position: absolute;
+  left: 2px;
+  top: 10px;
+  width: 6px;
+  height: 6px;
+  border-radius: 50%;
+  background: var(--olive-light);
+}
+
+.legal__operator { margin: 0; }
+.legal__operator > div {
+  display: grid;
+  grid-template-columns: 220px 1fr;
+  gap: 8px 20px;
+  padding: 11px 0;
+  border-bottom: 1px solid var(--line);
+}
+.legal__operator > div:last-child { border-bottom: 0; }
+.legal__operator dt { font-size: 14px; color: var(--ink-soft); }
+.legal__operator dd { margin: 0; font-size: 16px; }
+
+/* Незаполненные реквизиты видно сразу — их нельзя пропустить перед запуском */
+.legal__blank {
+  display: inline-block;
+  padding: 2px 10px;
+  border: 1px dashed rgba(139, 46, 46, .5);
+  border-radius: 6px;
+  background: rgba(139, 46, 46, .06);
+  color: var(--wine);
+  font-size: 14px;
+}
+
+.legal__back {
+  margin-top: 38px;
+  padding-top: 26px;
+  border-top: 1px solid var(--line);
+}
+
+@media (max-width: 560px) {
+  .legal__inner { width: min(760px, 100% - 28px); }
+  .legal__operator > div { grid-template-columns: 1fr; gap: 4px; }
+}
 
 /* ---------- 14. Анимации появления ---------- */
 .reveal {
@@ -1088,6 +1207,9 @@ h1, h2, h3 {
   .container { width: min(1200px, 100% - 36px); }
   .facts { gap: 14px; }
   .gallery__grid { grid-template-columns: repeat(2, 1fr); grid-auto-rows: 160px; }
+  /* В две колонки широкая плитка не помещается в остаток ряда и оставляет
+     пустую ячейку — на узких экранах делаем все плитки одинаковыми */
+  .gallery__item--wide { grid-column: auto; }
   .form__row, .form__row--three { grid-template-columns: 1fr; gap: 0; }
   .footer__inner { grid-template-columns: 1fr 1fr; gap: 26px; }
   .lightbox__nav { width: 44px; height: 44px; margin-top: -22px; }
@@ -1101,10 +1223,17 @@ h1, h2, h3 {
   .reviews__grid { grid-template-columns: 1fr; }
   .facts         { grid-template-columns: 1fr; }
   .gallery__grid { grid-template-columns: 1fr 1fr; grid-auto-rows: 130px; gap: 10px; }
-  .gallery__item--wide { grid-column: span 2; }
+
+  /* Флексом чипы рвутся лесенкой (2–2–1–2) — на узком экране кладём их
+     в ровную сетку 2×N, последний растягиваем на всю ширину */
+  .chips { display: grid; grid-template-columns: 1fr 1fr; gap: 10px; }
+  .chips .chip:last-child:nth-child(odd) { grid-column: span 2; }
+
   .hero { min-height: 92svh; }
   .hero__actions .btn { flex: 1 1 100%; }
-  .hero__badges { gap: 8px 18px; font-size: 13px; }
+
+  /* Бейджи выстраиваем в колонку, чтобы не было рваного правого края */
+  .hero__badges { flex-direction: column; gap: 10px; font-size: 14px; }
   .rating { flex-direction: column; padding: 22px; }
   .footer__inner { grid-template-columns: 1fr; }
   .contacts__cta .btn { flex: 1 1 100%; }
