@@ -870,7 +870,7 @@ h1, h2, h3 {
 }
 .delivery__text p { margin: 0 0 14px; color: rgba(250, 246, 240, .86); }
 /* На тёмном блоке веточка светлая */
-.delivery__text .section__eyebrow::after {
+.section--dark .section__eyebrow::after {
   background: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 82 12'%3E%3Cpath d='M0 6h26M56 6h26' stroke='%23E3CE9A' stroke-width='1' fill='none'/%3E%3Cg fill='%23E3CE9A'%3E%3Cellipse cx='33' cy='6' rx='5' ry='2.3' transform='rotate(-22 33 6)'/%3E%3Cellipse cx='49' cy='6' rx='5' ry='2.3' transform='rotate(22 49 6)'/%3E%3Ccircle cx='41' cy='6' r='2.1'/%3E%3C/g%3E%3C/svg%3E") center / contain no-repeat;
 }
 .delivery__aggregators { font-size: 15px; color: rgba(250, 246, 240, .7); }
