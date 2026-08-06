@@ -210,8 +210,9 @@ h1, h2, h3 {
 }
 .btn--ghost:hover { color: var(--wine); border-color: var(--wine); background: var(--white); }
 
-.btn--eda { --btn-bg: #1C1B1A; color: var(--cream); font-weight: 500; }
-.btn--eda:hover { --btn-bg: #2E2C29; color: var(--cream); }
+/* Фирменный жёлтый Яндекса */
+.btn--eda { --btn-bg: #FCE000; color: #21201F; font-weight: 600; }
+.btn--eda:hover { --btn-bg: #FFEB3D; color: #21201F; }
 .btn__logo { height: 20px; width: auto; flex: none; }
 .btn--wa { --btn-bg: #25D366; color: #06331a; font-weight: 600; }
 .btn--wa:hover { --btn-bg: #1fbb59; color: #06331a; }
@@ -369,6 +370,7 @@ h1, h2, h3 {
 }
 
 .hero__eyebrow {
+  display: inline-block;
   margin: 0 0 18px;
   padding-bottom: 16px;
   position: relative;
@@ -380,11 +382,12 @@ h1, h2, h3 {
 .hero__eyebrow::after {
   content: "";
   position: absolute;
-  left: 0;
+  left: 50%;
+  transform: translateX(-50%);
   bottom: 0;
   width: 82px;
   height: 12px;
-  background: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 82 12'%3E%3Cpath d='M0 6h26M56 6h26' stroke='%23A8853E' stroke-width='1' fill='none'/%3E%3Cg fill='%23A8853E'%3E%3Cellipse cx='33' cy='6' rx='5' ry='2.3' transform='rotate(-22 33 6)'/%3E%3Cellipse cx='49' cy='6' rx='5' ry='2.3' transform='rotate(22 49 6)'/%3E%3Ccircle cx='41' cy='6' r='2.1'/%3E%3C/g%3E%3C/svg%3E") left center / contain no-repeat;
+  background: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 82 12'%3E%3Cpath d='M0 6h26M56 6h26' stroke='%23A8853E' stroke-width='1' fill='none'/%3E%3Cg fill='%23A8853E'%3E%3Cellipse cx='33' cy='6' rx='5' ry='2.3' transform='rotate(-22 33 6)'/%3E%3Cellipse cx='49' cy='6' rx='5' ry='2.3' transform='rotate(22 49 6)'/%3E%3Ccircle cx='41' cy='6' r='2.1'/%3E%3C/g%3E%3C/svg%3E") center / contain no-repeat;
 }
 
 .hero__title {
@@ -433,7 +436,6 @@ h1, h2, h3 {
   align-items: start;
 }
 .about__text p { margin: 0 0 18px; color: var(--ink-soft); }
-.about__text .section__eyebrow::after { left: 0; transform: none; }
 
 .facts {
   display: grid;
@@ -480,14 +482,16 @@ h1, h2, h3 {
   display: flex;
   align-items: center;
   justify-content: center;
-  padding: 9px 18px;
+  min-height: 42px;          /* одинаковая высота во всех рядах */
+  padding: 8px 18px;
   border: 1px solid var(--line);
   border-radius: 999px;
   background: var(--white);
   font-size: 14px;
-  line-height: 1.3;
+  line-height: 1.25;
   color: var(--ink-soft);
   text-align: center;
+  white-space: nowrap;       /* подписи короткие, перенос ломал бы сетку */
 }
 
 /* ---------- 7. Меню ---------- */
@@ -735,7 +739,6 @@ h1, h2, h3 {
   gap: clamp(32px, 5vw, 64px);
   align-items: start;
 }
-.booking__aside .section__eyebrow::after { left: 0; transform: none; }
 .booking__lead { margin: 0 0 24px; color: var(--ink-soft); }
 .booking__points { margin: 0; padding: 0; list-style: none; }
 .booking__points li {
@@ -868,9 +871,7 @@ h1, h2, h3 {
 .delivery__text p { margin: 0 0 14px; color: rgba(250, 246, 240, .86); }
 /* На тёмном блоке веточка светлая */
 .delivery__text .section__eyebrow::after {
-  left: 0;
-  transform: none;
-  background: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 82 12'%3E%3Cpath d='M0 6h26M56 6h26' stroke='%23E3CE9A' stroke-width='1' fill='none'/%3E%3Cg fill='%23E3CE9A'%3E%3Cellipse cx='33' cy='6' rx='5' ry='2.3' transform='rotate(-22 33 6)'/%3E%3Cellipse cx='49' cy='6' rx='5' ry='2.3' transform='rotate(22 49 6)'/%3E%3Ccircle cx='41' cy='6' r='2.1'/%3E%3C/g%3E%3C/svg%3E") left center / contain no-repeat;
+  background: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 82 12'%3E%3Cpath d='M0 6h26M56 6h26' stroke='%23E3CE9A' stroke-width='1' fill='none'/%3E%3Cg fill='%23E3CE9A'%3E%3Cellipse cx='33' cy='6' rx='5' ry='2.3' transform='rotate(-22 33 6)'/%3E%3Cellipse cx='49' cy='6' rx='5' ry='2.3' transform='rotate(22 49 6)'/%3E%3Ccircle cx='41' cy='6' r='2.1'/%3E%3C/g%3E%3C/svg%3E") center / contain no-repeat;
 }
 .delivery__aggregators { font-size: 15px; color: rgba(250, 246, 240, .7); }
 .delivery__aggregators strong { color: var(--cream); }
@@ -1061,7 +1062,6 @@ h1, h2, h3 {
   box-shadow: var(--shadow);
 }
 .legal .section__eyebrow { display: block; }
-.legal .section__eyebrow::after { left: 0; transform: none; }
 
 .legal__title {
   font-size: clamp(27px, 4.4vw, 40px);
@@ -1351,6 +1351,7 @@ h1, h2, h3 {
      в ровную сетку 2×N, последний растягиваем на всю ширину */
   .chips { display: grid; grid-template-columns: 1fr 1fr; gap: 10px; }
   .chips .chip:last-child:nth-child(odd) { grid-column: span 2; }
+  .chip { font-size: 13.5px; padding-inline: 10px; }
 
   .hero__actions .btn { flex: 1 1 100%; }
 
