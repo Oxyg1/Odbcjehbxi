@@ -210,8 +210,9 @@ h1, h2, h3 {
 }
 .btn--ghost:hover { color: var(--wine); border-color: var(--wine); background: var(--white); }
 
-.btn--eda { --btn-bg: var(--gold); color: #3A2A05; font-weight: 600; }
-.btn--eda:hover { --btn-bg: #DDB63A; color: #3A2A05; }
+.btn--eda { --btn-bg: #1C1B1A; color: var(--cream); font-weight: 500; }
+.btn--eda:hover { --btn-bg: #2E2C29; color: var(--cream); }
+.btn__logo { height: 20px; width: auto; flex: none; }
 .btn--wa { --btn-bg: #25D366; color: #06331a; font-weight: 600; }
 .btn--wa:hover { --btn-bg: #1fbb59; color: #06331a; }
 .btn--tg { --btn-bg: #2AABEE; color: #042a3d; font-weight: 600; }
@@ -1144,6 +1145,105 @@ h1, h2, h3 {
 @media (max-width: 560px) {
   .legal__inner { width: min(760px, 100% - 28px); }
   .legal__operator > div { grid-template-columns: 1fr; gap: 4px; }
+}
+
+/* ---------- 13b. Кнопка «пропустить меню» ---------- */
+.skip-menu {
+  position: fixed;
+  right: clamp(16px, 3vw, 34px);
+  bottom: clamp(16px, 3vw, 34px);
+  z-index: 90;
+  display: inline-flex;
+  align-items: center;
+  gap: 9px;
+  padding: 12px 20px;
+  border: 1px solid var(--line);
+  border-radius: 999px;
+  background: rgba(253, 251, 243, .94);
+  backdrop-filter: blur(10px);
+  -webkit-backdrop-filter: blur(10px);
+  box-shadow: var(--shadow);
+  color: var(--ink);
+  font-size: 14.5px;
+  font-weight: 500;
+  opacity: 0;
+  transform: translateY(14px);
+  transition: opacity .35s var(--ease), transform .35s var(--ease),
+              background-color .25s var(--ease), color .25s var(--ease);
+}
+.skip-menu[hidden] { display: none; }
+.skip-menu.is-visible { opacity: 1; transform: none; }
+.skip-menu:hover { background: var(--wine); border-color: var(--wine); color: var(--white); }
+
+/* ---------- 13c. Возврат к прочитанному ---------- */
+.resume {
+  position: fixed;
+  left: 50%;
+  bottom: clamp(16px, 3vw, 34px);
+  z-index: 95;
+  display: flex;
+  align-items: center;
+  gap: 14px;
+  max-width: calc(100vw - 32px);
+  padding: 12px 14px 12px 20px;
+  border: 1px solid var(--line);
+  border-radius: 999px;
+  background: rgba(253, 251, 243, .96);
+  backdrop-filter: blur(10px);
+  -webkit-backdrop-filter: blur(10px);
+  box-shadow: var(--shadow-lg);
+  opacity: 0;
+  transform: translate(-50%, 16px);
+  transition: opacity .4s var(--ease), transform .4s var(--ease);
+}
+.resume[hidden] { display: none; }
+.resume.is-visible { opacity: 1; transform: translate(-50%, 0); }
+
+.resume__text {
+  margin: 0;
+  font-size: 14.5px;
+  color: var(--ink-soft);
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+.resume__text strong { color: var(--ink); }
+
+.resume__go {
+  flex: none;
+  padding: 9px 18px;
+  border: 0;
+  border-radius: 999px;
+  background: var(--wine);
+  color: var(--white);
+  font-size: 14px;
+  font-weight: 500;
+  cursor: pointer;
+  transition: background-color .25s var(--ease);
+}
+.resume__go:hover { background: var(--wine-light); }
+
+.resume__close {
+  flex: none;
+  width: 32px;
+  height: 32px;
+  padding: 0;
+  border: 0;
+  border-radius: 50%;
+  background: transparent;
+  color: var(--ink-soft);
+  font-size: 22px;
+  line-height: 1;
+  cursor: pointer;
+  transition: background-color .25s var(--ease), color .25s var(--ease);
+}
+.resume__close:hover { background: rgba(46, 42, 34, .08); color: var(--ink); }
+
+@media (max-width: 560px) {
+  .resume { gap: 10px; padding: 10px 8px 10px 16px; }
+  .resume__text { font-size: 13.5px; }
+  .resume__go { padding: 9px 14px; font-size: 13.5px; }
+  .skip-menu { padding: 11px 16px; font-size: 13.5px; }
 }
 
 /* ---------- 14. Анимации появления ---------- */

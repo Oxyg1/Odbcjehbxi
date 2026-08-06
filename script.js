@@ -458,7 +458,118 @@
   updateWorkStatus();
   window.setInterval(updateWorkStatus, 60000);
 
-  /* ---------- 8. Мелочи ---------- */
+  /* ---------- 8. Кнопка «пропустить меню» ----------
+     Раздел «Меню» самый длинный на странице, поэтому пока гость внутри него
+     показываем короткий путь к галерее. */
+  var skipMenu = document.getElementById('skipMenu');
+  var menuSection = document.getElementById('menu');
+
+  if (skipMenu && menuSection && 'IntersectionObserver' in window) {
+    skipMenu.hidden = false;
+
+    var skipObserver = new IntersectionObserver(function (entries) {
+      entries.forEach(function (entry) {
+        skipMenu.classList.toggle('is-visible', entry.isIntersecting);
+      });
+    }, { rootMargin: '-25% 0px -25% 0px', threshold: 0 });
+
+    skipObserver.observe(menuSection);
+  }
+
+  /* ---------- 9. Возврат к прочитанному ----------
+     Браузер сам восстанавливает прокрутку и бросает гостя в середину страницы.
+     Открываем всегда сверху, а вернуться предлагаем кнопкой. */
+  var STORE_KEY = 'proitalia:lastPosition';
+  var MAX_AGE = 30 * 60 * 1000;  // предложение живёт полчаса
+  var MIN_OFFSET = 700;          // ниже этого возвращать некуда
+
+  if ('scrollRestoration' in history) history.scrollRestoration = 'manual';
+
+  var resumeBar = document.getElementById('resumeBar');
+  var resumeGo = document.getElementById('resumeGo');
+  var resumeClose = document.getElementById('resumeClose');
+  var resumeSection = document.getElementById('resumeSection');
+
+  // Человеческие названия разделов для подсказки
+  var SECTION_NAMES = {
+    about: 'О ресторане',
+    menu: 'Меню',
+    gallery: 'Галерея',
+    reviews: 'Отзывы',
+    booking: 'Бронирование',
+    delivery: 'Доставка',
+    contacts: 'Контакты'
+  };
+
+  function currentSectionName() {
+    var names = Object.keys(SECTION_NAMES);
+    var middle = window.scrollY + window.innerHeight / 2;
+    var found = '';
+    names.forEach(function (id) {
+      var el = document.getElementById(id);
+      if (el && el.offsetTop <= middle) found = SECTION_NAMES[id];
+    });
+    return found;
+  }
+
+  function savePosition() {
+    try {
+      if (window.scrollY < MIN_OFFSET) {
+        sessionStorage.removeItem(STORE_KEY);
+        return;
+      }
+      sessionStorage.setItem(STORE_KEY, JSON.stringify({
+        y: Math.round(window.scrollY),
+        section: currentSectionName(),
+        at: Date.now()
+      }));
+    } catch (e) { /* приватный режим — просто не сохраняем */ }
+  }
+
+  if (resumeBar) {
+    // Позицию запоминаем только на главной: со страницы политики
+    // возвращать некуда, а чужое смещение сбило бы подсказку
+    window.addEventListener('pagehide', savePosition);
+    window.addEventListener('beforeunload', savePosition);
+
+    var saved = null;
+    try {
+      saved = JSON.parse(sessionStorage.getItem(STORE_KEY) || 'null');
+    } catch (e) { saved = null; }
+
+    // Открываемся сверху в любом случае
+    window.scrollTo(0, 0);
+
+    if (saved && saved.y > MIN_OFFSET && Date.now() - saved.at < MAX_AGE) {
+      if (saved.section) resumeSection.textContent = saved.section;
+      else resumeSection.parentNode.textContent = 'Вы уже листали страницу';
+
+      resumeBar.hidden = false;
+      window.setTimeout(function () { resumeBar.classList.add('is-visible'); }, 700);
+
+      var hideResume = function () {
+        resumeBar.classList.remove('is-visible');
+        window.setTimeout(function () { resumeBar.hidden = true; }, 400);
+      };
+
+      resumeGo.addEventListener('click', function () {
+        window.scrollTo({ top: saved.y, behavior: reduceMotion ? 'auto' : 'smooth' });
+        hideResume();
+      });
+      resumeClose.addEventListener('click', hideResume);
+
+      // Если гость сам начал листать — подсказка больше не нужна
+      window.addEventListener('scroll', function onScroll() {
+        if (window.scrollY < 300) return;
+        hideResume();
+        window.removeEventListener('scroll', onScroll);
+      }, { passive: true });
+
+      window.setTimeout(hideResume, 12000);
+    }
+  }
+
+  /* ---------- 10. Мелочи ---------- */
   var yearEl = document.getElementById('year');
   if (yearEl) yearEl.textContent = String(new Date().getFullYear());
 })();
