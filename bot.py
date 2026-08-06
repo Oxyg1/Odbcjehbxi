@@ -2881,7 +2881,7 @@ async def cmd_fzaddnft(update: Update, ctx: ContextTypes.DEFAULT_TYPE) -> None:
     if not ctx.args:
         state = await _fz_state()
         await update.message.reply_text(
-            f"Использование: /fzaddnft <N>\n\n"
+            f"Использование: <code>/fzaddnft N</code>\n\n"
             f"Текущий пул: <b>{state.get('remaining_nft',0)} / {state.get('total_nft', FZ_TOTAL_NFT)}</b>",
             parse_mode=ParseMode.HTML,
         )
@@ -2928,7 +2928,7 @@ async def cmd_fzsetdrop(update: Update, ctx: ContextTypes.DEFAULT_TYPE) -> None:
         return
     if not ctx.args:
         await update.message.reply_text(
-            f"Использование: /fzsetdrop <N>\n\n"
+            f"Использование: <code>/fzsetdrop N</code>\n\n"
             f"Текущий шанс: <b>1/{FZ_DROP_CHANCE}</b>\n"
             f"Пример: /fzsetdrop 500 → шанс 1/500\n\n"
             f"<i>⚠️ Изменение действует до перезапуска бота. "
@@ -27555,7 +27555,7 @@ async def cmd_givestreak(update: Update, ctx: ContextTypes.DEFAULT_TYPE) -> None
 
     if not ctx.args:
         await update.message.reply_text(
-            "Использование: /givestreak <uid|@username> <тип> <значение>\n\n"
+            "Использование: <code>/givestreak uid|@username тип значение</code>\n\n"
             "Типы:\n"
             "  <code>daily</code>   — дней входа подряд (streak)\n"
             "  <code>casino</code>  — побед в казино подряд\n"
@@ -28326,7 +28326,7 @@ async def cmd_setsleepsticker(update: Update, ctx: ContextTypes.DEFAULT_TYPE):
     if not ctx.args:
         await update.message.reply_text(
             f"Текущий стикер сна: <code>{SLEEP_STICKER_ID or '(не задан)'}</code>\n"
-            f"Использование: /setsleepsticker <file_id>",
+            f"Использование: <code>/setsleepsticker file_id</code>",
             parse_mode=ParseMode.HTML,
         )
         return
@@ -28347,7 +28347,7 @@ async def cmd_setwashsticker(update: Update, ctx: ContextTypes.DEFAULT_TYPE):
     if not ctx.args:
         await update.message.reply_text(
             f"Текущий стикер купания: <code>{WASH_STICKER_ID or '(не задан)'}</code>\n"
-            f"Использование: /setwashsticker <file_id>",
+            f"Использование: <code>/setwashsticker file_id</code>",
             parse_mode=ParseMode.HTML,
         )
         return
