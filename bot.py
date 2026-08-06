@@ -1,28 +1,27 @@
 """
-🐸 FROG TAMAGOTCHI v4.0
-━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
-pip install python-telegram-bot==20.7 aiosqlite aiohttp psutil
-python frog_bot.py
-━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
-Настройка:
-  1. Вставь токен в BOT_TOKEN
-  2. Добавь бота в чат и напиши /chatid — скопируй число в CHAT_ID
-  3. Перезапусти
+🐸 Frog Tamagotchi v6
 
-Changelog v4.0:
-  - Happy Pepe → Мифический (mythic) с мин. шансом выпадения
-  - Баги: исправлена маршрутизация announce (публичное → CHAT_ID)
-  - Баги: ссылки t.me/nft/ больше не вызывают /nft автоматически
-  - Баги: исправлена проверка ID для кнопок в группах
-  - КД казино убран (только анти-спам 5 сек)
-  - Добавлена последовательная анимация дуэли
-  - Добавлено подтверждение перед гачей
-  - Добавлены команды /mystats, /cooldowns, /mymenu
-  - Расширена статистика (КваКоины потрачено, казино, дуэли)
-  - Анонс «кто поймал комара» в общем чате
-  - Система баффов обликов в дуэлях (редкость → бонус)
-  - Расширена админ-панель (поиск игрока, выдача предметов)
-  - Добавлен трекинг потраченных КваКоинов
+Требования
+  Python 3.12+  — в коде есть f-строки с вложенными кавычками (PEP 701),
+                  на 3.11 файл не компилируется.
+  pip install "python-telegram-bot[job-queue]>=21" aiosqlite aiohttp psutil
+                  Нужна именно сборка с job-queue: без неё /duel и другие
+                  отложенные действия падают на ctx.job_queue = None.
+                  LinkPreviewOptions требует PTB 20.8+, кнопочные style и
+                  icon_custom_emoji_id (Bot API 9.4) — PTB 22.x.
+
+Запуск
+  BOT_TOKEN=... python bot.py
+
+Настройка
+  1. BOT_TOKEN берётся из переменной окружения.
+  2. Добавь бота в чат, напиши /chatid и впиши число в CHAT_ID.
+  3. Перезапусти.
+
+Оформление экранов
+  Единые правила и хелперы — в разделе «ДИЗАЙН-СИСТЕМА»: ui_card, ui_title,
+  ui_line, ui_kv, ui_money, ui_stars и разделитель SEP. Новые экраны
+  собираются из них, а не склейкой строк на месте.
 """
 
 import os, asyncio, random, time, math, json, re, io, sqlite3, html as _html
@@ -1170,7 +1169,7 @@ async def _fz_finale_timer_job(bot) -> None:
     timer_str = f"{hours:02d}:{minutes:02d}:{seconds:02d}"
 
     text = (
-        f"⚡ <b>ФИНАЛЬНЫЙ РЫВОК</b>\n\n"
+        f"⚡ <b>Финальный рывок</b>\n\n"
         f"⏳ До конца: <b>{timer_str}</b>\n"
         f"🍦 Осталось NFT: <b>{remaining} из {state.get('total_nft', FZ_TOTAL_NFT)}</b>\n\n"
         f"<i>Каждый бросок — шанс выбить 1000/1000 и получить NFT!</i>"
@@ -1491,7 +1490,7 @@ async def cmd_freeze(update: Update, ctx: ContextTypes.DEFAULT_TYPE) -> None:
     }
 
     await update.message.reply_text(
-        f"🧊 <b>ФРИЗ-ИВЕНТ</b>  {status_labels.get(status, status)}\n"
+        f"🧊 <b>Фриз-ивент</b>  {status_labels.get(status, status)}\n"
         f"{title_str}\n"
         f"⏳ До конца: <b>{time_str}</b>\n"
         f"🍦 Осталось NFT: <b>{remaining} / {state.get('total_nft', FZ_TOTAL_NFT)}</b>\n\n"
@@ -1546,7 +1545,7 @@ async def cmd_icecube(update: Update, ctx: ContextTypes.DEFAULT_TYPE) -> None:
     pkg_rows.append([btn("📊 Мои броски", callback_data="fz_mythrows")])
 
     await update.message.reply_text(
-        f"🧊 <b>КУБИКИ ЛЬДА</b>\n\n"
+        f"🧊 <b>Кубики льда</b>\n\n"
         f"Каждый кубик = 1 бросок в раскалённое болото.\n"
         f"Победный бросок: <b>{FZ_DROP_CHANCE}/{FZ_DROP_CHANCE}</b> 🎯\n\n"
         f"🍦 Осталось NFT: <b>{remaining} / {state.get('total_nft', FZ_TOTAL_NFT)}</b>\n"
@@ -1624,7 +1623,7 @@ async def cmd_fztop(update: Update, ctx: ContextTypes.DEFAULT_TYPE) -> None:
         lines.append(f"{medal} <b>{n}</b> — {cnt} бросков, {wins or 0} NFT")
 
     await update.message.reply_text(
-        "🧊 <b>ТОП-10 ПО БРОСКАМ</b>\n\n" + "\n".join(lines),
+        "🧊 <b>Топ-10 по броскам</b>\n\n" + "\n".join(lines),
         parse_mode=ParseMode.HTML,
     )
 
@@ -1663,7 +1662,7 @@ async def cmd_swamp(update: Update, ctx: ContextTypes.DEFAULT_TYPE) -> None:
     direction = "↑" if delta_forecast > 0 else "↓" if delta_forecast < 0 else "→"
 
     await update.message.reply_text(
-        f"🌡 <b>ШКАЛА ПЕРЕГРЕВА БОЛОТА</b>\n\n"
+        f"🌡 <b>Шкала перегрева болота</b>\n\n"
         f"{_fz_heat_bar(heat)}\n"
         f"Состояние: {heat_emoji} <b>{heat_label}</b>\n\n"
         f"💰 Монеты от ква/ухода: <b>×{coin_mult:.2f}</b>\n"
@@ -1897,7 +1896,7 @@ async def cmd_fzsimulate(update: Update, ctx: ContextTypes.DEFAULT_TYPE) -> None
     h, m_left = divmod(time_left // 60, 60)
 
     text = (
-        f"🔮 <b>СИМУЛЯЦИЯ ФИНАЛА</b> (не реальное завершение)\n"
+        f"🔮 <b>Симуляция финала</b> (не реальное завершение)\n"
         "\n"
         f"До конца: <b>{h}ч {m_left}м</b>  ·  NFT в пуле: <b>{remaining_nft}</b>\n"
         f"Игроков: <b>{total_players}</b>  ·  Бросков: <b>{total_throws:,}</b>\n"
@@ -2022,7 +2021,7 @@ async def cmd_fzbroadcast(update: Update, ctx: ContextTypes.DEFAULT_TYPE) -> Non
     _fz_pending_broadcasts[uid] = {"text": text, "uids": uids}
 
     preview_text = (
-        f"📋 <b>ПРЕВЬЮ РАССЫЛКИ</b>\n\n"
+        f"📋 <b>Превью рассылки</b>\n\n"
         f"👥 Получателей: <b>{count}</b>\n"
         "\n"
         f"🧊 {text}\n\n"
@@ -2361,7 +2360,7 @@ async def _fz_on_callback(update: Update, ctx: ContextTypes.DEFAULT_TYPE) -> Non
                 FZ_FINALE: "🔴", FZ_FINISHED: "🏁"
             }.get(status, "❓")
             text = (
-                f"🧊 <b>ФРИЗ-ИВЕНТ — ПАНЕЛЬ УПРАВЛЕНИЯ</b>\n"
+                f"🧊 <b>Фриз-ивент — панель управления</b>\n"
                 "\n"
                 f"Статус: {status_emoji} <b>{status}</b>   До конца: <b>{h}ч {m}м</b>\n"
                 f"🍦 NFT: <b>{remaining}/{total_nft}</b>   🌡 Жара: <b>{heat}%</b>\n"
@@ -2477,7 +2476,7 @@ async def _fz_on_callback(update: Update, ctx: ContextTypes.DEFAULT_TYPE) -> Non
         }
         try:
             await q.edit_message_text(
-                f"🧊 <b>ФРИЗ-ИВЕНТ</b>  {status_labels.get(status, status)}\n"
+                f"🧊 <b>Фриз-ивент</b>  {status_labels.get(status, status)}\n"
                 f"⏳ До конца: <b>{time_str}</b>\n"
                 f"🍦 Осталось NFT: <b>{remaining} / {state.get('total_nft', FZ_TOTAL_NFT)}</b>\n\n"
                 f"🌡 Болото: {_fz_heat_bar(heat)}\n"
@@ -2846,7 +2845,7 @@ async def cmd_fzpanel(update: Update, ctx: ContextTypes.DEFAULT_TYPE) -> None:
     }.get(status, "❓")
 
     text = (
-        f"🧊 <b>ФРИЗ-ИВЕНТ — ПАНЕЛЬ УПРАВЛЕНИЯ</b>\n"
+        f"🧊 <b>Фриз-ивент — панель управления</b>\n"
         "\n"
         f"Статус: {status_emoji} <b>{status}</b>   До конца: <b>{h}ч {m}м</b>\n"
         f"🍦 NFT: <b>{remaining}/{total_nft}</b>   🌡 Жара: <b>{heat}%</b>\n"
@@ -9378,7 +9377,7 @@ async def roulette_shoot(bot, sk_id: int, duel: dict, shooter_uid: int,
         round_winner = "defender" if turn == "attacker" else "attacker"
         loser_name   = att_name if turn == "attacker" else def_name
         result_text  = (
-            f"💥 <b>ВЫСТРЕЛ!</b>\n"
+            f"💥 <b>Выстрел!</b>\n"
             f"<b>{he(loser_name)}</b> проиграл раунд!\n"
         )
         duel["att_rounds_won"] = duel.get("att_rounds_won", 0)
@@ -9776,7 +9775,7 @@ def _bet_text(duel_id: int, att_name: str, def_name: str,
         my_line = f"\n✅ Твоя ставка: <b>{my_bet['amount']}🪙</b> на {side_ru} → выигрыш до <b>{win}🪙</b>"
 
     return (
-        f"🎰 <b>СТАВКИ — БОЙ</b>\n"
+        f"🎰 <b>Ставки — бой</b>\n"
         f"⚔️ <b>{he(att_name)}</b>  vs  🛡️ <b>{he(def_name)}</b>\n"
         "\n"
         f"{bar}\n"
@@ -10932,7 +10931,7 @@ def _hs_setup_text(s: dict) -> str:
     broad   = "всем игрокам в ЛС" if s.get("broadcast", True) else "только в чате"
     chat    = s.get("chat_id") or "не указан"
     return (
-        f"🙈 <b>НАСТРОЙКА ПРЯТКИ</b>\n"
+        f"🙈 <b>Настройка прятки</b>\n"
         "\n"
         f"🏆 Приз: <b>{prize}</b>\n"
         f"👥 Макс. участников: <b>{limit}</b>\n"
@@ -11071,7 +11070,7 @@ async def cmd_hsseeker(update: Update, ctx: ContextTypes.DEFAULT_TYPE) -> None:
             # Одно сообщение в чате с полем — все прячутся здесь
             pinned_msg = await ctx.bot.send_message(
                 chat_id_hs,
-                f"🙈 <b>ПРЯТКИ НАЧИНАЮТСЯ!</b>\n\n"
+                f"🙈 <b>Прятки начинаются!</b>\n\n"
                 f"🔍 Ищущий: <b>{seeker_name}</b>\n"
                 f"🌿 Прячется <b>{len(hiders)}</b> игроков\n\n"
                 f"{grid_text}",
@@ -11101,7 +11100,7 @@ async def cmd_hsseeker(update: Update, ctx: ContextTypes.DEFAULT_TYPE) -> None:
     # Каждому прячущемуся в ЛС — уведомление с кнопкой
     prize_text_n = event.get("prize_text") or ""
     hide_text = (
-        f"🙈 <b>ПРЯТКИ НАЧАЛИСЬ!</b>\n\n"
+        f"🙈 <b>Прятки начались!</b>\n\n"
         f"Тебя назначили прятаться.\n"
         f"Ищущий: <b>{seeker_name}</b>\n\n"
         f"Нажми на клетку в чате чтобы спрятаться.\n"
@@ -11274,7 +11273,7 @@ async def _hs_recruiting_ticker(bot, event_id: int, chat_id: int, msg_id: int) -
 
         participants_block = "\n".join(lines) if lines else "  пока никого"
         updated_text = (
-            f"🙈 <b>ИВЕНТ ПРЯТКИ — НАБОР</b>\n\n"
+            f"🙈 <b>Ивент прятки — набор</b>\n\n"
             f"Одного назначат ищущим — остальные прячутся.\n"
             f"Ищущий вскрывает клетки одну за другой.\n"
             f"Кто доживёт до конца — победит!\n\n"
@@ -11605,7 +11604,7 @@ async def cmd_newsdigest(update: Update, ctx: ContextTypes.DEFAULT_TYPE) -> None
         return f"@{uname}" if uname else name
 
     lines = [
-        f"📰 <b>ДАЙДЖЕСТ БОЛОТА</b>  ·  последние {hours}ч\n"
+        f"📰 <b>Дайджест болота</b>  ·  последние {hours}ч\n"
         f"Сгенерировано: {datetime.now().strftime('%d.%m %H:%M')}\n"
     ]
 
@@ -11768,7 +11767,7 @@ async def cmd_newsdigest(update: Update, ctx: ContextTypes.DEFAULT_TYPE) -> None
         already_chosen = [p for p in hiders if p["cell"] != -1]
 
         text = (
-            f"🙈 <b>ПРЯТКИ ИДУТ!</b>\n\n"
+            f"🙈 <b>Прятки идут!</b>\n\n"
             f"Ищущий: <b>{seeker_name}</b>\n"
             f"Нажми на клетку в чате чтобы спрятаться!\n"
             f"⏳ Осталось: <b>{m}м {s}с</b>"
@@ -11845,7 +11844,7 @@ async def cmd_newsdigest(update: Update, ctx: ContextTypes.DEFAULT_TYPE) -> None
 
     participants_block = "\n".join(lines) if lines else "  пока никого"
     join_text = (
-        f"🙈 <b>ИВЕНТ ПРЯТКИ — НАБОР</b>\n\n"
+        f"🙈 <b>Ивент прятки — набор</b>\n\n"
         f"Одного назначат ищущим — остальные прячутся.\n"
         f"Ищущий вскрывает клетки одну за другой.\n"
         f"Кто доживёт до конца — победит!\n\n"
@@ -11993,7 +11992,7 @@ async def hs_callbacks(q, d: str, uid: int, ctx) -> bool:
         ctx.bot_data.get("hs_setup", {}).pop(uid, None)
 
         join_text = (
-            f"🙈 <b>ИВЕНТ ПРЯТКИ!</b>\n\n"
+            f"🙈 <b>Ивент прятки!</b>\n\n"
             f"Одного назначат ищущим — остальные прячутся.\n"
             f"Ищущий вскрывает клетки одну за другой.\n"
             f"Кто доживёт до конца — победит!\n\n"
@@ -12140,7 +12139,7 @@ async def hs_callbacks(q, d: str, uid: int, ctx) -> bool:
         participants_block = "\n".join(lines) if lines else "  пока никого"
 
         updated_text = (
-            f"🙈 <b>ИВЕНТ ПРЯТКИ — НАБОР</b>\n\n"
+            f"🙈 <b>Ивент прятки — набор</b>\n\n"
             f"Одного назначат ищущим — остальные прячутся.\n"
             f"Ищущий вскрывает клетки одну за другой.\n"
             f"Кто доживёт до конца — победит!\n\n"
@@ -13170,7 +13169,7 @@ async def _hs_round_end(bot, event: dict, alive_hiders: list[dict]) -> None:
         names.append(he(fname(pf) if pf else str(p["uid"])))
 
     final_text = (
-        f"🏁 <b>ФИНАЛЬНЫЙ РАУНД!</b>\n\n"
+        f"🏁 <b>Финальный раунд!</b>\n\n"
         f"Выжили: {', '.join(names)}\n"
         f"Поле сужается до {HS_GRID_FINAL}×{HS_GRID_FINAL}!\n\n"
         f"Прячьтесь — у вас <b>2 минуты</b>!"
@@ -13312,7 +13311,7 @@ async def _hs_winner(bot, event: dict, winner_uids: list[int]) -> None:
             pass
 
     result_msg = (
-        f"🏆 <b>ПРЯТКИ ЗАВЕРШЕНЫ!</b>\n\n"
+        f"🏆 <b>Прятки завершены!</b>\n\n"
         f"Победитель{'и' if len(winner_uids) > 1 else ''}: {', '.join(names)}\n"
         + (f"Приз: <b>{prize_each}🪙</b> каждому" if prize_each else "")
     )
@@ -23489,7 +23488,7 @@ async def cmd_adminrollback(update: Update, ctx: ContextTypes.DEFAULT_TYPE):
             total_coins, victim_count = await c.fetchone()
 
     await update.message.reply_text(
-        f"⚠️ <b>ПОДТВЕРДИ ОТКАТ</b>\n\n"
+        f"⚠️ <b>Подтверди откат</b>\n\n"
         f"Ботовод: <b>{_html.escape(bname)}</b> <code>{bot_uid}</code>\n"
         f"Период: {hours} ч\n"
         f"Жертв: ~{victim_count}  Монет в раздаче: {total_coins}<tg-emoji emoji-id='5341524176039615767'>🪙</tg-emoji>\n\n"
@@ -27498,7 +27497,7 @@ async def cmd_admincasino(update: Update, ctx: ContextTypes.DEFAULT_TYPE):
     is_disabled = status_val == "1"
 
     if not ctx.args:
-        state_str = "🔴 <b>ОТКЛЮЧЕНО</b>" if is_disabled else "🟢 <b>Работает</b>"
+        state_str = "🔴 <b>Отключено</b>" if is_disabled else "🟢 <b>Работает</b>"
         await update.message.reply_text(
             f"🎰 <b>Казино</b> — {state_str}\n\n"
             f"<code>/admincasino off</code> — отключить\n"
@@ -31822,7 +31821,7 @@ async def cmd_mymenu(update: Update, ctx: ContextTypes.DEFAULT_TYPE):
 async def cmd_help(update: Update, ctx: ContextTypes.DEFAULT_TYPE):
     await group_reply(
         update,
-        "🐸 <b>Frog Tamagotchi v4 — помощь</b>\n\n"
+        "🐸 <b>Помощь</b>\n\n"
         "Все основные действия — через <b>кнопки</b> под статусом.\n"
         "Напиши <code>/frog</code> чтобы открыть 👇\n\n"
         "<b>Основные команды:</b>\n"
@@ -33385,7 +33384,7 @@ async def on_callback(update: Update, ctx: ContextTypes.DEFAULT_TYPE):
         # ── Финальный результат ─────────────────────────────────────────
         new_tag = ""
         if is_new:
-            new_tag = " 🆕 <b>НОВЫЙ!</b>"
+            new_tag = " 🆕 <b>Новый!</b>"
             if _skin_tickets_earned > 0:
                 new_tag += f" 🎟+{_skin_tickets_earned}"
         elif qty > 1:
@@ -33402,7 +33401,7 @@ async def on_callback(update: Update, ctx: ContextTypes.DEFAULT_TYPE):
                 f"{R_ICON[s['rarity']]} <b>{_html.escape(skin)}</b> {pemoji(skin)} 🍀",
                 delete_after=60,
             )
-        pity_line = f"\n🎯 Питти: <b>{f.get('gacha_pity', 0)}/{PITY_THRESHOLD}</b>" if not pity_triggered else "\n🌟 <b>ПИТТИ СРАБОТАЛ!</b> Гарантированная легенда!"
+        pity_line = f"\n🎯 Питти: <b>{f.get('gacha_pity', 0)}/{PITY_THRESHOLD}</b>" if not pity_triggered else "\n🌟 <b>Питти сработал!</b> Гарантированная легенда!"
         text = (
             f"🎰 <b>Результат гачи!</b>{new_tag}\n\n"
             f"{R_ICON[s['rarity']]} {display_skin(skin, use_st)}\n"
@@ -33667,7 +33666,7 @@ async def on_callback(update: Update, ctx: ContextTypes.DEFAULT_TYPE):
         # Анонс и результат
         new_tag = ""
         if is_new:
-            new_tag = " 🆕 <b>НОВЫЙ!</b>"
+            new_tag = " 🆕 <b>Новый!</b>"
             if _skin_tickets_t > 0:
                 new_tag += f" 🎟+{_skin_tickets_t}"
         elif qty > 1:
@@ -36271,7 +36270,7 @@ async def on_callback(update: Update, ctx: ContextTypes.DEFAULT_TYPE):
         await q.answer()
         if won_wp:
             result_text = (
-                f"✨ <b>ПОБЕДА!</b>\n\n"
+                f"✨ <b>Победа!</b>\n\n"
                 f"Ставка: <b>{wish_stake_p}{coin_emoji()}</b>\n"
                 f"Получено: <b>{wish_target_p}{coin_emoji()}</b> (прибыль: +{profit_wp}{coin_emoji()})\n"
                 f"Шанс был: <b>{displayed_pct:.1f}%</b>\n\n"
@@ -36740,7 +36739,7 @@ async def on_callback(update: Update, ctx: ContextTypes.DEFAULT_TYPE):
                         else he(q.from_user.first_name)
                     )
                     jackpot_msg = (
-                        f"🎉💥 <b>ДЖЕКПОТ В СЛОТАХ!</b> 💥🎉\n\n"
+                        f"🎉💥 <b>Джекпот В слотах!</b> 💥🎉\n\n"
                         f"Игрок {jackpot_winner_name} выбил 🎰 64 и забирает весь банк казино!\n"
                         f"🎯 Ставка была: <b>{stake}{coin_emoji()}</b>\n"
                         f"💰 Джекпот: <b>{jackpot_won_amount:,}{coin_emoji()}</b>\n"
@@ -45123,7 +45122,7 @@ async def on_callback(update: Update, ctx: ContextTypes.DEFAULT_TYPE):
     if d == "game_rules":
         await q.answer()
         rules_text = (
-            "📋 <b>ПРАВИЛА ИГРЫ</b>\n"
+            "📋 <b>Правила игры</b>\n"
             "\n"
             "<b>1. Один аккаунт — один игрок</b>\n"
             "Создание нескольких аккаунтов с целью получения преимущества "
@@ -45880,7 +45879,7 @@ async def on_callback(update: Update, ctx: ContextTypes.DEFAULT_TYPE):
             prob_a: float, title: str, body: str = "", footer: str = ""
         ) -> str:
             lines = [
-                f"⚔️ <b>БАТЛ!</b>  {stake_txt}",
+                f"⚔️ <b>Батл!</b>  {stake_txt}",
                 f"🐸 <b>{he(c_name)}</b>  vs  <b>{he(t_name)}</b> 🐸",
                 _bar_line(prob_a),
             ]
@@ -51515,7 +51514,7 @@ async def on_message(update: Update, ctx: ContextTypes.DEFAULT_TYPE):
             asyncio.create_task(update_trial_progress(user.id, "casino_win", bot=ctx.bot))
         if won_wi:
             _res_wi = (
-                f"✨ <b>ПОБЕДА!</b>\n\n"
+                f"✨ <b>Победа!</b>\n\n"
                 f"Ставка: <b>{_wish_stake}{coin_emoji()}</b>\n"
                 f"Получено обратно: <b>{wish_target_input}{coin_emoji()}</b> (прибыль: +{profit_wi}{coin_emoji()})\n"
                 f"Шанс был: <b>{_fair_pct_wi:.1f}%</b>\n\n"
@@ -70126,7 +70125,7 @@ async def _war_callbacks(q, d, uid, f, ctx):
             try:
                 await ctx.bot.send_message(
                     guard_uid,
-                    f"🚨 <b>НАБЕГ!</b>\n"
+                    f"🚨 <b>Набег!</b>\n"
                     f"Стая <b>{he(staya['name'])}</b> атакует ваш котёл!\n"
                     f"Нажми кнопку в течение 5 минут чтобы перехватить нападающего — добыча упадёт в 2×!",
                     parse_mode=ParseMode.HTML,
@@ -70238,7 +70237,7 @@ async def _war_callbacks(q, d, uid, f, ctx):
 
             intercept_note = "\n⚠️ <i>Охранник перехватил — добыча упала в 2×</i>" if intercepted else ""
             result_text = (
-                f"✅ <b>НАБЕГ УДАЛСЯ!</b>{intercept_note}\n"
+                f"✅ <b>Набег удался!</b>{intercept_note}\n"
                 f"Украдено: <b>{stolen}🪙</b>\n"
                 f"  · Тебе лично: {self_share}🪙\n"
                 f"  · В котёл стаи: {staya_share}🪙"
@@ -70261,7 +70260,7 @@ async def _war_callbacks(q, d, uid, f, ctx):
                     try:
                         await ctx.bot.send_message(
                             m["user_id"],
-                            f"⚠️ <b>НАБЕГ!</b>\n"
+                            f"⚠️ <b>Набег!</b>\n"
                             f"Стая <b>{he(_att_name_s)}</b> "
                             f"украла <b>{stolen}🪙</b> из котла!{_intercept_note}",
                             parse_mode=ParseMode.HTML,
@@ -70272,7 +70271,7 @@ async def _war_callbacks(q, d, uid, f, ctx):
         else:
             # ПРОВАЛ
             result_text = (
-                f"❌ <b>НАБЕГ ПРОВАЛИЛСЯ!</b>\n"
+                f"❌ <b>Набег провалился!</b>\n"
                 f"Ты выбрал не тот котёл — там была ловушка!\n"
                 f"Стая-жертва получила <b>{RAID_PENALTY_ON_FAIL}🪙</b> из твоей ставки."
             )
