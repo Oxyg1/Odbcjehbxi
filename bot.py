@@ -29327,18 +29327,19 @@ async def cmd_casino(update: Update, ctx: ContextTypes.DEFAULT_TYPE):
             for k, v in CASINO.items()
         ]
         + [
-            [InlineKeyboardButton("🎯 Режим желания — поставь и загадай", callback_data="casino_wish_menu")],
+            [InlineKeyboardButton("🎯 Режим желания", callback_data="casino_wish_menu")],
             [
                 InlineKeyboardButton(
-                    "🎰 Банк казино (Джекпот)", callback_data="menu_jackpot"
+                    "🎰 Джекпот", callback_data="menu_jackpot"
                 )
             ],
         ]
     )
     await update.message.reply_text(
-        f"🎰 <b>Казино</b>  {f['coins']}{coin_emoji()}\n"
-        f"💰 Джекпот-банк: <b>{jp:,}{coin_emoji()}</b>\n\n"
-        "Выбери игру:",
+        ui_card(
+            ui_title("🎰", "Казино"),
+            ui_line(ui_money(f["coins"]), f"джекпот {jp:,}{coin_emoji()}"),
+        ),
         parse_mode=ParseMode.HTML,
         reply_markup=kb,
     )
@@ -29348,7 +29349,7 @@ async def cmd_jackpot(update: Update, ctx: ContextTypes.DEFAULT_TYPE):
     """/jackpot — банк казино"""
     pool = await jackpot_get()
     text = (
-        "🎰 <b>Банк казино (Джекпот)</b>\n\n"
+        "🎰 <b>Джекпот</b>\n\n"
         f"💰 Накоплено: <b>{pool:,}{coin_emoji()}</b>\n\n"
         "10% от каждого проигрыша в казино идёт сюда.\n"
         "Весь банк забирает тот, кто выбьет <b>🎰 Джекпот</b> в слотах!\n\n"
@@ -29538,23 +29539,28 @@ async def cmd_stats(update: Update, ctx: ContextTypes.DEFAULT_TYPE):
         casino_wr = int(f.get("total_casino_wins", 0) / f["total_casino"] * 100)
     s = SKINS.get(f["skin"], SKINS["Brownie"])
     await update.message.reply_text(
-        f"📊 <b>{fname(f)}</b>  {R_ICON[s['rarity']]} {pemoji(f['skin'])}\n\n"
-        f"⭐️ Уровень: {f['level']}\n"
-        f"{coin_emoji()} КваКоинов: {f['coins']}\n"
-        f"💸 Потрачено: {f.get('coins_spent', 0)}{coin_emoji()}\n"
-        f"⭐ Stars: {f.get('stars_spent', 0)}\n"
-        f"🔥 Стрик: {f['streak']} дней\n"
-        f"📅 Возраст: {days} дней\n\n"
-        f"🍎 Кормёжек: {f['total_feeds']}\n"
-        f"🎮 Игр: {f['total_plays']}\n"
-        f"🛁 Купаний: {f['total_washes']}\n"
-        f"😴 Снов: {f['total_sleeps']}\n"
-        f"🎰 Гач: {f['total_gacha']}\n"
-        f"🦟 Комаров: {f.get('total_mosquitoes', 0)}\n\n"
-        f"⚔️ Дуэлей: {f.get('total_duels', 0)} | Побед: {f.get('total_duel_wins', 0)} ({win_rate}%)\n"
-        f"🃏 Казино: {f.get('total_casino', 0)} | Побед: {f.get('total_casino_wins', 0)} ({casino_wr}%)\n\n"
-        f"🗂 Коллекция: {len(coll)}/50\n"
-        f"Облик: {display_skin(f['skin'], use_st)}",
+        ui_card(
+            f"📊 <b>{fname(f)}</b>{SEP}{R_ICON[s['rarity']]} {pemoji(f['skin'])}",
+            # Каждый показатель — своя строка «подпись: значение»; 17 строк
+            # подряд читались как таблица без границ. Группируем по смыслу
+            # и сводим однотипные счётчики в строки через разделитель.
+            ui_line(f"⭐️ уровень {f['level']}",
+                    f"{_E_FIRE}{f['streak']} дн",
+                    f"📅 {days} дн в игре"),
+            ui_line(ui_money(f["coins"]),
+                    f"потрачено {f.get('coins_spent', 0)}{coin_emoji()}",
+                    f"{_E_STARS}{f.get('stars_spent', 0)}"),
+            ui_line(f"🍎 {f['total_feeds']}",
+                    f"🎮 {f['total_plays']}",
+                    f"🛁 {f['total_washes']}",
+                    f"😴 {f['total_sleeps']}",
+                    f"🎰 {f['total_gacha']}",
+                    f"🦟 {f.get('total_mosquitoes', 0)}"),
+            ui_line(f"⚔️ дуэли {f.get('total_duel_wins', 0)}/{f.get('total_duels', 0)} ({win_rate}%)",
+                    f"🃏 казино {f.get('total_casino_wins', 0)}/{f.get('total_casino', 0)} ({casino_wr}%)"),
+            ui_line(f"🗂 коллекция {len(coll)}/50",
+                    display_skin(f["skin"], use_st)),
+        ),
         parse_mode=ParseMode.HTML,
         link_preview_options=LinkPreviewOptions(),
     )
@@ -35692,7 +35698,7 @@ async def on_callback(update: Update, ctx: ContextTypes.DEFAULT_TYPE):
         else:  # menu_jackpot
             jp_pool = await jackpot_get()
             text = (
-                "🎰 <b>Банк казино (Джекпот)</b>\n\n"
+                "🎰 <b>Джекпот</b>\n\n"
                 f"💰 Накоплено: <b>{jp_pool:,}{coin_emoji()}</b>\n\n"
                 "10% от каждого проигрыша в казино идёт сюда.\n"
                 "Весь банк забирает тот, кто выбьет <b>🎰 Джекпот</b> в слотах!\n\n"
@@ -35954,10 +35960,10 @@ async def on_callback(update: Update, ctx: ContextTypes.DEFAULT_TYPE):
                 for k, v in CASINO.items()
             ]
             + [
-                [InlineKeyboardButton("🎯 Режим желания — поставь и загадай", callback_data="casino_wish_menu")],
+                [InlineKeyboardButton("🎯 Режим желания", callback_data="casino_wish_menu")],
                 [
                     InlineKeyboardButton(
-                        "🎰 Банк казино (Джекпот)", callback_data="menu_jackpot"
+                        "🎰 Джекпот", callback_data="menu_jackpot"
                     )
                 ],
                 [InlineKeyboardButton("◀️ Назад", callback_data="menu_games")],
@@ -35966,7 +35972,8 @@ async def on_callback(update: Update, ctx: ContextTypes.DEFAULT_TYPE):
         jp = await jackpot_get()
         try:
             await q.message.edit_text(
-                f"🎰 <b>Казино</b>  {f['coins']}{coin_emoji()}\n💰 Джекпот-банк: <b>{jp:,}{coin_emoji()}</b>\n\nВыбери игру:",
+                ui_card(ui_title("🎰", "Казино"),
+                        ui_line(ui_money(f["coins"]), f"джекпот {jp:,}{coin_emoji()}")),
                 parse_mode=ParseMode.HTML,
                 reply_markup=kb,
             )
@@ -44377,14 +44384,18 @@ async def on_callback(update: Update, ctx: ContextTypes.DEFAULT_TYPE):
             if not cat_items:
                 continue
 
-            all_lines.append(f"\n{cat_icon} <b>{cat_name}</b>")
+            # У полученного достижения его эмодзи — награда, её и показываем.
+            # У закрытого хватает одного замка: два эмодзи подряд превращали
+            # список из сотни строк в сплошную рябь.
+            earned_cnt = sum(1 for aid, _ in cat_items if aid in earned_set)
+            all_lines.append(f"\n{cat_icon} <b>{cat_name}</b>{SEP}{earned_cnt}/{len(cat_items)}")
             for aid, ach in cat_items:
                 if aid in earned_set:
-                    all_lines.append(f"  ✅ {ach['emoji']} <b>{ach['name']}</b> — <i>{ach['desc']}</i>")
+                    all_lines.append(f"  {ach['emoji']} <b>{ach['name']}</b>")
                 elif ach.get("secret"):
-                    all_lines.append("  🔒 ❓ Секретное достижение")
+                    all_lines.append("  🔒 Секретное достижение")
                 else:
-                    all_lines.append(f"  🔒 {ach['emoji']} {ach['name']} — <i>{ach['desc']}</i>")
+                    all_lines.append(f"  🔒 {ach['name']}{SEP}<i>{ach['desc']}</i>")
 
         # Разбиваем на страницы безопасно (целыми строками, не обрезая теги)
         PAGE_LIMIT = 3000
@@ -44409,8 +44420,8 @@ async def on_callback(update: Update, ctx: ContextTypes.DEFAULT_TYPE):
             body = "\n".join(pages[page])
 
         total_pages = max(1, len(pages))
-        page_info = f" (стр. {page+1}/{total_pages})" if total_pages > 1 else ""
-        header = f"🏆 <b>Достижения</b> — <b>{n_earned}</b>/{total}{page_info}\n"
+        page_info = f"{SEP}стр. {page+1}/{total_pages}" if total_pages > 1 else ""
+        header = f"🏆 <b>Достижения</b>{SEP}<b>{n_earned}</b>/{total}{page_info}\n"
         text = header + body
 
         # Кнопки вкладок
