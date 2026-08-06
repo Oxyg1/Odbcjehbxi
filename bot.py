@@ -4835,6 +4835,77 @@ _E_FROG   = '<tg-emoji emoji-id="5341367834935075028">🐸</tg-emoji>'    # 11 �
 _E_TICKET = '<tg-emoji emoji-id="5341688243790323773">🎟</tg-emoji>'    # 12 лотерейный билет
 _E_STARS  = '<tg-emoji emoji-id="6028338546736107668">⭐</tg-emoji>'    # 13 Telegram Stars (премиум)
 
+# ══════════════════════════════════════════════════════════════════════════════
+# 🎨  ДИЗАЙН-СИСТЕМА
+# ══════════════════════════════════════════════════════════════════════════════
+# Один набор правил на все экраны. Правила намеренно жёсткие — именно
+# разнобой в разделителях, отступах и «поясняющих» абзацах превращал
+# интерфейс в кашу.
+#
+#   1. Заголовок — одна строка: <эмодзи> <b>Название</b>. Больше эмодзи в
+#      заголовок не ставим.
+#   2. Тело — не больше 5 коротких строк. Всё, что не влияет на решение
+#      игрока прямо сейчас, из экрана убирается.
+#   3. Блоки разделяются пустой строкой. Линейки из ━ и ─ не используются.
+#   4. Внутри строки разделитель всегда SEP (« · »). Не |, не —, не •.
+#   5. Подсказка — не больше одной строки, курсивом, в самом низу.
+#   6. Иконки статов — только премиум-эмодзи из списка выше.
+#
+# Кастомные emoji-id придумывать нельзя: Telegram отвергает сообщение с
+# несуществующим id. Ниже — только проверенные, уже работавшие в боте.
+
+SEP = " · "            # разделитель внутри строки
+SEP_ARROW = " → "      # переход/результат
+
+# Иконки кнопок (Bot API 9.4 icon_custom_emoji_id) — проверенные id
+ICON_CARE  = "5774022692642492953"   # ✅
+ICON_GAMES = "5938413566624272793"   # 🎮
+ICON_GACHA = "5960608239623082921"   # 🎰
+ICON_SHOP  = "5983399041197675256"   # 🛒
+ICON_MORE  = "5850309953293653168"   # ⚙️
+ICON_PLAZA = "6032594876506312598"   # 🌿
+ICON_STARS = "6028338546736107668"   # ⭐ Telegram Stars
+
+
+def ui_title(emoji: str, text: str) -> str:
+    """Заголовок экрана. Ровно один эмодзи слева, жирный текст."""
+    return f"{emoji} <b>{text}</b>"
+
+
+def ui_card(head: str, *blocks: str, hint: str = "") -> str:
+    """
+    Собирает экран из заголовка и блоков.
+
+    Пустые блоки отбрасываются, поэтому условные секции можно передавать
+    как `secion_text if cond else ""` — без склейки строк на месте вызова.
+    Подсказка (одна строка, курсив) всегда прижата к низу.
+    """
+    parts = [head] + [b for b in blocks if b]
+    if hint:
+        parts.append(f"<i>{hint}</i>")
+    return "\n\n".join(parts)
+
+
+def ui_line(*items: str) -> str:
+    """Строка из значений через единый разделитель. Пустые отбрасываются."""
+    return SEP.join(i for i in items if i)
+
+
+def ui_kv(label: str, value) -> str:
+    """Пара «подпись — значение» с жирным значением."""
+    return f"{label} <b>{value}</b>"
+
+
+def ui_money(amount) -> str:
+    """Сумма в КваКоинах с премиум-иконкой."""
+    return f"{amount}{_E_COIN}"
+
+
+def ui_stars(amount) -> str:
+    """Сумма в Telegram Stars с премиум-иконкой."""
+    return f"{amount}{_E_STARS}"
+
+
 _LANGS = {
     "ru": {
         # ── Общее ──
@@ -4992,10 +5063,10 @@ _LANGS = {
         "btn_inventory":   "🎒 Инвентарь",
         "btn_quests":      "📋 Квесты",
         "btn_top":         "🏅 Топ",
-        "btn_nft":         "🪸 NFT лягушки",
+        "btn_nft":         "🪸 NFT",
         "btn_referrals":   "🔗 Рефералы",
         "btn_settings":    "⚙️ Настройки",
-        "btn_feedback":    "📝 Фидбек",
+        "btn_feedback":    "📝 Написать нам",
         "btn_help":        "❓ Помощь",
         "btn_hibernate":   "❄️ Анабиоз",
         "btn_lang":        "🌐 Язык",
@@ -5090,7 +5161,7 @@ _LANGS = {
         "btn_feed_all":      "🍽 Скормить всё",
         "games_hint_private": "<i>В личных сообщениях доступны соло-игры и дуэли.\nГрупповые игры (КНБ/крестики в чате) — только в чате!</i>\n\n",
         "games_title":       "🎲 <b>Игры</b>",
-        "more_title":        "⚙️ <b>Дополнительно</b>\n\nВыбери раздел:",
+        "more_title":        "⚙️ <b>Профиль</b>",
         "shop_title_full":   "🛒 <b>Магазин</b>",
     },
     "en": {
@@ -5249,10 +5320,10 @@ _LANGS = {
         "btn_inventory":   "🎒 Inventory",
         "btn_quests":      "📋 Quests",
         "btn_top":         "🏅 Top",
-        "btn_nft":         "🪸 NFT Frogs",
+        "btn_nft":         "🪸 NFT",
         "btn_referrals":   "🔗 Referrals",
         "btn_settings":    "⚙️ Settings",
-        "btn_feedback":    "📝 Feedback",
+        "btn_feedback":    "📝 Contact us",
         "btn_help":        "❓ Help",
         "btn_hibernate":   "❄️ Hibernate",
         "btn_lang":        "🌐 Language",
@@ -5347,7 +5418,7 @@ _LANGS = {
         "btn_feed_all":      "🍽 Feed All",
         "games_hint_private": "<i>Solo games and duels available in DMs.\nGroup games (RPS/TicTacToe) — in chat only!</i>\n\n",
         "games_title":       "🎲 <b>Games</b>",
-        "more_title":        "⚙️ <b>More</b>\n\nChoose a section:",
+        "more_title":        "⚙️ <b>Profile</b>",
         "shop_title_full":   "🛒 <b>Shop</b>",
     },
     "zh": {
@@ -5506,7 +5577,7 @@ _LANGS = {
         "btn_inventory":   "🎒 背包",
         "btn_quests":      "📋 任务",
         "btn_top":         "🏅 排行榜",
-        "btn_nft":         "🪸 NFT青蛙",
+        "btn_nft":         "🪸 NFT",
         "btn_referrals":   "🔗 推荐",
         "btn_settings":    "⚙️ 设置",
         "btn_feedback":    "📝 反馈",
@@ -5604,7 +5675,7 @@ _LANGS = {
         "btn_feed_all":      "🍽 全部喂食",
         "games_hint_private": "<i>私聊中可玩单人游戏和决斗。\n群聊游戏（石头剪刀布/井字棋）仅在群聊中可用！</i>\n\n",
         "games_title":       "🎲 <b>游戏</b>",
-        "more_title":        "⚙️ <b>更多</b>\n\n选择一个功能：",
+        "more_title":        "⚙️ <b>个人资料</b>",
         "shop_title_full":   "🛒 <b>商店</b>",
     },
 }
@@ -17735,9 +17806,15 @@ M_SAY = {
 
 
 def bar(v: int) -> str:
+    """
+    Полоса прогресса без HTML-обёртки.
+
+    Все места вызова оборачивают результат в <code> сами, поэтому тег здесь
+    добавлять нельзя — иначе получается вложенный <code><code>…</code></code>.
+    """
     v = max(0, min(100, v))
-    f = round(v / 10)
-    return "<code>" + "█" * f + "░" * (10 - f) + "</code>"
+    filled = round(v / 10)
+    return "█" * filled + "░" * (10 - filled)
 
 
 def fname(f: dict) -> str:
@@ -17793,14 +17870,17 @@ def status_text(f: dict) -> str:
         prog = json.loads(f.get("trial_progress", "{}"))
         done = sum(1 for tq in quests if prog.get(tq["id"], 0) >= tq["goal"])
         total = len(quests)
-        lines = [f"💀 <b>{t('stat_trial', lg)}</b>  ({done}/{total})\n"]
-        for tq in quests:
-            cur = prog.get(tq["id"], 0)
-            icon = "✅" if cur >= tq["goal"] else "🔲"
-            lines.append(f"{icon} {tq['desc']}  <b>{cur}/{tq['goal']}</b>")
-        lines.append(f"\n<i>{t('stat_trial_done', lg)}</i>")
-        lines.append(f"\n{coin_emoji()}{f.get('coins', 0)}")
-        return "\n".join(lines)
+        tasks = "\n".join(
+            f"{'✅' if prog.get(tq['id'], 0) >= tq['goal'] else '🔲'} {tq['desc']}"
+            f"{SEP}<b>{prog.get(tq['id'], 0)}/{tq['goal']}</b>"
+            for tq in quests
+        )
+        return ui_card(
+            f"{_E_SKULL} <b>{t('stat_trial', lg)}</b>{SEP}{done}/{total}",
+            tasks,
+            ui_money(f.get("coins", 0)),
+            hint=t("stat_trial_done", lg),
+        )
 
     # ── Анабиоз ──────────────────────────────────────────
     hiber_until = f.get("hibernation_until", 0) or 0
@@ -17810,44 +17890,59 @@ def status_text(f: dict) -> str:
         _sk = f["skin"]
         _s_use_st = bool(f.get("use_static", 0))
         _nft = f.get("equipped_nft_url", "") or ""
-        return (
-            f"❄️ <b>{t('stat_frozen', lg)}</b>\n\n"
-            f"<b>{fname(f)}</b>  {display_skin(_sk, _s_use_st, user_nft_url=_nft)}\n\n"
-            f"{t('stat_hunger', lg)}      <code>{bar(f['hunger'])}</code> {f['hunger']}%\n"
-            f"{t('stat_happiness', lg)}    <code>{bar(f['happiness'])}</code> {f['happiness']}%\n"
-            f"{t('stat_health', lg)}   <code>{bar(f['health'])}</code> {f['health']}%\n\n"
-            f"{t('stat_thaws_in', lg)}: <b>{rem_h}ч {rem_m}м</b>\n\n"
-            f"{coin_emoji()}{f.get('coins', 0)}"
+        frozen_stats = "\n".join(
+            f"{icon} <code>{bar(val)}</code> {val}%"
+            for icon, val in (
+                (_E_FOOD,  f["hunger"]),
+                (_E_HAPPY, f["happiness"]),
+                (_E_HEART, f["health"]),
+            )
+        )
+        return ui_card(
+            f"❄️ <b>{fname(f)}</b>{SEP}{display_skin(_sk, _s_use_st, user_nft_url=_nft)}",
+            t("stat_frozen", lg),
+            frozen_stats,
+            ui_kv(f"{t('stat_thaws_in', lg)}:", f"{rem_h}ч {rem_m}м"),
+            ui_money(f.get("coins", 0)),
         )
 
-    skin = f["skin"]
-    s = SKINS.get(skin, SKINS["Brownie"])
-    m = get_mood(f)
+    skin   = f["skin"]
+    m      = get_mood(f)
     phrase = t_mood(m, lg)
-    need = xp_need(f["level"])
+    need   = xp_need(f["level"])
     xp_pct = min(100, int(f["xp"] / need * 100))
-    name = fname(f)
+    name   = fname(f)
     use_st = bool(f.get("use_static", 0))
-    streak = f"  {_E_FIRE}{f['streak']}д" if f["streak"] > 1 else ""
-    alive = t("stat_alive", lg) if f["alive"] else t("stat_dead", lg)
-    nxt = ""  # убрано отображение следующей награды за уровень
-    clean = f.get("cleanliness", 100)
+    clean  = f.get("cleanliness", 100)
     energy = f.get("energy", 100)
-    equipped_nft_url = f.get("equipped_nft_url", "") or ""
+    nft_url = f.get("equipped_nft_url", "") or ""
 
-    return (
-        f"<i>{phrase}</i>\n\n"
-        f"{t('stat_level', lg)} {f['level']}\n"
-        f"{_E_XP} <code>{bar(xp_pct)}</code> • {f['xp']}/{need}\n\n"
-        f"{t('stat_hunger', lg)}      <code>{bar(f['hunger'])}</code> {f['hunger']}%\n"
-        f"{t('stat_happiness', lg)}    <code>{bar(f['happiness'])}</code> {f['happiness']}%\n"
-        f"{t('stat_health', lg)}   <code>{bar(f['health'])}</code> {f['health']}%\n"
-        f"{t('stat_clean', lg)}    <code>{bar(clean)}</code> {clean}%\n"
-        f"{t('stat_energy', lg)}    <code>{bar(energy)}</code> {energy}%\n\n"
-        f"<b>{name}</b>\n"
-        f"{t('stat_skin', lg)}: {display_skin(skin, use_st, user_nft_url=equipped_nft_url)}\n"
-        f"{coin_emoji()}{f['coins']}{streak}"
-        + (f"\n\n{t('stat_boost', lg)}" if f.get("_boost_active") else "")
+    # Иконка вместо подписи: сами эмодзи одинаковой ширины, поэтому колонка
+    # выравнивается без хрупких пробельных отступов, а строка короче.
+    stats = "\n".join(
+        f"{icon} <code>{bar(val)}</code> {val}%"
+        for icon, val in (
+            (_E_FOOD,  f["hunger"]),
+            (_E_HAPPY, f["happiness"]),
+            (_E_HEART, f["health"]),
+            (_E_SOAP,  clean),
+            (_E_BOLT,  energy),
+        )
+    )
+
+    wallet = ui_line(
+        ui_money(f["coins"]),
+        f"{_E_FIRE}{f['streak']}д" if f["streak"] > 1 else "",
+    )
+
+    return ui_card(
+        f"{_E_FROG} <b>{name}</b>{SEP}{display_skin(skin, use_st, user_nft_url=nft_url)}",
+        f"{_E_STAR} {ui_kv('Уровень', f['level'])}\n"
+        f"{_E_XP} <code>{bar(xp_pct)}</code> {f['xp']}/{need}",
+        stats,
+        wallet,
+        t("stat_boost", lg) if f.get("_boost_active") else "",
+        hint=phrase,
     )
 
 
@@ -17890,57 +17985,103 @@ def _care_ready(f: dict) -> bool:
     return False
 
 
+def settings_screen(f: dict) -> tuple[str, InlineKeyboardMarkup]:
+    """
+    Экран настроек — единственный источник правды.
+
+    Раньше он был скопирован в каждый обработчик переключателя, копии
+    разошлись, и, например, смена режима стикеров стирала с экрана все
+    остальные пункты. Теперь любой toggle перерисовывает экран отсюда.
+    """
+    use_st = bool(f.get("use_static", 0))
+    # Шаблон пункта: «иконка Категория · состояние».
+    mode_state = "статичные" if use_st else "анимированные"
+    feed_state = "выкл" if f.get("no_feed_notify", 0) else "вкл"
+    mosq_state = "вкл" if f.get("mosquito_notify", 1) else "выкл"
+    gift_state = "только соседи" if f.get("gift_notify", 0) == 1 else "все"
+    war_state  = "вкл" if f.get("war_notify", 1) else "выкл"
+
+    kb = InlineKeyboardMarkup([
+        [InlineKeyboardButton(f"🎨 Стикеры{SEP}{mode_state}", callback_data="toggle_static")],
+        [InlineKeyboardButton(f"🍽 Кормление{SEP}{feed_state}", callback_data="toggle_feed_notify")],
+        [InlineKeyboardButton(f"🦟 Комар{SEP}{mosq_state}", callback_data="toggle_mosquito_notify")],
+        [InlineKeyboardButton(f"🎁 Переводы{SEP}{gift_state}", callback_data="toggle_gift_notify")],
+        [InlineKeyboardButton(f"⚔️ Набеги{SEP}{war_state}", callback_data="toggle_war_notify")],
+        [InlineKeyboardButton("🚫 Блокировки кормления", callback_data="feed_blocks_menu")],
+        [
+            InlineKeyboardButton(t("btn_lang", f),      callback_data="lang_set_menu"),
+            InlineKeyboardButton(t("btn_hibernate", f), callback_data="hibernation_menu"),
+        ],
+        [
+            InlineKeyboardButton("📋 Правила", callback_data="game_rules"),
+            InlineKeyboardButton(t("btn_feedback", f), callback_data="feedback_start"),
+        ],
+        [InlineKeyboardButton(t("btn_back", f), callback_data="menu_more")],
+    ])
+
+    text = ui_card(
+        ui_title("⚙️", "Настройки"),
+        ui_kv("👕 Облик:", display_skin(f["skin"], use_st)),
+        hint="Нажми на пункт, чтобы переключить.",
+    )
+    return text, kb
+
+
+async def show_settings(q, f: dict) -> None:
+    """Перерисовывает экран настроек в текущем сообщении."""
+    text, kb = settings_screen(f)
+    try:
+        await q.message.edit_text(
+            text, parse_mode=ParseMode.HTML, reply_markup=kb,
+            link_preview_options=LinkPreviewOptions(),
+        )
+    except Exception:
+        pass
+
+
 def main_kb(f: dict, is_group: bool = False, sacrifice_active: bool = False,
             contest_active: bool = False, legend_pct: int | None = None,
             legend_emoji: str = "📜", auction_active: bool = False,
             nft_contest_active: bool = False,
             freeze_active: bool = False) -> InlineKeyboardMarkup:
-    m = get_mood(f)
     care_ready = _care_ready(f)
     care_key = "menu_care_ready" if care_ready else "menu_care"
     care_lbl = t(care_key, f) + ("" if care_ready else " ⏳")
 
-    # Собираем временные события
+    # Временные события. Порядок фиксирован: сначала то, что закончится
+    # раньше и требует действия, потом фоновое — чтобы кнопки не прыгали.
     event_btns = []
     if freeze_active:
-        event_btns.append(btn("🧊 Фриз-ивент", callback_data="fz_dashboard", style="primary"))
+        event_btns.append(btn("Фриз-ивент", callback_data="fz_dashboard", style="primary"))
     if auction_active:
-        event_btns.append(btn("🔨 Аукцион", callback_data="auction_menu", style="danger"))
+        event_btns.append(btn("Аукцион", callback_data="auction_menu", style="danger"))
     if sacrifice_active:
         event_btns.append(InlineKeyboardButton(t("menu_event", f), callback_data="sacrifice_menu"))
     if contest_active:
-        event_btns.append(InlineKeyboardButton("🎟 Конкурс", callback_data="contest_my_stats"))
+        event_btns.append(InlineKeyboardButton("Конкурс", callback_data="contest_my_stats"))
     if nft_contest_active and f.get("league", 0) in NFT_CONTEST_TARGET_LEAGUES:
-        event_btns.append(InlineKeyboardButton("🏆 NFT-конкурс", callback_data="nft_contest_menu"))
+        event_btns.append(InlineKeyboardButton("NFT-конкурс", callback_data="nft_contest_menu"))
     if legend_pct is not None:
         event_btns.append(InlineKeyboardButton(
-            f"📜 {legend_emoji} {legend_pct}%", callback_data="legend_status"
+            f"{legend_emoji} Легенда{SEP}{legend_pct}%", callback_data="legend_status"
         ))
-
-    # Иконки кнопок главного меню (Bot API 9.4 icon_custom_emoji_id)
-    _ICON_CARE   = "5774022692642492953"  # ✅
-    _ICON_GAMES  = "5938413566624272793"  # 🎮
-    _ICON_GACHA  = "5960608239623082921"  # 🎰
-    _ICON_SHOP   = "5983399041197675256"  # 🛒
-    _ICON_MORE   = "5850309953293653168"  # ⚙️
-    _ICON_PLAZA  = "6032594876506312598"  # 🌿
 
     if is_group:
         rows = [
-            [btn(care_lbl, callback_data="menu_care", style="primary", icon_id=_ICON_CARE),
-             btn(t("menu_games", f), callback_data="menu_games", icon_id=_ICON_GAMES)],
-            [btn(t("menu_gacha", f), callback_data="gacha", icon_id=_ICON_GACHA),
-             btn(t("menu_more", f), callback_data="menu_more", icon_id=_ICON_MORE)],
-            *([[btn("Площадь", callback_data="plaza", icon_id=_ICON_PLAZA)]] if f.get("level", 1) >= 3 else []),
+            [btn(care_lbl, callback_data="menu_care", style="primary", icon_id=ICON_CARE),
+             btn(t("menu_games", f), callback_data="menu_games", icon_id=ICON_GAMES)],
+            [btn(t("menu_gacha", f), callback_data="gacha", icon_id=ICON_GACHA),
+             btn(t("menu_more", f), callback_data="menu_more", icon_id=ICON_MORE)],
+            *([[btn("Площадь", callback_data="plaza", icon_id=ICON_PLAZA)]] if f.get("level", 1) >= 3 else []),
         ]
     else:
         rows = [
-            [btn(care_lbl, callback_data="menu_care", style="primary", icon_id=_ICON_CARE),
-             btn(t("menu_games", f), callback_data="menu_games", icon_id=_ICON_GAMES)],
-            [btn(t("menu_gacha", f), callback_data="gacha", icon_id=_ICON_GACHA),
-             btn(t("menu_shop", f), callback_data="menu_shop", icon_id=_ICON_SHOP)],
-            [btn(t("menu_more", f), callback_data="menu_more", icon_id=_ICON_MORE),
-             *([btn("Площадь", callback_data="plaza", icon_id=_ICON_PLAZA)] if f.get("level", 1) >= 3 else [])],
+            [btn(care_lbl, callback_data="menu_care", style="primary", icon_id=ICON_CARE),
+             btn(t("menu_games", f), callback_data="menu_games", icon_id=ICON_GAMES)],
+            [btn(t("menu_gacha", f), callback_data="gacha", icon_id=ICON_GACHA),
+             btn(t("menu_shop", f), callback_data="menu_shop", icon_id=ICON_SHOP)],
+            [btn(t("menu_more", f), callback_data="menu_more", icon_id=ICON_MORE),
+             *([btn("Площадь", callback_data="plaza", icon_id=ICON_PLAZA)] if f.get("level", 1) >= 3 else [])],
         ]
 
     # Строим ряды с событиями (без кнопки площади — она теперь в основных рядах)
@@ -39386,6 +39527,10 @@ async def on_callback(update: Update, ctx: ContextTypes.DEFAULT_TYPE):
     # ── МЕНЮ "ПРОЧЕЕ" ──────────────────────────────
     if d == "menu_more":
         await q.answer()
+        # Ряды сгруппированы по смыслу: кто я → что у меня → к чему иду →
+        # характер лягушки → люди → система. Язык, анабиоз и обратная связь
+        # ушли в «Настройки» — раньше они висели здесь вперемешку с игровыми
+        # разделами и растягивали меню на 10 рядов.
         kb = InlineKeyboardMarkup(
             [
                 [
@@ -39394,32 +39539,23 @@ async def on_callback(update: Update, ctx: ContextTypes.DEFAULT_TYPE):
                 ],
                 [
                     InlineKeyboardButton(t("btn_inventory",    f), callback_data="inv_0"),
+                    InlineKeyboardButton(t("btn_nft",          f), callback_data="nft_menu"),
+                ],
+                [
                     InlineKeyboardButton(t("btn_quests",       f), callback_data="quests"),
-                ],
-                [
-                    InlineKeyboardButton("📖 Дневник",          callback_data="diary"),
-                    InlineKeyboardButton("🎭 Характер",          callback_data="personality_view"),
-                ],
-                [
-                    InlineKeyboardButton("🔮 Гороскоп",          callback_data="horoscope"),
                     InlineKeyboardButton(t("btn_top",          f), callback_data="top_select"),
                 ],
                 [
-                    InlineKeyboardButton(t("btn_nft",          f), callback_data="nft_menu"),
-                    InlineKeyboardButton(t("btn_referrals",    f), callback_data="referral_menu"),
+                    InlineKeyboardButton("📖 Дневник",   callback_data="diary"),
+                    InlineKeyboardButton("🎭 Характер",  callback_data="personality_view"),
+                    InlineKeyboardButton("🔮 Гороскоп",  callback_data="horoscope"),
                 ],
+                [btn("✨ Множитель наград", callback_data="bonus_menu", style="primary")],
                 [
-                    InlineKeyboardButton(t("btn_settings",     f), callback_data="settings"),
-                    InlineKeyboardButton(t("btn_feedback",     f), callback_data="feedback_start"),
+                    InlineKeyboardButton(t("btn_referrals", f), callback_data="referral_menu"),
+                    InlineKeyboardButton(t("btn_settings",  f), callback_data="settings"),
                 ],
-                [
-                    InlineKeyboardButton(t("btn_hibernate",    f), callback_data="hibernation_menu"),
-                    InlineKeyboardButton(t("btn_lang",         f), callback_data="lang_set_menu"),
-                ],
-                # Кнопка бонуса — одна на весь ряд, привлекает внимание
-                [btn("🎁 Бонус и множитель наград ✨", callback_data="bonus_menu", style="primary")],
-                [InlineKeyboardButton("📋 Правила игры", callback_data="game_rules")],
-                [InlineKeyboardButton(t("btn_back",            f), callback_data="refresh")],
+                [InlineKeyboardButton(t("btn_back", f), callback_data="refresh")],
             ]
         )
         try:
@@ -43233,7 +43369,7 @@ async def on_callback(update: Update, ctx: ContextTypes.DEFAULT_TYPE):
             status_hiber = f"❄️ <b>Активен!</b> Осталось: {rem_h}ч {rem_m}м"
             kb_hiber = InlineKeyboardMarkup([
                 [InlineKeyboardButton(t("btn_unhibernate", f), callback_data="hibernation_cancel")],
-                [InlineKeyboardButton(t("btn_back", f), callback_data="menu_more")],
+                [InlineKeyboardButton(t("btn_back", f), callback_data="settings")],
             ])
         else:
             status_hiber = "⬜ Не активен"
@@ -43247,7 +43383,7 @@ async def on_callback(update: Update, ctx: ContextTypes.DEFAULT_TYPE):
                     InlineKeyboardButton(t("btn_hibernate_14", f), callback_data="hibernation_set_14"),
                     InlineKeyboardButton(t("btn_hibernate_30", f), callback_data="hibernation_set_30"),
                 ],
-                [InlineKeyboardButton("◀️ Назад", callback_data="menu_more")],
+                [InlineKeyboardButton("◀️ Назад", callback_data="settings")],
             ])
         try:
             await q.message.edit_text(
@@ -43284,7 +43420,7 @@ async def on_callback(update: Update, ctx: ContextTypes.DEFAULT_TYPE):
                 f"Деградация остановлена. Лягушка в безопасности! <tg-emoji emoji-id='5341367834935075028'>🐸</tg-emoji>",
                 parse_mode=ParseMode.HTML,
                 reply_markup=InlineKeyboardMarkup([
-                    [InlineKeyboardButton("◀️ Назад", callback_data="menu_more")],
+                    [InlineKeyboardButton("◀️ Назад", callback_data="settings")],
                 ]),
             )
         except Exception:
@@ -43688,7 +43824,7 @@ async def on_callback(update: Update, ctx: ContextTypes.DEFAULT_TYPE):
                 "Просто отправь текст в <b>личку боту</b>, и оно попадёт к администраторам.",
                 parse_mode=ParseMode.HTML,
                 reply_markup=InlineKeyboardMarkup(
-                    [[InlineKeyboardButton("◀️ Отмена", callback_data="menu_more")]]
+                    [[InlineKeyboardButton("◀️ Отмена", callback_data="settings")]]
                 ),
             )
         except Exception:
@@ -44973,72 +45109,7 @@ async def on_callback(update: Update, ctx: ContextTypes.DEFAULT_TYPE):
     # ── НАСТРОЙКИ ──────────────────────────────────
     if d == "settings":
         await q.answer()
-        use_st = bool(f.get("use_static", 0))
-        mode_icon = "🖼 Статичный" if use_st else "🎬 Анимированный"
-        no_feed_notif = bool(f.get("no_feed_notify", 0))
-        feed_notif_icon = "🔕 Выключены" if no_feed_notif else "🔔 Включены"
-        mosq_notify = bool(f.get("mosquito_notify", 1))
-        mosq_icon = "🔔 Включены" if mosq_notify else "🔕 Выключены"
-        gift_notify = f.get("gift_notify", 0)
-        gift_notify_icon = "🏘 Только соседи" if gift_notify == 1 else "🔔 Все"
-        war_notify = bool(f.get("war_notify", 1))
-        war_notify_icon = "🔔 Включены" if war_notify else "🔕 Выключены"
-        kb = InlineKeyboardMarkup(
-            [
-                [
-                    InlineKeyboardButton(
-                        f"Стикер: {mode_icon} (нажми чтобы сменить)",
-                        callback_data="toggle_static",
-                    )
-                ],
-                [
-                    InlineKeyboardButton(
-                        f"Уведомления о кормлении: {feed_notif_icon}",
-                        callback_data="toggle_feed_notify",
-                    )
-                ],
-                [
-                    InlineKeyboardButton(
-                        f"🦟 Уведомления о комаре: {mosq_icon}",
-                        callback_data="toggle_mosquito_notify",
-                    )
-                ],
-                [
-                    InlineKeyboardButton(
-                        f"🎁 Уведомления о переводах: {gift_notify_icon}",
-                        callback_data="toggle_gift_notify",
-                    )
-                ],
-                [
-                    InlineKeyboardButton(
-                        f"⚔️ Уведомления о набегах и стычках: {war_notify_icon}",
-                        callback_data="toggle_war_notify",
-                    )
-                ],
-                [InlineKeyboardButton("🚫 Блокировки кормления", callback_data="feed_blocks_menu")],
-                [InlineKeyboardButton("◀️ Назад", callback_data="menu_more")],
-            ]
-        )
-        try:
-            await q.message.edit_text(
-                "⚙️ <b>Настройки</b>\n\n"
-                f"🎨 Режим стикеров: <b>{mode_icon}</b>\n"
-                "<i>Статичный — тихий стикер, Анимированный — движущийся</i>\n\n"
-                f"🔔 Уведомления о кормлении: <b>{feed_notif_icon}</b>\n"
-                "<i>Приходят когда другой игрок кормит твою лягушку</i>\n\n"
-                f"🦟 Уведомления о комаре: <b>{mosq_icon}</b>\n"
-                "<i>Личное сообщение когда комар появляется на болоте</i>\n\n"
-                f"🎁 Уведомления о переводах: <b>{gift_notify_icon}</b>\n"
-                "<i>Все — уведомление от любого, Только соседи — только от членов твоей стаи</i>\n\n"
-                f"⚔️ Уведомления о набегах/стычках: <b>{war_notify_icon}</b>\n"
-                "<i>Пуши когда на стаю нападают или объявляется стычка</i>\n\n"
-                f"👕 Текущий облик: {display_skin(f['skin'], use_st)}",
-                parse_mode=ParseMode.HTML,
-                reply_markup=kb,
-                link_preview_options=LinkPreviewOptions(),
-            )
-        except Exception:
-            pass
+        await show_settings(q, f)
         return
 
     if d == "game_rules":
@@ -45083,7 +45154,7 @@ async def on_callback(update: Update, ctx: ContextTypes.DEFAULT_TYPE):
                 rules_text,
                 parse_mode=ParseMode.HTML,
                 reply_markup=InlineKeyboardMarkup([
-                    [InlineKeyboardButton("◀️ Назад", callback_data="menu_more")]
+                    [InlineKeyboardButton("◀️ Назад", callback_data="settings")]
                 ]),
                 link_preview_options=LinkPreviewOptions(),
             )
@@ -45094,156 +45165,29 @@ async def on_callback(update: Update, ctx: ContextTypes.DEFAULT_TYPE):
     if d == "toggle_static":
         f["use_static"] = 0 if f.get("use_static", 0) else 1
         await db_save(f)
-        use_st = bool(f["use_static"])
-        mode_icon = "🖼 Статичный" if use_st else "🎬 Анимированный"
-        kb = InlineKeyboardMarkup(
-            [
-                [
-                    InlineKeyboardButton(
-                        f"Стикер: {mode_icon} (нажми чтобы сменить)",
-                        callback_data="toggle_static",
-                    )
-                ],
-                [InlineKeyboardButton("◀️ Назад", callback_data="menu_more")],
-            ]
-        )
-        await q.answer(f"Режим: {mode_icon}!")
-        try:
-            await q.message.edit_text(
-                "⚙️ <b>Настройки</b>\n\n"
-                f"🎨 Режим стикеров: <b>{mode_icon}</b>\n"
-                "<i>Статичный — тихий стикер, Анимированный — движущийся</i>\n\n"
-                f"👕 Текущий облик: {display_skin(f['skin'], use_st)}",
-                parse_mode=ParseMode.HTML,
-                reply_markup=kb,
-                link_preview_options=LinkPreviewOptions(),
-            )
-        except Exception:
-            pass
+        await q.answer("Стикеры: " + ("статичные" if f["use_static"] else "анимированные"))
+        await show_settings(q, f)
         return
 
     if d == "toggle_feed_notify":
         f["no_feed_notify"] = 0 if f.get("no_feed_notify", 0) else 1
         await db_save(f)
-        await q.answer("Настройка сохранена!")
-        # Перерисовываем настройки
-        use_st = bool(f.get("use_static", 0))
-        mode_icon = "🖼 Статичный" if use_st else "🎬 Анимированный"
-        no_feed_notif = bool(f.get("no_feed_notify", 0))
-        feed_notif_icon = "🔕 Выключены" if no_feed_notif else "🔔 Включены"
-        mosq_notify = bool(f.get("mosquito_notify", 1))
-        mosq_icon = "🔔 Включены" if mosq_notify else "🔕 Выключены"
-        gift_notify = f.get("gift_notify", 0)
-        gift_notify_icon = "🏘 Только соседи" if gift_notify == 1 else "🔔 Все"
-        kb = InlineKeyboardMarkup([
-            [InlineKeyboardButton(f"Стикер: {mode_icon} (нажми чтобы сменить)", callback_data="toggle_static")],
-            [InlineKeyboardButton(f"Уведомления о кормлении: {feed_notif_icon}", callback_data="toggle_feed_notify")],
-            [InlineKeyboardButton(f"🦟 Уведомления о комаре: {mosq_icon}", callback_data="toggle_mosquito_notify")],
-            [InlineKeyboardButton(f"🎁 Уведомления о переводах: {gift_notify_icon}", callback_data="toggle_gift_notify")],
-            [InlineKeyboardButton("◀️ Назад", callback_data="menu_more")],
-        ])
-        try:
-            await q.message.edit_text(
-                "⚙️ <b>Настройки</b>\n\n"
-                f"🎨 Режим стикеров: <b>{mode_icon}</b>\n"
-                "<i>Статичный — тихий стикер, Анимированный — движущийся</i>\n\n"
-                f"🔔 Уведомления о кормлении: <b>{feed_notif_icon}</b>\n"
-                "<i>Приходят когда другой игрок кормит твою лягушку</i>\n\n"
-                f"🦟 Уведомления о комаре: <b>{mosq_icon}</b>\n"
-                "<i>Личное сообщение когда комар появляется на болоте</i>\n\n"
-                f"🎁 Уведомления о переводах: <b>{gift_notify_icon}</b>\n"
-                "<i>Все — уведомление от любого, Только соседи — только от членов твоей стаи</i>\n\n"
-                f"👕 Текущий облик: {display_skin(f['skin'], use_st)}",
-                parse_mode=ParseMode.HTML, reply_markup=kb, link_preview_options=LinkPreviewOptions(),
-            )
-        except Exception:
-            pass
+        await q.answer("Уведомления о кормлении: " + ("выключены" if f["no_feed_notify"] else "включены"))
+        await show_settings(q, f)
         return
 
     if d == "toggle_mosquito_notify":
         f["mosquito_notify"] = 0 if f.get("mosquito_notify", 1) else 1
         await db_save(f)
-        status = "включены 🔔" if f["mosquito_notify"] else "отключены 🔕"
-        await q.answer((f"Уведомления о комаре {status}")[:200], show_alert=True)
-        # Перерисовываем настройки
-        use_st = bool(f.get("use_static", 0))
-        mode_icon = "🖼 Статичный" if use_st else "🎬 Анимированный"
-        no_feed_notif = bool(f.get("no_feed_notify", 0))
-        feed_notif_icon = "🔕 Выключены" if no_feed_notif else "🔔 Включены"
-        mosq_notify = bool(f.get("mosquito_notify", 1))
-        mosq_icon = "🔔 Включены" if mosq_notify else "🔕 Выключены"
-        gift_notify = f.get("gift_notify", 0)
-        gift_notify_icon = "🏘 Только соседи" if gift_notify == 1 else "🔔 Все"
-        kb = InlineKeyboardMarkup([
-            [InlineKeyboardButton(f"Стикер: {mode_icon} (нажми чтобы сменить)", callback_data="toggle_static")],
-            [InlineKeyboardButton(f"Уведомления о кормлении: {feed_notif_icon}", callback_data="toggle_feed_notify")],
-            [InlineKeyboardButton(f"🦟 Уведомления о комаре: {mosq_icon}", callback_data="toggle_mosquito_notify")],
-            [InlineKeyboardButton(f"🎁 Уведомления о переводах: {gift_notify_icon}", callback_data="toggle_gift_notify")],
-            [InlineKeyboardButton("◀️ Назад", callback_data="menu_more")],
-        ])
-        try:
-            await q.message.edit_text(
-                "⚙️ <b>Настройки</b>\n\n"
-                f"🎨 Режим стикеров: <b>{mode_icon}</b>\n"
-                "<i>Статичный — тихий стикер, Анимированный — движущийся</i>\n\n"
-                f"🔔 Уведомления о кормлении: <b>{feed_notif_icon}</b>\n"
-                "<i>Приходят когда другой игрок кормит твою лягушку</i>\n\n"
-                f"🦟 Уведомления о комаре: <b>{mosq_icon}</b>\n"
-                "<i>Личное сообщение когда комар появляется на болоте</i>\n\n"
-                f"🎁 Уведомления о переводах: <b>{gift_notify_icon}</b>\n"
-                "<i>Все — уведомление от любого, Только соседи — только от членов твоей стаи</i>\n\n"
-                f"👕 Текущий облик: {display_skin(f['skin'], use_st)}",
-                parse_mode=ParseMode.HTML, reply_markup=kb, link_preview_options=LinkPreviewOptions(),
-            )
-        except Exception:
-            pass
+        await q.answer("Уведомления о комаре: " + ("включены" if f["mosquito_notify"] else "выключены"))
+        await show_settings(q, f)
         return
     # ─── УВЕДОМЛЕНИЯ О ПЕРЕВОДАХ /gift ──────────────────────────────────────
     if d == "toggle_war_notify":
         f["war_notify"] = 0 if f.get("war_notify", 1) else 1
         await db_save(f)
-        icon = "🔔 Включены" if f["war_notify"] else "🔕 Выключены"
-        await q.answer((f"Уведомления о набегах/стычках: {icon}")[:200], show_alert=True)
-        # Перерисовываем настройки через d="settings"
-        f2 = await db_get(uid)
-        if f2:
-            f.update(f2)
-        d = "settings"
-        # fall-through to re-render (handled by continuing to settings block)
-        # Instead just re-call logic:
-        use_st2 = bool(f.get("use_static", 0))
-        mode_icon2 = "🖼 Статичный" if use_st2 else "🎬 Анимированный"
-        no_feed2 = bool(f.get("no_feed_notify", 0))
-        feed_icon2 = "🔕 Выключены" if no_feed2 else "🔔 Включены"
-        mosq2 = bool(f.get("mosquito_notify", 1))
-        mosq_icon2 = "🔔 Включены" if mosq2 else "🔕 Выключены"
-        gift2 = f.get("gift_notify", 0)
-        gift_icon2 = "🏘 Только соседи" if gift2 == 1 else "🔔 Все"
-        war_icon2 = "🔔 Включены" if f.get("war_notify", 1) else "🔕 Выключены"
-        kb2 = InlineKeyboardMarkup([
-            [InlineKeyboardButton(f"Стикер: {mode_icon2} (нажми чтобы сменить)", callback_data="toggle_static")],
-            [InlineKeyboardButton(f"Уведомления о кормлении: {feed_icon2}", callback_data="toggle_feed_notify")],
-            [InlineKeyboardButton(f"🦟 Уведомления о комаре: {mosq_icon2}", callback_data="toggle_mosquito_notify")],
-            [InlineKeyboardButton(f"🎁 Уведомления о переводах: {gift_icon2}", callback_data="toggle_gift_notify")],
-            [InlineKeyboardButton(f"⚔️ Уведомления о набегах/стычках: {war_icon2}", callback_data="toggle_war_notify")],
-            [InlineKeyboardButton("🚫 Блокировки кормления", callback_data="feed_blocks_menu")],
-            [InlineKeyboardButton("◀️ Назад", callback_data="menu_more")],
-        ])
-        try:
-            await q.message.edit_text(
-                "⚙️ <b>Настройки</b>\n\n"
-                f"🎨 Режим стикеров: <b>{mode_icon2}</b>\n"
-                "<i>Статичный — тихий стикер, Анимированный — движущийся</i>\n\n"
-                f"🔔 Уведомления о кормлении: <b>{feed_icon2}</b>\n"
-                f"🦟 Уведомления о комаре: <b>{mosq_icon2}</b>\n"
-                f"🎁 Уведомления о переводах: <b>{gift_icon2}</b>\n"
-                f"⚔️ Уведомления о набегах/стычках: <b>{war_icon2}</b>\n\n"
-                f"👕 Текущий облик: {display_skin(f['skin'], use_st2)}",
-                parse_mode=ParseMode.HTML, reply_markup=kb2,
-                link_preview_options=LinkPreviewOptions(),
-            )
-        except Exception:
-            pass
+        await q.answer("Уведомления о набегах: " + ("включены" if f["war_notify"] else "выключены"))
+        await show_settings(q, f)
         return
 
     if d == "feed_blocks_menu":
@@ -45296,44 +45240,11 @@ async def on_callback(update: Update, ctx: ContextTypes.DEFAULT_TYPE):
         return
 
     if d == "toggle_gift_notify":
-        # Переключаем: 0 (все) → 1 (только соседи) → 0 ...
-        current = f.get("gift_notify", 0)
-        f["gift_notify"] = 0 if current == 1 else 1
+        # 0 — уведомлять обо всех переводах, 1 — только от соседей по стае
+        f["gift_notify"] = 0 if f.get("gift_notify", 0) == 1 else 1
         await db_save(f)
-        gift_notify = f["gift_notify"]
-        gift_notify_icon = "🏘 Только соседи" if gift_notify == 1 else "🔔 Все"
-        gift_notif_status = "только от соседей по стае 🏘" if gift_notify == 1 else "от всех игроков 🔔"
-        await q.answer((f"Уведомления о переводах: {gift_notif_status}")[:200], show_alert=True)
-        # Перерисовываем настройки
-        use_st = bool(f.get("use_static", 0))
-        mode_icon = "🖼 Статичный" if use_st else "🎬 Анимированный"
-        no_feed_notif = bool(f.get("no_feed_notify", 0))
-        feed_notif_icon = "🔕 Выключены" if no_feed_notif else "🔔 Включены"
-        mosq_notify = bool(f.get("mosquito_notify", 1))
-        mosq_icon = "🔔 Включены" if mosq_notify else "🔕 Выключены"
-        kb = InlineKeyboardMarkup([
-            [InlineKeyboardButton(f"Стикер: {mode_icon} (нажми чтобы сменить)", callback_data="toggle_static")],
-            [InlineKeyboardButton(f"Уведомления о кормлении: {feed_notif_icon}", callback_data="toggle_feed_notify")],
-            [InlineKeyboardButton(f"🦟 Уведомления о комаре: {mosq_icon}", callback_data="toggle_mosquito_notify")],
-            [InlineKeyboardButton(f"🎁 Уведомления о переводах: {gift_notify_icon}", callback_data="toggle_gift_notify")],
-            [InlineKeyboardButton("◀️ Назад", callback_data="menu_more")],
-        ])
-        try:
-            await q.message.edit_text(
-                "⚙️ <b>Настройки</b>\n\n"
-                f"🎨 Режим стикеров: <b>{mode_icon}</b>\n"
-                "<i>Статичный — тихий стикер, Анимированный — движущийся</i>\n\n"
-                f"🔔 Уведомления о кормлении: <b>{feed_notif_icon}</b>\n"
-                "<i>Приходят когда другой игрок кормит твою лягушку</i>\n\n"
-                f"🦟 Уведомления о комаре: <b>{mosq_icon}</b>\n"
-                "<i>Личное сообщение когда комар появляется на болоте</i>\n\n"
-                f"🎁 Уведомления о переводах: <b>{gift_notify_icon}</b>\n"
-                "<i>Все — уведомление от любого, Только соседи — только от членов твоей стаи</i>\n\n"
-                f"👕 Текущий облик: {display_skin(f['skin'], use_st)}",
-                parse_mode=ParseMode.HTML, reply_markup=kb, link_preview_options=LinkPreviewOptions(),
-            )
-        except Exception:
-            pass
+        await q.answer("Уведомления о переводах: " + ("только от соседей" if f["gift_notify"] else "от всех"))
+        await show_settings(q, f)
         return
     # ─── БЛОКИРОВКА КОРМЁЖКИ ─────────────────────────────────────────────────
     if d == "feedblock_all":
@@ -47088,7 +46999,7 @@ async def on_callback(update: Update, ctx: ContextTypes.DEFAULT_TYPE):
                 [InlineKeyboardButton("🇷🇺 Русский",  callback_data="lang_set_ru"),
                  InlineKeyboardButton("🇬🇧 English",  callback_data="lang_set_en"),
                  InlineKeyboardButton("🇨🇳 中文",     callback_data="lang_set_zh")],
-                [InlineKeyboardButton(t("btn_back", f), callback_data="menu_more")],
+                [InlineKeyboardButton(t("btn_back", f), callback_data="settings")],
             ])
             cur_label = {"ru": "🇷🇺 Русский", "en": "🇬🇧 English", "zh": "🇨🇳 中文"}.get(f.get("lang","ru"), "🇷🇺")
             try:
@@ -47110,7 +47021,7 @@ async def on_callback(update: Update, ctx: ContextTypes.DEFAULT_TYPE):
                 [InlineKeyboardButton("🇷🇺 Русский",  callback_data="lang_set_ru"),
                  InlineKeyboardButton("🇬🇧 English",  callback_data="lang_set_en"),
                  InlineKeyboardButton("🇨🇳 中文",     callback_data="lang_set_zh")],
-                [InlineKeyboardButton(t("btn_back", f), callback_data="menu_more")],
+                [InlineKeyboardButton(t("btn_back", f), callback_data="settings")],
             ])
             try:
                 await q.message.edit_text(
