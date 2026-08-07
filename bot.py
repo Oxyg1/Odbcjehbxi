@@ -2313,7 +2313,7 @@ async def cmd_fzexport(update: Update, ctx: ContextTypes.DEFAULT_TYPE) -> None:
     await ctx.bot.send_document(
         uid,
         document=buf,
-        caption=f"🧊 Freeze export — {len(rows)} игроков",
+        caption=f"🧊 Freeze export{SEP}{ui_plural(len(rows), 'игрок', 'игрока', 'игроков')}",
     )
 
 
@@ -4903,6 +4903,25 @@ def ui_money(amount) -> str:
 def ui_stars(amount) -> str:
     """Сумма в Telegram Stars с премиум-иконкой."""
     return f"{amount}{_E_STARS}"
+
+
+def ui_plural(n: int, one: str, few: str, many: str) -> str:
+    """
+    Число с существительным в правильном падеже: 1 облик, 2 облика, 5 обликов.
+
+    Интерфейс без этого выглядит машинным — «(1 обликов)» в инвентаре
+    сразу выдаёт, что текст собран склейкой.
+    """
+    n = abs(int(n))
+    if n % 100 in (11, 12, 13, 14):
+        form = many
+    elif n % 10 == 1:
+        form = one
+    elif n % 10 in (2, 3, 4):
+        form = few
+    else:
+        form = many
+    return f"{n} {form}"
 
 
 _LANGS = {
@@ -11072,7 +11091,7 @@ async def cmd_hsseeker(update: Update, ctx: ContextTypes.DEFAULT_TYPE) -> None:
                 chat_id_hs,
                 f"🙈 <b>Прятки начинаются!</b>\n\n"
                 f"🔍 Ищущий: <b>{seeker_name}</b>\n"
-                f"🌿 Прячется <b>{len(hiders)}</b> игроков\n\n"
+                f"🌿 Прячется <b>{ui_plural(len(hiders), 'игрок', 'игрока', 'игроков')}</b>\n\n"
                 f"{grid_text}",
                 parse_mode=ParseMode.HTML,
                 reply_markup=grid_kb,
@@ -11090,7 +11109,7 @@ async def cmd_hsseeker(update: Update, ctx: ContextTypes.DEFAULT_TYPE) -> None:
         await ctx.bot.send_message(
             seeker_uid,
             f"🔍 <b>Ты ищущий!</b>\n\n"
-            f"Прячется {len(hiders)} игроков.\n"
+            f"Прячется {ui_plural(len(hiders), 'игрок', 'игрока', 'игроков')}.\n"
             f"Жди — через 5 минут в чате появится поле для вскрытия.",
             parse_mode=ParseMode.HTML,
         )
@@ -11125,7 +11144,7 @@ async def cmd_hsseeker(update: Update, ctx: ContextTypes.DEFAULT_TYPE) -> None:
 
     await update.message.reply_text(
         f"✅ Ищущий назначен: {seeker_name}\n"
-        f"Прячется: {len(hiders)} игроков\n"
+        f"Прячется: {ui_plural(len(hiders), 'игрок', 'игрока', 'игроков')}\n"
         f"⏳ Фаза пряток: 5 минут"
     )
 
@@ -11339,7 +11358,7 @@ async def _hs_start_seeking(bot, event_id: int) -> None:
 
     reveal_text = (
         f"🔍 <b>{seeker_name}</b> начинает искать!\n\n"
-        f"Прячется <b>{total_alive}</b> игроков "
+        f"Прячется <b>{ui_plural(total_alive, 'игрок', 'игрока', 'игроков')}</b> "
         f"в {event['grid_size']}×{event['grid_size']} клетках\n\n"
         f"Только ищущий может вскрывать клетки 👇"
     )
@@ -11370,7 +11389,7 @@ async def _hs_start_seeking(bot, event_id: int) -> None:
         await bot.send_message(
             seeker_uid,
             f"🔍 <b>Пора искать!</b>\n"
-            f"Прячется {total_alive} игроков.\n"
+            f"Прячется {ui_plural(total_alive, 'игрок', 'игрока', 'игроков')}.\n"
             f"Нажимай клетки в чате чтобы вскрывать 👆",
             parse_mode=ParseMode.HTML,
         )
@@ -13249,7 +13268,7 @@ async def _hs_final_timeout(bot, event_id: int, round_n: int) -> None:
     reveal_kb   = hs_reveal_keyboard(event_id, HS_GRID_FINAL, set(), set())
     reveal_text = (
         f"🔍 <b>Финал! Ищущий вскрывает</b>\n"
-        f"Прячется <b>{len(alive)}</b> игроков в {HS_GRID_FINAL}×{HS_GRID_FINAL} 👇"
+        f"Прячется <b>{ui_plural(len(alive), 'игрок', 'игрока', 'игроков')}</b> в {HS_GRID_FINAL}×{HS_GRID_FINAL} 👇"
     )
 
     if chat_id_f and pinned_f:
@@ -16228,7 +16247,7 @@ async def update_giveaway_message(gid: int, ctx):
     )
     kb = InlineKeyboardMarkup([
         [btn(
-            f"🎁 Участвовать ({len(participants)} участников)",
+            f"🎁 Участвовать ({ui_plural(len(participants), 'участник', 'участника', 'участников')})",
             callback_data=f"giveaway_join_{gid}",
             style="success",
         )],
@@ -33868,7 +33887,8 @@ async def on_callback(update: Update, ctx: ContextTypes.DEFAULT_TYPE):
             ]
         else:
             lines = [
-                f"🎒 <b>Инвентарь</b> ({all_items_count} обликов)  стр. {page+1}/{total_pages}\n"
+                f"🎒 <b>Инвентарь</b>{SEP}{ui_plural(all_items_count, 'облик', 'облика', 'обликов')}"
+                f"{SEP}стр. {page+1}/{total_pages}\n"
             ]
             equip_rows = []
 
@@ -39808,9 +39828,9 @@ async def on_callback(update: Update, ctx: ContextTypes.DEFAULT_TYPE):
                 ) as c:
                     has_ev = await c.fetchone()
             ev_mark = " 🎭 событие!" if has_ev else ""
-            header_lines.append(f"🌿 Стая <b>{he(staya['name'])}</b> · {members_cnt} уч.{ev_mark}")
+            header_lines.append(f"Стая <b>{he(staya['name'])}</b>{SEP}{ui_plural(members_cnt, 'участник', 'участника', 'участников')}{ev_mark}")
         else:
-            header_lines.append("🌿 Стая: <i>не состоишь ни в одной</i>")
+            header_lines.append("Стая: <i>не состоишь ни в одной</i>")
 
         # Поход
         if adv:
@@ -44244,7 +44264,7 @@ async def on_callback(update: Update, ctx: ContextTypes.DEFAULT_TYPE):
                 callback_data="ref_withdraw_request"
             )])
         kb_rows.append([InlineKeyboardButton(
-            f"{'🔔 Уведомления: ВКЛ' if notify_on else '🔕 Уведомления: ВЫКЛ'}",
+            f"{'🔔 Уведомления · вкл' if notify_on else '🔕 Уведомления · выкл'}",
             callback_data="ref_toggle_notify"
         )])
         kb_rows.append([InlineKeyboardButton("◀️ Назад", callback_data="menu_more")])
@@ -44297,7 +44317,7 @@ async def on_callback(update: Update, ctx: ContextTypes.DEFAULT_TYPE):
         if ref_stars_bal >= 50:
             kb_rows.append([InlineKeyboardButton(f"💸 Подать заявку на вывод ({ref_stars_bal}⭐)", callback_data="ref_withdraw_request")])
         kb_rows.append([InlineKeyboardButton(
-            f"{'🔔 Уведомления: ВКЛ' if notify_on else '🔕 Уведомления: ВЫКЛ'}",
+            f"{'🔔 Уведомления · вкл' if notify_on else '🔕 Уведомления · выкл'}",
             callback_data="ref_toggle_notify"
         )])
         kb_rows.append([InlineKeyboardButton("◀️ Назад", callback_data="menu_more")])
@@ -44508,7 +44528,7 @@ async def on_callback(update: Update, ctx: ContextTypes.DEFAULT_TYPE):
         await q.answer()
         try:
             await q.message.edit_text(
-                "🏅 <b>Выбери таблицу лидеров</b>",
+                "🏅 <b>Топ игроков</b>",
                 parse_mode=ParseMode.HTML,
                 reply_markup=InlineKeyboardMarkup([
                     [
@@ -45000,9 +45020,8 @@ async def on_callback(update: Update, ctx: ContextTypes.DEFAULT_TYPE):
         else:
             text = (
                 "🪸 <b>KissedFrog NFT</b>\n\n"
-                "У тебя нет NFT лягушек.\n\n"
-                "Если у тебя есть жаба из коллекции KissedFrog — добавь!\n"
-                "Команда: <code>/nft https://t.me/nft/KissedFrog-XXXX</code>"
+                "Пока ни одной. Есть жаба из коллекции — добавь ссылкой:\n"
+                "<code>/nft https://t.me/nft/KissedFrog-XXXX</code>"
             )
             kb = InlineKeyboardMarkup(
                 [[InlineKeyboardButton("◀️ Назад", callback_data="menu_more")]]
