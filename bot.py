@@ -3664,9 +3664,8 @@ def _get_user_lock(uid: int) -> asyncio.Lock:
 # Скопируй document_id эмодзи из пакета и вставь сюда:
 BATTLE_EMOJI_ID = "5244823936557950175"  # например: "5045984863544260270"
 
-# ID премиум-эмодзи для монеты КваКоин.
-# Вставь document_id кастомного эмодзи монеты сюда:
-COIN_EMOJI_ID = "5341524176039615767"  # ← вставь сюда ID премиум-эмодзи монеты
+# Иконка КваКоина задаётся в разделе «ПРЕМИУМ ЭМОДЗИ» константой _E_COIN.
+# Здесь её больше нет: две независимые копии одного id расходились при правке.
 
 # ID премиум-реакции на «ква» и стикеры лягушек.
 # Вставь document_id кастомного эмодзи; если пусто — сразу ставится ❤️.
@@ -4818,21 +4817,48 @@ async def send_action_sticker(bot, chat_id: int, action: str) -> None:
 # Перевести строку: t("key", f) или t("key", "en")
 
 # ══════════════════════════════════════════════════════════════════════════════
-# 💎  ПРЕМИУМ ЭМОДЗИ — иконки главного меню (Bot API tg-emoji)
+# 💎  ПРЕМИУМ ЭМОДЗИ
 # ══════════════════════════════════════════════════════════════════════════════
-_E_STAR  = '<tg-emoji emoji-id="5341787058102901072">⭐️</tg-emoji>'   # 1 уровень
-_E_FOOD  = '<tg-emoji emoji-id="5341326049198251117">🍖</tg-emoji>'    # 2 голод
-_E_HAPPY = '<tg-emoji emoji-id="5341367834935075028">😃</tg-emoji>'    # 3 радость
-_E_HEART = '<tg-emoji emoji-id="5341676144867449701">❤️</tg-emoji>'    # 4 здоровье
-_E_SOAP  = '<tg-emoji emoji-id="5341814971095360388">🧼</tg-emoji>'    # 5 чистота
-_E_BOLT  = '<tg-emoji emoji-id="5343666557266467138">⚡</tg-emoji>'    # 6 энергия
-_E_COIN  = '<tg-emoji emoji-id="5341524176039615767">🪙</tg-emoji>'    # 7 монета
-_E_FIRE  = '<tg-emoji emoji-id="5341735149128159966">🔥</tg-emoji>'    # 8 стрик
-_E_XP    = '<tg-emoji emoji-id="5341447412089133029">⭐</tg-emoji>'    # опыт / XP
-_E_SKULL  = '<tg-emoji emoji-id="5341573078537248907">💀</tg-emoji>'    # 10 смерть / черепок
-_E_FROG   = '<tg-emoji emoji-id="5341367834935075028">🐸</tg-emoji>'    # 11 лягушка
-_E_TICKET = '<tg-emoji emoji-id="5341688243790323773">🎟</tg-emoji>'    # 12 лотерейный билет
-_E_STARS  = '<tg-emoji emoji-id="6028338546736107668">⭐</tg-emoji>'    # 13 Telegram Stars (премиум)
+# Набор бота — 12 эмодзи. Каждый закреплён за одним смыслом; использовать их
+# «по похожести картинки» нельзя, иначе иконка начинает означать разное на
+# разных экранах.
+#
+# Символ внутри тега — это ЗАПАСНОЙ вариант: его видят те, у кого премиум-
+# эмодзи не отрисовались. Поэтому он должен быть похож на саму картинку, а не
+# просто «какой-нибудь подходящий». Раньше уровень и опыт оба падали в звезду
+# и на таком экране становились неразличимы.
+#
+# Придумывать новые emoji-id нельзя: Telegram отклоняет сообщение целиком,
+# если id не существует.
+
+def _pe(emoji_id: str, fallback: str) -> str:
+    return f'<tg-emoji emoji-id="{emoji_id}">{fallback}</tg-emoji>'
+
+
+_E_LEVEL  = _pe("5341787058102901072", "⭐️")  # значок LV — уровень
+_E_XP     = _pe("5341447412089133029", "🔵")  # синий кружок — опыт
+_E_FOOD   = _pe("5341326049198251117", "🍖")  # мясо на кости — голод
+_E_HAPPY  = _pe("5341367834935075028", "😃")  # весёлая мордочка — радость
+_E_FROG   = _pe("5341367834935075028", "🐸")  # та же картинка в роли «лягушка»
+_E_HEART  = _pe("5341676144867449701", "❤️")  # сердце с пульсом — здоровье
+_E_SOAP   = _pe("5341814971095360388", "🧼")  # мыло — чистота
+_E_BOLT   = _pe("5343666557266467138", "⚡")  # молния — энергия
+_E_COIN   = _pe("5341524176039615767", "🪙")  # КваКоин — основная валюта
+_E_FIRE   = _pe("5341735149128159966", "🔥")  # огонь — стрики и «горячее»
+_E_SKULL  = _pe("5341573078537248907", "💀")  # мёртвая лягушка — смерть
+_E_TICKET = _pe("5341688243790323773", "🎟")  # зелёный купон с лягушкой —
+                                              # лотереи и разовые события
+_E_COSMETIC = _pe("5341677472012342805", "🎫")  # голубой купон с вешалкой —
+                                                # всё косметическое: билеты
+                                                # гачи, облики, гардероб
+
+# ⚠️ Этот id НЕ из набора бота — он взят из системного набора Telegram Stars.
+# Оставлен как был: премиум-эмодзи вообще доступны боту только при купленном
+# на Fragment юзернейме, и если сработали остальные — сработает и он.
+_E_STARS  = _pe("6028338546736107668", "⭐")  # Telegram Stars
+
+# Совместимость: прежнее имя константы уровня.
+_E_STAR = _E_LEVEL
 
 # ══════════════════════════════════════════════════════════════════════════════
 # 🎨  ДИЗАЙН-СИСТЕМА
@@ -7525,7 +7551,7 @@ async def handle_interactive_event_choice(query, uid: int, event_id: str, choice
         f"<b>Награда:</b> {reward_line}"
     )
     if not frog.get("alive"):
-        result_msg += "\n\n<tg-emoji emoji-id='5341573078537248907'>💀</tg-emoji> <b>Лягушка погибла!</b> Используй /revive"
+        result_msg += f"\n\n{_E_SKULL} <b>Лягушка погибла!</b> Используй /revive"
 
     # answer() вызываем безусловно — иначе кнопка «крутится» вечно
     await query.answer()
@@ -9924,9 +9950,9 @@ async def _bet_payout(bot, duel_id: int, winner_side: str):
             await bot.send_message(
                 w["uid"],
                 f"🎰 <b>Ставка выиграла!</b>\n"
-                f"Поставил: <b>{w['amount']}🪙</b>\n"
-                f"Получил: <b>{payout}🪙</b> "
-                f"({'<b>+' + str(profit) + '🪙</b>' if profit >= 0 else '<b>' + str(profit) + '🪙</b>'})",
+                f"Поставил: <b>{w['amount']}{_E_COIN}</b>\n"
+                f"Получил: <b>{payout}{_E_COIN}</b> "
+                f"({'<b>+' + str(profit) + '{_E_COIN}</b>' if profit >= 0 else '<b>' + str(profit) + '{_E_COIN}</b>'})",
                 parse_mode=ParseMode.HTML,
             )
         except Exception:
@@ -9952,7 +9978,7 @@ async def _bet_payout(bot, duel_id: int, winner_side: str):
         try:
             await bot.send_message(
                 lo["uid"],
-                f"🎰 Ставка проиграла — <b>−{lo['amount']}🪙</b>",
+                f"🎰 Ставка проиграла — <b>−{lo['amount']}{_E_COIN}</b>",
                 parse_mode=ParseMode.HTML,
             )
         except Exception:
@@ -13323,7 +13349,7 @@ async def _hs_winner(bot, event: dict, winner_uids: list[int]) -> None:
                 w_uid,
                 f"🏆 <b>Ты выжил!</b>\n\n"
                 f"Ищущий не нашёл тебя — победа!\n"
-                + (f"Приз: <b>+{prize_each}🪙</b>" if prize_each else ""),
+                + (f"Приз: <b>+{prize_each}{_E_COIN}</b>" if prize_each else ""),
                 parse_mode=ParseMode.HTML,
             )
         except Exception:
@@ -17127,7 +17153,7 @@ async def job_boost_check(ctx: ContextTypes.DEFAULT_TYPE):
         await ctx.bot.send_message(
             CHAT_ID,
             "🌙 <b>Событие «Золотая лягушка» завершилось.</b>\n\n"
-            "Спасибо всем участникам! Курсы и шансы вернулись в норму. <tg-emoji emoji-id='5341367834935075028'>🐸</tg-emoji>",
+            f"Спасибо всем участникам! Курсы и шансы вернулись в норму. {_E_FROG}",
             parse_mode="HTML",
         )
     except Exception:
@@ -17322,8 +17348,8 @@ async def complete_trial(uid: int, bot=None):
                 uid,
                 f"🎉 <b>Испытание пройдено!</b>\n\n"
                 f"Твоя лягушка воскрешена с полными показателями!\n\n"
-                f"<tg-emoji emoji-id='5341524176039615767'>🪙</tg-emoji> Бонус: <b>+{bonus_coins}</b> монет\n"
-                f"<tg-emoji emoji-id='5341447412089133029'>⭐</tg-emoji> Бонус: <b>+{bonus_xp}</b> XP\n\n"
+                f"{_E_COIN} Бонус: <b>+{bonus_coins}</b> монет\n"
+                f"{_E_XP} Бонус: <b>+{bonus_xp}</b> XP\n\n"
                 f"{status_text(f)}",
                 parse_mode=ParseMode.HTML,
                 reply_markup=await main_kb_live(f),
@@ -17604,10 +17630,8 @@ def pemoji(skin: str) -> str:
 
 
 def coin_emoji() -> str:
-    """Возвращает <tg-emoji> тег для монеты КваКоин (или plain 🪙 как fallback)."""
-    if COIN_EMOJI_ID:
-        return f'<tg-emoji emoji-id="{COIN_EMOJI_ID}">' + "🪙" + "</tg-emoji>"
-    return "🪙"
+    """Премиум-иконка КваКоина для HTML-текстов. Для кнопок — coin_plain()."""
+    return _E_COIN
 
 
 def coin_plain() -> str:
@@ -18556,9 +18580,9 @@ async def _run_chat_auto_giveaway(chat_id: int, fund: int, ctx):
             await ctx.bot.send_message(
                 chat_id,
                 f"🎉 <b>Авторозыгрыш фонда чата!</b>\n\n"
-                f"Накоплено: <b>{fund}<tg-emoji emoji-id='5341524176039615767'>🪙</tg-emoji></b>\n"
+                f"Накоплено: <b>{fund}{_E_COIN}</b>\n"
                 f"Победитель: <b>{he(w_name)}</b> 🏆\n"
-                f"Приз: <b>+{fund}<tg-emoji emoji-id='5341524176039615767'>🪙</tg-emoji></b>",
+                f"Приз: <b>+{fund}{_E_COIN}</b>",
                 parse_mode=ParseMode.HTML,
             )
         except Exception:
@@ -19202,7 +19226,7 @@ async def maybe_big_win_announce(
         f"💰 <b>Крупный выигрыш!</b>\n\n"
         f"<tg-emoji emoji-id='5341367834935075028'>🐸</tg-emoji> <b>{player_name}</b>\n"
         f"🎮 Игра: {game_label}\n"
-        f"🏆 Выиграл: <b>{amount}<tg-emoji emoji-id='5341524176039615767'>🪙</tg-emoji></b>{stake_part}"
+        f"🏆 Выиграл: <b>{amount}{_E_COIN}</b>{stake_part}"
     )
     # Только главный игровой чат — удалять через 2 минуты
     try:
@@ -19761,7 +19785,7 @@ async def cmd_nftadmin(update: Update, ctx: ContextTypes.DEFAULT_TYPE):
         await update.message.reply_text(
             f"🔥 <b>NFT Chill Flame — статус</b>\n\n"
             f"Статус: <b>{status}</b>\n"
-            f"Цена повтора: <b>{NFT_KVA_STARS}⭐ / {NFT_KVA_COINS}🪙</b>\n"
+            f"Цена повтора: <b>{NFT_KVA_STARS}⭐ / {NFT_KVA_COINS}{_E_COIN}</b>\n"
             f"Шанс выигрыша: <b>1/{NFT_KVA_TOTAL}</b>\n"
             f"🗑 Удаление ответа бота: <b>{_del_reply_str}</b>\n"
             f"🗑 Удаление сообщения «ква»: <b>{_del_user_str}</b>\n\n"
@@ -19787,7 +19811,7 @@ async def cmd_nftadmin(update: Update, ctx: ContextTypes.DEFAULT_TYPE):
     elif cmd == "coins" and len(args) > 1:
         try:
             NFT_KVA_COINS = max(1, int(args[1]))
-            await update.message.reply_text(f"🪙 Цена повтора: <b>{NFT_KVA_COINS} монет</b>.", parse_mode=ParseMode.HTML)
+            await update.message.reply_text(f"{_E_COIN} Цена повтора: <b>{NFT_KVA_COINS} монет</b>.", parse_mode=ParseMode.HTML)
         except ValueError:
             await update.message.reply_text("⚠️ Укажи число: /nftadmin coins 1000")
     elif cmd == "delreply" and len(args) > 1:
@@ -20385,7 +20409,7 @@ async def _handle_chatadmin_callback(q, uid: int, ctx):
         await q.answer()
         try:
             await q.message.edit_text(
-                f"🎯 <b>Порог авторозыгрыша</b>\n\nТекущий: <b>{s.get('auto_giveaway_threshold', 0):,}<tg-emoji emoji-id='5341524176039615767'>🪙</tg-emoji></b>\n\n"
+                f"🎯 <b>Порог авторозыгрыша</b>\n\nТекущий: <b>{s.get('auto_giveaway_threshold', 0):,}{_E_COIN}</b>\n\n"
                 f"Введи сумму от <b>0</b> до <b>100000</b> (0 = выключен):",
                 parse_mode=ParseMode.HTML,
                 reply_markup=InlineKeyboardMarkup([[btn("❌ Отмена", callback_data=f"ca_economy_{cid}")]]),
@@ -20455,14 +20479,14 @@ async def _handle_chatadmin_callback(q, uid: int, ctx):
                 top5 = await c.fetchall()
             async with db.execute("SELECT SUM(coins_spent) FROM frogs WHERE source_chat_id=?", (cid,)) as c:
                 total_spent = (await c.fetchone())[0] or 0
-        top_txt = "\n".join(f"  {i+1}. {he(r[0])} — ур.{r[1]} · {r[2]}<tg-emoji emoji-id='5341524176039615767'>🪙</tg-emoji>" for i, r in enumerate(top5)) or "  —"
+        top_txt = "\n".join(f"  {i+1}. {he(r[0])} — ур.{r[1]} · {r[2]}{_E_COIN}" for i, r in enumerate(top5)) or "  —"
         await q.answer()
         try:
             await q.message.edit_text(
                 f"📊 <b>Статистика — {he(chat_title)}</b>\n\n"
                 f"👥 Всего игроков: <b>{total_m}</b>\n"
                 f"🟢 Активных 24ч: <b>{act24}</b> · 7д: <b>{act7d}</b>\n"
-                f"💸 Потрачено всего: <b>{total_spent:,}<tg-emoji emoji-id='5341524176039615767'>🪙</tg-emoji></b>\n\n"
+                f"💸 Потрачено всего: <b>{total_spent:,}{_E_COIN}</b>\n\n"
                 f"<b>🏆 Топ-5:</b>\n{top_txt}",
                 parse_mode=ParseMode.HTML,
                 reply_markup=InlineKeyboardMarkup([[btn("◀️ Назад", callback_data=f"ca_main_{cid}")]]),
@@ -23455,7 +23479,7 @@ async def _do_rollback(bot_uid: int, hours: int, dry_run: bool, bot) -> str:
                         aid,
                         f"🔨 <b>Откат ботовода завершён</b>\n"
                         f"Ботовод: <code>{bot_uid}</code>\n"
-                        f"Удалено: {total_coins_removed}<tg-emoji emoji-id='5341524176039615767'>🪙</tg-emoji>  {total_skins_removed} скинов\n"
+                        f"Удалено: {total_coins_removed}{_E_COIN}  {total_skins_removed} скинов\n"
                         f"Затронуто: {total_victims_affected} игроков",
                         parse_mode=ParseMode.HTML,
                     )
@@ -23508,7 +23532,7 @@ async def cmd_adminrollback(update: Update, ctx: ContextTypes.DEFAULT_TYPE):
         f"⚠️ <b>Подтверди откат</b>\n\n"
         f"Ботовод: <b>{_html.escape(bname)}</b> <code>{bot_uid}</code>\n"
         f"Период: {hours} ч\n"
-        f"Жертв: ~{victim_count}  Монет в раздаче: {total_coins}<tg-emoji emoji-id='5341524176039615767'>🪙</tg-emoji>\n\n"
+        f"Жертв: ~{victim_count}  Монет в раздаче: {total_coins}{_E_COIN}\n\n"
         f"Это удалит скины из гачи и заберёт монеты у всех получателей.\n"
         f"<b>Необратимо.</b> Сначала сделай /backup!",
         parse_mode=ParseMode.HTML, reply_markup=kb,
@@ -24053,7 +24077,7 @@ async def cmd_start(update: Update, ctx: ContextTypes.DEFAULT_TYPE):
                 ])
                 await group_reply(
                     update,
-                    f"<tg-emoji emoji-id='5341735149128159966'>🔥</tg-emoji> <b>Ивент «{SACRIFICE_EVENT_NAME}»</b>\n\n"
+                    f"{_E_FIRE} <b>Ивент «{SACRIFICE_EVENT_NAME}»</b>\n\n"
                     f"💰 Банк: <b>{ev['total_bank']}{coin_emoji()}</b>\n"
                     f"⏳ Заканчивается: <b>{int((ev['end_time'] - time.time()) // 3600)}ч "
                     f"{int(((ev['end_time'] - time.time()) % 3600) // 60)}м</b>\n\n"
@@ -24388,9 +24412,9 @@ async def cmd_topsponsors(update: Update, ctx: ContextTypes.DEFAULT_TYPE):
             tag = f"@{r['username']}" if r["username"] else f"id{r['user_id']}"
             lines.append(
                 f"{medals[i]} <b>{he(r['first_name'])}</b> ({tag})\n"
-                f"   💝 {r['chat_sponsor_coins']:,}<tg-emoji emoji-id='5341524176039615767'>🪙</tg-emoji>  ·  ур.{r['level']}"
+                f"   💝 {r['chat_sponsor_coins']:,}{_E_COIN}  ·  ур.{r['level']}"
             )
-        lines.append(f"\n<i>Твоя позиция: #{my_pos} · Ты задонатил: {my_donated:,}<tg-emoji emoji-id='5341524176039615767'>🪙</tg-emoji></i>")
+        lines.append(f"\n<i>Твоя позиция: #{my_pos} · Ты задонатил: {my_donated:,}{_E_COIN}</i>")
         text = "\n".join(lines)
         kb = InlineKeyboardMarkup([
             [InlineKeyboardButton("🔄 Обновить", callback_data="topsponsors_refresh")]
@@ -24626,7 +24650,7 @@ async def cmd_heal(update: Update, ctx: ContextTypes.DEFAULT_TYPE):
     await legend_track(user.id, "heals", bot=ctx.bot)
     f["total_heals"] = f.get("total_heals", 0) + 1
     await db_save(f)
-    result = f"💊 <b>Вылечена!</b> <i>Чувствует себя лучше <tg-emoji emoji-id='5341676144867449701'>❤️</tg-emoji></i>\n<tg-emoji emoji-id='5341676144867449701'>❤️</tg-emoji>+40  -{cost}{coin_emoji()}"
+    result = f"💊 <b>Вылечена!</b> <i>Чувствует себя лучше {_E_HEART}</i>\n{_E_HEART}+40  -{cost}{coin_emoji()}"
     for lvl, skin in rewards:
         result += f"\n🎉 <b>Уровень {lvl}!</b> Облик: {display_skin(skin)}"
     await update.message.reply_text(
@@ -24682,7 +24706,7 @@ async def cmd_revive(update: Update, ctx: ContextTypes.DEFAULT_TYPE):  # plog in
         await update.message.reply_text(
             f"🤢 <b>{fname(f)} объелась и лопнула!</b>\n\n"
             f"Накоплено сытости: <b>{f.get('overfeed_total', 0)} / {OVERFEED_DEATH_THRESHOLD}</b>\n\n"
-            f"• Воскресить за <b>{cost}🪙</b> — желудок промывается, счётчик сбрасывается\n"
+            f"• Воскресить за <b>{cost}{_E_COIN}</b> — желудок промывается, счётчик сбрасывается\n"
             f"  {coins_txt}",
             parse_mode=ParseMode.HTML,
             reply_markup=InlineKeyboardMarkup([
@@ -25103,8 +25127,8 @@ async def _casino_auto_loop(
                     message_id=message_id,
                     text=(
                         f"❌ <b>Авто-режим остановлен</b>\n\n"
-                        f"Недостаточно монет для ставки {stake}<tg-emoji emoji-id='5341524176039615767'>🪙</tg-emoji>\n"
-                        f"💼 Баланс: <b>{balance_now}</b><tg-emoji emoji-id='5341524176039615767'>🪙</tg-emoji>"
+                        f"Недостаточно монет для ставки {stake}{_E_COIN}\n"
+                        f"💼 Баланс: <b>{balance_now}</b>{_E_COIN}"
                     ),
                     parse_mode=ParseMode.HTML,
                     reply_markup=InlineKeyboardMarkup([[
@@ -25135,7 +25159,7 @@ async def _casino_auto_loop(
                 text=(
                     f"🔁 <b>Авто-режим — раунд {count}</b>\n\n"
                     f"{g['emoji']} <i>Бросаем...</i>\n"
-                    f"💼 Баланс: <b>{f['coins']}</b><tg-emoji emoji-id='5341524176039615767'>🪙</tg-emoji>"
+                    f"💼 Баланс: <b>{f['coins']}</b>{_E_COIN}"
                 ),
                 parse_mode=ParseMode.HTML,
                 reply_markup=InlineKeyboardMarkup([[
@@ -25630,7 +25654,7 @@ async def cmd_duel(update: Update, ctx: ContextTypes.DEFAULT_TYPE):
         return
     if not target["alive"]:
         t_display = f"@{target['username']}" if target.get("username") else he(target.get("first_name", ""))
-        await update.message.reply_text(f"<tg-emoji emoji-id='5341573078537248907'>💀</tg-emoji> Лягушка {t_display} умерла!")
+        await update.message.reply_text(f"{_E_SKULL} Лягушка {t_display} умерла!")
         return
     if f["coins"] < stake:
         await update.message.reply_text(
@@ -25839,7 +25863,7 @@ async def cmd_feed(update: Update, ctx: ContextTypes.DEFAULT_TYPE):
     await send_feed_sticker(ctx.bot, update.effective_chat.id)
     try:
         await anim_msg.edit_text(
-            f"<tg-emoji emoji-id='5341326049198251117'>🍖</tg-emoji> <b>Ням-ням!</b> <i>Лягушка {_feed_tname_esc} ест...</i> 👅",
+            f"{_E_FOOD} <b>Ням-ням!</b> <i>Лягушка {_feed_tname_esc} ест...</i> 👅",
             parse_mode=ParseMode.HTML,
         )
     except Exception:
@@ -25892,7 +25916,7 @@ async def cmd_feed(update: Update, ctx: ContextTypes.DEFAULT_TYPE):
         update,
         f"✅ <b>Лягушка {target_mention} покормлена!</b>\n\n"
         f"<i>{_social_lore}</i>\n\n"
-        f"<tg-emoji emoji-id='5341326049198251117'>🍖</tg-emoji> Сытость: +{hunger_gain}% (теперь {target['hunger']}%)\n"
+        f"{_E_FOOD} Сытость: +{hunger_gain}% (теперь {target['hunger']}%)\n"
         f"{_reward_line}",
         parse_mode=ParseMode.HTML,
     )
@@ -25940,7 +25964,7 @@ async def cmd_feed(update: Update, ctx: ContextTypes.DEFAULT_TYPE):
                 target["user_id"],
                 f"🍎 <b>Твою лягушку покормил {sender_mention}!</b>\n\n"
                 f"<tg-emoji emoji-id='5341367834935075028'>🐸</tg-emoji> <b>{target_name_esc}</b>\n"
-                f"<tg-emoji emoji-id='5341326049198251117'>🍖</tg-emoji> Твоей лягушке начислено: <b>+{hunger_gain}% сытости</b> (теперь {target['hunger']}%)\n\n"
+                f"{_E_FOOD} Твоей лягушке начислено: <b>+{hunger_gain}% сытости</b> (теперь {target['hunger']}%)\n\n"
                 f"<i>Квак! Было вкусно! <tg-emoji emoji-id='5341367834935075028'>🐸</tg-emoji></i>",
                 parse_mode=ParseMode.HTML,
                 reply_markup=_feed_notify_kb,
@@ -26560,7 +26584,7 @@ async def cmd_buy(update: Update, ctx: ContextTypes.DEFAULT_TYPE):
 
     # ── Текст ─────────────────────────────────────────────────────────
     rate_note  = f"  ✨ Буст ×{stars_mult_b:.1f}" if stars_mult_b > 1.0 else ""
-    ticket_str = f"  ·  🎟 {ticket_count} билетов" if ticket_count else ""
+    ticket_str = f" · {_E_COSMETIC}{ui_plural(ticket_count, 'билет', 'билета', 'билетов')}" if ticket_count else ""
     sub_hint   = "" if sub_active else (
         "\n🧑‍🍼 <b>Няня</b> — автоуход, 200⭐/мес"
         "\n🏪 <b>Трудяга</b> — уход + 400–700🪙/день, 800⭐/мес"
@@ -26575,9 +26599,9 @@ async def cmd_buy(update: Update, ctx: ContextTypes.DEFAULT_TYPE):
 
     kb = InlineKeyboardMarkup(
         sub_rows
-        + [[InlineKeyboardButton("─── КваКоины ───────────────", callback_data="ignore")]]
+        + [[InlineKeyboardButton("🪙 КваКоины", callback_data="ignore")]]
         + coin_rows
-        + [[InlineKeyboardButton("─── Гача-билеты ────────────", callback_data="ignore")]]
+        + [[InlineKeyboardButton("🎫 Гача-билеты", callback_data="ignore")]]
         + ticket_rows
     )
     await update.message.reply_text(text, parse_mode=ParseMode.HTML, reply_markup=kb)
@@ -27836,7 +27860,7 @@ async def cmd_givecauldron(update: Update, ctx: ContextTypes.DEFAULT_TYPE):
 
     await update.message.reply_text(
         f"✅ Стая <b>{he(staya['name'])}</b> (id={staya_id})\n"
-        f"Котёл: {old_cauldron} → <b>{new_cauldron}🪙</b>{lvl_str}",
+        f"Котёл: {old_cauldron} → <b>{new_cauldron}{_E_COIN}</b>{lvl_str}",
         parse_mode=ParseMode.HTML,
     )
 
@@ -29036,7 +29060,7 @@ async def cmd_chatlogs(update: Update, ctx: ContextTypes.DEFAULT_TYPE):
     lines = [f"📋 <b>Последние {len(rows)} действий в чате</b>\n"]
     for username, action, amount, ts in rows:
         dt = datetime.fromtimestamp(ts, timezone.utc).strftime("%d.%m %H:%M")
-        amt_str = f" +{amount}<tg-emoji emoji-id='5341524176039615767'>🪙</tg-emoji>" if amount else ""
+        amt_str = f" +{amount}{_E_COIN}" if amount else ""
         lines.append(f"<i>{dt}</i> · {he(username or '?')} — {he(action)}{amt_str}")
     await msg.reply_text("\n".join(lines), parse_mode=ParseMode.HTML)
 
@@ -29084,14 +29108,14 @@ async def cmd_chatstats(update: Update, ctx: ContextTypes.DEFAULT_TYPE):
             total_spent = (await c.fetchone())[0] or 0
 
     top_txt = "\n".join(
-        f"  {i+1}. {he(r[1] or r[0])} — ур.{r[2]} · {r[3]}<tg-emoji emoji-id='5341524176039615767'>🪙</tg-emoji>"
+        f"  {i+1}. {he(r[1] or r[0])} — ур.{r[2]} · {r[3]}{_E_COIN}"
         for i, r in enumerate(top5)
     ) or "  —"
     reply = await msg.reply_text(
         f"📊 <b>Статистика — {he(chat_title)}</b>\n\n"
         f"👥 Всего игроков: <b>{total_m}</b>\n"
         f"🟢 Активных 24ч: <b>{act24}</b> · 7д: <b>{act7d}</b>\n"
-        f"💸 Потрачено всего: <b>{total_spent:,}<tg-emoji emoji-id='5341524176039615767'>🪙</tg-emoji></b>\n\n"
+        f"💸 Потрачено всего: <b>{total_spent:,}{_E_COIN}</b>\n\n"
         f"<b>🏆 Топ-5:</b>\n{top_txt}",
         parse_mode=ParseMode.HTML,
     )
@@ -29460,7 +29484,7 @@ async def cmd_donate(update: Update, ctx: ContextTypes.DEFAULT_TYPE):
         s = await get_chat_settings(gid)
         fund = s.get("local_fund", 0)
         threshold = s.get("auto_giveaway_threshold", 0)
-        threshold_str = f"\n🎯 До авто-розыгрыша: <b>{threshold:,}<tg-emoji emoji-id='5341524176039615767'>🪙</tg-emoji></b>" if threshold > 0 else ""
+        threshold_str = f"\n🎯 До авто-розыгрыша: <b>{threshold:,}{_E_COIN}</b>" if threshold > 0 else ""
         msg = await update.message.reply_text(
             f"💰 <b>Банк чата</b>\n\n"
             f"Текущий фонд: <b>{fund:,}{coin_emoji()}</b>{threshold_str}\n\n"
@@ -29517,7 +29541,7 @@ async def cmd_donate(update: Update, ctx: ContextTypes.DEFAULT_TYPE):
 
     threshold = s.get("auto_giveaway_threshold", 0)
     threshold_str = (
-        f"\n🎯 До авто-розыгрыша: <b>{max(0, threshold - new_fund):,}<tg-emoji emoji-id='5341524176039615767'>🪙</tg-emoji></b>"
+        f"\n🎯 До авто-розыгрыша: <b>{max(0, threshold - new_fund):,}{_E_COIN}</b>"
         if threshold > 0 else ""
     )
 
@@ -29599,8 +29623,8 @@ async def cmd_mystats(update: Update, ctx: ContextTypes.DEFAULT_TYPE):
     days = int((time.time() - f["born_at"]) / 86400)
     text = (
         f"<tg-emoji emoji-id='5341367834935075028'>🐸</tg-emoji> <b>{fname(f)}</b> — ур.{f['level']}  {R_ICON[s['rarity']]} {pemoji(f['skin'])}\n"
-        f"<tg-emoji emoji-id='5341676144867449701'>❤️</tg-emoji> {f['health']}%  <tg-emoji emoji-id='5341326049198251117'>🍖</tg-emoji> {f['hunger']}%  😄 {f['happiness']}%\n"
-        f"{f['coins']}{coin_emoji()}  <tg-emoji emoji-id='5341735149128159966'>🔥</tg-emoji> {f['streak']}д  📅 {days}дн\n"
+        f"{_E_HEART} {f['health']}%  {_E_FOOD} {f['hunger']}%  😄 {f['happiness']}%\n"
+        f"{f['coins']}{coin_emoji()}  {_E_FIRE} {f['streak']}д  📅 {days}дн\n"
         f"🗂 Коллекция: {len(coll)}/50  ⚔️ Побед в дуэлях: {f.get('total_duel_wins', 0)}\n"
         f"{M_ICON[m]} <i>«{random.choice(M_SAY[m])}»</i>"
     )
@@ -31206,7 +31230,7 @@ async def cmd_contest_end(update: Update, ctx: ContextTypes.DEFAULT_TYPE):
         f"Название: {_html.escape(contest['title'])}\n"
         f"🤝 Реферальных билетов: <b>{valid_ref_tickets}</b>\n"
         f"🎴 Скин-билетов: <b>{valid_skin_tickets}</b>\n"
-        f"<tg-emoji emoji-id='5341688243790323773'>🎟</tg-emoji> Итого: <b>{valid_ref_tickets + valid_skin_tickets}</b>\n"
+        f"{_E_TICKET} Итого: <b>{valid_ref_tickets + valid_skin_tickets}</b>\n"
         f"Участников-рефереров: <b>{unique_referrers}</b>\n\n"
         f"Выбрать победителей: /contest_winners N",
         parse_mode=ParseMode.HTML,
@@ -31822,10 +31846,10 @@ async def cmd_mymenu(update: Update, ctx: ContextTypes.DEFAULT_TYPE):
         + "\n\n"
         f"🍖 Голод: <code>{bar(f['hunger'])}</code> {f['hunger']}%\n"
         f"😄 Радость: <code>{bar(f['happiness'])}</code> {f['happiness']}%\n"
-        f"<tg-emoji emoji-id='5341676144867449701'>❤️</tg-emoji> Здоровье: <code>{bar(f['health'])}</code> {f['health']}%\n"
+        f"{_E_HEART} Здоровье: <code>{bar(f['health'])}</code> {f['health']}%\n"
         f"🛁 Чистота: <code>{bar(clean)}</code> {clean}%\n"
-        f"<tg-emoji emoji-id='5343666557266467138'>⚡</tg-emoji> Энергия: <code>{bar(energy)}</code> {energy}%\n\n"
-        f"<tg-emoji emoji-id='5341787058102901072'>⭐️</tg-emoji> Ур.{f['level']}  ·  {f['xp']}/{xp_need(f['level'])} XP\n"
+        f"{_E_BOLT} Энергия: <code>{bar(energy)}</code> {energy}%\n\n"
+        f"{_E_LEVEL} Ур.{f['level']}  ·  {f['xp']}/{xp_need(f['level'])} XP\n"
         f"🗂 Обликов: {len(coll)}/50\n\n"
         f"КД:  {feed_cd}🍎  {play_cd}🎮  {wash_cd}🛁  {sleep_cd}😴  {heal_cd}💊  {daily_cd}📅\n\n"
         f"<i>Для полного меню напиши боту: /frog</i>"
@@ -32365,7 +32389,7 @@ async def on_callback(update: Update, ctx: ContextTypes.DEFAULT_TYPE):
                 uid,
                 f"💔 <b>Лягушка {frog_name} умерла!</b>\n\n"
                 f"Что хочешь сделать?\n\n"
-                f"• <b>Воскресить</b> — стоит 100<tg-emoji emoji-id='5341524176039615767'>🪙</tg-emoji>, лягушка ожьёт с 50% всех показателей\n"
+                f"• <b>Воскресить</b> — стоит 100{_E_COIN}, лягушка ожьёт с 50% всех показателей\n"
                 f"• <b>Испытание</b> — бесплатно, выполни 3 задания, чтобы воскресить лягушку "
                 f"с <b>полными</b> показателями и получить бонусные монеты и XP",
                 parse_mode=ParseMode.HTML,
@@ -32381,7 +32405,7 @@ async def on_callback(update: Update, ctx: ContextTypes.DEFAULT_TYPE):
             await ctx.bot.send_message(
                 uid,
                 f"⚠️ <b>Лягушка {frog_name} в опасности!</b>\n\n"
-                f"<tg-emoji emoji-id='5341676144867449701'>❤️</tg-emoji> Здоровье: <b>{f['health']}%</b> — срочно покорми и вылечи!\n"
+                f"{_E_HEART} Здоровье: <b>{f['health']}%</b> — срочно покорми и вылечи!\n"
                 f"Если здоровье упадёт до 0 — лягушка умрёт.",
                 parse_mode=ParseMode.HTML,
             )
@@ -32602,7 +32626,7 @@ async def on_callback(update: Update, ctx: ContextTypes.DEFAULT_TYPE):
         lines = ["⚔️ <b>Испытание началось!</b>\n\n"
                  "Выполни все задания, чтобы воскресить лягушку с полными показателями и получить бонус:\n"]
         for i, tq in enumerate(trial_quests, 1):
-            lines.append(f"{i}. {tq['desc']}  (+{tq['coins']}<tg-emoji emoji-id='5341524176039615767'>🪙</tg-emoji>, +{tq['xp']} XP)")
+            lines.append(f"{i}. {tq['desc']}  (+{tq['coins']}{_E_COIN}, +{tq['xp']} XP)")
         lines.append("\n<i>⛔ Во время испытания доступны только: казино, лотерея, дуэли, батлы, игры, кормление чужих.</i>")
         try:
             await q.message.edit_text(
@@ -32743,7 +32767,7 @@ async def on_callback(update: Update, ctx: ContextTypes.DEFAULT_TYPE):
                 await q.message.edit_text(
                     f"🤢 <b>{fname(f)}</b> съела слишком много и лопнула!\n\n"
                     f"Накоплено сытости: <b>{f['overfeed_total']} / {OVERFEED_DEATH_THRESHOLD}</b>\n"
-                    f"<tg-emoji emoji-id='5341573078537248907'>💀</tg-emoji> Воскресить за <b>{OVERFEED_REVIVE_COST}<tg-emoji emoji-id='5341524176039615767'>🪙</tg-emoji></b> (используй /revive)",
+                    f"{_E_SKULL} Воскресить за <b>{OVERFEED_REVIVE_COST}{_E_COIN}</b> (используй /revive)",
                     parse_mode=ParseMode.HTML,
                     reply_markup=InlineKeyboardMarkup([[btn(f"🤢 Воскресить ({OVERFEED_REVIVE_COST}🪙)", callback_data="revive_confirm", style="success")]]),
                 )
@@ -32821,7 +32845,7 @@ async def on_callback(update: Update, ctx: ContextTypes.DEFAULT_TYPE):
                 await q.message.edit_text(
                     f"🤢 <b>{fname(f)}</b> объелась и лопнула!\n\n"
                     f"Накоплено сытости: <b>{f['overfeed_total']} / {OVERFEED_DEATH_THRESHOLD}</b>\n"
-                    f"<tg-emoji emoji-id='5341573078537248907'>💀</tg-emoji> Воскресить за <b>{OVERFEED_REVIVE_COST}<tg-emoji emoji-id='5341524176039615767'>🪙</tg-emoji></b> (или /revive)",
+                    f"{_E_SKULL} Воскресить за <b>{OVERFEED_REVIVE_COST}{_E_COIN}</b> (или /revive)",
                     parse_mode=ParseMode.HTML,
                     reply_markup=InlineKeyboardMarkup([[btn(f"🤢 Воскресить ({OVERFEED_REVIVE_COST}🪙)", callback_data="revive_confirm", style="success")]]),
                 )
@@ -32835,7 +32859,7 @@ async def on_callback(update: Update, ctx: ContextTypes.DEFAULT_TYPE):
         await ach_check(f, ctx.bot)
         _feed_lore = _get_feed_text(f)
         _feed_reaction = _frog_reaction("feed")
-        result = f"<i>{_feed_lore}</i>\n\n{food['emoji']} <b>{he(food['name'])}</b> съедена!\n<tg-emoji emoji-id='5341326049198251117'>🍖</tg-emoji>+{food['hunger']} 😄+{food['happy']} <tg-emoji emoji-id='5341447412089133029'>⭐</tg-emoji>+{food['xp']}\n\n🐸 <i>{_feed_reaction}</i>"
+        result = f"<i>{_feed_lore}</i>\n\n{food['emoji']} <b>{he(food['name'])}</b> съедена!\n{_E_FOOD}+{food['hunger']} 😄+{food['happy']} {_E_XP}+{food['xp']}\n\n🐸 <i>{_feed_reaction}</i>"
         for lvl, skin in rewards:
             result += f"\n🎉 <b>Уровень {lvl}!</b> Открыт облик: {display_skin(skin)}"
         # Возвращаем в меню кормления, а не в главное меню
@@ -32896,7 +32920,7 @@ async def on_callback(update: Update, ctx: ContextTypes.DEFAULT_TYPE):
                 await q.message.edit_text(
                     f"🤢 <b>{fname(f)}</b> съела всё подряд и лопнула от обжорства!\n\n"
                     f"Накоплено сытости: <b>{f['overfeed_total']} / {OVERFEED_DEATH_THRESHOLD}</b>\n"
-                    f"<tg-emoji emoji-id='5341573078537248907'>💀</tg-emoji> Воскресить за <b>{OVERFEED_REVIVE_COST}<tg-emoji emoji-id='5341524176039615767'>🪙</tg-emoji></b> (или /revive)",
+                    f"{_E_SKULL} Воскресить за <b>{OVERFEED_REVIVE_COST}{_E_COIN}</b> (или /revive)",
                     parse_mode=ParseMode.HTML,
                     reply_markup=InlineKeyboardMarkup([[btn(f"🤢 Воскресить ({OVERFEED_REVIVE_COST}🪙)", callback_data="revive_confirm", style="success")]]),
                 )
@@ -32911,7 +32935,7 @@ async def on_callback(update: Update, ctx: ContextTypes.DEFAULT_TYPE):
         await check_referral_stages(f, ctx.bot)
         result_all = (
             f"🍽 <b>Скормлено всё!</b> ×{total_fed} единиц\n\n"
-            f"<tg-emoji emoji-id='5341326049198251117'>🍖</tg-emoji> +{total_hunger}  😄 +{total_happy}  <tg-emoji emoji-id='5341676144867449701'>❤️</tg-emoji> +{total_health}  <tg-emoji emoji-id='5341447412089133029'>⭐</tg-emoji> +{total_xp}  {coin_emoji()} +{total_fed*2}"
+            f"{_E_FOOD} +{total_hunger}  😄 +{total_happy}  {_E_HEART} +{total_health}  {_E_XP} +{total_xp}  {coin_emoji()} +{total_fed*2}"
         )
         for lvl, skin in rewards:
             result_all += (
@@ -33057,7 +33081,7 @@ async def on_callback(update: Update, ctx: ContextTypes.DEFAULT_TYPE):
         mult_str = f"  ✨×{mult:.2f}" if mult > 1.0 else ""
         _wash_lore = random.choice(WASH_TEXTS).format(name=fname(f))
         _wash_reaction = _frog_reaction("wash")
-        result = f"🛁 <b>Лягушка чистенькая!</b>\n\n<i>{_wash_lore}</i>\n\n🛁100%  😄+20  <tg-emoji emoji-id='5341676144867449701'>❤️</tg-emoji>+10  <tg-emoji emoji-id='5341447412089133029'>⭐</tg-emoji>+{int(15*mult)}{mult_str}\n\n🐸 <i>{_wash_reaction}</i>"
+        result = f"🛁 <b>Лягушка чистенькая!</b>\n\n<i>{_wash_lore}</i>\n\n🛁100%  😄+20  {_E_HEART}+10  {_E_XP}+{int(15*mult)}{mult_str}\n\n🐸 <i>{_wash_reaction}</i>"
         for lvl, skin in rewards:
             result += f"\n🎉 <b>Уровень {lvl}!</b> Облик: {display_skin(skin)}"
         try:
@@ -33114,7 +33138,7 @@ async def on_callback(update: Update, ctx: ContextTypes.DEFAULT_TYPE):
         _sleep_lore = random.choice(SLEEP_TEXTS).format(name=fname(f))
         _dream = random.choice(DREAM_POOL).format(name=fname(f))
         _sleep_reaction = _frog_reaction("sleep")
-        result = f"😴 <b>Лягушка выспалась!</b>\n\n<i>{_sleep_lore}</i>\n\n💤 <b>Приснилось:</b> {_dream}\n\n<tg-emoji emoji-id='5343666557266467138'>⚡</tg-emoji>+{gain}  <tg-emoji emoji-id='5341676144867449701'>❤️</tg-emoji>+15  😄+10  <tg-emoji emoji-id='5341447412089133029'>⭐</tg-emoji>+{int(10*mult)}{mult_str}\n\n🐸 <i>{_sleep_reaction}</i>"
+        result = f"😴 <b>Лягушка выспалась!</b>\n\n<i>{_sleep_lore}</i>\n\n💤 <b>Приснилось:</b> {_dream}\n\n{_E_BOLT}+{gain}  {_E_HEART}+15  😄+10  {_E_XP}+{int(10*mult)}{mult_str}\n\n🐸 <i>{_sleep_reaction}</i>"
         for lvl, skin in rewards:
             result += f"\n🎉 <b>Уровень {lvl}!</b> Облик: {display_skin(skin)}"
         try:
@@ -33168,7 +33192,7 @@ async def on_callback(update: Update, ctx: ContextTypes.DEFAULT_TYPE):
         f["total_heals"] = f.get("total_heals", 0) + 1
         mult_str = f"  ✨×{mult:.2f}" if mult > 1.0 else ""
         _heal_lore = random.choice(HEAL_TEXTS).format(name=fname(f))
-        result = f"💊 <b>Вылечена!</b>\n\n<i>{_heal_lore}</i>\n\n<tg-emoji emoji-id='5341676144867449701'>❤️</tg-emoji>+40  -{cost}{coin_emoji()}  <tg-emoji emoji-id='5341447412089133029'>⭐</tg-emoji>+{int(5*mult)}{mult_str}"
+        result = f"💊 <b>Вылечена!</b>\n\n<i>{_heal_lore}</i>\n\n{_E_HEART}+40  -{cost}{coin_emoji()}  {_E_XP}+{int(5*mult)}{mult_str}"
         for lvl, skin in rewards:
             result += f"\n🎉 <b>Уровень {lvl}!</b> Облик: {display_skin(skin)}"
         try:
@@ -33270,7 +33294,7 @@ async def on_callback(update: Update, ctx: ContextTypes.DEFAULT_TYPE):
                             _partner_id,
                             f"{icon} <b>Болотная Связь!</b>\n\n"
                             f"<b>{fname(f)}</b> и <b>{he(pname)}</b> — {new_streak} дней вместе!\n"
-                            f"Оба получают +{bond_reward}<tg-emoji emoji-id='5341524176039615767'>🪙</tg-emoji> 🌿",
+                            f"Оба получают +{bond_reward}{_E_COIN} 🌿",
                             parse_mode=ParseMode.HTML,
                         )
                         partner["coins"] = partner.get("coins", 0) + bond_reward
@@ -33322,14 +33346,14 @@ async def on_callback(update: Update, ctx: ContextTypes.DEFAULT_TYPE):
             kb_rows.append(
                 [
                     InlineKeyboardButton(
-                        f"🎟 Использовать билет (×{ticket_count})",
+                        f"🎫 Использовать билет (×{ticket_count})",
                         callback_data="gacha_use_ticket",
                     )
                 ]
             )
         else:
             kb_rows.append(
-                [btn("🎟 Купить билеты", callback_data="stars_menu", style="primary")]
+                [btn("🎫 Купить билеты", callback_data="stars_menu", style="primary")]
             )
         kb_rows.append([btn("❌ Отмена", callback_data="refresh", style="danger")])
         kb = InlineKeyboardMarkup(kb_rows)
@@ -33355,7 +33379,7 @@ async def on_callback(update: Update, ctx: ContextTypes.DEFAULT_TYPE):
                     ui_line(
                         f"крутка {ui_money(cost)}",
                         f"баланс {ui_money(f['coins'])}",
-                        f"билеты {_E_TICKET}{ticket_count}" if ticket_count else "",
+                        f"билеты {_E_COSMETIC}{ticket_count}" if ticket_count else "",
                     ),
                     chance_lines,
                     hint=not_enough,
@@ -33703,7 +33727,7 @@ async def on_callback(update: Update, ctx: ContextTypes.DEFAULT_TYPE):
             f"🎰 <b>Результат (билет)!</b>{new_tag}\n\n"
             f"{R_ICON[s['rarity']]} {display_skin(skin, use_st)}\n"
             f"Редкость: <b>{R_NAME[s['rarity']]}</b>\n"
-            f"🎟 Осталось билетов: {new_ticket_count}  ·  ⭐ +20 XP"
+            f"{_E_COSMETIC} Осталось билетов: {new_ticket_count} · {_E_XP} +20 XP"
         )
         for lvl, rskin in rewards:
             text += f"\n🎉 <b>Уровень {lvl}!</b> Облик: {display_skin(rskin, use_st)}"
@@ -33714,7 +33738,7 @@ async def on_callback(update: Update, ctx: ContextTypes.DEFAULT_TYPE):
             kb_rows.append(
                 [
                     InlineKeyboardButton(
-                        "🎟 Ещё (билет)", callback_data="gacha_use_ticket"
+                        "🎫 Ещё (билет)", callback_data="gacha_use_ticket"
                     )
                 ]
             )
@@ -34275,9 +34299,9 @@ async def on_callback(update: Update, ctx: ContextTypes.DEFAULT_TYPE):
                 f"🏪 <b>Лот #{lid}</b>\n\n"
                 f"{pemoji(lot_v['skin'])} <b>{lot_v['skin']}</b>\n"
                 f"Редкость: {R_NAME.get(s_v.get('rarity','common'), '?')}\n"
-                f"Цена: <b>{lot_v['price']}🪙</b>\n"
+                f"Цена: <b>{lot_v['price']}{_E_COIN}</b>\n"
                 f"Продавец: <b>{he(seller_name_v)}</b>\n\n"
-                f"У тебя: <b>{f['coins']}🪙</b>",
+                f"У тебя: <b>{f['coins']}{_E_COIN}</b>",
                 parse_mode=ParseMode.HTML,
                 reply_markup=InlineKeyboardMarkup(kb_v),
             )
@@ -34315,7 +34339,7 @@ async def on_callback(update: Update, ctx: ContextTypes.DEFAULT_TYPE):
                     lot_c["seller_id"],
                     f"🏪 <b>Твой облик куплен!</b>\n\n"
                     f"{pemoji(lot_c['skin'])} <b>{lot_c['skin']}</b>\n"
-                    f"Выручка: <b>+{seller_payout}🪙</b> (комиссия {commission_c}🪙)",
+                    f"Выручка: <b>+{seller_payout}{_E_COIN}</b> (комиссия {commission_c}{_E_COIN})",
                     parse_mode=ParseMode.HTML,
                 )
             except Exception:
@@ -34326,8 +34350,8 @@ async def on_callback(update: Update, ctx: ContextTypes.DEFAULT_TYPE):
             await q.message.edit_text(
                 f"✅ <b>Покупка совершена!</b>\n\n"
                 f"{pemoji(lot_c['skin'])} <b>{lot_c['skin']}</b> теперь твой!\n"
-                f"Потрачено: <b>{price_c}🪙</b>\n"
-                f"Баланс: <b>{f['coins']}🪙</b>",
+                f"Потрачено: <b>{price_c}{_E_COIN}</b>\n"
+                f"Баланс: <b>{f['coins']}{_E_COIN}</b>",
                 parse_mode=ParseMode.HTML,
                 reply_markup=InlineKeyboardMarkup([[
                     InlineKeyboardButton("🏪 На рынок", callback_data="market_main"),
@@ -34396,7 +34420,7 @@ async def on_callback(update: Update, ctx: ContextTypes.DEFAULT_TYPE):
                 f"💰 <b>Продажа: {pemoji(skin_sp)} {skin_sp}</b>\n\n"
                 f"Напиши цену в монетах (от 10 до 50 000).\n"
                 f"Комиссия 10% при продаже.\n\n"
-                f"Твой баланс: <b>{f['coins']}🪙</b>",
+                f"Твой баланс: <b>{f['coins']}{_E_COIN}</b>",
                 parse_mode=ParseMode.HTML,
                 reply_markup=InlineKeyboardMarkup([[
                     InlineKeyboardButton("❌ Отмена", callback_data="market_main"),
@@ -34632,10 +34656,10 @@ async def on_callback(update: Update, ctx: ContextTypes.DEFAULT_TYPE):
         try:
             await q.message.edit_text(
                 f"<tg-emoji emoji-id='5341367834935075028'>🐸</tg-emoji> <b>Подписки для {he(frog_name_ss)}</b>\n\n"
-                f"🧑‍🍼 <b>Болотная Няня</b> — 300<tg-emoji emoji-id='5341447412089133029'>⭐</tg-emoji>/мес\n"
+                f"🧑‍🍼 <b>Болотная Няня</b> — 300{_E_XP}/мес\n"
                 f"Тётя Жаба кормит, моет и укладывает спать <b>{he(frog_name_ss)}</b>.\n"
                 f"Параметры держатся на 85% — тебе всегда есть чем заняться.\n\n"
-                f"🏪 <b>Трудяга</b> — 800<tg-emoji emoji-id='5341447412089133029'>⭐</tg-emoji>/мес\n"
+                f"🏪 <b>Трудяга</b> — 800{_E_XP}/мес\n"
                 f"Всё то же + <b>{he(frog_name_ss)}</b> каждый вечер приносит <b>400–700 монет</b>\n"
                 f"с Болотного Рынка и рассказывает что там было 🌿\n\n"
                 "\n"
@@ -35866,10 +35890,10 @@ async def on_callback(update: Update, ctx: ContextTypes.DEFAULT_TYPE):
                 lbl_quick += " ✨"
             kb_rows.append([InlineKeyboardButton(lbl_quick, callback_data=f"buy_pkg_{i}")])
         kb_rows.append([InlineKeyboardButton("◀️ Назад", callback_data="refresh")])
-        boost_note = f"\n✨ <b>Золотая лягушка:</b> 1<tg-emoji emoji-id='5341447412089133029'>⭐</tg-emoji> = {int(5*stars_mult_quick)}<tg-emoji emoji-id='5341524176039615767'>🪙</tg-emoji>" if stars_mult_quick > 1.0 else ""
+        boost_note = f"\n✨ <b>Золотая лягушка:</b> 1{_E_XP} = {int(5*stars_mult_quick)}{_E_COIN}" if stars_mult_quick > 1.0 else ""
         try:
             await q.message.edit_text(
-                f"<tg-emoji emoji-id='5341447412089133029'>⭐</tg-emoji> <b>Пополнение КваКоинов</b>\n\nУ тебя: {f['coins']}{coin_emoji()}{boost_note}\n\nВыбери пакет:",
+                f"{_E_XP} <b>Пополнение КваКоинов</b>\n\nУ тебя: {f['coins']}{coin_emoji()}{boost_note}\n\nВыбери пакет:",
                 parse_mode=ParseMode.HTML,
                 reply_markup=InlineKeyboardMarkup(kb_rows),
             )
@@ -35909,7 +35933,7 @@ async def on_callback(update: Update, ctx: ContextTypes.DEFAULT_TYPE):
             try:
                 await q.message.edit_text(
                     f"📩 <b>Счёт отправлен!</b>\n\n"
-                    f"{coin_emoji()} {pkg['label']} за <tg-emoji emoji-id='5341447412089133029'>⭐</tg-emoji>{price_stars} Stars\n\n"
+                    f"{coin_emoji()} {pkg['label']} за {_E_XP}{price_stars} Stars\n\n"
                     f"<i>Проверь личные сообщения с ботом и нажми «Оплатить».</i>\n\n"
                     f"⚠️ Если сообщение не пришло — сначала напиши /start боту в личку.",
                     parse_mode=ParseMode.HTML,
@@ -36061,7 +36085,7 @@ async def on_callback(update: Update, ctx: ContextTypes.DEFAULT_TYPE):
                 "🍇 🍇 🍇 → <b>×4</b>\n"
                 "🍋 🍋 🍋 → <b>×3</b>\n"
                 "Два 7️⃣ → <b>×4</b> ✨\n\n"
-                f"💰 Джекпот-банк сейчас: <b>{jp:,}<tg-emoji emoji-id='5341524176039615767'>🪙</tg-emoji></b>"
+                f"💰 Джекпот-банк сейчас: <b>{jp:,}{_E_COIN}</b>"
             )
         else:
             extra = ""
@@ -36222,7 +36246,7 @@ async def on_callback(update: Update, ctx: ContextTypes.DEFAULT_TYPE):
             await q.message.edit_text(
                 f"🎯 <b>Режим желания</b>  ·  Ставка: <b>{wish_stake}{coin_emoji()}</b>\n\n"
                 f"Напиши сколько хочешь <b>получить</b> при победе (включая ставку).\n"
-                f"Например: <code>{wish_stake * 2}</code> → получишь {wish_stake * 2}<tg-emoji emoji-id='5341524176039615767'>🪙</tg-emoji>, прибыль +{wish_stake}<tg-emoji emoji-id='5341524176039615767'>🪙</tg-emoji>, шанс 50%\n"
+                f"Например: <code>{wish_stake * 2}</code> → получишь {wish_stake * 2}{_E_COIN}, прибыль +{wish_stake}{_E_COIN}, шанс 50%\n"
                 f"Чем больше сумма — тем меньше шанс. Честный шанс = ставка ÷ желаемая сумма.\n\n"
                 f"💼 Баланс: <b>{f['coins']}{coin_emoji()}</b>",
                 parse_mode=ParseMode.HTML,
@@ -36880,7 +36904,7 @@ async def on_callback(update: Update, ctx: ContextTypes.DEFAULT_TYPE):
         await q.answer("⏹ Авто-режим останавливается...", show_alert=False)
         try:
             await q.message.edit_text(
-                f"⏹ <b>Авто-режим остановлен.</b>\n💼 Баланс: {f['coins']}<tg-emoji emoji-id='5341524176039615767'>🪙</tg-emoji>",
+                f"⏹ <b>Авто-режим остановлен.</b>\n💼 Баланс: {f['coins']}{_E_COIN}",
                 parse_mode=ParseMode.HTML,
                 reply_markup=InlineKeyboardMarkup([[
                     InlineKeyboardButton("🎰 Казино", callback_data="casino_menu"),
@@ -37099,7 +37123,7 @@ async def on_callback(update: Update, ctx: ContextTypes.DEFAULT_TYPE):
                     try:
                         await q.message.edit_text(
                             f"<b>🎉 Правильно! Все {len(seq)} символа!</b>\n\n"
-                            f"💰 +{reward}🪙  ⭐ +30XP\n\n{status_text(f)}",
+                            f"💰 +{reward}{_E_COIN}  ⭐ +30XP\n\n{status_text(f)}",
                             parse_mode=ParseMode.HTML,
                             reply_markup=await main_kb_live(f),
                             link_preview_options=LinkPreviewOptions(),
@@ -37845,7 +37869,7 @@ async def on_callback(update: Update, ctx: ContextTypes.DEFAULT_TYPE):
             await q.message.edit_text(
                 f"❌ <b>Крестики-нолики — Соло</b>\n\n"
                 f"{side_hint}. {'Твой ход!' if player_mark == 'X' else 'Бот уже походил — твой ход!'}\n"
-                f"<i>Победа: +12<tg-emoji emoji-id='5341524176039615767'>🪙</tg-emoji> | Ничья: +5<tg-emoji emoji-id='5341524176039615767'>🪙</tg-emoji> | Поражение: 0<tg-emoji emoji-id='5341524176039615767'>🪙</tg-emoji></i>",
+                f"<i>Победа: +12{_E_COIN} | Ничья: +5{_E_COIN} | Поражение: 0{_E_COIN}</i>",
                 parse_mode=ParseMode.HTML,
                 reply_markup=InlineKeyboardMarkup(rows),
             )
@@ -38200,7 +38224,7 @@ async def on_callback(update: Update, ctx: ContextTypes.DEFAULT_TYPE):
         await q.answer((f"Вызов отменён, {stake_ttt}🪙 возвращены.")[:200], show_alert=True)
         try:
             await q.message.edit_text(
-                f"✅ Вызов отменён. +{stake_ttt}<tg-emoji emoji-id='5341524176039615767'>🪙</tg-emoji> возвращено.",
+                f"✅ Вызов отменён. +{stake_ttt}{_E_COIN} возвращено.",
                 parse_mode=ParseMode.HTML,
                 reply_markup=InlineKeyboardMarkup([[InlineKeyboardButton(t("btn_back_games", f), callback_data="menu_games")]]),
             )
@@ -38408,7 +38432,7 @@ async def on_callback(update: Update, ctx: ContextTypes.DEFAULT_TYPE):
         await q.answer((f"Вызов отменён, {stake_t5}🪙 возвращены.")[:200], show_alert=True)
         try:
             await q.message.edit_text(
-                f"✅ Вызов 5×5 отменён. +{stake_t5}<tg-emoji emoji-id='5341524176039615767'>🪙</tg-emoji> возвращено.",
+                f"✅ Вызов 5×5 отменён. +{stake_t5}{_E_COIN} возвращено.",
                 parse_mode=ParseMode.HTML,
                 reply_markup=InlineKeyboardMarkup([[InlineKeyboardButton(t("btn_back_games", f), callback_data="menu_games")]]),
             )
@@ -38475,7 +38499,7 @@ async def on_callback(update: Update, ctx: ContextTypes.DEFAULT_TYPE):
                 f"💣 <b>Сапёр!</b>\n\n"
                 f"Поле 5×5, {SAPPER_MINES} мин. Открывай клетки!\n"
                 f"🟩 — закрыто  ⬜ — 0 мин рядом  1️⃣–5️⃣ — число мин рядом\n\n"
-                f"Награда: <b>+1<tg-emoji emoji-id='5341524176039615767'>🪙</tg-emoji> за каждую безопасную клетку</b> (макс {total_safe}<tg-emoji emoji-id='5341524176039615767'>🪙</tg-emoji>)\n"
+                f"Награда: <b>+1{_E_COIN} за каждую безопасную клетку</b> (макс {total_safe}{_E_COIN})\n"
                 f"Попадёшь на мину — ничего не получишь.{cd_note}",
                 parse_mode=ParseMode.HTML,
                 reply_markup=InlineKeyboardMarkup(board_rows),
@@ -38542,7 +38566,7 @@ async def on_callback(update: Update, ctx: ContextTypes.DEFAULT_TYPE):
             del ctx.user_data[f"sapper_{uid}"]
             try:
                 await q.message.edit_text(
-                    f"💥 <b>БУМ! Мина!</b>\n\nТы открыл {len(gdata['revealed'])} клеток.\n<tg-emoji emoji-id='5341447412089133029'>⭐</tg-emoji> +5 XP за попытку",
+                    f"💥 <b>БУМ! Мина!</b>\n\nТы открыл {len(gdata['revealed'])} клеток.\n{_E_XP} +5 XP за попытку",
                     parse_mode=ParseMode.HTML,
                     reply_markup=InlineKeyboardMarkup(board_rows),
                 )
@@ -38567,9 +38591,9 @@ async def on_callback(update: Update, ctx: ContextTypes.DEFAULT_TYPE):
                 board_rows.append([InlineKeyboardButton(t("btn_play_again", f), callback_data="sapper_start"),
                                    InlineKeyboardButton("◀️ Назад", callback_data="menu_games")])
                 result_text = (
-                    f"🎉 <b>Поле разминировано!</b>\n\n+{prize}{coin_emoji()}  <tg-emoji emoji-id='5341447412089133029'>⭐</tg-emoji> +30 XP"
+                    f"🎉 <b>Поле разминировано!</b>\n\n+{prize}{coin_emoji()}  {_E_XP} +30 XP"
                     if not is_on_cd_s else
-                    f"🎉 <b>Поле разминировано!</b> (без награды — КД)\n<tg-emoji emoji-id='5341447412089133029'>⭐</tg-emoji> +30 XP"
+                    f"🎉 <b>Поле разминировано!</b> (без награды — КД)\n{_E_XP} +30 XP"
                 )
                 try:
                     await q.message.edit_text(result_text, parse_mode=ParseMode.HTML,
@@ -38586,7 +38610,7 @@ async def on_callback(update: Update, ctx: ContextTypes.DEFAULT_TYPE):
                 try:
                     await q.message.edit_text(
                         f"💣 <b>Сапёр</b> — открыто {opened}/{total_safe} клеток\n"
-                        f"Сейчас заработано: {partial_prize}<tg-emoji emoji-id='5341524176039615767'>🪙</tg-emoji> (если сдашься — получишь их){cd_note}",
+                        f"Сейчас заработано: {partial_prize}{_E_COIN} (если сдашься — получишь их){cd_note}",
                         parse_mode=ParseMode.HTML,
                         reply_markup=InlineKeyboardMarkup(board_rows),
                     )
@@ -38614,9 +38638,9 @@ async def on_callback(update: Update, ctx: ContextTypes.DEFAULT_TYPE):
         board_rows.append([InlineKeyboardButton(t("btn_play_again", f), callback_data="sapper_start"),
                            InlineKeyboardButton("◀️ Назад", callback_data="menu_games")])
         result_text = (
-            f"🏳 <b>Сдался!</b> Открыл {len(revealed_s)} клеток\n\n+{prize}{coin_emoji()}  <tg-emoji emoji-id='5341447412089133029'>⭐</tg-emoji> +10 XP"
+            f"🏳 <b>Сдался!</b> Открыл {len(revealed_s)} клеток\n\n+{prize}{coin_emoji()}  {_E_XP} +10 XP"
             if not is_on_cd_s else
-            f"🏳 <b>Сдался!</b> Открыл {len(revealed_s)} клеток (без награды — КД)\n<tg-emoji emoji-id='5341447412089133029'>⭐</tg-emoji> +10 XP"
+            f"🏳 <b>Сдался!</b> Открыл {len(revealed_s)} клеток (без награды — КД)\n{_E_XP} +10 XP"
         )
         try:
             await q.message.edit_text(result_text, parse_mode=ParseMode.HTML,
@@ -38886,7 +38910,7 @@ async def on_callback(update: Update, ctx: ContextTypes.DEFAULT_TYPE):
                     f"🎉 <b>Угадано!</b> Слово: <b>{word_h}</b>\n\n"
                     f"{pic}\n\n"
                     f"Ошибок: {errors}/6\n"
-                    f"+{prize}{coin_emoji()}  <tg-emoji emoji-id='5341447412089133029'>⭐</tg-emoji> +20 XP"
+                    f"+{prize}{coin_emoji()}  {_E_XP} +20 XP"
                 )
             # q.answer: для группового — notify всех, для соло — тост
             if gdata["mode"] == "group":
@@ -38918,9 +38942,9 @@ async def on_callback(update: Update, ctx: ContextTypes.DEFAULT_TYPE):
             await q.answer("💀 Повесили!", show_alert=False)
             try:
                 await q.message.edit_text(
-                    f"<tg-emoji emoji-id='5341573078537248907'>💀</tg-emoji> <b>Повесили!</b> Слово было: <b>{word_h}</b>\n\n"
+                    f"{_E_SKULL} <b>Повесили!</b> Слово было: <b>{word_h}</b>\n\n"
                     f"{pic}\n\n"
-                    f"<tg-emoji emoji-id='5341447412089133029'>⭐</tg-emoji> +5 XP за попытку",
+                    f"{_E_XP} +5 XP за попытку",
                     parse_mode=ParseMode.HTML,
                     reply_markup=InlineKeyboardMarkup([[InlineKeyboardButton("◀️ Назад", callback_data="menu_games")]]),
                 )
@@ -39493,7 +39517,7 @@ async def on_callback(update: Update, ctx: ContextTypes.DEFAULT_TYPE):
                 await quest_update(uid, "guess_win")
                 await ach_check(f, ctx.bot)
             result_msg = (
-                f"<b>🎉 Угадал! Число было {secret}!</b>\n💰 +15<tg-emoji emoji-id='5341524176039615767'>🪙</tg-emoji>  <tg-emoji emoji-id='5341447412089133029'>⭐</tg-emoji> +25XP\n\n{status_text(f)}"
+                f"<b>🎉 Угадал! Число было {secret}!</b>\n💰 +15{_E_COIN}  {_E_XP} +25XP\n\n{status_text(f)}"
                 if not is_on_cd_g else
                 f"<b>🎉 Угадал! Число было {secret}!</b> (без награды — КД)\n\n{status_text(f)}"
             )
@@ -40404,7 +40428,7 @@ async def on_callback(update: Update, ctx: ContextTypes.DEFAULT_TYPE):
                 f"🌿 <b>{he(my_name)}</b> приглашает тебя в стаю "
                 f"<b>«{he(staya['name'])}»</b> (ур.{staya['level']})!\n\n"
                 f"👥 {len(members)}/{staya.get('max_members') or STAYA_MAX_MEMBERS} участников\n"
-                f"<tg-emoji emoji-id='5341524176039615767'>🪙</tg-emoji> Котёл: {staya['cauldron']}<tg-emoji emoji-id='5341524176039615767'>🪙</tg-emoji>",
+                f"{_E_COIN} Котёл: {staya['cauldron']}{_E_COIN}",
                 parse_mode=ParseMode.HTML, reply_markup=kb,
             )
         except Exception: pass
@@ -40463,7 +40487,7 @@ async def on_callback(update: Update, ctx: ContextTypes.DEFAULT_TYPE):
                 await q.message.edit_text(
                     "🌿 <b>Болотные Стаи</b>\n\n"
                     "Вступи в стаю — вместе прокачивайте болото и получайте бонусы!\n\n"
-                    f"Создать стаю: <b>{STAYA_CREATE_COST}<tg-emoji emoji-id='5341524176039615767'>🪙</tg-emoji></b> · У тебя: <b>{f['coins']}<tg-emoji emoji-id='5341524176039615767'>🪙</tg-emoji></b>",
+                    f"Создать стаю: <b>{STAYA_CREATE_COST}{_E_COIN}</b> · У тебя: <b>{f['coins']}{_E_COIN}</b>",
                     parse_mode=ParseMode.HTML,
                     reply_markup=InlineKeyboardMarkup([
                         [InlineKeyboardButton(f"🌿 Создать стаю ({STAYA_CREATE_COST}🪙)", callback_data="staya_create_start")],
@@ -40848,7 +40872,7 @@ async def on_callback(update: Update, ctx: ContextTypes.DEFAULT_TYPE):
         try:
             await q.message.edit_text(
                 f"🎣 <b>Рыбалка с другом</b>\n\n"
-                f"Ставка: <b>{FISH_COST}🪙</b> с каждого.\n\n"
+                f"Ставка: <b>{FISH_COST}{_E_COIN}</b> с каждого.\n\n"
                 f"Возможные исходы:\n"
                 f"🐟 <b>35%</b> — совместный улов, каждый получает ставку + бонус\n"
                 f"🏆 <b>30%</b> — ты победил, берёшь обе ставки\n"
@@ -40987,7 +41011,7 @@ async def on_callback(update: Update, ctx: ContextTypes.DEFAULT_TYPE):
             sent_fish = await ctx.bot.send_message(
                 target_id,
                 f"🎣 <b>{he(my_name)}</b> зовёт на совместную рыбалку!\n\n"
-                f"Ставка: <b>{FISH_COST}<tg-emoji emoji-id='5341524176039615767'>🪙</tg-emoji></b> каждый.\n"
+                f"Ставка: <b>{FISH_COST}{_E_COIN}</b> каждый.\n"
                 f"Победитель забирает всё — или оба поймают что-то вместе!",
                 parse_mode=ParseMode.HTML, reply_markup=kb,
             )
@@ -41000,7 +41024,7 @@ async def on_callback(update: Update, ctx: ContextTypes.DEFAULT_TYPE):
             await q.message.edit_text(
                 f"🎣 <b>Приглашение отправлено!</b>\n\n"
                 f"Ждём ответа от <b>{he(tname)}</b>...\n"
-                f"Ставка: <b>{FISH_COST}🪙</b>",
+                f"Ставка: <b>{FISH_COST}{_E_COIN}</b>",
                 parse_mode=ParseMode.HTML,
                 reply_markup=InlineKeyboardMarkup([[
                     InlineKeyboardButton("❌ Отменить", callback_data=f"fish_cancel_{target_id}"),
@@ -41118,7 +41142,7 @@ async def on_callback(update: Update, ctx: ContextTypes.DEFAULT_TYPE):
         text = (
             f"💚 <b>Болотная Связь</b>\n\n"
             f"Партнёр: <b>{he(pname)}</b>\n"
-            f"<tg-emoji emoji-id='5341735149128159966'>🔥</tg-emoji> Стрик: <b>{streak} дней</b>{progress_line}\n\n"
+            f"{_E_FIRE} Стрик: <b>{streak} дней</b>{progress_line}\n\n"
             f"<b>Вехи:</b>\n{milestones_text}\n\n"
             f"<i>Заходи каждый день — стрик не прервётся!</i>"
         )
@@ -41228,7 +41252,7 @@ async def on_callback(update: Update, ctx: ContextTypes.DEFAULT_TYPE):
         try:
             await ctx.bot.send_message(
                 target_id,
-                f"🍎 <b>{fname(f)}</b> покормил твою лягушку!\n<i>{lore}</i>\n<tg-emoji emoji-id='5341326049198251117'>🍖</tg-emoji> +20",
+                f"🍎 <b>{fname(f)}</b> покормил твою лягушку!\n<i>{lore}</i>\n{_E_FOOD} +20",
                 parse_mode=ParseMode.HTML,
             )
         except Exception:
@@ -41856,7 +41880,7 @@ async def on_callback(update: Update, ctx: ContextTypes.DEFAULT_TYPE):
             try:
                 await ctx.bot.send_message(
                     feeder_id_tip,
-                    f"🪙 <b>{he(fname(f))}</b> оставил чаевые: <b>+{amount_tip}🪙</b>\n"
+                    f"{_E_COIN} <b>{he(fname(f))}</b> оставил чаевые: <b>+{amount_tip}{_E_COIN}</b>\n"
                     f"<i>Приятно быть полезным! 🐸</i>",
                     parse_mode=ParseMode.HTML,
                 )
@@ -41939,7 +41963,7 @@ async def on_callback(update: Update, ctx: ContextTypes.DEFAULT_TYPE):
                     frog_id,
                     f"💚 <b>Болотная Связь активирована!</b>\n\n"
                     f"Твой партнёр: <b>{he(pname)}</b>\n"
-                    f"Заходите каждый день — стрик будет расти <tg-emoji emoji-id='5341735149128159966'>🔥</tg-emoji>",
+                    f"Заходите каждый день — стрик будет расти {_E_FIRE}",
                     parse_mode=ParseMode.HTML,
                 )
             except Exception:
@@ -42351,7 +42375,7 @@ async def on_callback(update: Update, ctx: ContextTypes.DEFAULT_TYPE):
             await q.message.edit_text(
                 f"🌿 <b>Создание стаи</b>\n\n"
                 f"Напиши название стаи в чат (до 30 символов).\n"
-                f"Стоимость: <b>{STAYA_CREATE_COST}<tg-emoji emoji-id='5341524176039615767'>🪙</tg-emoji></b>\n\n"
+                f"Стоимость: <b>{STAYA_CREATE_COST}{_E_COIN}</b>\n\n"
                 f"<i>Отправь текст прямо сейчас 👇</i>",
                 parse_mode=ParseMode.HTML,
                 reply_markup=InlineKeyboardMarkup([[
@@ -42588,10 +42612,10 @@ async def on_callback(update: Update, ctx: ContextTypes.DEFAULT_TYPE):
 
         try:
             await q.message.edit_text(
-                f"🪙 <b>Котёл стаи «{he(staya['name'])}»</b>\n"
+                f"{_E_COIN} <b>Котёл стаи «{he(staya['name'])}»</b>\n"
                 f"Уровень болота: <b>{staya['level']}</b>{boost_line}\n"
                 f"{_prog_c}"
-                f"У тебя монет: <b>{f['coins']:,}🪙</b>\n"
+                f"У тебя монет: <b>{f['coins']:,}{_E_COIN}</b>\n"
                 f"{top_block}{recent_block}\n\n"
                 f"Сколько положить в котёл?",
                 parse_mode=ParseMode.HTML,
@@ -42609,7 +42633,7 @@ async def on_callback(update: Update, ctx: ContextTypes.DEFAULT_TYPE):
         ctx.user_data[f"staya_cauldron_input_{uid}"] = staya["id"]
         try:
             await q.message.edit_text(
-                f"✏️ Введи сумму для взноса в котёл (у тебя <b>{f['coins']}<tg-emoji emoji-id='5341524176039615767'>🪙</tg-emoji></b>):",
+                f"✏️ Введи сумму для взноса в котёл (у тебя <b>{f['coins']}{_E_COIN}</b>):",
                 parse_mode=ParseMode.HTML,
                 reply_markup=InlineKeyboardMarkup([[
                     InlineKeyboardButton("❌ Отмена", callback_data="staya_cauldron")
@@ -42651,10 +42675,10 @@ async def on_callback(update: Update, ctx: ContextTypes.DEFAULT_TYPE):
         ]
         try:
             await q.message.edit_text(
-                f"✅ <b>+{amount}🪙 в котёл!</b>\n\n"
-                f"💰 Котёл: <b>{cauldron_now}🪙</b>\n"
+                f"✅ <b>+{amount}{_E_COIN} в котёл!</b>\n\n"
+                f"💰 Котёл: <b>{cauldron_now}{_E_COIN}</b>\n"
                 f"{need_line_upd}"
-                f"У тебя осталось: <b>{f['coins']}🪙</b>\n\nДобавить ещё?",
+                f"У тебя осталось: <b>{f['coins']}{_E_COIN}</b>\n\nДобавить ещё?",
                 parse_mode=ParseMode.HTML,
                 reply_markup=InlineKeyboardMarkup(rows_upd),
             )
@@ -42851,7 +42875,7 @@ async def on_callback(update: Update, ctx: ContextTypes.DEFAULT_TYPE):
             f"🌿 <b>Стая «{he(staya['name'])}» объявляет набор!</b>\n\n"
             f"🏔️ Уровень болота: {staya['level']}\n"
             f"👥 {len(members_rec)}/{staya.get('max_members') or STAYA_MAX_MEMBERS} участников\n"
-            f"<tg-emoji emoji-id='5341524176039615767'>🪙</tg-emoji> Котёл: {staya['cauldron']}<tg-emoji emoji-id='5341524176039615767'>🪙</tg-emoji>\n\n"
+            f"{_E_COIN} Котёл: {staya['cauldron']}{_E_COIN}\n\n"
             + (f"<i>{he(invite_text)}</i>\n\n" if invite_text else "") +
             f"Вожак: {my_name}\n\n"
             f"Вступай через кнопку 👇"
@@ -43159,8 +43183,8 @@ async def on_callback(update: Update, ctx: ContextTypes.DEFAULT_TYPE):
         ctx.user_data[f"staya_rename_{uid}"] = staya["id"]
         try:
             await q.message.edit_text(
-                f"✏️ <b>Переименование стаи</b> — стоит <b>800<tg-emoji emoji-id='5341524176039615767'>🪙</tg-emoji></b>\n"
-                f"У тебя: {f['coins']}<tg-emoji emoji-id='5341524176039615767'>🪙</tg-emoji>\n\nНапиши новое название (2–30 символов):",
+                f"✏️ <b>Переименование стаи</b> — стоит <b>800{_E_COIN}</b>\n"
+                f"У тебя: {f['coins']}{_E_COIN}\n\nНапиши новое название (2–30 символов):",
                 parse_mode=ParseMode.HTML,
                 reply_markup=InlineKeyboardMarkup([[InlineKeyboardButton("❌ Отмена", callback_data="staya_manage")]])
             )
@@ -43189,9 +43213,9 @@ async def on_callback(update: Update, ctx: ContextTypes.DEFAULT_TYPE):
                 f"🏠 <b>Места в стае</b>\n\n"
                 f"Текущий лимит: <b>{current_max}</b> мест\n"
                 f"Занято: {len(members_bs)}\n\n"
-                f"Каждое дополнительное место — <b>{SLOT_COST}<tg-emoji emoji-id='5341524176039615767'>🪙</tg-emoji></b>\n"
-                f"У тебя: {f['coins']}<tg-emoji emoji-id='5341524176039615767'>🪙</tg-emoji> личных\n"
-                f"Котёл стаи: {staya['cauldron']}<tg-emoji emoji-id='5341524176039615767'>🪙</tg-emoji>",
+                f"Каждое дополнительное место — <b>{SLOT_COST}{_E_COIN}</b>\n"
+                f"У тебя: {f['coins']}{_E_COIN} личных\n"
+                f"Котёл стаи: {staya['cauldron']}{_E_COIN}",
                 parse_mode=ParseMode.HTML, reply_markup=InlineKeyboardMarkup(kb_bs)
             )
         except Exception: pass
@@ -43323,7 +43347,7 @@ async def on_callback(update: Update, ctx: ContextTypes.DEFAULT_TYPE):
                     f"🔮 <b>Гороскоп {fname(f)}</b>\n"
                     f"{zodiac['name']} · <i>{zodiac['trait']}</i>\n\n"
                     f"{horo}\n\n"
-                    f"<i>Следующий гороскоп — завтра за {HOROSCOPE_COST}<tg-emoji emoji-id='5341524176039615767'>🪙</tg-emoji></i>",
+                    f"<i>Следующий гороскоп — завтра за {HOROSCOPE_COST}{_E_COIN}</i>",
                     parse_mode=ParseMode.HTML,
                     reply_markup=InlineKeyboardMarkup([[InlineKeyboardButton("◀️ Назад", callback_data="menu_more")]]),
                 )
@@ -43335,8 +43359,8 @@ async def on_callback(update: Update, ctx: ContextTypes.DEFAULT_TYPE):
                 f"🔮 <b>Гороскоп на сегодня</b>\n"
                 f"{zodiac['name']} · <i>{zodiac['trait']}</i>\n\n"
                 f"🌑 Звёзды болота готовы открыть тебе тайны дня...\n\n"
-                f"Узнать гороскоп: <b>{HOROSCOPE_COST}<tg-emoji emoji-id='5341524176039615767'>🪙</tg-emoji></b>\n"
-                f"У тебя: <b>{f['coins']}<tg-emoji emoji-id='5341524176039615767'>🪙</tg-emoji></b>",
+                f"Узнать гороскоп: <b>{HOROSCOPE_COST}{_E_COIN}</b>\n"
+                f"У тебя: <b>{f['coins']}{_E_COIN}</b>",
                 parse_mode=ParseMode.HTML,
                 reply_markup=InlineKeyboardMarkup([
                     [InlineKeyboardButton(f"🔮 Открыть за {HOROSCOPE_COST}🪙", callback_data="horoscope_buy")],
@@ -43496,7 +43520,7 @@ async def on_callback(update: Update, ctx: ContextTypes.DEFAULT_TYPE):
                 f"✨ <b>Событие «Золотая лягушка»</b>\n\n"
                 f"Статус: {status_str}\n\n"
                 f"Эффекты:\n"
-                f"  💫 Stars → КваКоины: ×1.5 (1<tg-emoji emoji-id='5341447412089133029'>⭐</tg-emoji>=3<tg-emoji emoji-id='5341524176039615767'>🪙</tg-emoji>)\n"
+                f"  💫 Stars → КваКоины: ×1.5 (1{_E_XP}=3{_E_COIN})\n"
                 f"  🍀 Легендарки в гаче: ×2\n"
                 f"  🔴 Мифики в гаче: ×2\n\n"
                 f"Выбери длительность для запуска:",
@@ -43524,7 +43548,7 @@ async def on_callback(update: Update, ctx: ContextTypes.DEFAULT_TYPE):
                 CHAT_ID,
                 f"✨ <b>Событие «Золотая лягушка» началось!</b>\n\n"
                 f"⏳ Длительность: <b>{hours} ч</b>\n\n"
-                f"💫 Курс Stars повышен: <b>1<tg-emoji emoji-id='5341447412089133029'>⭐</tg-emoji> = 3{coin_emoji()}</b>\n"
+                f"💫 Курс Stars повышен: <b>1{_E_XP} = 3{coin_emoji()}</b>\n"
                 f"🍀 Шансы на легендарные облики в гаче: <b>×2</b>\n"
                 f"🔴 Шансы на мифические: <b>×2</b>\n\n"
                 f"<i>Скорее в магазин и гачу! <tg-emoji emoji-id='5341367834935075028'>🐸</tg-emoji></i>",
@@ -43541,7 +43565,7 @@ async def on_callback(update: Update, ctx: ContextTypes.DEFAULT_TYPE):
                 await ctx.bot.send_message(
                     buid,
                     f"✨ <b>Золотая лягушка!</b>\n\n"
-                    f"Сейчас выгодно: 1<tg-emoji emoji-id='5341447412089133029'>⭐</tg-emoji> = 3{coin_emoji()}, леги ×2 в гаче!\n"
+                    f"Сейчас выгодно: 1{_E_XP} = 3{coin_emoji()}, леги ×2 в гаче!\n"
                     f"Событие идёт <b>{hours} ч</b>. Заходи!",
                     parse_mode=ParseMode.HTML,
                 )
@@ -43622,11 +43646,11 @@ async def on_callback(update: Update, ctx: ContextTypes.DEFAULT_TYPE):
         ])
         try:
             await q.message.edit_text(
-                f"<tg-emoji emoji-id='5341735149128159966'>🔥</tg-emoji> <b>Жертвоприношение болота</b>\n\n"
+                f"{_E_FIRE} <b>Жертвоприношение болота</b>\n\n"
                 f"💰 Банк: <b>{ev['total_bank']}{coin_emoji()}</b>\n"
                 f"🏆 Приз победителю: <b>{prize}{coin_emoji()}</b> (30%)\n"
                 f"👥 Участников: <b>{total_participants}</b>\n"
-                f"<tg-emoji emoji-id='5341573078537248907'>💀</tg-emoji> Всего сожжено: <b>{total_burned}</b> эпиков\n"
+                f"{_E_SKULL} Всего сожжено: <b>{total_burned}</b> эпиков\n"
                 f"🕒 До конца: <b>{time_str}</b>\n\n"
                 f"{my_status}\n\n"
                 f"<b>🏆 Топ участников:</b>\n{top_block}\n\n"
@@ -43691,10 +43715,10 @@ async def on_callback(update: Update, ctx: ContextTypes.DEFAULT_TYPE):
         )
         try:
             await q.message.edit_text(
-                f"<tg-emoji emoji-id='5341735149128159966'>🔥</tg-emoji> <b>Выбери облик для жертвы</b>\n\n"
+                f"{_E_FIRE} <b>Выбери облик для жертвы</b>\n\n"
                 f"Твои эпические облики:\n{epic_list}\n\n"
                 f"💰 Банк ивента: <b>{ev['total_bank']}{coin_emoji()}</b>\n"
-                f"<tg-emoji emoji-id='5341735149128159966'>🔥</tg-emoji> Сожжено тобой: <b>{already_burned}</b> / {SACRIFICE_MAX_BURN}\n"
+                f"{_E_FIRE} Сожжено тобой: <b>{already_burned}</b> / {SACRIFICE_MAX_BURN}\n"
                 f"📦 Можно сжечь ещё: <b>{can_burn}</b>\n\n"
                 f"<i>👆 Нажми на облик — появится экран подтверждения.</i>\n"
                 f"<i>Случайных сожжений не будет!</i>",
@@ -43744,7 +43768,7 @@ async def on_callback(update: Update, ctx: ContextTypes.DEFAULT_TYPE):
                 f"🟣 {display_skin(skin_name)}\n\n"
                 f"💰 За это в банк ивента добавится: <b>+{SACRIFICE_COINS_PER_EPIC}{coin_emoji()}</b>\n\n"
                 f"<b>Это действие необратимо!</b>\n"
-                f"Облик будет навсегда уничтожен <tg-emoji emoji-id='5341735149128159966'>🔥</tg-emoji>\n\n"
+                f"Облик будет навсегда уничтожен {_E_FIRE}\n\n"
                 f"Ты уверен?",
                 parse_mode=ParseMode.HTML,
                 reply_markup=kb_confirm,
@@ -43820,13 +43844,13 @@ async def on_callback(update: Update, ctx: ContextTypes.DEFAULT_TYPE):
         ])
         try:
             await q.message.edit_text(
-                f"<tg-emoji emoji-id='5341735149128159966'>🔥</tg-emoji> <b>Жертва принята!</b>\n\n"
+                f"{_E_FIRE} <b>Жертва принята!</b>\n\n"
                 f"Сожжён: {skin_emoji} <b>{he(skin_name)}</b>\n"
                 f"В банк добавлено: <b>+{coins_added}{coin_emoji()}</b>\n"
                 f"💰 Общий банк: <b>{new_bank}{coin_emoji()}</b>\n\n"
                 f"Ты сжёг всего: <b>{new_burned}</b> / {SACRIFICE_MAX_BURN} эпиков\n"
                 f"{'📦 Осталось мест: <b>' + str(can_burn_left) + '</b>' + chr(10) if can_burn_left > 0 else '🔒 Лимит жертв исчерпан' + chr(10)}"
-                f"\n<i>Болото принимает жертву… <tg-emoji emoji-id='5341735149128159966'>🔥</tg-emoji></i>",
+                f"\n<i>Болото принимает жертву… {_E_FIRE}</i>",
                 parse_mode=ParseMode.HTML,
                 reply_markup=kb_after,
             )
@@ -43883,7 +43907,7 @@ async def on_callback(update: Update, ctx: ContextTypes.DEFAULT_TYPE):
         text = (
             f"🔥 <b>{FUNNEL_NAME}</b>\n\n"
             f"💰 Выплаты за сожжённый облик:\n{ranges_text}\n\n"
-            f"<tg-emoji emoji-id='5341735149128159966'>🔥</tg-emoji> Ты сжёг: <b>{my_burned}</b> обликов\n"
+            f"{_E_FIRE} Ты сжёг: <b>{my_burned}</b> обликов\n"
             f"👥 Участников: <b>{len(participants)}</b>\n"
             f"⏳ До конца: <b>{h}ч {m}м</b>\n\n"
             f"<i>Выбери облик для сжигания!</i>"
@@ -43938,7 +43962,7 @@ async def on_callback(update: Update, ctx: ContextTypes.DEFAULT_TYPE):
         kb = InlineKeyboardMarkup(rows)
         try:
             await q.message.edit_text(
-                f"<tg-emoji emoji-id='5341735149128159966'>🔥</tg-emoji> <b>Выбери облик для сжигания</b>\n\n<i>Нажми на облик — появится подтверждение.</i>",
+                f"{_E_FIRE} <b>Выбери облик для сжигания</b>\n\n<i>Нажми на облик — появится подтверждение.</i>",
                 parse_mode=ParseMode.HTML,
                 reply_markup=kb,
             )
@@ -44062,7 +44086,7 @@ async def on_callback(update: Update, ctx: ContextTypes.DEFAULT_TYPE):
         try:
             await ctx.bot.send_message(
                 ADMIN_CHAT_ID,
-                f"<tg-emoji emoji-id='5341735149128159966'>🔥</tg-emoji> <b>{user_name}</b> (id: {uid}) сжёг {R_ICON.get(rarity,'')} {skin_name} → <b>{reward}{coin_emoji()}</b>",
+                f"{_E_FIRE} <b>{user_name}</b> (id: {uid}) сжёг {R_ICON.get(rarity,'')} {skin_name} → <b>{reward}{coin_emoji()}</b>",
                 parse_mode=ParseMode.HTML,
             )
         except Exception:
@@ -44072,7 +44096,7 @@ async def on_callback(update: Update, ctx: ContextTypes.DEFAULT_TYPE):
             await q.message.edit_text(
                 f"✅ <b>Облик сожжён!</b>\n\n"
                 f"{R_ICON.get(rarity,'')} {display_skin(skin_name)}\n"
-                f"<tg-emoji emoji-id='5341735149128159966'>🔥</tg-emoji> Ты получил: <b>{reward}{coin_emoji()}</b>\n\n"
+                f"{_E_FIRE} Ты получил: <b>{reward}{coin_emoji()}</b>\n\n"
                 f"💰 Твой баланс: {f2['coins']}{coin_emoji()}",
                 parse_mode=ParseMode.HTML,
                 reply_markup=InlineKeyboardMarkup([
@@ -44145,7 +44169,7 @@ async def on_callback(update: Update, ctx: ContextTypes.DEFAULT_TYPE):
         try:
             await ctx.bot.send_message(
                 ADMIN_CHAT_ID,
-                f"<tg-emoji emoji-id='5341735149128159966'>🔥</tg-emoji> <b>{user_name}</b> (id: {uid}) сжёг {qty_all}× {R_ICON.get(rarity,'')} {skin_name} → <b>{total_reward}{coin_emoji()}</b>",
+                f"{_E_FIRE} <b>{user_name}</b> (id: {uid}) сжёг {qty_all}× {R_ICON.get(rarity,'')} {skin_name} → <b>{total_reward}{coin_emoji()}</b>",
                 parse_mode=ParseMode.HTML,
             )
         except Exception:
@@ -44155,7 +44179,7 @@ async def on_callback(update: Update, ctx: ContextTypes.DEFAULT_TYPE):
             await q.message.edit_text(
                 f"✅ <b>Сожжено {qty_all} обликов!</b>\n\n"
                 f"{R_ICON.get(rarity,'')} {display_skin(skin_name)} ×{qty_all}\n"
-                f"<tg-emoji emoji-id='5341735149128159966'>🔥</tg-emoji> Итого получено: <b>{total_reward}{coin_emoji()}</b>\n"
+                f"{_E_FIRE} Итого получено: <b>{total_reward}{coin_emoji()}</b>\n"
                 f"💰 (~{total_reward // qty_all}{coin_emoji()} в среднем за штуку)\n\n"
                 f"💰 Твой баланс: {f2['coins']}{coin_emoji()}",
                 parse_mode=ParseMode.HTML,
@@ -44355,7 +44379,7 @@ async def on_callback(update: Update, ctx: ContextTypes.DEFAULT_TYPE):
                     adm_id,
                     f"💸 <b>Заявка на вывод реф. Stars!</b>\n\n"
                     f"Пользователь: {user_mention} [ID {uid}]\n"
-                    f"Сумма: <b>{ref_stars_bal} <tg-emoji emoji-id='5341447412089133029'>⭐</tg-emoji></b>\n\n"
+                    f"Сумма: <b>{ref_stars_bal} {_E_XP}</b>\n\n"
                     f"Одобри: /ref_approve_{uid} или отклони: /ref_decline_{uid}",
                     parse_mode=ParseMode.HTML,
                 )
@@ -44621,8 +44645,8 @@ async def on_callback(update: Update, ctx: ContextTypes.DEFAULT_TYPE):
             lines = [f"💝 <b>Топ спонсоров — {chat_label}</b>\n<i>Учитываются /giveaway и прочие активности</i>\n"]
             for i, r in enumerate(rows):
                 tag = f"@{r['username']}" if r["username"] else f"id{r['user_id']}"
-                lines.append(f"{medals[i]} <b>{he(r['first_name'])}</b> ({tag})\n   💝 {r['chat_sponsor_coins']:,}<tg-emoji emoji-id='5341524176039615767'>🪙</tg-emoji>  ·  ур.{r['level']}")
-            lines.append(f"\n<i>Твоя позиция: #{my_pos} · Ты задонатил: {my_donated:,}<tg-emoji emoji-id='5341524176039615767'>🪙</tg-emoji></i>")
+                lines.append(f"{medals[i]} <b>{he(r['first_name'])}</b> ({tag})\n   💝 {r['chat_sponsor_coins']:,}{_E_COIN}  ·  ур.{r['level']}")
+            lines.append(f"\n<i>Твоя позиция: #{my_pos} · Ты задонатил: {my_donated:,}{_E_COIN}</i>")
             text = "\n".join(lines)
         try:
             await q.message.edit_text(text, parse_mode=ParseMode.HTML,
@@ -44850,7 +44874,7 @@ async def on_callback(update: Update, ctx: ContextTypes.DEFAULT_TYPE):
             try:
                 await q.message.edit_text(
                     f"📩 <b>Счёт отправлен!</b>\n\n"
-                    f"{coin_emoji()} {pkg['label']} за <tg-emoji emoji-id='5341447412089133029'>⭐</tg-emoji>{price_stars} Stars\n\n"
+                    f"{coin_emoji()} {pkg['label']} за {_E_XP}{price_stars} Stars\n\n"
                     f"<i>Проверь личные сообщения с ботом и нажми «Оплатить».</i>\n\n"
                     f"⚠️ Если сообщение не пришло — сначала напиши /start боту в личку.",
                     parse_mode=ParseMode.HTML,
@@ -44930,7 +44954,7 @@ async def on_callback(update: Update, ctx: ContextTypes.DEFAULT_TYPE):
             try:
                 await q.message.edit_text(
                     f"📩 <b>Счёт отправлен!</b>\n\n"
-                    f"<tg-emoji emoji-id='5341688243790323773'>🎟</tg-emoji> {tp['label']} за ⭐{price_stars} Stars\n\n"
+                    f"{_E_TICKET} {tp['label']} за ⭐{price_stars} Stars\n\n"
                     f"<i>Проверь личные сообщения с ботом и нажми «Оплатить».</i>",
                     parse_mode=ParseMode.HTML,
                     reply_markup=InlineKeyboardMarkup(
@@ -46119,7 +46143,7 @@ async def on_callback(update: Update, ctx: ContextTypes.DEFAULT_TYPE):
             try:
                 await ctx.bot.send_message(
                     winner_id,
-                    f"🏆 Ты <b>победил</b> в батле!{stake_result}\n<tg-emoji emoji-id='5343666557266467138'>⚡</tg-emoji> +0.3 Power → {w_final_power}",
+                    f"🏆 Ты <b>победил</b> в батле!{stake_result}\n{_E_BOLT} +0.3 Power → {w_final_power}",
                     parse_mode=ParseMode.HTML,
                 )
             except Exception:
@@ -46127,7 +46151,7 @@ async def on_callback(update: Update, ctx: ContextTypes.DEFAULT_TYPE):
             try:
                 await ctx.bot.send_message(
                     loser_id,
-                    f"<tg-emoji emoji-id='5341573078537248907'>💀</tg-emoji> Ты <b>проиграл</b> батл против <b>{he(w_name)}</b>.\n<tg-emoji emoji-id='5343666557266467138'>⚡</tg-emoji> +0.1 Power → {l_final_power}",
+                    f"{_E_SKULL} Ты <b>проиграл</b> батл против <b>{he(w_name)}</b>.\n{_E_BOLT} +0.1 Power → {l_final_power}",
                     parse_mode=ParseMode.HTML,
                 )
             except Exception:
@@ -46766,7 +46790,7 @@ async def on_callback(update: Update, ctx: ContextTypes.DEFAULT_TYPE):
         try:
             await q.message.edit_text(
                 f"🥊 <b>Батл (кубики + Power)</b>\n\n"
-                f"Твой Power: <tg-emoji emoji-id='5343666557266467138'>⚡</tg-emoji>{my_power_s}\n\n"
+                f"Твой Power: {_E_BOLT}{my_power_s}\n\n"
                 f"Выбери соперника для батла:\n"
                 f"<i>(топ-10 активных игроков)</i>\n\n"
                 f"<i>Или напиши</i> <code>/battle @username [ставка]</code>",
@@ -46908,7 +46932,7 @@ async def on_callback(update: Update, ctx: ContextTypes.DEFAULT_TYPE):
         try:
             await q.message.edit_text(
                 f"🥊 <b>Батл (кубики + Power)</b>  {f['coins']}{coin_emoji()}\n\n"
-                f"Твой Power: <tg-emoji emoji-id='5343666557266467138'>⚡</tg-emoji>{my_power}\n\n"
+                f"Твой Power: {_E_BOLT}{my_power}\n\n"
                 f"Выбери соперника:\n<i>(топ-10 активных игроков)</i>",
                 parse_mode=ParseMode.HTML,
                 reply_markup=InlineKeyboardMarkup(kb_rows),
@@ -48148,7 +48172,7 @@ async def on_callback(update: Update, ctx: ContextTypes.DEFAULT_TYPE):
             try:
                 await ctx.bot.send_message(
                     target_uid_xp,
-                    f"<tg-emoji emoji-id='5341447412089133029'>⭐</tg-emoji> Администратор {'начислил' if amount_xp >= 0 else 'списал'} <b>{abs(amount_xp)} XP</b>!\n"
+                    f"{_E_XP} Администратор {'начислил' if amount_xp >= 0 else 'списал'} <b>{abs(amount_xp)} XP</b>!\n"
                     f"Текущий опыт: {p_xp['xp']} XP (уровень {p_xp['level']})",
                     parse_mode=ParseMode.HTML,
                 )
@@ -48184,9 +48208,9 @@ async def on_callback(update: Update, ctx: ContextTypes.DEFAULT_TYPE):
         ])
         try:
             await q.message.edit_text(
-                f"<tg-emoji emoji-id='5341524176039615767'>🪙</tg-emoji> <b>Управление монетами</b>\n"
+                f"{_E_COIN} <b>Управление монетами</b>\n"
                 f"Игрок ID: <code>{target_uid_sc}</code>\n"
-                f"Текущий баланс: <b>{current_coins:,}</b> <tg-emoji emoji-id='5341524176039615767'>🪙</tg-emoji>\n\n"
+                f"Текущий баланс: <b>{current_coins:,}</b> {_E_COIN}\n\n"
                 f"Выбери действие:",
                 parse_mode=ParseMode.HTML,
                 reply_markup=kb_sc,
@@ -48564,10 +48588,10 @@ async def on_callback(update: Update, ctx: ContextTypes.DEFAULT_TYPE):
         if not rows:
             text = "💚 Все лягушки живы!"
         else:
-            lines = [f"<tg-emoji emoji-id='5341573078537248907'>💀</tg-emoji> <b>Мёртвые лягушки ({len(rows)})</b>\n"]
+            lines = [f"{_E_SKULL} <b>Мёртвые лягушки ({len(rows)})</b>\n"]
             for r in rows:
                 uname = f"@{r[1]}" if r[1] else f"ID:{r[2]}"
-                lines.append(f"<tg-emoji emoji-id='5341573078537248907'>💀</tg-emoji> {r[0]} ({uname}) ур.{r[3]}")
+                lines.append(f"{_E_SKULL} {r[0]} ({uname}) ур.{r[3]}")
             text = "\n".join(lines)
         try:
             await q.message.edit_text(
@@ -49095,7 +49119,7 @@ async def on_callback(update: Update, ctx: ContextTypes.DEFAULT_TYPE):
             ban_mark = " 🚫" if r["banned"] else ""
             lines.append(
                 f"{medals[i]} <b>{he(r['first_name'])}</b> ({uname}){ban_mark}\n"
-                f"   <tg-emoji emoji-id='5341524176039615767'>🪙</tg-emoji> {r['coins']:,} · ур.{r['level']} · <code>{r['user_id']}</code>"
+                f"   {_E_COIN} {r['coins']:,} · ур.{r['level']} · <code>{r['user_id']}</code>"
             )
         try:
             await q.message.edit_text(
@@ -49287,7 +49311,7 @@ async def on_callback(update: Update, ctx: ContextTypes.DEFAULT_TYPE):
         ])
         try:
             await q.message.edit_text(
-                f"<tg-emoji emoji-id='5341688243790323773'>🎟</tg-emoji> <b>Лотерея — панель управления</b>\n\n"
+                f"{_E_TICKET} <b>Лотерея — панель управления</b>\n\n"
                 f"📅 Розыгрыш: <b>{draw_date}</b>\n"
                 f"🗑 Билеты сброшены (удалено: {cnt})\n\n"
                 f"<i>Участников нет</i>",
@@ -49977,7 +50001,7 @@ async def on_callback(update: Update, ctx: ContextTypes.DEFAULT_TYPE):
             await q.message.edit_text(
                 f"🎁 <b>Выдача монет игроку (ID {target_uid_give})</b>\n\n"
                 f"<code>/givecoin @username 500</code>\n\n"
-                f"Или используй кнопки в карточке игрока (<tg-emoji emoji-id='5341524176039615767'>🪙</tg-emoji> +100 / +1000 / -100)\n\n"
+                f"Или используй кнопки в карточке игрока ({_E_COIN} +100 / +1000 / -100)\n\n"
                 f"<i>Для открытия карточки: /adminlookup {target_uid_give}</i>",
                 parse_mode=ParseMode.HTML,
                 reply_markup=InlineKeyboardMarkup(
@@ -50020,7 +50044,7 @@ async def on_callback(update: Update, ctx: ContextTypes.DEFAULT_TYPE):
                 # Если у пользователя есть сообщение — обновляем его финальным результатом
                 if uid_str in recipient_msgs:
                     late_caught_lines = "\n".join(
-                        f"{['🥇','🥈','🥉','4️⃣','5️⃣'][i]} {c['name']} — +{c['reward']} <tg-emoji emoji-id='5341524176039615767'>🪙</tg-emoji>"
+                        f"{['🥇','🥈','🥉','4️⃣','5️⃣'][i]} {c['name']} — +{c['reward']} {_E_COIN}"
                         for i, c in enumerate(catchers)
                     )
                     late_final_text = f"🦟 <b>Комара поймали!</b>\n\n{late_caught_lines}"
@@ -50212,7 +50236,7 @@ async def on_callback(update: Update, ctx: ContextTypes.DEFAULT_TYPE):
         # Анонс в общий чат — только финальный результат когда все места заняты
         if len(catchers) >= MAX_CATCHERS:
             caught_lines_chat = "\n".join(
-                f"{['🥇','🥈','🥉','4️⃣','5️⃣'][i]} {c['name']} — +{c['reward']} <tg-emoji emoji-id='5341524176039615767'>🪙</tg-emoji>"
+                f"{['🥇','🥈','🥉','4️⃣','5️⃣'][i]} {c['name']} — +{c['reward']} {_E_COIN}"
                 for i, c in enumerate(catchers)
             )
             try:
@@ -50565,10 +50589,10 @@ async def successful_payment(update: Update, ctx: ContextTypes.DEFAULT_TYPE):
         if ref_f.get("ref_notify_enabled", 1):
             bal = ref_f["ref_stars_balance"]
             notify_text = (
-                f"<tg-emoji emoji-id='5341447412089133029'>⭐</tg-emoji> <b>Реферальная комиссия!</b>\n\n"
+                f"{_E_XP} <b>Реферальная комиссия!</b>\n\n"
                 f"Твой реферал купил на <b>{stars} Stars</b>\n"
-                f"Тебе начислено: <b>+{commission} <tg-emoji emoji-id='5341447412089133029'>⭐</tg-emoji></b>\n"
-                f"Твой реф. баланс: <b>{bal} <tg-emoji emoji-id='5341447412089133029'>⭐</tg-emoji></b>"
+                f"Тебе начислено: <b>+{commission} {_E_XP}</b>\n"
+                f"Твой реф. баланс: <b>{bal} {_E_XP}</b>"
                 + (f"\n\n✅ <b>Доступна заявка на вывод!</b> /referral" if bal >= 50 else "")
             )
             try:
@@ -50925,14 +50949,14 @@ async def successful_payment(update: Update, ctx: ContextTypes.DEFAULT_TYPE):
             ctx.bot,
             f"🎟 <b>Покупка билетов!</b>\n"
             f"Игрок: {user.first_name} (@{user.username or 'нет'}) [ID {user.id}]\n"
-            f"Куплено: <tg-emoji emoji-id='5341688243790323773'>🎟</tg-emoji> ×{qty} гача-билетов",
+            f"Куплено: {_E_TICKET} ×{qty} гача-билетов",
             admin_only=True,
         )
         inv = await inv_get(user.id)
         total_tickets = inv.get("gacha_ticket", 0)
         await update.message.reply_text(
             f"✅ <b>Оплата получена!</b>\n\n"
-            f"<tg-emoji emoji-id='5341688243790323773'>🎟</tg-emoji> Получено <b>{qty} гача-билетов</b>\n"
+            f"{_E_TICKET} Получено <b>{qty} гача-билетов</b>\n"
             f"Всего билетов: {total_tickets}\n\n"
             f"<i>Используй их в меню гачи → /frog → 🎰 Гача</i>",
             parse_mode=ParseMode.HTML,
@@ -50957,7 +50981,7 @@ async def successful_payment(update: Update, ctx: ContextTypes.DEFAULT_TYPE):
                 ctx.bot,
                 f"🎁 <b>Секретный подарок куплен!</b>\n"
                 f"Игрок: {user.first_name} (@{user.username or 'нет'}) [ID {user.id}]\n"
-                f"Подарок: {gift['emoji']} {gift['name']} — {stars_paid}<tg-emoji emoji-id='5341447412089133029'>⭐</tg-emoji>",
+                f"Подарок: {gift['emoji']} {gift['name']} — {stars_paid}{_E_XP}",
                 admin_only=True,
             )
             await update.message.reply_text(
@@ -50973,13 +50997,13 @@ async def successful_payment(update: Update, ctx: ContextTypes.DEFAULT_TYPE):
                 f"⚠️ <b>ОШИБКА отправки секретного подарка!</b>\n"
                 f"Игрок: {user.first_name} (@{user.username or 'нет'}) [ID {user.id}]\n"
                 f"Подарок: {gift['emoji']} {gift['name']}\n"
-                f"Оплачено: {stars_paid}<tg-emoji emoji-id='5341447412089133029'>⭐</tg-emoji>\n"
+                f"Оплачено: {stars_paid}{_E_XP}\n"
                 f"Ошибка API: <code>{_html.escape(str(err))}</code>\n\n"
                 f"<b>Нужно вручную отправить подарок или вернуть Stars!</b>",
                 admin_only=True,
             )
             await update.message.reply_text(
-                f"✅ Оплата {stars_paid}<tg-emoji emoji-id='5341447412089133029'>⭐</tg-emoji> получена, но произошла ошибка при отправке подарка.\n\n"
+                f"✅ Оплата {stars_paid}{_E_XP} получена, но произошла ошибка при отправке подарка.\n\n"
                 f"<b>Администратор уже уведомлён</b> и свяжется с тобой для решения вопроса.\n"
                 f"<i>ID транзакции: {payload}</i>",
                 parse_mode=ParseMode.HTML,
@@ -51010,9 +51034,9 @@ async def successful_payment(update: Update, ctx: ContextTypes.DEFAULT_TYPE):
     boost_note = f" (×{stars_mult:.1f} Золотая лягушка)" if stars_mult > 1.0 else ""
     await announce(
         ctx.bot,
-        f"<tg-emoji emoji-id='5341447412089133029'>⭐</tg-emoji> <b>Покупка Stars!</b>\n"
+        f"{_E_XP} <b>Покупка Stars!</b>\n"
         f"Пользователь: {user.first_name} (@{user.username or 'нет'}) [ID {user.id}]\n"
-        f"Приобрёл: {stars_paid} <tg-emoji emoji-id='5341447412089133029'>⭐</tg-emoji> → {coins_to_add} {coin_emoji()}{boost_note}\n"
+        f"Приобрёл: {stars_paid} {_E_XP} → {coins_to_add} {coin_emoji()}{boost_note}\n"
         f"Теперь у него: {f['coins']} {coin_emoji()}",
         admin_only=True,
     )
@@ -51133,16 +51157,16 @@ async def on_message(update: Update, ctx: ContextTypes.DEFAULT_TYPE):
                     bal     = f_bal.get("coins", 0) if f_bal else 0
                     await update.message.reply_text(
                         f"✅ <b>Ставка принята!</b>\n"
-                        f"{amount}🪙 на {side_ru}  ×{odds}\n"
-                        f"Потенциальный выигрыш: <b>{win_est}🪙</b>\n"
-                        f"Баланс: <b>{bal}🪙</b>",
+                        f"{amount}{_E_COIN} на {side_ru}  ×{odds}\n"
+                        f"Потенциальный выигрыш: <b>{win_est}{_E_COIN}</b>\n"
+                        f"Баланс: <b>{bal}{_E_COIN}</b>",
                         parse_mode=ParseMode.HTML,
                     )
                 elif result == "no_coins":
                     f_bal = await db_get(user.id)
                     bal   = f_bal.get("coins", 0) if f_bal else 0
                     await update.message.reply_text(
-                        f"❌ Недостаточно монет. У тебя <b>{bal}🪙</b>.", parse_mode=ParseMode.HTML,
+                        f"❌ Недостаточно монет. У тебя <b>{bal}{_E_COIN}</b>.", parse_mode=ParseMode.HTML,
                     )
                 elif result == "closed":
                     await update.message.reply_text("⏰ Ставки уже закрыты!")
@@ -51198,7 +51222,7 @@ async def on_message(update: Update, ctx: ContextTypes.DEFAULT_TYPE):
                 await ach_check(f_mc, ctx.bot)
             pos_emoji = ["🥇", "🥈", "🥉", "4️⃣", "5️⃣"][min(mc["pos"], 4)]
             await update.message.reply_text(
-                f"✅ Правильно! {pos_emoji} Поимка засчитана — <b>+{mc['reward']}🪙 +30XP</b>",
+                f"✅ Правильно! {pos_emoji} Поимка засчитана — <b>+{mc['reward']}{_E_COIN} +30XP</b>",
                 parse_mode=ParseMode.HTML,
             )
         else:
@@ -51458,8 +51482,8 @@ async def on_message(update: Update, ctx: ContextTypes.DEFAULT_TYPE):
         await update.message.reply_text(
             f"✅ <b>Лот #{_lid} создан!</b>\n\n"
             f"{pemoji(_skin_m)} <b>{_skin_m}</b>\n"
-            f"Цена: <b>{_price_m}🪙</b>\n"
-            f"При продаже получишь: <b>{_price_m - _commission_show}🪙</b> (комиссия {_commission_show}🪙)\n\n"
+            f"Цена: <b>{_price_m}{_E_COIN}</b>\n"
+            f"При продаже получишь: <b>{_price_m - _commission_show}{_E_COIN}</b> (комиссия {_commission_show}{_E_COIN})\n\n"
             f"<i>Облик снят из твоей коллекции до продажи или отмены.</i>",
             parse_mode=ParseMode.HTML,
             reply_markup=InlineKeyboardMarkup([[
@@ -51484,7 +51508,7 @@ async def on_message(update: Update, ctx: ContextTypes.DEFAULT_TYPE):
         # Минимум: target > stake (иначе нет смысла рисковать)
         if wish_target_input <= _wish_stake:
             await update.message.reply_text(
-                f"❌ Желаемая сумма должна быть больше ставки ({_wish_stake}<tg-emoji emoji-id='5341524176039615767'>🪙</tg-emoji>).\n"
+                f"❌ Желаемая сумма должна быть больше ставки ({_wish_stake}{_E_COIN}).\n"
                 f"Например: <code>{_wish_stake * 2}</code> — получишь ×2 от ставки.",
                 parse_mode=ParseMode.HTML,
             )
@@ -51952,7 +51976,7 @@ async def on_message(update: Update, ctx: ContextTypes.DEFAULT_TYPE):
             return
         if f_ci["coins"] < amount_ci:
             await update.message.reply_text(
-                f"❌ Недостаточно монет!\nНужно: <b>{amount_ci}🪙</b>, у тебя: <b>{f_ci['coins']}🪙</b>",
+                f"❌ Недостаточно монет!\nНужно: <b>{amount_ci}{_E_COIN}</b>, у тебя: <b>{f_ci['coins']}{_E_COIN}</b>",
                 parse_mode=ParseMode.HTML,
             )
             ctx.user_data[cauldron_input_key] = staya_id_ci
@@ -51966,9 +51990,9 @@ async def on_message(update: Update, ctx: ContextTypes.DEFAULT_TYPE):
         staya_ci = await staya_get(staya_id_ci)
         cauldron_now = staya_ci["cauldron"] if staya_ci else "?"
         await update.message.reply_text(
-            f"✅ <b>+{amount_ci}🪙 в котёл!</b>\n\n"
-            f"💰 Котёл: <b>{cauldron_now}🪙</b>\n"
-            f"У тебя осталось: <b>{f_ci['coins']}🪙</b>",
+            f"✅ <b>+{amount_ci}{_E_COIN} в котёл!</b>\n\n"
+            f"💰 Котёл: <b>{cauldron_now}{_E_COIN}</b>\n"
+            f"У тебя осталось: <b>{f_ci['coins']}{_E_COIN}</b>",
             parse_mode=ParseMode.HTML,
             reply_markup=InlineKeyboardMarkup([[
                 InlineKeyboardButton("🪙 Ещё в котёл", callback_data="staya_cauldron"),
@@ -52012,7 +52036,7 @@ async def on_message(update: Update, ctx: ContextTypes.DEFAULT_TYPE):
         f_rn = await db_get(user.id)
         RENAME_COST = 800
         if not f_rn or f_rn["coins"] < RENAME_COST:
-            await update.message.reply_text(f"Нужно {RENAME_COST}<tg-emoji emoji-id='5341524176039615767'>🪙</tg-emoji> для переименования!")
+            await update.message.reply_text(f"Нужно {RENAME_COST}{_E_COIN} для переименования!")
             return
         f_rn["coins"] -= RENAME_COST
         await db_save(f_rn)
@@ -52183,7 +52207,7 @@ async def on_message(update: Update, ctx: ContextTypes.DEFAULT_TYPE):
             rows_hm.append([InlineKeyboardButton(t("btn_hm_surrender", f_hm), callback_data=f"hm_give_up_{game_id_hm}")])
             display_hm = " ".join("_" for _ in word_candidate)
             owner_name = f_hm.get("first_name", "?") if f_hm else "?"
-            prize_line = f"💰 Приз за победу: <b>{stake_hm}<tg-emoji emoji-id='5341524176039615767'>🪙</tg-emoji></b> · " if stake_hm else ""
+            prize_line = f"💰 Приз за победу: <b>{stake_hm}{_E_COIN}</b> · " if stake_hm else ""
             try:
                 await ctx.bot.send_message(
                     chat_id_hm,
@@ -53572,7 +53596,7 @@ async def _legend_finish(bot, leg: dict):
             place_str = f"Место: {medals[i]}" if i < 10 else f"Место: {i+1}"
             personal_text = (
                 final_text +
-                f"\n\n{place_str}\n💰 Твоя награда: <b>+{personal_reward}<tg-emoji emoji-id='5341524176039615767'>🪙</tg-emoji></b>"
+                f"\n\n{place_str}\n💰 Твоя награда: <b>+{personal_reward}{_E_COIN}</b>"
             )
             await bot.send_message(uid_r, personal_text, parse_mode=ParseMode.HTML)
         except (Forbidden, BadRequest):
@@ -54710,7 +54734,7 @@ async def job_mosquito(ctx: ContextTypes.DEFAULT_TYPE):
                 f"❌ Не доставлено: <b>{failed_count}</b>\n"
                 f"👥 Всего активных: <b>{len(users)}</b>\n"
                 f"⏱ Рассылка заняла: <b>{_bulk_elapsed:.1f} сек</b>\n"
-                f"🎁 Награда 1-го места: <b>{reward}<tg-emoji emoji-id='5341524176039615767'>🪙</tg-emoji></b>\n"
+                f"🎁 Награда 1-го места: <b>{reward}{_E_COIN}</b>\n"
                 f"🛡 Антибот: мин. реакция {MOSQUITO_MIN_REACT_MS}ms, лимит {MOSQUITO_DAILY_LIMIT}/день",
                 parse_mode=ParseMode.HTML,
             )
@@ -54788,7 +54812,7 @@ async def job_mosquito(ctx: ContextTypes.DEFAULT_TYPE):
         # (если все поймали до таймаута — callback уже отправил итог)
         MAX_CATCHERS_JOB = 5
         caught_lines = "\n".join(
-            f"{['🥇','🥈','🥉','4️⃣','5️⃣'][i]} {c['name']} — +{c['reward']} <tg-emoji emoji-id='5341524176039615767'>🪙</tg-emoji>"
+            f"{['🥇','🥈','🥉','4️⃣','5️⃣'][i]} {c['name']} — +{c['reward']} {_E_COIN}"
             for i, c in enumerate(catchers_final)
         )
         if len(catchers_final) < MAX_CATCHERS_JOB:
@@ -54872,7 +54896,7 @@ async def job_background_decay(ctx: ContextTypes.DEFAULT_TYPE):
                     await ctx.bot.send_message(
                         uid_dec,
                         f"⚠️ <b>Твоя лягушка совсем слаба!</b>\n"
-                        f"<tg-emoji emoji-id='5341676144867449701'>❤️</tg-emoji> Здоровье: {f['health']}%\n"
+                        f"{_E_HEART} Здоровье: {f['health']}%\n"
                         f"<i>Срочно покорми и позаботься — иначе она умрёт!</i>",
                         parse_mode=ParseMode.HTML,
                     )
@@ -55281,7 +55305,7 @@ async def _work_phase_catchup_midday(now: float, bot, uid_list: list[int]):
             event = scene["event"].format(name=name)
             await _work_send_safe(
                 bot, uid,
-                f"<tg-emoji emoji-id='5343666557266467138'>⚡</tg-emoji> <b>Рабочий день в разгаре</b>\n\n"
+                f"{_E_BOLT} <b>Рабочий день в разгаре</b>\n\n"
                 f"{event}\n\n"
                 f"<i>Вечером в 18:00 МСК вернётся домой <tg-emoji emoji-id='5341367834935075028'>🐸</tg-emoji></i>",
                 parse_mode=ParseMode.HTML,
@@ -55380,15 +55404,15 @@ async def _work_phase_evening(now: float, bot):
             bonus_parts = []
             if scene["bonus_hunger"]    != 0: bonus_parts.append(f"🍖{scene['bonus_hunger']:+d}")
             if scene["bonus_happiness"] != 0: bonus_parts.append(f"😄{scene['bonus_happiness']:+d}")
-            if scene["bonus_health"]    != 0: bonus_parts.append(f"<tg-emoji emoji-id='5341676144867449701'>❤️</tg-emoji>{scene['bonus_health']:+d}")
-            if scene["bonus_xp"]        != 0: bonus_parts.append(f"<tg-emoji emoji-id='5341447412089133029'>⭐</tg-emoji>{scene['bonus_xp']:+d}")
+            if scene["bonus_health"]    != 0: bonus_parts.append(f"{_E_HEART}{scene['bonus_health']:+d}")
+            if scene["bonus_xp"]        != 0: bonus_parts.append(f"{_E_XP}{scene['bonus_xp']:+d}")
             bonus_line = ("  " + "  ".join(bonus_parts)) if bonus_parts else ""
 
             await _work_send_safe(
                 bot, uid,
                 f"{scene['prof_emoji']} <b>{name} вернулась с работы!</b>\n\n"
                 f"{outcome}\n\n"
-                f"<tg-emoji emoji-id='5341524176039615767'>🪙</tg-emoji> Принесла домой: <b>+{earned} КваКоинов</b>{bonus_line}\n\n"
+                f"{_E_COIN} Принесла домой: <b>+{earned} КваКоинов</b>{bonus_line}\n\n"
                 f"<i>«Ква! Устала, но довольна!» <tg-emoji emoji-id='5341367834935075028'>🐸</tg-emoji></i>",
                 parse_mode=ParseMode.HTML,
             )
@@ -55949,12 +55973,12 @@ async def job_lottery_draw(ctx: ContextTypes.DEFAULT_TYPE):
                 msg = (
                     f"🏆 <b>Результаты лотереи</b>\n\n"
                     f"🎉 Ты выиграл!\n{prize_text}\n\n"
-                    f"<tg-emoji emoji-id='5341688243790323773'>🎟</tg-emoji> Твоих билетов было: <b>{user_tickets_count}</b>\n\n"
+                    f"{_E_TICKET} Твоих билетов было: <b>{user_tickets_count}</b>\n\n"
                     + result_msg
                 )
             else:
                 msg = (
-                    f"<tg-emoji emoji-id='5341688243790323773'>🎟</tg-emoji> <b>Результаты лотереи</b>\n\n"
+                    f"{_E_TICKET} <b>Результаты лотереи</b>\n\n"
                     f"😔 В этот раз не повезло...\n"
                     f"Твоих билетов было: <b>{user_tickets_count}</b>\n\n"
                     + result_msg
@@ -56794,7 +56818,7 @@ async def cmd_hangman_group(update: Update, ctx: ContextTypes.DEFAULT_TYPE):
         return
     if creator_f["coins"] < stake:
         await update.message.reply_text(
-            f"💸 Нужно {stake}<tg-emoji emoji-id='5341524176039615767'>🪙</tg-emoji> чтобы выставить приз, у тебя {creator_f['coins']}!",
+            f"💸 Нужно {stake}{_E_COIN} чтобы выставить приз, у тебя {creator_f['coins']}!",
             parse_mode=ParseMode.HTML,
         )
         return
@@ -56806,7 +56830,7 @@ async def cmd_hangman_group(update: Update, ctx: ContextTypes.DEFAULT_TYPE):
         await ctx.bot.send_message(
             user.id,
             f"🪢 <b>Загадай слово для виселицы!</b>\n\n"
-            f"💰 Твоя ставка: <b>{stake}<tg-emoji emoji-id='5341524176039615767'>🪙</tg-emoji></b> — победитель забирает всё!\n\n"
+            f"💰 Твоя ставка: <b>{stake}{_E_COIN}</b> — победитель забирает всё!\n\n"
             "Напиши одно слово на русском языке (только буквы, от 3 до 20).\n"
             "Бот опубликует игру в чат, и все смогут угадывать.\n\n"
             "<i>Просто отправь слово в этот диалог:</i>",
@@ -56921,7 +56945,7 @@ async def _sacrifice_finish(event_id: int, bot, chat_id: int):
         try:
             await bot.send_message(
                 chat_id,
-                f"<tg-emoji emoji-id='5341735149128159966'>🔥</tg-emoji> <b>Ивент «{SACRIFICE_EVENT_NAME}» завершён</b>\n\n"
+                f"{_E_FIRE} <b>Ивент «{SACRIFICE_EVENT_NAME}» завершён</b>\n\n"
                 f"<i>Никто не принёс жертву. Болото молчит…</i>",
                 parse_mode=ParseMode.HTML,
             )
@@ -56985,7 +57009,7 @@ async def _sacrifice_finish(event_id: int, bot, chat_id: int):
         await bot.send_message(
             chat_id,
             f"🏆 <b>Итоги «{SACRIFICE_EVENT_NAME}»!</b>\n\n"
-            f"<tg-emoji emoji-id='5341735149128159966'>🔥</tg-emoji> Всего сожжено: <b>{total_burned}</b> эпиков\n"
+            f"{_E_FIRE} Всего сожжено: <b>{total_burned}</b> эпиков\n"
             f"💰 Общий банк: <b>{total_bank}{coin_emoji()}</b>\n\n"
             f"🎉 Победитель: <b>{he(winner_name)}</b>{winner_tag}\n"
             f"   Получает 30% — <b>{winner_prize}{coin_emoji()}</b>\n\n"
@@ -57002,7 +57026,7 @@ async def _sacrifice_finish(event_id: int, bot, chat_id: int):
             winner_uid,
             f"🏆 <b>Ты выиграл ивент «{SACRIFICE_EVENT_NAME}»!</b>\n\n"
             f"На твой счёт зачислено <b>{winner_prize}{coin_emoji()}</b>\n"
-            f"<i>Болото запомнит твою жертву.</i> <tg-emoji emoji-id='5341735149128159966'>🔥</tg-emoji>",
+            f"<i>Болото запомнит твою жертву.</i> {_E_FIRE}",
             parse_mode=ParseMode.HTML,
         )
     except Exception:
@@ -57020,7 +57044,7 @@ async def _sacrifice_finish(event_id: int, bot, chat_id: int):
         try:
             await bot.send_message(
                 p["user_id"],
-                f"<tg-emoji emoji-id='5341735149128159966'>🔥</tg-emoji> <b>Ивент «{SACRIFICE_EVENT_NAME}» завершён!</b>\n\n"
+                f"{_E_FIRE} <b>Ивент «{SACRIFICE_EVENT_NAME}» завершён!</b>\n\n"
                 f"Победитель: <b>{he(winner_name)}</b>\n"
                 f"Твоя доля: <b>+{other_share}{coin_emoji()}</b>\n"
                 f"<i>В следующий раз удача улыбнётся тебе!</i>",
@@ -57104,7 +57128,7 @@ async def cmd_sacrifice_start(update: Update, ctx: ContextTypes.DEFAULT_TYPE):
     ])
 
     msg = await update.message.reply_text(
-        f"<tg-emoji emoji-id='5341735149128159966'>🔥</tg-emoji> <b>Ивент «{SACRIFICE_EVENT_NAME}» начался!</b>\n\n"
+        f"{_E_FIRE} <b>Ивент «{SACRIFICE_EVENT_NAME}» начался!</b>\n\n"
         f"⏳ Длительность: <b>{hours} ч</b>\n"
         f"💰 За каждый сожжённый эпик в банк идёт <b>{SACRIFICE_COINS_PER_EPIC}{coin_emoji()}</b>\n"
         f"🎯 30% банка достанется случайному победителю (чем больше сжёг — тем выше шанс)\n"
@@ -57146,7 +57170,7 @@ async def cmd_sacrifice_start(update: Update, ctx: ContextTypes.DEFAULT_TYPE):
         try:
             await ctx.bot.send_message(
                 uid,
-                f"<tg-emoji emoji-id='5341735149128159966'>🔥</tg-emoji> <b>Новый ивент: «{SACRIFICE_EVENT_NAME}»!</b>\n\n"
+                f"{_E_FIRE} <b>Новый ивент: «{SACRIFICE_EVENT_NAME}»!</b>\n\n"
                 f"Сожги эпические облики, пополни общий банк и побори за главный приз!\n\n"
                 f"💰 За каждый эпик в банк → <b>{SACRIFICE_COINS_PER_EPIC}{coin_emoji()}</b>\n"
                 f"🏆 30% банка — победителю (рандом по весам)\n"
@@ -57196,9 +57220,9 @@ async def cmd_sacrifice_status(update: Update, ctx: ContextTypes.DEFAULT_TYPE):
     remaining = max(0, int(ev["end_time"] - time.time()))
     h, m = divmod(remaining // 60, 60)
     await update.message.reply_text(
-        f"<tg-emoji emoji-id='5341735149128159966'>🔥</tg-emoji> <b>«{SACRIFICE_EVENT_NAME}»</b>\n\n"
+        f"{_E_FIRE} <b>«{SACRIFICE_EVENT_NAME}»</b>\n\n"
         f"💰 Банк: <b>{ev['total_bank']}{coin_emoji()}</b>\n"
-        f"<tg-emoji emoji-id='5341735149128159966'>🔥</tg-emoji> Сожжено эпиков: <b>{total_burned}</b>\n"
+        f"{_E_FIRE} Сожжено эпиков: <b>{total_burned}</b>\n"
         f"👥 Участников: <b>{len(parts)}</b>\n"
         f"⏳ До конца: <b>{h}ч {m}м</b>",
         parse_mode=ParseMode.HTML,
@@ -57248,7 +57272,7 @@ async def cmd_funnel_start(update: Update, ctx: ContextTypes.DEFAULT_TYPE):
     ]
     for rarity, (mn, mx) in ranges.items():
         emoji = R_ICON.get(rarity, "⚪")
-        announce_lines.append(f"{emoji} {R_NAME.get(rarity, rarity)}: <b>{mn}–{mx}<tg-emoji emoji-id='5341524176039615767'>🪙</tg-emoji></b>")
+        announce_lines.append(f"{emoji} {R_NAME.get(rarity, rarity)}: <b>{mn}–{mx}{_E_COIN}</b>")
     announce_lines.append("\n<i>Нажми кнопку, чтобы сжечь облик!</i>")
 
     kb = InlineKeyboardMarkup([[
@@ -57268,7 +57292,7 @@ async def cmd_funnel_start(update: Update, ctx: ContextTypes.DEFAULT_TYPE):
         try:
             await ctx.bot.send_message(
                 uid,
-                f"<tg-emoji emoji-id='5341735149128159966'>🔥</tg-emoji> <b>Новый ивент: «{FUNNEL_NAME}»!</b>\n\nСжигай облики и получай случайные КваКоины!\n⏳ Ивент идёт <b>{hours} ч</b>. Не пропусти!",
+                f"{_E_FIRE} <b>Новый ивент: «{FUNNEL_NAME}»!</b>\n\nСжигай облики и получай случайные КваКоины!\n⏳ Ивент идёт <b>{hours} ч</b>. Не пропусти!",
                 parse_mode=ParseMode.HTML,
                 reply_markup=notif_kb,
             )
@@ -57311,14 +57335,14 @@ async def cmd_funnel_status(update: Update, ctx: ContextTypes.DEFAULT_TYPE):
     h, m = divmod(remaining // 60, 60)
     params = json.loads(ev.get("params") or "{}")
     ranges_str = ", ".join(
-        f"{R_ICON.get(r,'⚪')}{r}: {mn}-{mx}<tg-emoji emoji-id='5341524176039615767'>🪙</tg-emoji>"
+        f"{R_ICON.get(r,'⚪')}{r}: {mn}-{mx}{_E_COIN}"
         for r, (mn, mx) in params.items()
     )
 
     await update.message.reply_text(
-        f"<tg-emoji emoji-id='5341735149128159966'>🔥</tg-emoji> <b>«{FUNNEL_NAME}»</b>\n\n"
+        f"{_E_FIRE} <b>«{FUNNEL_NAME}»</b>\n\n"
         f"💰 Выплаты: {ranges_str}\n"
-        f"<tg-emoji emoji-id='5341735149128159966'>🔥</tg-emoji> Сожжено: <b>{total_burned}</b> обликов\n"
+        f"{_E_FIRE} Сожжено: <b>{total_burned}</b> обликов\n"
         f"👥 Участников: <b>{len(participants)}</b>\n"
         f"⏳ До конца: <b>{h}ч {m}м</b>",
         parse_mode=ParseMode.HTML,
@@ -57655,7 +57679,7 @@ async def cmd_farewell(update: Update, ctx: ContextTypes.DEFAULT_TYPE):
     msg = await update.message.reply_text(
         f"🕯️ <b>Сегодня мы прощаемся с легендарной лягушкой</b>\n\n"
         f"<tg-emoji emoji-id='5341367834935075028'>🐸</tg-emoji> <b>{he(frog_name)}</b>  ·  облик: {skin}\n"
-        f"<tg-emoji emoji-id='5341447412089133029'>⭐</tg-emoji> Уровень: <b>{level}</b>  ·  прожила <b>{days_lived}</b> дней\n\n"
+        f"{_E_XP} Уровень: <b>{level}</b>  ·  прожила <b>{days_lived}</b> дней\n\n"
         f"Она оставила след в нашем болоте. Напишите <b>в ответ на это сообщение</b> "
         f"своё воспоминание — бот соберёт их в книгу памяти.\n\n"
         f"<i>⏳ Через час начнётся церемония прощания.</i>",
@@ -58806,15 +58830,15 @@ async def cmd_fix_workers(update: Update, ctx: ContextTypes.DEFAULT_TYPE):
                 bonus_parts = []
                 if scene["bonus_hunger"]    != 0: bonus_parts.append(f"🍖{scene['bonus_hunger']:+d}")
                 if scene["bonus_happiness"] != 0: bonus_parts.append(f"😄{scene['bonus_happiness']:+d}")
-                if scene["bonus_health"]    != 0: bonus_parts.append(f"<tg-emoji emoji-id='5341676144867449701'>❤️</tg-emoji>{scene['bonus_health']:+d}")
-                if scene["bonus_xp"]        != 0: bonus_parts.append(f"<tg-emoji emoji-id='5341447412089133029'>⭐</tg-emoji>{scene['bonus_xp']:+d}")
+                if scene["bonus_health"]    != 0: bonus_parts.append(f"{_E_HEART}{scene['bonus_health']:+d}")
+                if scene["bonus_xp"]        != 0: bonus_parts.append(f"{_E_XP}{scene['bonus_xp']:+d}")
                 bonus_line = ("  " + "  ".join(bonus_parts)) if bonus_parts else ""
 
                 ok = await _work_send_safe(
                     ctx.bot, uid,
                     f"{scene['prof_emoji']} <b>{name} вернулась с работы!</b>\n\n"
                     f"{outcome}\n\n"
-                    f"<tg-emoji emoji-id='5341524176039615767'>🪙</tg-emoji> Принесла домой: <b>+{earned} КваКоинов</b>{bonus_line}\n\n"
+                    f"{_E_COIN} Принесла домой: <b>+{earned} КваКоинов</b>{bonus_line}\n\n"
                     f"<i>«Ква! Устала, но довольна!» <tg-emoji emoji-id='5341367834935075028'>🐸</tg-emoji></i>",
                     parse_mode=ParseMode.HTML,
                 )
@@ -58893,9 +58917,9 @@ async def cmd_staya(update: Update, ctx: ContextTypes.DEFAULT_TYPE):
         text = (
             f"🌿 <b>Болотные Стаи</b>\n\n"
             f"Ты не состоишь ни в одной стае.\n\n"
-            f"Создай свою за <b>{STAYA_CREATE_COST}<tg-emoji emoji-id='5341524176039615767'>🪙</tg-emoji></b> или вступи по приглашению.\n"
+            f"Создай свою за <b>{STAYA_CREATE_COST}{_E_COIN}</b> или вступи по приглашению.\n"
             f"Стая — это болото до 15 лягушек с общим котлом и событиями!\n\n"
-            f"У тебя: <b>{f['coins']}<tg-emoji emoji-id='5341524176039615767'>🪙</tg-emoji></b>"
+            f"У тебя: <b>{f['coins']}{_E_COIN}</b>"
         )
         kb_rows = [
             [InlineKeyboardButton(f"🌿 Создать стаю ({STAYA_CREATE_COST}🪙)", callback_data="staya_create_start")],
@@ -59097,7 +59121,7 @@ async def cmd_gift_friend(update: Update, ctx: ContextTypes.DEFAULT_TYPE):
                 await ctx.bot.send_message(
                     ADMIN_IDS[0],
                     f"🚨 <b>Спам переводов!</b>\n\n"
-                    f"Сумма: <b>{amount}🪙</b>\n"
+                    f"Сумма: <b>{amount}{_E_COIN}</b>\n"
                     f"Уникальных отправителей: <b>{len(_all_senders)}</b> за минуту\n"
                     f"IDs: {', '.join(f'<code>{s}</code>' for s in _all_senders[:10])}\n\n"
                     f"Переводы заморожены на 1 час.",
@@ -59128,14 +59152,14 @@ async def cmd_gift_friend(update: Update, ctx: ContextTypes.DEFAULT_TYPE):
     my_name = f.get("frog_name") or f.get("first_name") or "Сосед"
     tname_disp = tname or tfirst or uname
     await update.message.reply_text(
-        f"🎁 Отправлено <b>{actual}<tg-emoji emoji-id='5341524176039615767'>🪙</tg-emoji></b> лягушке {he(tname_disp)}\n"
-        f"<i>(болотная пошлина {tax}<tg-emoji emoji-id='5341524176039615767'>🪙</tg-emoji>)</i>",
+        f"🎁 Отправлено <b>{actual}{_E_COIN}</b> лягушке {he(tname_disp)}\n"
+        f"<i>(болотная пошлина {tax}{_E_COIN})</i>",
         parse_mode=ParseMode.HTML,
     )
     try:
         await ctx.bot.send_message(
             target_id,
-            f"🎁 <b>{he(my_name)}</b> прислал тебе <b>{actual}<tg-emoji emoji-id='5341524176039615767'>🪙</tg-emoji></b>!\n"
+            f"🎁 <b>{he(my_name)}</b> прислал тебе <b>{actual}{_E_COIN}</b>!\n"
             f"<i>Болотные соседи заботятся друг о друге 🌿</i>",
             parse_mode=ParseMode.HTML,
         )
@@ -59151,7 +59175,7 @@ async def cmd_gift_friend(update: Update, ctx: ContextTypes.DEFAULT_TYPE):
                 f"💸 <b>Перевод /gift</b>\n"
                 f"От: <b>{he(my_name)}</b> ({_sender_uname})\n"
                 f"Кому: <b>{he(tname_disp)}</b> ({_recv_uname})\n"
-                f"Сумма: <b>{amount}🪙</b> (получено {actual}, пошлина {tax})\n"
+                f"Сумма: <b>{amount}{_E_COIN}</b> (получено {actual}, пошлина {tax})\n"
                 f"🕐 {datetime.now(timezone.utc).strftime('%d.%m.%Y %H:%M')} UTC",
                 parse_mode=ParseMode.HTML,
             )
@@ -59202,7 +59226,7 @@ async def cmd_fish(update: Update, ctx: ContextTypes.DEFAULT_TYPE):
         await ctx.bot.send_message(
             target_id,
             f"🎣 <b>{he(my_name)}</b> зовёт на совместную рыбалку!\n\n"
-            f"Ставка: <b>{FISH_COST}<tg-emoji emoji-id='5341524176039615767'>🪙</tg-emoji></b> каждый.\n"
+            f"Ставка: <b>{FISH_COST}{_E_COIN}</b> каждый.\n"
             f"Победитель забирает всё — или выловите что-то вместе!\n\n"
             f"Согласен?",
             parse_mode=ParseMode.HTML,
@@ -59232,7 +59256,7 @@ async def cmd_letopis(update: Update, ctx: ContextTypes.DEFAULT_TYPE):
     for ev in events:
         dt = datetime.utcfromtimestamp(ev["created_at"] + 3*3600).strftime("%d.%m %H:%M")
         likes = ev.get("like_count", 0)
-        like_str = f"  <tg-emoji emoji-id='5341676144867449701'>❤️</tg-emoji>{likes}" if likes else ""
+        like_str = f"  {_E_HEART}{likes}" if likes else ""
         lines.append(f"<i>{dt}</i> {ev['text']}{like_str}")
     await update.message.reply_text(
         "\n".join(lines), parse_mode=ParseMode.HTML,
@@ -59413,7 +59437,7 @@ async def cmd_bond(update: Update, ctx: ContextTypes.DEFAULT_TYPE):
                 partner = await db_get(b["partner_id"])
                 pname = (partner.get("frog_name") or partner.get("first_name") or "?") if partner else "?"
                 streak = b.get("streak", 0)
-                lines.append(f"💚 <b>{he(pname)}</b> — <tg-emoji emoji-id='5341735149128159966'>🔥</tg-emoji> {streak} дн.")
+                lines.append(f"💚 <b>{he(pname)}</b> — {_E_FIRE} {streak} дн.")
             await update.message.reply_text(
                 f"💚 <b>Болотная Связь</b>\n\n"
                 + "\n".join(lines) +
@@ -60297,7 +60321,7 @@ async def handle_checkers_callback(q, d, uid, ctx):
         try:
             await q.message.edit_text(
                 f"♟️ <b>{_html.escape(user.first_name)}</b> вызывает на шашки!\n"
-                f"Ставка: <b>{stake}<tg-emoji emoji-id='5341524176039615767'>🪙</tg-emoji></b> с каждого · банк: <b>{stake * 2}<tg-emoji emoji-id='5341524176039615767'>🪙</tg-emoji></b>\n\n"
+                f"Ставка: <b>{stake}{_E_COIN}</b> с каждого · банк: <b>{stake * 2}{_E_COIN}</b>\n\n"
                 f"⚫ = чёрные · ⚪ = белые · 🔵🟡 = дамки · ✅ = возможный ход",
                 parse_mode=ParseMode.HTML, reply_markup=kb,
             )
@@ -60485,7 +60509,7 @@ async def handle_checkers_callback(q, d, uid, ctx):
                     await q.message.edit_text(
                         f"♟️ <b>Шашки завершены!</b>\n"
                         f"⚫ {_html.escape(gd['p1n'])} vs ⚪ {_html.escape(gd['p2n'])}\n\n"
-                        f"🏆 <b>{_html.escape(w_name)}</b> победил(а)! +{prize}<tg-emoji emoji-id='5341524176039615767'>🪙</tg-emoji>",
+                        f"🏆 <b>{_html.escape(w_name)}</b> победил(а)! +{prize}{_E_COIN}",
                         parse_mode=ParseMode.HTML,
                     )
                 except Exception: pass
@@ -60639,7 +60663,7 @@ async def handle_checkers_callback(q, d, uid, ctx):
             await q.answer(f"Вызов отменён, {stake}🪙 возвращено.")
             try:
                 await q.message.edit_text(
-                    f"♟️ Вызов отменён. +{stake}<tg-emoji emoji-id='5341524176039615767'>🪙</tg-emoji> возвращено.",
+                    f"♟️ Вызов отменён. +{stake}{_E_COIN} возвращено.",
                     parse_mode=ParseMode.HTML,
                 )
             except Exception: pass
@@ -60658,7 +60682,7 @@ async def handle_checkers_callback(q, d, uid, ctx):
             await q.message.edit_text(
                 f"♟️ <b>Шашки</b>\n"
                 f"🏳 <b>{_html.escape(l_name)}</b> сдался!\n"
-                f"🏆 Победа <b>{_html.escape(w_name)}</b>! +{prize}<tg-emoji emoji-id='5341524176039615767'>🪙</tg-emoji>",
+                f"🏆 Победа <b>{_html.escape(w_name)}</b>! +{prize}{_E_COIN}",
                 parse_mode=ParseMode.HTML,
             )
         except Exception: pass
@@ -60843,7 +60867,7 @@ async def _bs_send_place_pm(gid: str, gd: dict, bot, player: int) -> bool:
     stake = gd["stake"]
     kb = _bs_place_kb(gid, placed, size, ms)
     text = (
-        f"🚢 <b>Морской бой</b> · Банк: {stake * 2}<tg-emoji emoji-id='5341524176039615767'>🪙</tg-emoji>  {size}×{size}\n"
+        f"🚢 <b>Морской бой</b> · Банк: {stake * 2}{_E_COIN}  {size}×{size}\n"
         f"⚓ {_html.escape(gd['p1n'])} vs ⚓ {_html.escape(gd['p2n'])}\n\n"
         f"📍 <b>{_html.escape(name)}</b> — расставь <b>{ms}</b> клеток кораблей.\n"
         f"Тапни по ячейкам ⬜ → 🟩. Соперник не видит!"
@@ -60878,7 +60902,7 @@ async def _bs_start_game(gid: str, gd: dict, message, bot) -> None:
         return
     try:
         await message.edit_text(
-            f"🚢 <b>Морской бой</b> · Банк: {stake * 2}<tg-emoji emoji-id='5341524176039615767'>🪙</tg-emoji>  {size}×{size}\n"
+            f"🚢 <b>Морской бой</b> · Банк: {stake * 2}{_E_COIN}  {size}×{size}\n"
             f"⚓ {_html.escape(gd['p1n'])} vs ⚓ {_html.escape(gd['p2n'])}\n\n"
             f"📨 <b>{_html.escape(gd['p1n'])}</b> расставляет флот в личке…\n"
             f"<i>Соперник не видит расстановку!</i>",
@@ -60937,7 +60961,7 @@ async def _bs_cmd(update: Update, ctx: ContextTypes.DEFAULT_TYPE, size: int, max
     ])
     msg = await update.message.reply_text(
         f"🚢 <b>{_html.escape(user.first_name)}</b> вызывает на морской бой {size}×{size}!\n"
-        f"Ставка: <b>{stake}<tg-emoji emoji-id='5341524176039615767'>🪙</tg-emoji></b> с каждого · банк: <b>{stake * 2}<tg-emoji emoji-id='5341524176039615767'>🪙</tg-emoji></b>\n\n"
+        f"Ставка: <b>{stake}{_E_COIN}</b> с каждого · банк: <b>{stake * 2}{_E_COIN}</b>\n\n"
         f"⬜ = пусто · 🟩 = корабль (расстановка в личке)\n"
         f"🟦 = промах · 🟨 = попал · 🟥 = потопил",
         parse_mode=ParseMode.HTML, reply_markup=kb,
@@ -60999,7 +61023,7 @@ async def handle_battleship_callback(q, d, uid, ctx):
         await q.answer()
         try:
             await q.message.edit_text(
-                f"🚢 <b>Морской бой</b> · Банк: {stake * 2}<tg-emoji emoji-id='5341524176039615767'>🪙</tg-emoji>  {size}×{size}\n"
+                f"🚢 <b>Морской бой</b> · Банк: {stake * 2}{_E_COIN}  {size}×{size}\n"
                 f"⚓ {_html.escape(gd['p1n'])} vs ⚓ {_html.escape(gd['p2n'])}\n\n"
                 f"📍 <b>{_html.escape(p_name)}</b> расставляет флот.\n"
                 f"Выбрано: {len(placed)}/{ms} · тапни 🟩 чтобы убрать",
@@ -61050,7 +61074,7 @@ async def handle_battleship_callback(q, d, uid, ctx):
             # Обновляем публичное сообщение
             try:
                 await ctx.bot.edit_message_text(
-                    f"🚢 <b>Морской бой</b> · Банк: {stake * 2}<tg-emoji emoji-id='5341524176039615767'>🪙</tg-emoji>  {size}×{size}\n"
+                    f"🚢 <b>Морской бой</b> · Банк: {stake * 2}{_E_COIN}  {size}×{size}\n"
                     f"⚓ {_html.escape(gd['p1n'])} vs ⚓ {_html.escape(gd['p2n'])}\n\n"
                     f"✅ {_html.escape(gd['p1n'])} расставил флот!\n"
                     f"📨 <b>{_html.escape(gd['p2n'])}</b> расставляет флот в личке…",
@@ -61095,7 +61119,7 @@ async def handle_battleship_callback(q, d, uid, ctx):
             try:
                 await ctx.bot.send_message(
                     chat_id,
-                    f"🚢 <b>Бой начался!</b> · Банк: {stake * 2}<tg-emoji emoji-id='5341524176039615767'>🪙</tg-emoji>\n"
+                    f"🚢 <b>Бой начался!</b> · Банк: {stake * 2}{_E_COIN}\n"
                     f"⚓ {_html.escape(gd['p1n'])} vs ⚓ {_html.escape(gd['p2n'])}\n\n"
                     f"💥 Ход <b>{_html.escape(gd['p1n'])}</b> — тапни ⬜ чтобы выстрелить!",
                     parse_mode=ParseMode.HTML, reply_markup=kb,
@@ -61155,7 +61179,7 @@ async def handle_battleship_callback(q, d, uid, ctx):
                         f"🚢 <b>Морской бой завершён!</b>\n"
                         f"⚓ {_html.escape(gd['p1n'])} vs ⚓ {_html.escape(gd['p2n'])}\n\n"
                         f"🏆 <b>{_html.escape(cur_name)}</b> потопил весь флот!\n"
-                        f"+{prize}<tg-emoji emoji-id='5341524176039615767'>🪙</tg-emoji>",
+                        f"+{prize}{_E_COIN}",
                         parse_mode=ParseMode.HTML,
                     )
                 except Exception: pass
@@ -61197,7 +61221,7 @@ async def handle_battleship_callback(q, d, uid, ctx):
                     try:
                         await q.message.edit_text(
                             f"🚢 <b>Морской бой vs 🤖 Бот</b>\n\n"
-                            f"<tg-emoji emoji-id='5341573078537248907'>💀</tg-emoji> <b>Бот потопил твой флот!</b>\n"
+                            f"{_E_SKULL} <b>Бот потопил твой флот!</b>\n"
                             f"Ходы бота: {', '.join(bot_log)}\n\n{board_txt2}",
                             parse_mode=ParseMode.HTML,
                         )
@@ -61241,7 +61265,7 @@ async def handle_battleship_callback(q, d, uid, ctx):
         else:
             try:
                 await q.message.edit_text(
-                    f"🚢 <b>Морской бой</b> · Банк: {stake * 2}<tg-emoji emoji-id='5341524176039615767'>🪙</tg-emoji>\n"
+                    f"🚢 <b>Морской бой</b> · Банк: {stake * 2}{_E_COIN}\n"
                     f"⚓ {_html.escape(gd['p1n'])} vs ⚓ {_html.escape(gd['p2n'])}\n\n"
                     f"{result_txt}\n"
                     f"💥 Ход <b>{_html.escape(next_name)}</b> — тапни ⬜!",
@@ -61262,7 +61286,7 @@ async def handle_battleship_callback(q, d, uid, ctx):
             p1f = await db_get(gd["p1"])
             if p1f: p1f["coins"] += stake; await db_save(p1f)
             await q.answer(f"Вызов отменён, {stake}🪙 возвращено.")
-            try: await q.message.edit_text(f"🚢 Вызов отменён. +{stake}<tg-emoji emoji-id='5341524176039615767'>🪙</tg-emoji> возвращено.", parse_mode=ParseMode.HTML)
+            try: await q.message.edit_text(f"🚢 Вызов отменён. +{stake}{_E_COIN} возвращено.", parse_mode=ParseMode.HTML)
             except Exception: pass
             return
         # Сдача во время игры
@@ -61278,7 +61302,7 @@ async def handle_battleship_callback(q, d, uid, ctx):
             await q.message.edit_text(
                 f"🚢 <b>Морской бой</b>\n"
                 f"🏳 <b>{_html.escape(l_name)}</b> сдался!\n"
-                f"🏆 Победа <b>{_html.escape(w_name)}</b>! +{prize}<tg-emoji emoji-id='5341524176039615767'>🪙</tg-emoji>",
+                f"🏆 Победа <b>{_html.escape(w_name)}</b>! +{prize}{_E_COIN}",
                 parse_mode=ParseMode.HTML,
             )
         except Exception:
@@ -68398,7 +68422,7 @@ async def _war_callbacks_v2(q, d: str, uid: int, f: dict, ctx) -> bool:
         try:
             await q.message.edit_text(
                 f"🏹 <b>Выбери цель для набега</b>\n"
-                f"Взнос: <b>{RAID_ENTRY_PERSONAL}🪙</b> личных + <b>{RAID_ENTRY_CAULDRON}🪙</b> из котла\n"
+                f"Взнос: <b>{RAID_ENTRY_PERSONAL}{_E_COIN}</b> личных + <b>{RAID_ENTRY_CAULDRON}{_E_COIN}</b> из котла\n"
                 f"<i>Все члены стаи смогут проголосовать за выбор котла!</i>",
                 parse_mode=ParseMode.HTML,
                 reply_markup=InlineKeyboardMarkup(kb),
@@ -68408,7 +68432,7 @@ async def _war_callbacks_v2(q, d: str, uid: int, f: dict, ctx) -> bool:
             try:
                 await q.message.reply_text(
                     f"🏹 <b>Выбери цель для набега</b>\n"
-                    f"Взнос: <b>{RAID_ENTRY_PERSONAL}🪙</b> личных + <b>{RAID_ENTRY_CAULDRON}🪙</b> из котла\n"
+                    f"Взнос: <b>{RAID_ENTRY_PERSONAL}{_E_COIN}</b> личных + <b>{RAID_ENTRY_CAULDRON}{_E_COIN}</b> из котла\n"
                     f"<i>Все члены стаи смогут проголосовать за выбор котла!</i>",
                     parse_mode=ParseMode.HTML,
                     reply_markup=InlineKeyboardMarkup(kb),
@@ -68714,8 +68738,8 @@ async def _war_callbacks_v2(q, d: str, uid: int, f: dict, ctx) -> bool:
         try:
             await q.message.edit_text(
                 f"⚔️ <b>СТЫЧКА — выбери цель</b>\n"
-                f"Взнос: <b>{SKIRMISH_ENTRY_COINS}🪙</b> из котла\n"
-                f"Приз: <b>{int(SKIRMISH_WIN_PCT*100)}%</b> котла проигравшей стаи (макс. {SKIRMISH_WIN_MAX}🪙)\n"
+                f"Взнос: <b>{SKIRMISH_ENTRY_COINS}{_E_COIN}</b> из котла\n"
+                f"Приз: <b>{int(SKIRMISH_WIN_PCT*100)}%</b> котла проигравшей стаи (макс. {SKIRMISH_WIN_MAX}{_E_COIN})\n"
                 f"Режим определяется случайно при старте.\n"
                 f"<i>Выбирай стаи близкого уровня (±2)</i>",
                 parse_mode=ParseMode.HTML,
@@ -68726,8 +68750,8 @@ async def _war_callbacks_v2(q, d: str, uid: int, f: dict, ctx) -> bool:
             try:
                 await q.message.reply_text(
                     f"⚔️ <b>СТЫЧКА — выбери цель</b>\n"
-                    f"Взнос: <b>{SKIRMISH_ENTRY_COINS}🪙</b> из котла\n"
-                    f"Приз: <b>{int(SKIRMISH_WIN_PCT*100)}%</b> котла проигравшей стаи (макс. {SKIRMISH_WIN_MAX}🪙)\n"
+                    f"Взнос: <b>{SKIRMISH_ENTRY_COINS}{_E_COIN}</b> из котла\n"
+                    f"Приз: <b>{int(SKIRMISH_WIN_PCT*100)}%</b> котла проигравшей стаи (макс. {SKIRMISH_WIN_MAX}{_E_COIN})\n"
                     f"Режим определяется случайно при старте.\n"
                     f"<i>Выбирай стаи близкого уровня (±2)</i>",
                     parse_mode=ParseMode.HTML,
@@ -69514,7 +69538,7 @@ async def _war_callbacks_v2(q, d: str, uid: int, f: dict, ctx) -> bool:
             await q.message.edit_text(
                 f"{q.message.text or ''}\n\n"
                 f"Выбрано: <b>{side_ru}</b>  ×{odds}\n"
-                f"💰 Твой баланс: <b>{bal}🪙</b>\n"
+                f"💰 Твой баланс: <b>{bal}{_E_COIN}</b>\n"
                 f"Выбери сумму ставки:",
                 parse_mode=ParseMode.HTML,
                 reply_markup=_bet_amount_keyboard(duel_id_s, side_s),
@@ -69596,7 +69620,7 @@ async def _war_callbacks_v2(q, d: str, uid: int, f: dict, ctx) -> bool:
             await q.message.edit_text(
                 f"{q.message.text or ''}\n\n"
                 f"✏️ Напиши <b>число</b> — сумму ставки на {side_ru}.\n"
-                f"Баланс: <b>{bal}🪙</b>",
+                f"Баланс: <b>{bal}{_E_COIN}</b>",
                 parse_mode=ParseMode.HTML,
                 reply_markup=InlineKeyboardMarkup([[
                     InlineKeyboardButton("❌ Отмена", callback_data=f"bet_cancel_{uid}")
@@ -70005,7 +70029,7 @@ async def _war_callbacks(q, d, uid, f, ctx):
         try:
             await q.message.edit_text(
                 f"🏹 <b>Выбери цель для набега</b>{scout_note}\n"
-                f"Стоимость: <b>{RAID_ENTRY_PERSONAL}🪙</b> личных + <b>{RAID_ENTRY_CAULDRON}🪙</b> из котла",
+                f"Стоимость: <b>{RAID_ENTRY_PERSONAL}{_E_COIN}</b> личных + <b>{RAID_ENTRY_CAULDRON}{_E_COIN}</b> из котла",
                 parse_mode=ParseMode.HTML,
                 reply_markup=InlineKeyboardMarkup(kb_t),
             )
@@ -70161,8 +70185,8 @@ async def _war_callbacks(q, d, uid, f, ctx):
             await q.message.edit_text(
                 f"🏹 <b>НАБЕГ НА «{he(target['name'])}»</b>\n"
                 "\n"
-                f"В котле врага: <b>{target['cauldron']}🪙</b>\n"
-                f"Можно украсть: до <b>{steal_max}🪙</b>\n"
+                f"В котле врага: <b>{target['cauldron']}{_E_COIN}</b>\n"
+                f"Можно украсть: до <b>{steal_max}{_E_COIN}</b>\n"
                 f"⚠️ Перед тобой 3 котла.\n"
                 f"В одном — монеты, в двух — <b>ловушки</b>.\n"
                 f"Угадай — и монеты твои!",
@@ -70279,7 +70303,7 @@ async def _war_callbacks(q, d, uid, f, ctx):
                             m["user_id"],
                             f"⚠️ <b>Набег!</b>\n"
                             f"Стая <b>{he(_att_name_s)}</b> "
-                            f"украла <b>{stolen}🪙</b> из котла!{_intercept_note}",
+                            f"украла <b>{stolen}{_E_COIN}</b> из котла!{_intercept_note}",
                             parse_mode=ParseMode.HTML,
                         )
                     except Exception:
@@ -70313,7 +70337,7 @@ async def _war_callbacks(q, d, uid, f, ctx):
                             m["user_id"],
                             f"✅ <b>Набег отбит!</b>\n"
                             f"Стая <b>{he(_att_name_f)}</b> "
-                            f"не угадала котёл и потеряла {RAID_PENALTY_ON_FAIL}🪙!\n"
+                            f"не угадала котёл и потеряла {RAID_PENALTY_ON_FAIL}{_E_COIN}!\n"
                             f"Штраф зачислен в ваш котёл.",
                             parse_mode=ParseMode.HTML,
                         )
@@ -70391,8 +70415,8 @@ async def _war_callbacks(q, d, uid, f, ctx):
         try:
             await q.message.edit_text(
                 f"⚔️ <b>СТЫЧКА — выбери цель</b>\n"
-                f"Стоимость объявления: <b>{SKIRMISH_ENTRY_COINS}🪙</b> из котла\n"
-                f"Приз: <b>{int(SKIRMISH_WIN_PCT * 100)}%</b> котла проигравшей стаи (макс. {SKIRMISH_WIN_MAX}🪙)\n"
+                f"Стоимость объявления: <b>{SKIRMISH_ENTRY_COINS}{_E_COIN}</b> из котла\n"
+                f"Приз: <b>{int(SKIRMISH_WIN_PCT * 100)}%</b> котла проигравшей стаи (макс. {SKIRMISH_WIN_MAX}{_E_COIN})\n"
                 f"<i>Стычки доступны с близкими по уровню стаями (±2)</i>",
                 parse_mode=ParseMode.HTML,
                 reply_markup=InlineKeyboardMarkup(kb_sk),
@@ -70476,7 +70500,7 @@ async def _war_callbacks(q, d, uid, f, ctx):
                         await ctx.bot.send_message(
                             _m["user_id"],
                             f"🐉 <b>Дракон стаи напал на «{he(target['name'])}»!</b>\n"
-                            f"Авто-победа без боя — захвачено <b>{_dragon_steal}🪙</b> из котла!",
+                            f"Авто-победа без боя — захвачено <b>{_dragon_steal}{_E_COIN}</b> из котла!",
                             parse_mode=ParseMode.HTML,
                         )
                     except Exception:
@@ -70485,7 +70509,7 @@ async def _war_callbacks(q, d, uid, f, ctx):
             try:
                 await q.message.edit_text(
                     f"🐉 <b>Дракон стаи атаковал «{he(target['name'])}»!</b>\n\n"
-                    f"Захвачено: <b>{_dragon_steal}🪙</b> без боя.",
+                    f"Захвачено: <b>{_dragon_steal}{_E_COIN}</b> без боя.",
                     parse_mode=ParseMode.HTML,
                     reply_markup=InlineKeyboardMarkup([[btn("◀️ Меню войны", callback_data="war_menu")]]),
                 )
@@ -71262,7 +71286,7 @@ async def _auction_finish(auction_id: int, bot) -> None:
                     wuid,
                     f"{medals[i]} <b>Поздравляем! Ты в топ-{i+1} аукциона!</b>\n\n"
                     f"Лот: {_auction_skin_line(skin)}\n"
-                    f"Твоя ставка: <b>{wamount:,}🪙</b>\n\n"
+                    f"Твоя ставка: <b>{wamount:,}{_E_COIN}</b>\n\n"
                     f"Облик уже добавлен в коллекцию! Надень через /frog → Облики.",
                     parse_mode=ParseMode.HTML,
                 )
@@ -71302,9 +71326,9 @@ async def _auction_finish(auction_id: int, bot) -> None:
             await bot.send_message(
                 luid,
                 f"🔨 <b>Аукцион завершён</b>\n\n"
-                f"Твоя ставка: <b>{lamount:,}🪙</b>\n"
-                f"Возврат (60%): <b>+{refund:,}🪙</b>\n"
-                f"Сгорело (40%): <b>{burned:,}🪙</b>\n\n"
+                f"Твоя ставка: <b>{lamount:,}{_E_COIN}</b>\n"
+                f"Возврат (60%): <b>+{refund:,}{_E_COIN}</b>\n"
+                f"Сгорело (40%): <b>{burned:,}{_E_COIN}</b>\n\n"
                 f"Победители: {', '.join(he(n) for n in winner_names[:3])}",
                 parse_mode=ParseMode.HTML,
             )
@@ -71559,8 +71583,8 @@ async def _place_bid(msg_or_q, uid: int, f: dict, amount: int, bot) -> None:
                 await bot.send_message(
                     prev_leader["user_id"],
                     f"⚠️ <b>Тебя перебили на аукционе!</b>\n\n"
-                    f"Новая максимальная ставка: <b>{my_total:,}🪙</b>\n"
-                    f"Твоя ставка: {int(prev_leader['amount']):,}🪙\n\n"
+                    f"Новая максимальная ставка: <b>{my_total:,}{_E_COIN}</b>\n"
+                    f"Твоя ставка: {int(prev_leader['amount']):,}{_E_COIN}\n\n"
                     f"Подними ставку: /auction",
                     parse_mode=ParseMode.HTML,
                 )
