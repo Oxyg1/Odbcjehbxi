@@ -45,7 +45,7 @@ from telegram import (
     InlineQueryResultArticle,
     InputTextMessageContent,
 )
-from telegram import ReactionTypeEmoji, ReactionTypeCustomEmoji
+from telegram import ReactionTypeEmoji
 from telegram.ext import (
     Application,
     CommandHandler,
@@ -18230,7 +18230,6 @@ async def show_status(target, f: dict, edit=False, app=None):
         # Запоминаем владельца сообщения для проверки в группах
             )
         if msg and hasattr(msg, "message_id") and hasattr(msg, "chat"):
-            from telegram.ext import Application
 
             # Используем глобальный бот из msg
             pass
@@ -21275,7 +21274,6 @@ async def make_db_backup(bot=None, notify_admin: bool = False) -> str:
     Удаляет старые бэкапы, оставляя BACKUP_KEEP последних.
     Возвращает путь к новому файлу.
     """
-    import shutil
     import glob
     os.makedirs(BACKUP_DIR, exist_ok=True)
     ts = datetime.now().strftime("%Y-%m-%d_%H-%M")
@@ -34156,7 +34154,7 @@ async def on_callback(update: Update, ctx: ContextTypes.DEFAULT_TYPE):
         try:
             frog_status = status_text(f)
             await q.message.edit_text(
-                f"{frog_status}\n\n🧹 <b>Ухаживать за лягушкой</b>\n<i>Выбери действие:</i>",
+                frog_status,
                 parse_mode=ParseMode.HTML,
                 reply_markup=care_kb(f),
                 link_preview_options=LinkPreviewOptions(),
@@ -34166,7 +34164,7 @@ async def on_callback(update: Update, ctx: ContextTypes.DEFAULT_TYPE):
             # Если edit не удался — шлём новым сообщением
             try:
                 await q.message.reply_text(
-                    f"🧹 <b>Ухаживать за лягушкой</b>\n<i>Выбери действие:</i>",
+                    ui_title("🧹", "Уход"),
                     parse_mode=ParseMode.HTML,
                     reply_markup=care_kb(f),
                 )
@@ -55834,7 +55832,7 @@ async def job_lottery_draw(ctx: ContextTypes.DEFAULT_TYPE):
     today = lottery_today()
     # Розыгрыш проводится для ПРЕДЫДУЩЕЙ даты (той, которая только что "закрылась")
     # lottery_today() уже вернула СЛЕДУЮЩУЮ дату, поэтому берём ту, что только что прошла.
-    from datetime import datetime, timezone, timedelta
+    from datetime import datetime, timezone
     now = datetime.now(timezone.utc)
     draw_date = now.strftime("%Y-%m-%d")  # текущая UTC-дата — это и есть дата розыгрыша
 
@@ -70948,7 +70946,6 @@ async def cmd_m_new(update: Update, ctx: ContextTypes.DEFAULT_TYPE):
         # Разрешаем базовое HTML-форматирование: безопасные теги остаются,
         # опасные (<script>, <a href=...> и т.п.) экранируются
         SAFE_TAGS = {"b", "i", "u", "s", "code", "pre", "tg-emoji"}
-        import re as _re
         def safe_html(text: str) -> str:
             """Оставляем только безопасные HTML-теги, остальное экранируем посимвольно."""
             result = []
