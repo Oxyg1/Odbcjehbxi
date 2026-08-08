@@ -29581,25 +29581,32 @@ async def cmd_stats(update: Update, ctx: ContextTypes.DEFAULT_TYPE):
     await update.message.reply_text(
         ui_card(
             f"📊 <b>{fname(f)}</b>{SEP}{R_ICON[s['rarity']]} {pemoji(f['skin'])}",
-            # Каждый показатель — своя строка «подпись: значение»; 17 строк
-            # подряд читались как таблица без границ. Группируем по смыслу
-            # и сводим однотипные счётчики в строки через разделитель.
-            ui_line(f"⭐️ уровень {f['level']}",
+            # Каждый показатель был отдельной строкой «подпись: значение» —
+            # 17 строк подряд читались как таблица без границ. Группируем по
+            # смыслу. Не больше трёх значений в строке: при крупных числах
+            # четвёртое уводит строку за 21W и её рвёт переносом на телефоне
+            # (проверяется tools/msgwidth.py).
+            ui_line(f"{_E_LEVEL} ур. {f['level']}",
                     f"{_E_FIRE}{f['streak']} дн",
                     f"📅 {days} дн в игре"),
             ui_line(ui_money(f["coins"]),
-                    f"потрачено {f.get('coins_spent', 0)}{coin_emoji()}",
-                    f"{_E_STARS}{f.get('stars_spent', 0)}"),
-            ui_line(f"🍎 {f['total_feeds']}",
-                    f"🎮 {f['total_plays']}",
-                    f"🛁 {f['total_washes']}",
-                    f"😴 {f['total_sleeps']}",
-                    f"🎰 {f['total_gacha']}",
-                    f"🦟 {f.get('total_mosquitoes', 0)}"),
-            ui_line(f"⚔️ дуэли {f.get('total_duel_wins', 0)}/{f.get('total_duels', 0)} ({win_rate}%)",
-                    f"🃏 казино {f.get('total_casino_wins', 0)}/{f.get('total_casino', 0)} ({casino_wr}%)"),
-            ui_line(f"🗂 коллекция {len(coll)}/50",
+                    f"потрачено {f.get('coins_spent', 0)}{coin_emoji()}"),
+            ui_line(f"{_E_STARS}{f.get('stars_spent', 0)}",
+                    f"🗂 {len(coll)}/50",
                     display_skin(f["skin"], use_st)),
+            # Счётчики ухода — один блок из двух строк, а не два блока:
+            # между строками одного смысла пустая строка не нужна.
+            ui_line(f"{_E_FOOD} {f['total_feeds']}",
+                    f"🎮 {f['total_plays']}",
+                    f"{_E_SOAP} {f['total_washes']}")
+            + "\n"
+            + ui_line(f"😴 {f['total_sleeps']}",
+                      f"🎰 {f['total_gacha']}",
+                      f"🦟 {f.get('total_mosquitoes', 0)}"),
+            # Процент в скобках, а не через SEP: иначе разделитель означает
+            # и «следующая колонка», и «уточнение к числу».
+            ui_line(f"⚔️ {f.get('total_duel_wins', 0)}/{f.get('total_duels', 0)} ({win_rate}%)",
+                    f"🃏 {f.get('total_casino_wins', 0)}/{f.get('total_casino', 0)} ({casino_wr}%)"),
         ),
         parse_mode=ParseMode.HTML,
         link_preview_options=LinkPreviewOptions(),
@@ -33376,11 +33383,12 @@ async def on_callback(update: Update, ctx: ContextTypes.DEFAULT_TYPE):
             await q.message.edit_text(
                 ui_card(
                     ui_title("🎰", "Гача"),
-                    ui_line(
-                        f"крутка {ui_money(cost)}",
-                        f"баланс {ui_money(f['coins'])}",
-                        f"билеты {_E_COSMETIC}{ticket_count}" if ticket_count else "",
-                    ),
+                    # Билеты отдельной строкой: с ними третья колонка уводит
+                    # строку за 21W и её рвёт переносом (tools/msgwidth.py).
+                    ui_line(f"крутка {ui_money(cost)}",
+                            f"баланс {ui_money(f['coins'])}")
+                    + (f"\n{_E_COSMETIC} {ui_plural(ticket_count, 'билет', 'билета', 'билетов')}"
+                       if ticket_count else ""),
                     chance_lines,
                     hint=not_enough,
                 ),
