@@ -244,6 +244,28 @@ def scan(path: str = "bot.py"):
     return struct, buttons
 
 
+# ── Премиум-эмодзи в полях без HTML ──────────────────────────────────────────
+#
+# Всплывающие уведомления, поля invoice, подписи кнопок и меню команд Telegram
+# отдаёт как обычный текст. Тег <tg-emoji> там не превращается в картинку —
+# игрок видит сырую разметку. Для кнопок иконка ставится отдельным полем
+# icon_custom_emoji_id, для остальных — обычный символ.
+
+_PLAIN_SINK = re.compile(
+    r"\.answer\(|send_invoice\(|^\s*(?:title|description)=|BotCommand\("
+)
+_PREMIUM = re.compile(r"\{_E_[A-Z_]+\}|<tg-emoji")
+
+
+def scan_premium_leaks(path: str = "bot.py"):
+    """Премиум-эмодзи там, где Telegram не разбирает HTML."""
+    out = []
+    for n, line in enumerate(open(path, encoding="utf-8"), 1):
+        if _PREMIUM.search(line) and _PLAIN_SINK.search(line):
+            out.append((n, line.strip()[:96]))
+    return out
+
+
 if __name__ == "__main__":
     if len(sys.argv) > 1:
         for arg in sys.argv[1:]:
@@ -265,4 +287,9 @@ if __name__ == "__main__":
         print(f"   bot.py:{line_no:<6} {w:5.1f}W  {part[:74]}")
     print(f"\n── Кнопки {BTN_HALF_LIMIT:.1f}–{BTN_FULL_LIMIT:.0f}W — только на всю ширину ряда: {len(soft)}")
 
-    sys.exit(1 if struct else 0)
+    leaks = scan_premium_leaks()
+    print(f"\n── Премиум-эмодзи в полях без HTML: {len(leaks)}")
+    for n, s in leaks[:15]:
+        print(f"   bot.py:{n:<6} {s}")
+
+    sys.exit(1 if (struct or leaks) else 0)

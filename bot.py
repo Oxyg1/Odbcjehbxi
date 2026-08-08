@@ -649,12 +649,12 @@ async def _fz_announce_drop(uid: int, bot) -> None:
         f"👤 Игрок: <a href='tg://user?id={uid}'>{name}</a>\n"
         f"🆔 ID: <code>{uid}</code>\n"
         f"📎 Username: {username_str}\n"
-        f"⭐ Уровень: {level_str} · 🪙 Монет: {coins_str}\n"
+        f"{_E_LEVEL} Уровень: {level_str} · 🪙 Монет: {coins_str}\n"
         "\n"
         f"🎲 Источник броска: <code>{win_source}</code>\n"
         f"🕐 Время победы: {win_ts_str}\n"
         f"🧊 Всего бросков игрока: <b>{user_throws}</b>\n"
-        f"⭐ Stars потрачено игроком: <b>{user_stars}</b>\n"
+        f"{_E_STARS} Stars потрачено игроком: <b>{user_stars}</b>\n"
         "\n"
         f"🍦 Осталось NFT в пуле: <b>{remaining} / {total_nft}</b>\n"
         f"📊 Всего бросков в ивенте: <b>{total_throws:,}</b>\n"
@@ -834,7 +834,7 @@ async def _fz_handle_payment(update, ctx) -> None:
     for rv in rolls_sorted:
         diff = FZ_DROP_CHANCE - rv
         if rv == FZ_DROP_CHANCE:
-            rolls_lines.append(f"🏆 <b>{rv}/1000</b> (−{diff})")
+            rolls_lines.append(f"{_E_TROPHY} <b>{rv}/1000</b> (−{diff})")
         else:
             rolls_lines.append(f"🧊 {rv}/1000 (−{diff})")
     rolls_text = "\n".join(rolls_lines)
@@ -870,9 +870,9 @@ async def _fz_handle_payment(update, ctx) -> None:
     await _fz_admin_notify(ctx.bot,
         f"💳 <b>Покупка пакета кубиков</b>\n\n"
         f"👤 {uname} <code>[{uid}]</code>\n"
-        f"📦 {pkg['label']} — {stars_paid}⭐ ({cubes} кубиков)\n"
-        f"🏆 побед {wins} · 🍦 NFT {remaining}\n"
-        f"⭐ Итого Stars за ивент: {f.get('fz_stars_spent', stars_paid) if f else stars_paid}"
+        f"📦 {pkg['label']} — {stars_paid}{_E_STARS} ({cubes} кубиков)\n"
+        f"{_E_TROPHY} побед {wins} · 🍦 NFT {remaining}\n"
+        f"{_E_STARS} Итого Stars за ивент: {f.get('fz_stars_spent', stars_paid) if f else stars_paid}"
     )
 
 
@@ -1498,8 +1498,8 @@ async def cmd_freeze(update: Update, ctx: ContextTypes.DEFAULT_TYPE) -> None:
         f"Состояние: {heat_emoji} {heat_label}\n\n"
         f"<b>Твои результаты:</b>\n"
         f"  🧊 Кубиков брошено: <b>{total_throws}</b>\n"
-        f"  🏆 NFT дропов: <b>{wins}</b>\n"
-        f"  ⭐ Stars потрачено: <b>{stars_spent}</b>\n"
+        f"  {_E_TROPHY} NFT дропов: <b>{wins}</b>\n"
+        f"  {_E_STARS} Stars потрачено: <b>{stars_spent}</b>\n"
         f"  🎯 Шанс победы: <b>{p_at_least_one}%</b> <i>(дроп + топ + розыгрыш)</i>",
         parse_mode=ParseMode.HTML,
         reply_markup=InlineKeyboardMarkup([
@@ -1538,7 +1538,7 @@ async def cmd_icecube(update: Update, ctx: ContextTypes.DEFAULT_TYPE) -> None:
     for pkg in FREEZE_PACKAGES:
         cool = f"  −{abs(pkg['heat_bonus'])}% жары" if pkg["heat_bonus"] < 0 else ""
         pkg_rows.append([btn(
-            f"{pkg['label']}{SEP}{pkg['stars']}⭐{SEP}{pkg['cubes']} куб.{cool}",
+            f"{pkg['label']}{SEP}{pkg['stars']}{_E_STARS}{SEP}{pkg['cubes']} куб.{cool}",
             callback_data=f"fz_buy_{pkg['idx']}",
         )])
 
@@ -1594,8 +1594,8 @@ async def cmd_fzstats(update: Update, ctx: ContextTypes.DEFAULT_TYPE) -> None:
         f"  — за Stars: <b>{paid_throws}</b>\n"
         f"  — бесплатных: <b>{free_throws}</b>\n"
         f"  — в sold-out пуле: <b>{pool_throws}</b>\n"
-        f"🏆 NFT выбито: <b>{wins}</b>\n"
-        f"⭐ Stars потрачено: <b>{stars_spent}</b>\n"
+        f"{_E_TROPHY} NFT выбито: <b>{wins}</b>\n"
+        f"{_E_STARS} Stars потрачено: <b>{stars_spent}</b>\n"
         f"🎯 Лучший бросок: <b>{best} / {FZ_DROP_CHANCE}</b> (нужно {FZ_DROP_CHANCE})\n"
         f"📈 Шанс хотя бы 1 NFT: <b>{p_at_least_one}%</b>",
         parse_mode=ParseMode.HTML,
@@ -1900,14 +1900,14 @@ async def cmd_fzsimulate(update: Update, ctx: ContextTypes.DEFAULT_TYPE) -> None
         "\n"
         f"До конца: <b>{h}ч {m_left}м</b> · NFT в пуле: <b>{remaining_nft}</b>\n"
         f"Игроков: <b>{total_players}</b> · Бросков: <b>{total_throws:,}</b>\n"
-        f"Stars: <b>{total_stars:,}⭐</b> · Кубиков куплено: <b>{total_cubes:,}</b>\n"
+        f"Stars: <b>{total_stars:,}{_E_STARS}</b> · Кубиков куплено: <b>{total_cubes:,}</b>\n"
         f"Макс. нагрев: <b>{max_heat}%</b>\n"
         "\n"
         f"🍦 <b>Дропы (уже выбиты):</b>\n{drop_text}\n"
         "\n"
-        f"🎰 <b>Запасной розыгрыш</b> (если финал сейчас, {remaining_nft} NFT):\n{lottery_text}\n"
+        f"{_E_CASINO} <b>Запасной розыгрыш</b> (если финал сейчас, {remaining_nft} NFT):\n{lottery_text}\n"
         "\n"
-        f"🏆 <b>Топ по броскам:</b>\n{top_text}\n"
+        f"{_E_TROPHY} <b>Топ по броскам:</b>\n{top_text}\n"
         "\n"
         f"🌀 <b>Sold-out лидер:</b> {pool_winner_str}\n"
         "\n"
@@ -1971,9 +1971,9 @@ async def cmd_fzstatus(update: Update, ctx: ContextTypes.DEFAULT_TYPE) -> None:
         f"🌡 Шкала: <b>{heat}%</b> {_fz_heat_bar(heat, 5)}\n"
         f"🧊 Бросков сегодня: <b>{state.get('daily_throws', 0)}</b>\n\n"
         f"📊 Всего бросков: <b>{total_throws:,}</b>\n"
-        f"👥 Игроков: <b>{total_players:,}</b>\n"
-        f"⭐ Stars собрано: <b>{total_stars:,}</b>\n"
-        f"🏆 NFT дропов: <b>{total_wins}</b>\n"
+        f"{_E_USERS} Игроков: <b>{total_players:,}</b>\n"
+        f"{_E_STARS} Stars собрано: <b>{total_stars:,}</b>\n"
+        f"{_E_TROPHY} NFT дропов: <b>{total_wins}</b>\n"
         f"🏊 Sold-out пул: <b>{pool_throws:,} бросков</b>",
         parse_mode=ParseMode.HTML,
     )
@@ -2022,7 +2022,7 @@ async def cmd_fzbroadcast(update: Update, ctx: ContextTypes.DEFAULT_TYPE) -> Non
 
     preview_text = (
         f"📋 <b>Превью рассылки</b>\n\n"
-        f"👥 Получателей: <b>{count}</b>\n"
+        f"{_E_USERS} Получателей: <b>{count}</b>\n"
         "\n"
         f"🧊 {text}\n\n"
         "\n"
@@ -2364,7 +2364,7 @@ async def _fz_on_callback(update: Update, ctx: ContextTypes.DEFAULT_TYPE) -> Non
                 "\n"
                 f"Статус: {status_emoji} <b>{status}</b> До конца: <b>{h}ч {m}м</b>\n"
                 f"🍦 NFT: <b>{remaining}/{total_nft}</b> 🌡 Жара: <b>{heat}%</b>\n"
-                f"📊 Бросков: <b>{total_throws:,}</b> 👥 Игроков: <b>{total_players:,}</b> ⭐ Stars: <b>{total_stars or 0:,}</b>\n"
+                f"📊 Бросков: <b>{total_throws:,}</b> {_E_USERS} Игроков: <b>{total_players:,}</b> {_E_STARS} Stars: <b>{total_stars or 0:,}</b>\n"
                 "\n"
                 f"<b>Быстрые команды:</b>\n"
                 f"<code>/fzaddnft &lt;N&gt;</code> — пополнить пул NFT\n"
@@ -2483,8 +2483,8 @@ async def _fz_on_callback(update: Update, ctx: ContextTypes.DEFAULT_TYPE) -> Non
                 f"Состояние: {heat_emoji} {heat_label}\n\n"
                 f"<b>Твои результаты:</b>\n"
                 f"  🧊 Кубиков брошено: <b>{total_throws}</b>\n"
-                f"  🏆 NFT дропов: <b>{wins}</b>\n"
-                f"  ⭐ Stars потрачено: <b>{stars_spent}</b>\n"
+                f"  {_E_TROPHY} NFT дропов: <b>{wins}</b>\n"
+                f"  {_E_STARS} Stars потрачено: <b>{stars_spent}</b>\n"
                 f"  🎯 Шанс победы: <b>{p_at_least_one}%</b> <i>(дроп + топ + розыгрыш)</i>\n"
                 f"  <i>Подробно: 📊 Мои броски</i>",
                 parse_mode=ParseMode.HTML,
@@ -2524,7 +2524,7 @@ async def _fz_on_callback(update: Update, ctx: ContextTypes.DEFAULT_TYPE) -> Non
         for pkg in FREEZE_PACKAGES:
             cool = f"  −{abs(pkg['heat_bonus'])}% жары" if pkg["heat_bonus"] < 0 else ""
             pkg_rows.append([btn(
-                f"{pkg['label']}{SEP}{pkg['stars']}⭐{SEP}{pkg['cubes']} куб.{cool}",
+                f"{pkg['label']}{SEP}{pkg['stars']}{_E_STARS}{SEP}{pkg['cubes']} куб.{cool}",
                 callback_data=f"fz_buy_{pkg['idx']}",
             )])
         pkg_rows.append([
@@ -2849,7 +2849,7 @@ async def cmd_fzpanel(update: Update, ctx: ContextTypes.DEFAULT_TYPE) -> None:
         "\n"
         f"Статус: {status_emoji} <b>{status}</b> До конца: <b>{h}ч {m}м</b>\n"
         f"🍦 NFT: <b>{remaining}/{total_nft}</b> 🌡 Жара: <b>{heat}%</b>\n"
-        f"📊 Бросков: <b>{total_throws:,}</b> 👥 Игроков: <b>{total_players:,}</b> ⭐ Stars: <b>{total_stars or 0:,}</b>\n"
+        f"📊 Бросков: <b>{total_throws:,}</b> {_E_USERS} Игроков: <b>{total_players:,}</b> {_E_STARS} Stars: <b>{total_stars or 0:,}</b>\n"
         "\n"
         f"<b>Быстрые команды:</b>\n"
         f"<code>/fzaddnft &lt;N&gt;</code> — пополнить пул NFT\n"
@@ -2965,12 +2965,12 @@ async def cmd_fzpkglist(update: Update, ctx: ContextTypes.DEFAULT_TYPE) -> None:
         heat_note = f"  (жара {pkg['heat_bonus']:+d}%)" if pkg["heat_bonus"] else ""
         lines.append(
             f"<b>idx {pkg['idx']}</b>: {pkg['label']}\n"
-            f"   {pkg['stars']}⭐ → {pkg['cubes']} куб.{heat_note}\n"
+            f"   {pkg['stars']}{_E_STARS} → {pkg['cubes']} куб.{heat_note}\n"
             f"   <i>{pkg['desc']}</i>"
         )
     lines.append(
-        f"\n✏️ Изменить: <code>/fzsetpkg &lt;idx&gt; &lt;stars&gt; &lt;cubes&gt;</code>\n"
-        f"Пример: <code>/fzsetpkg 1 20 30</code> → idx 1 = 20⭐ за 30 кубиков"
+        f"\n{_E_PENCIL} Изменить: <code>/fzsetpkg &lt;idx&gt; &lt;stars&gt; &lt;cubes&gt;</code>\n"
+        f"Пример: <code>/fzsetpkg 1 20 30</code> → idx 1 = 20{_E_STARS} за 30 кубиков"
     )
     await update.message.reply_text("\n\n".join(lines), parse_mode=ParseMode.HTML)
 
@@ -3008,11 +3008,13 @@ async def cmd_fzsetpkg(update: Update, ctx: ContextTypes.DEFAULT_TYPE) -> None:
     pkg["cubes"] = cubes
     # Обновляем desc
     ev = round(stars / cubes * FZ_DROP_CHANCE, 0) if cubes else 0
+    # Обычный ⭐, а не премиум: этот desc уходит в send_invoice(description=...),
+    # где Telegram HTML не разбирает и тег показался бы сырой разметкой.
     pkg["desc"] = f"{cubes} кубиков · {stars} Stars (EV {int(ev)}⭐)"
 
     await update.message.reply_text(
         f"✅ Пакет <b>idx {idx}</b> ({pkg['label']}) обновлён:\n"
-        f"   {old_stars}⭐ / {old_cubes} куб. → <b>{stars}⭐ / {cubes} куб.</b>\n"
+        f"   {old_stars}{_E_STARS} / {old_cubes} куб. → <b>{stars}{_E_STARS} / {cubes} куб.</b>\n"
         f"<i>Действует до перезапуска. Для постоянного изменения — правь FREEZE_PACKAGES в коде.</i>",
         parse_mode=ParseMode.HTML,
     )
@@ -3407,7 +3409,19 @@ BUTTON_ICONS: dict[str, str] = {
     "🧼": "5341814971095360388",
     "🍖": "5341326049198251117",
 
-    # Ждут id — список в порядке ценности (сколько кнопок затронет)
+    # Присланы владельцем — работают
+    "✏️":   "5334673106202010226",
+    "👥":   "5372926953978341366",
+    "🏃":   "5364035388128108366",
+    "🏃‍♂️": "5364035388128108366",
+    "🏆":   "5386750400709819565",
+    "🔍":   "5188217332748527444",
+    "🤖":   "5372981976804366741",
+    "📫":   "5350403531297809491",
+    "📬":   "5350403531297809491",   # та же иконка почты
+    "➕":   "5226945370684140473",
+
+    # Ждут id — в порядке ценности (сколько кнопок затронет)
     "◀️": "",   # 304 — «Назад», самая частая кнопка бота
     "❌": "",   # 67  — отмена, закрыть
     "🔄": "",   # 32  — обновить
@@ -3419,14 +3433,6 @@ BUTTON_ICONS: dict[str, str] = {
     "🚫": "",   # 14  — запрет, блокировка
     "🚪": "",   # 12  — вступить, покинуть
     "🎁": "",   # 11  — подарок
-    "✏️": "",   # 10  — ввод своего значения
-    "👥": "",   # 10  — игроки, участники
-    "🏃": "",   # 9   — сдаться, сбежать
-    "🏆": "",   # 8   — топ, победа
-    "🔍": "",   # 8   — поиск
-    "🤖": "",   # 8   — бот
-    "📬": "",   # 8   — заявки
-    "➕": "",   # 8   — добавить
     "🛡️": "",   # 7   — защита
     "🗑": "",   # 7   — удалить
     "🧊": "",   # 6   — фриз-ивент
@@ -3434,10 +3440,13 @@ BUTTON_ICONS: dict[str, str] = {
     "🎭": "",   # 6   — облик, стикеры
 }
 
-# Ведущая эмодзи подписи: сам символ плюс возможные модификаторы и ZWJ-склейки
+# Ведущая эмодзи подписи — ровно один графемный кластер: базовый символ,
+# модификаторы (тон кожи, вариационный селектор) и ZWJ-склейки.
+# Без учёта ZWJ разбор обрывался на середине: 🏃‍♂️ читался как «🏃‍».
+_EMOJI_CHAR = "[\U0001F000-\U0001FAFF←-⯿☀-➿]"
+_EMOJI_MOD = "[︀-️\U0001F3FB-\U0001F3FF]*"
 _BTN_LEAD_EMOJI = re.compile(
-    "^([\U0001F000-\U0001FAFF←-⯿☀-➿]"
-    "[︀-️‍\U0001F000-\U0001FAFF]*)\\s*"
+    f"^({_EMOJI_CHAR}{_EMOJI_MOD}(?:‍{_EMOJI_CHAR}{_EMOJI_MOD})*)\\s*"
 )
 
 
@@ -3531,24 +3540,24 @@ def slot_evaluate(val: int, stake: int) -> tuple[int, str]:
 
     # Три семёрки — джекпот
     if val == 64:
-        return stake * 10, f"🎰 <b>7️⃣ 7️⃣ 7️⃣ — ДЖЕКПОТ!!!</b> ×10 🎉"
+        return stake * 10, f"{_E_CASINO} <b>7️⃣ 7️⃣ 7️⃣ — ДЖЕКПОТ!!!</b> ×10 🎉"
 
     # Три одинаковых
     if s1 == s2 == s3:
         if s1 == "BAR":
-            return stake * 6,  f"🎰 <b>BAR BAR BAR!</b> {combo} ×6 🔥"
+            return stake * 6,  f"{_E_CASINO} <b>BAR BAR BAR!</b> {combo} ×6 🔥"
         if s1 == "🍇":
-            return stake * 4,  f"🎰 <b>Три виноград!</b> {combo} ×4 🍇"
+            return stake * 4,  f"{_E_CASINO} <b>Три виноград!</b> {combo} ×4 🍇"
         if s1 == "🍋":
-            return stake * 3,  f"🎰 <b>Три лимон!</b> {combo} ×3 🍋"
+            return stake * 3,  f"{_E_CASINO} <b>Три лимон!</b> {combo} ×3 🍋"
 
     # Два семёрки
     sevens = (s1 == "7️⃣") + (s2 == "7️⃣") + (s3 == "7️⃣")
     if sevens == 2:
-        return stake * 4, f"🎰 <b>Два 7️⃣!</b> {combo} ×4 ✨"
+        return stake * 4, f"{_E_CASINO} <b>Два 7️⃣!</b> {combo} ×4 ✨"
 
     # Ничего
-    return 0, f"🎰 {combo} — ничего 💸"
+    return 0, f"{_E_CASINO} {combo} — ничего 💸"
 
 
 # ══════════════════════════════════════════
@@ -4943,10 +4952,26 @@ _E_COSMETIC = _pe("5341677472012342805", "🎫")  # голубой купон с
                                                 # всё косметическое: билеты
                                                 # гачи, облики, гардероб
 
-# ⚠️ Этот id НЕ из набора бота — он взят из системного набора Telegram Stars.
-# Оставлен как был: премиум-эмодзи вообще доступны боту только при купленном
-# на Fragment юзернейме, и если сработали остальные — сработает и он.
-_E_STARS  = _pe("6028338546736107668", "⭐")  # Telegram Stars
+_E_STARS  = _pe("6028338546736107668", "⭐")  # Telegram Stars — валюта
+
+# ── Интерфейсные иконки ───────────────────────────────────────────────────────
+# Те же id используются и как иконки кнопок (BUTTON_ICONS ниже). В тексте
+# сообщения ставятся через эти константы, на кнопке — автоматически.
+_E_CHECK  = _pe("5774022692642492953", "✅")   # готово, подтверждение
+_E_GAMES  = _pe("5938413566624272793", "🎮")   # игры
+_E_CASINO = _pe("5960608239623082921", "🎰")   # казино, гача
+_E_SHOP   = _pe("5983399041197675256", "🛒")   # магазин
+_E_GEAR   = _pe("5850309953293653168", "⚙️")   # настройки
+_E_LEAF   = _pe("6032594876506312598", "🌿")   # болото, стая, площадь
+
+_E_PENCIL = _pe("5334673106202010226", "✏️")   # ввод своего значения
+_E_USERS  = _pe("5372926953978341366", "👥")   # игроки, участники
+_E_RUN    = _pe("5364035388128108366", "🏃")   # сдаться, сбежать
+_E_TROPHY = _pe("5386750400709819565", "🏆")   # топ, победа
+_E_SEARCH = _pe("5188217332748527444", "🔍")   # поиск
+_E_BOT    = _pe("5372981976804366741", "🤖")   # бот, автоигрок
+_E_MAIL   = _pe("5350403531297809491", "📫")   # заявки, входящие
+_E_PLUS   = _pe("5226945370684140473", "➕")   # добавить
 
 # Совместимость: прежнее имя константы уровня.
 _E_STAR = _E_LEVEL
@@ -6836,7 +6861,7 @@ def build_work_report(frog_name: str) -> tuple[str, dict]:
     if scene.get("bonus_hunger",    0) != 0: bonus_parts.append(f"🍖{scene['bonus_hunger']:+d}")
     if scene.get("bonus_happiness", 0) != 0: bonus_parts.append(f"😄{scene['bonus_happiness']:+d}")
     if scene.get("bonus_health",    0) != 0: bonus_parts.append(f"❤️{scene['bonus_health']:+d}")
-    if scene.get("bonus_xp",        0) != 0: bonus_parts.append(f"⭐{scene['bonus_xp']:+d}")
+    if scene.get("bonus_xp",        0) != 0: bonus_parts.append(f"{_E_XP}{scene['bonus_xp']:+d}")
     bonus_line = ("  " + "  ".join(bonus_parts)) if bonus_parts else ""
 
     text = (
@@ -7577,7 +7602,7 @@ def _build_reward_summary(choice: dict) -> str:
     parts = []
     if choice.get("coins",     0) > 0: parts.append(f"🪙 +{choice['coins']}")
     if choice.get("coins",     0) < 0: parts.append(f"🪙 {choice['coins']}")
-    if choice.get("xp",        0) > 0: parts.append(f"⭐ +{choice['xp']} XP")
+    if choice.get("xp",        0) > 0: parts.append(f"{_E_XP} +{choice['xp']} XP")
     if choice.get("hunger",    0) != 0: parts.append(f"🍖 {choice['hunger']:+d}")
     if choice.get("happiness", 0) != 0: parts.append(f"😄 {choice['happiness']:+d}")
     if choice.get("health",    0) != 0: parts.append(f"❤️ {choice['health']:+d}")
@@ -9132,7 +9157,7 @@ async def guess_resolve(bot, sk_id: int, duel: dict,
             f"🎯 <b>Раунд завершён!</b>\n"
             f"⚔️ {he(att_name)} загадал <b>{att_n}</b>\n"
             f"🛡️ {he(def_name)} загадал <b>{def_n}</b>\n"
-            f"🏆 Победа <b>{he(att_name)}</b>!"
+            f"{_E_TROPHY} Победа <b>{he(att_name)}</b>!"
         )
     elif def_n > att_n:
         round_winner = "defender"
@@ -9140,7 +9165,7 @@ async def guess_resolve(bot, sk_id: int, duel: dict,
             f"🎯 <b>Раунд завершён!</b>\n"
             f"⚔️ {he(att_name)} загадал <b>{att_n}</b>\n"
             f"🛡️ {he(def_name)} загадал <b>{def_n}</b>\n"
-            f"🏆 Победа <b>{he(def_name)}</b>!"
+            f"{_E_TROPHY} Победа <b>{he(def_name)}</b>!"
         )
     else:
         round_winner = "draw"
@@ -9247,10 +9272,10 @@ async def reaction_run_round(bot, sk_id: int, duel_id: int,
 
     if first_uid == att_uid:
         round_winner = "attacker"
-        result_text = f"🏹 <b>Раунд {round_num}!</b>\n⚔️ <b>{he(att_name)}</b> нажал первым! 🏆"
+        result_text = f"🏹 <b>Раунд {round_num}!</b>\n⚔️ <b>{he(att_name)}</b> нажал первым! {_E_TROPHY}"
     elif first_uid == def_uid:
         round_winner = "defender"
-        result_text = f"🏹 <b>Раунд {round_num}!</b>\n🛡️ <b>{he(def_name)}</b> нажал первым! 🏆"
+        result_text = f"🏹 <b>Раунд {round_num}!</b>\n🛡️ <b>{he(def_name)}</b> нажал первым! {_E_TROPHY}"
     else:
         round_winner = "draw"
         result_text = f"🏹 <b>Раунд {round_num}!</b>\n⚖️ Никто не нажал — ничья, переигровка!"
@@ -9326,23 +9351,23 @@ async def lottery_resolve(bot, sk_id: int, duel: dict,
     if att_cd.get("special") == "win" or def_cd.get("special") == "lose":
         if att_cd.get("special") == "win":
             round_winner = "attacker"
-            reveal += f"\n✨ <b>{he(att_name)}</b> нашёл Золотую кувшинку! 🏆"
+            reveal += f"\n✨ <b>{he(att_name)}</b> нашёл Золотую кувшинку! {_E_TROPHY}"
         else:
             round_winner = "attacker"
-            reveal += f"\n💀 <b>{he(def_name)}</b> попал в топь! 🏆 {he(att_name)}"
+            reveal += f"\n💀 <b>{he(def_name)}</b> попал в топь! {_E_TROPHY} {he(att_name)}"
     elif def_cd.get("special") == "win" or att_cd.get("special") == "lose":
         if def_cd.get("special") == "win":
             round_winner = "defender"
-            reveal += f"\n✨ <b>{he(def_name)}</b> нашёл Золотую кувшинку! 🏆"
+            reveal += f"\n✨ <b>{he(def_name)}</b> нашёл Золотую кувшинку! {_E_TROPHY}"
         else:
             round_winner = "defender"
-            reveal += f"\n💀 <b>{he(att_name)}</b> попал в топь! 🏆 {he(def_name)}"
+            reveal += f"\n💀 <b>{he(att_name)}</b> попал в топь! {_E_TROPHY} {he(def_name)}"
     elif att_cd["value"] > def_cd["value"]:
         round_winner = "attacker"
-        reveal += f"\n🏆 Победа <b>{he(att_name)}</b> — карта ценнее!"
+        reveal += f"\n{_E_TROPHY} Победа <b>{he(att_name)}</b> — карта ценнее!"
     elif def_cd["value"] > att_cd["value"]:
         round_winner = "defender"
-        reveal += f"\n🏆 Победа <b>{he(def_name)}</b> — карта ценнее!"
+        reveal += f"\n{_E_TROPHY} Победа <b>{he(def_name)}</b> — карта ценнее!"
     else:
         round_winner = "draw"
         reveal += f"\n⚖️ Ничья! Карты равны — раунд переигрывается."
@@ -9432,10 +9457,10 @@ async def bluff_resolve(bot, sk_id: int, duel: dict,
 
     if att_result == "win" and def_result != "win":
         round_winner = "attacker"
-        reveal += f"\n🏆 Победа <b>{he(att_name)}</b>!"
+        reveal += f"\n{_E_TROPHY} Победа <b>{he(att_name)}</b>!"
     elif def_result == "win" and att_result != "win":
         round_winner = "defender"
-        reveal += f"\n🏆 Победа <b>{he(def_name)}</b>!"
+        reveal += f"\n{_E_TROPHY} Победа <b>{he(def_name)}</b>!"
     elif att_result == "win" and def_result == "win":
         round_winner = "draw"
         reveal += "\n⚖️ Оба обманули — ничья!"
@@ -9653,19 +9678,19 @@ async def pattern_resolve(bot, sk_id: int, duel: dict,
         # Оба правы — кто быстрее?
         if att_ts < def_ts - 0.1:
             round_winner = "attacker"
-            reveal += f"\n🏆 <b>{he(att_name)}</b> ответил быстрее!"
+            reveal += f"\n{_E_TROPHY} <b>{he(att_name)}</b> ответил быстрее!"
         elif def_ts < att_ts - 0.1:
             round_winner = "defender"
-            reveal += f"\n🏆 <b>{he(def_name)}</b> ответил быстрее!"
+            reveal += f"\n{_E_TROPHY} <b>{he(def_name)}</b> ответил быстрее!"
         else:
             round_winner = "draw"
             reveal += "\n⚖️ Одновременно — ничья!"
     elif att_ok:
         round_winner = "attacker"
-        reveal += f"\n🏆 Победа <b>{he(att_name)}</b>!"
+        reveal += f"\n{_E_TROPHY} Победа <b>{he(att_name)}</b>!"
     elif def_ok:
         round_winner = "defender"
-        reveal += f"\n🏆 Победа <b>{he(def_name)}</b>!"
+        reveal += f"\n{_E_TROPHY} Победа <b>{he(def_name)}</b>!"
     else:
         round_winner = "draw"
         reveal += "\n⚖️ Оба ошиблись — ничья, новый паттерн!"
@@ -9826,7 +9851,7 @@ async def _send_duel_result(bot, sk_id: int, duel: dict,
         final_text  = (
             f"{result_text}\n"
             f"\n"
-            f"{he(winner_name)} побеждает 🏆"
+            f"{he(winner_name)} побеждает {_E_TROPHY}"
         )
         for m in members:
             mid = live_msg_ids.get(m["user_id"])
@@ -9911,7 +9936,7 @@ def _bet_text(duel_id: int, att_name: str, def_name: str,
         my_line = f"\n✅ Твоя ставка: <b>{my_bet['amount']}🪙</b> на {side_ru} → выигрыш до <b>{win}🪙</b>"
 
     return (
-        f"🎰 <b>Ставки — бой</b>\n"
+        f"{_E_CASINO} <b>Ставки — бой</b>\n"
         f"⚔️ <b>{he(att_name)}</b> vs 🛡️ <b>{he(def_name)}</b>\n"
         "\n"
         f"{bar}\n"
@@ -10040,7 +10065,7 @@ async def _bet_payout(bot, duel_id: int, winner_side: str):
         try:
             await bot.send_message(
                 w["uid"],
-                f"🎰 <b>Ставка выиграла!</b>\n"
+                f"{_E_CASINO} <b>Ставка выиграла!</b>\n"
                 f"Поставил: <b>{w['amount']}{_E_COIN}</b>\n"
                 f"Получил: <b>{payout}{_E_COIN}</b> "
                 f"({'<b>+' + str(profit) + '{_E_COIN}</b>' if profit >= 0 else '<b>' + str(profit) + '{_E_COIN}</b>'})",
@@ -10069,7 +10094,7 @@ async def _bet_payout(bot, duel_id: int, winner_side: str):
         try:
             await bot.send_message(
                 lo["uid"],
-                f"🎰 Ставка проиграла — <b>−{lo['amount']}{_E_COIN}</b>",
+                f"{_E_CASINO} Ставка проиграла — <b>−{lo['amount']}{_E_COIN}</b>",
                 parse_mode=ParseMode.HTML,
             )
         except Exception:
@@ -10116,7 +10141,7 @@ async def _sk_start_duel(bot, sk: dict, att_m: dict, def_m: dict,
         f"⚔️ {he(att_name)} vs {he(def_name)}\n"
         f"бой {duel_index+1} из {total_duels} · {mode_name}\n"
         f"\n"
-        f"🎰 ставки открыты — {BET_PHASE_SEC} секунд"
+        f"{_E_CASINO} ставки открыты — {BET_PHASE_SEC} секунд"
     )
 
     for m in members:
@@ -10181,7 +10206,7 @@ async def _sk_start_duel(bot, sk: dict, att_m: dict, def_m: dict,
     att_odds = _bet_calc_odds(pool, "attacker")
     def_odds = _bet_calc_odds(pool, "defender")
     bet_line = (
-        f"🎰 Ставок: <b>{pool['count']}</b> · пул <b>{total_p}🪙</b> "
+        f"{_E_CASINO} Ставок: <b>{pool['count']}</b> · пул <b>{total_p}🪙</b> "
         f"(⚔️{att_pool} ×{att_odds} / 🛡{def_pool} ×{def_odds})"
     )
 
@@ -10478,7 +10503,7 @@ async def _sk_resolve_rps(bot, sk_id: int, duel: dict, att_c: str, def_c: str):
     elif _RPS_BEATS.get(att_c) == def_c:
         def_hp -= 4
         round_result = (
-            f"🏆 <b>{he(att_name)}</b> побеждает раунд!\n"
+            f"{_E_TROPHY} <b>{he(att_name)}</b> побеждает раунд!\n"
             f"{_RPS_EMOJI[att_c]} {_RPS_NAME[att_c]} бьёт {_RPS_EMOJI[def_c]} {_RPS_NAME[def_c]}\n"
             f"<b>{he(def_name)}</b> −4 HP"
         )
@@ -10486,7 +10511,7 @@ async def _sk_resolve_rps(bot, sk_id: int, duel: dict, att_c: str, def_c: str):
     else:
         att_hp -= 4
         round_result = (
-            f"🏆 <b>{he(def_name)}</b> побеждает раунд!\n"
+            f"{_E_TROPHY} <b>{he(def_name)}</b> побеждает раунд!\n"
             f"{_RPS_EMOJI[def_c]} {_RPS_NAME[def_c]} бьёт {_RPS_EMOJI[att_c]} {_RPS_NAME[att_c]}\n"
             f"<b>{he(att_name)}</b> −4 HP"
         )
@@ -10577,10 +10602,10 @@ async def _sk_resolve_eo(bot, sk_id: int, duel: dict, att_choice: str, def_choic
 
     if att_ok and not def_ok:
         def_hp -= 4; result = "attacker"
-        round_result = f"🏆 <b>{he(att_name)}</b> угадал! <b>{he(def_name)}</b> −4 HP\n{detail}"
+        round_result = f"{_E_TROPHY} <b>{he(att_name)}</b> угадал! <b>{he(def_name)}</b> −4 HP\n{detail}"
     elif def_ok and not att_ok:
         att_hp -= 4; result = "defender"
-        round_result = f"🏆 <b>{he(def_name)}</b> угадал! <b>{he(att_name)}</b> −4 HP\n{detail}"
+        round_result = f"{_E_TROPHY} <b>{he(def_name)}</b> угадал! <b>{he(att_name)}</b> −4 HP\n{detail}"
     else:
         att_hp -= 1; def_hp -= 1; result = "draw"
         verb = "угадали" if att_ok else "промахнулись"
@@ -10658,7 +10683,7 @@ async def _sk_finish_duel(bot, sk_id: int, duel_id: int,
     # Одно сообщение: результат дуэли + счёт
     scoreboard = await _sk_scoreboard(sk, members)
     duel_result = (
-        f"{he(winner_name)} побеждает дуэль 🏆\n"
+        f"{he(winner_name)} побеждает дуэль {_E_TROPHY}\n"
         f"+{SKIRMISH_DUEL_REWARD}🪙\n"
         f"\n"
         f"{scoreboard}"
@@ -11038,18 +11063,18 @@ def hs_grid_text(event: dict, players: list[dict], phase: str,
         return (
             f"🙈 <b>Прятки</b> · выбор укрытия\n"
             f"\n"
-            f"Нажми на 🌿 — спрячешься там. Ищущий не видит твой выбор.\n"
+            f"Нажми на {_E_LEAF} — спрячешься там. Ищущий не видит твой выбор.\n"
             f"\n"
             f"⏳ До конца пряток: <b>{m}м {s}с</b>\n"
             f"🫣 Спрятались: <b>{chosen_count}/{hiders_total}</b>\n"
-            + (f"🏆 Приз: <b>{prize}</b>" if prize else "")
+            + (f"{_E_TROPHY} Приз: <b>{prize}</b>" if prize else "")
         )
     elif phase == "seeking":
         text = (
-            f"🔍 <b>ПРЯТКИ — ищущий вскрывает клетки</b>\n"
+            f"{_E_SEARCH} <b>ПРЯТКИ — ищущий вскрывает клетки</b>\n"
             f"\n"
             f"Выживших: <b>{len(alive)}</b> из <b>{total}</b>\n"
-            + (f"🏆 Приз: <b>{prize}</b>" if prize else "")
+            + (f"{_E_TROPHY} Приз: <b>{prize}</b>" if prize else "")
         )
         if last_event:
             text += f"\n\n{last_event}"
@@ -11069,8 +11094,8 @@ def _hs_setup_text(s: dict) -> str:
     return (
         f"🙈 <b>Настройка прятки</b>\n"
         "\n"
-        f"🏆 Приз: <b>{prize}</b>\n"
-        f"👥 Макс. участников: <b>{limit}</b>\n"
+        f"{_E_TROPHY} Приз: <b>{prize}</b>\n"
+        f"{_E_USERS} Макс. участников: <b>{limit}</b>\n"
         f"📢 Рассылка: <b>{broad}</b>\n"
         f"💬 Чат (chat_id): <b>{chat}</b>\n"
         "\n"
@@ -11207,8 +11232,8 @@ async def cmd_hsseeker(update: Update, ctx: ContextTypes.DEFAULT_TYPE) -> None:
             pinned_msg = await ctx.bot.send_message(
                 chat_id_hs,
                 f"🙈 <b>Прятки начинаются!</b>\n\n"
-                f"🔍 Ищущий: <b>{seeker_name}</b>\n"
-                f"🌿 Прячется <b>{ui_plural(len(hiders), 'игрок', 'игрока', 'игроков')}</b>\n\n"
+                f"{_E_SEARCH} Ищущий: <b>{seeker_name}</b>\n"
+                f"{_E_LEAF} Прячется <b>{ui_plural(len(hiders), 'игрок', 'игрока', 'игроков')}</b>\n\n"
                 f"{grid_text}",
                 parse_mode=ParseMode.HTML,
                 reply_markup=grid_kb,
@@ -11225,7 +11250,7 @@ async def cmd_hsseeker(update: Update, ctx: ContextTypes.DEFAULT_TYPE) -> None:
     try:
         await ctx.bot.send_message(
             seeker_uid,
-            f"🔍 <b>Ты ищущий!</b>\n\n"
+            f"{_E_SEARCH} <b>Ты ищущий!</b>\n\n"
             f"Прячется {ui_plural(len(hiders), 'игрок', 'игрока', 'игроков')}.\n"
             f"Жди — через 5 минут в чате появится поле для вскрытия.",
             parse_mode=ParseMode.HTML,
@@ -11241,7 +11266,7 @@ async def cmd_hsseeker(update: Update, ctx: ContextTypes.DEFAULT_TYPE) -> None:
         f"Ищущий: <b>{seeker_name}</b>\n\n"
         f"Нажми на клетку в чате чтобы спрятаться.\n"
         f"⏳ У тебя <b>5 минут</b>!"
-        + (f"\n\n🏆 Приз: <b>{he(prize_text_n)}</b>" if prize_text_n else "")
+        + (f"\n\n{_E_TROPHY} Приз: <b>{he(prize_text_n)}</b>" if prize_text_n else "")
     )
     for hider in hiders:
         try:
@@ -11284,7 +11309,7 @@ async def _hs_update_scoreboard(bot, event: dict, players: list[dict],
         he(fname(seeker_f)) if seeker_f else "?"
     )
 
-    lines = [f"🔍 Ищущий: <b>{seeker_str}</b>\n"]
+    lines = [f"{_E_SEARCH} Ищущий: <b>{seeker_str}</b>\n"]
     for p in players:
         if p["uid"] == seeker_uid:
             continue
@@ -11413,7 +11438,7 @@ async def _hs_recruiting_ticker(bot, event_id: int, chat_id: int, msg_id: int) -
             f"Одного назначат ищущим — остальные прячутся.\n"
             f"Ищущий вскрывает клетки одну за другой.\n"
             f"Кто доживёт до конца — победит!\n\n"
-            + (f"🏆 Приз: <b>{he(prize_text)}</b>\n\n" if prize_text else "")
+            + (f"{_E_TROPHY} Приз: <b>{he(prize_text)}</b>\n\n" if prize_text else "")
             + f"Участники ({len(players)}):\n{participants_block}\n\n"
         )
         join_kb = InlineKeyboardMarkup([[
@@ -11473,7 +11498,7 @@ async def _hs_start_seeking(bot, event_id: int) -> None:
     reveal_kb     = hs_reveal_keyboard(event_id, event["grid_size"], set(), set())
 
     reveal_text = (
-        f"🔍 <b>{seeker_name}</b> начинает искать!\n\n"
+        f"{_E_SEARCH} <b>{seeker_name}</b> начинает искать!\n\n"
         f"Прячется <b>{ui_plural(total_alive, 'игрок', 'игрока', 'игроков')}</b> "
         f"в {event['grid_size']}×{event['grid_size']} клетках\n\n"
         f"Только ищущий может вскрывать клетки 👇"
@@ -11504,7 +11529,7 @@ async def _hs_start_seeking(bot, event_id: int) -> None:
     try:
         await bot.send_message(
             seeker_uid,
-            f"🔍 <b>Пора искать!</b>\n"
+            f"{_E_SEARCH} <b>Пора искать!</b>\n"
             f"Прячется {ui_plural(total_alive, 'игрок', 'игрока', 'игроков')}.\n"
             f"Нажимай клетки в чате чтобы вскрывать 👆",
             parse_mode=ParseMode.HTML,
@@ -11519,7 +11544,7 @@ async def _hs_start_seeking(bot, event_id: int) -> None:
         try:
             await bot.send_message(
                 p["uid"],
-                f"🔍 <b>{seeker_name} начинает искать!</b>\n"
+                f"{_E_SEARCH} <b>{seeker_name} начинает искать!</b>\n"
                 f"Следи за чатом — сейчас начнётся вскрытие!\n\n"
                 f"У тебя <b>{HS_RELOCATE_COUNT}</b> перемещение — можешь сменить укрытие "
                 f"пока ищущий ещё не добрался до тебя.",
@@ -11589,7 +11614,7 @@ async def cmd_hsstatus(update: Update, ctx: ContextTypes.DEFAULT_TYPE) -> None:
         f"🙈 <b>Ивент прятки #{event['id']}</b>\n"
         f"Статус: <b>{st}</b> · Раунд: <b>{event['round']}</b>\n"
         f"Ищущий: <b>{seeker_name}</b>\n"
-        f"👥 <b>{len(players)}</b> · 🐸 <b>{len(alive)}</b> · 💀 <b>{len(elim)}</b>\n"
+        f"{_E_USERS} <b>{len(players)}</b> · 🐸 <b>{len(alive)}</b> · 💀 <b>{len(elim)}</b>\n"
         + (f"Выбрали клетку: <b>{len(chose)}/{len(alive)}</b>\n" if event["status"] == "hiding" else "")
         + (f"⏳ До вскрытия: <b>{m}м {s}с</b>" if time_left else ""),
         parse_mode=ParseMode.HTML,
@@ -11906,7 +11931,7 @@ async def cmd_newsdigest(update: Update, ctx: ContextTypes.DEFAULT_TYPE) -> None
             f"Ищущий: <b>{seeker_name}</b>\n"
             f"Нажми на клетку в чате чтобы спрятаться!\n"
             f"⏳ Осталось: <b>{m}м {s}с</b>"
-            + (f"\n\n🏆 Приз: <b>{he(prize_text)}</b>" if prize_text else "")
+            + (f"\n\n{_E_TROPHY} Приз: <b>{he(prize_text)}</b>" if prize_text else "")
         )
 
         sent = 0
@@ -11931,10 +11956,10 @@ async def cmd_newsdigest(update: Update, ctx: ContextTypes.DEFAULT_TYPE) -> None
         alive = [p for p in players
                  if not p["eliminated"] and p["uid"] != seeker_uid]
         text = (
-            f"🔍 <b>Ищущий вскрывает клетки!</b>\n\n"
+            f"{_E_SEARCH} <b>Ищущий вскрывает клетки!</b>\n\n"
             f"Следи за чатом — поиск идёт прямо сейчас.\n"
             f"Выживших: <b>{len(alive)}</b>"
-            + (f"\n\n🏆 Приз: <b>{he(prize_text)}</b>" if prize_text else "")
+            + (f"\n\n{_E_TROPHY} Приз: <b>{he(prize_text)}</b>" if prize_text else "")
         )
         sent = 0
         for p in alive:
@@ -11983,7 +12008,7 @@ async def cmd_newsdigest(update: Update, ctx: ContextTypes.DEFAULT_TYPE) -> None
         f"Одного назначат ищущим — остальные прячутся.\n"
         f"Ищущий вскрывает клетки одну за другой.\n"
         f"Кто доживёт до конца — победит!\n\n"
-        + (f"🏆 Приз: <b>{he(prize_text)}</b>\n\n" if prize_text else "")
+        + (f"{_E_TROPHY} Приз: <b>{he(prize_text)}</b>\n\n" if prize_text else "")
         + f"Участники ({len(players)}):\n{participants_block}\n\n"
     )
     join_kb = InlineKeyboardMarkup([[
@@ -12130,7 +12155,7 @@ async def hs_callbacks(q, d: str, uid: int, ctx) -> bool:
             f"Одного назначат ищущим — остальные прячутся.\n"
             f"Ищущий вскрывает клетки одну за другой.\n"
             f"Кто доживёт до конца — победит!\n\n"
-            + (f"🏆 Приз: <b>{he(prize_text)}</b>\n\n" if prize_text else "")
+            + (f"{_E_TROPHY} Приз: <b>{he(prize_text)}</b>\n\n" if prize_text else "")
         )
         join_kb = InlineKeyboardMarkup([[
             btn("🙋 Участвовать", callback_data=f"hs_join_{event_id}", style="primary"),
@@ -12276,7 +12301,7 @@ async def hs_callbacks(q, d: str, uid: int, ctx) -> bool:
             f"Одного назначат ищущим — остальные прячутся.\n"
             f"Ищущий вскрывает клетки одну за другой.\n"
             f"Кто доживёт до конца — победит!\n\n"
-            + (f"🏆 Приз: <b>{he(prize_text)}</b>\n\n" if prize_text else "")
+            + (f"{_E_TROPHY} Приз: <b>{he(prize_text)}</b>\n\n" if prize_text else "")
             + f"Участники ({len(players)}):\n{participants_block}\n\n"
         )
         join_kb = InlineKeyboardMarkup([[
@@ -12469,7 +12494,7 @@ async def hs_callbacks(q, d: str, uid: int, ctx) -> bool:
             else:
                 last_event = f"💥 <b>{cell_name}</b> — {' '.join(names)} выбыли!"
         else:
-            last_event = f"🌿 <b>{cell_name}</b> — пусто."
+            last_event = f"{_E_LEAF} <b>{cell_name}</b> — пусто."
 
         # ── Обновляем поле ───────────────────────────────────────────────────
         all_players  = await hs_get_players(event_id, round_n=event["round"])
@@ -13121,7 +13146,7 @@ async def _hs_resolve_escape(bot, event: dict,
         try:
             await bot.send_message(
                 uid,
-                f"🏃 <b>Побег удался!</b>\n"
+                f"{_E_RUN} <b>Побег удался!</b>\n"
                 f"Ты скрылся — ищущий думает что там пусто.\n"
                 f"Новое укрытие: клетка <b>{new_cell + 1}</b>",
                 parse_mode=ParseMode.HTML,
@@ -13380,7 +13405,7 @@ async def _hs_final_timeout(bot, event_id: int, round_n: int) -> None:
     pinned_f    = event_fresh["pinned_msg_id"] if event_fresh else 0
     reveal_kb   = hs_reveal_keyboard(event_id, HS_GRID_FINAL, set(), set())
     reveal_text = (
-        f"🔍 <b>Финал! Ищущий вскрывает</b>\n"
+        f"{_E_SEARCH} <b>Финал! Ищущий вскрывает</b>\n"
         f"Прячется <b>{ui_plural(len(alive), 'игрок', 'игрока', 'игроков')}</b> в {HS_GRID_FINAL}×{HS_GRID_FINAL} 👇"
     )
 
@@ -13434,7 +13459,7 @@ async def _hs_winner(bot, event: dict, winner_uids: list[int]) -> None:
         try:
             await bot.send_message(
                 w_uid,
-                f"🏆 <b>Ты выжил!</b>\n\n"
+                f"{_E_TROPHY} <b>Ты выжил!</b>\n\n"
                 f"Ищущий не нашёл тебя — победа!\n"
                 + (f"Приз: <b>+{prize_each}{_E_COIN}</b>" if prize_each else ""),
                 parse_mode=ParseMode.HTML,
@@ -13443,7 +13468,7 @@ async def _hs_winner(bot, event: dict, winner_uids: list[int]) -> None:
             pass
 
     result_msg = (
-        f"🏆 <b>Прятки завершены!</b>\n\n"
+        f"{_E_TROPHY} <b>Прятки завершены!</b>\n\n"
         f"Победитель{'и' if len(winner_uids) > 1 else ''}: {', '.join(names)}\n"
         + (f"Приз: <b>{prize_each}🪙</b> каждому" if prize_each else "")
     )
@@ -13933,10 +13958,10 @@ async def _skirmish_duel_resolve_choices(bot, skirmish_id: int, duel: dict,
         )
         if att_correct and not def_correct:
             result = "attacker"; def_hp -= 4
-            round_result = f"🏆 {he(att_name)} угадал! Защитник −4 HP.\n{detail}"
+            round_result = f"{_E_TROPHY} {he(att_name)} угадал! Защитник −4 HP.\n{detail}"
         elif def_correct and not att_correct:
             result = "defender"; att_hp -= 4
-            round_result = f"🏆 {he(def_name)} угадал! Атакующий −4 HP.\n{detail}"
+            round_result = f"{_E_TROPHY} {he(def_name)} угадал! Атакующий −4 HP.\n{detail}"
         else:
             result = "draw"; att_hp -= 1; def_hp -= 1
             round_result = f"⚖️ Оба {'угадали' if att_correct else 'промахнулись'}! Оба теряют 1 HP.\n{detail}"
@@ -15093,7 +15118,7 @@ async def _build_diary(uid: int, f: dict) -> str:
     if f.get("last_feed", 0) and now - f.get("last_feed", 0) < 7 * 86400:
         facts.append(f"🍎 {random.choice(_DIARY_FEED_PHRASES).capitalize()} (всего кормёжек: {feeds_7})")
     if f.get("last_play", 0) and now - f.get("last_play", 0) < 7 * 86400:
-        facts.append(f"🎮 {random.choice(_DIARY_PLAY_PHRASES).capitalize()}")
+        facts.append(f"{_E_GAMES} {random.choice(_DIARY_PLAY_PHRASES).capitalize()}")
     if f.get("last_wash", 0) and now - f.get("last_wash", 0) < 7 * 86400:
         facts.append(f"🛁 {random.choice(_DIARY_WASH_PHRASES).capitalize()}")
     if f.get("last_sleep", 0) and now - f.get("last_sleep", 0) < 7 * 86400:
@@ -15101,7 +15126,7 @@ async def _build_diary(uid: int, f: dict) -> str:
     if f.get("last_event", 0) and now - f.get("last_event", 0) < 7 * 86400:
         facts.append(f"🎲 {random.choice(_DIARY_EVENT_PHRASES).capitalize()}")
     if f.get("last_casino", 0) and now - f.get("last_casino", 0) < 7 * 86400:
-        facts.append(f"🎰 {random.choice(_DIARY_CASINO_PHRASES).capitalize()}")
+        facts.append(f"{_E_CASINO} {random.choice(_DIARY_CASINO_PHRASES).capitalize()}")
     if duels_7 > 0:
         facts.append(f"⚔️ {random.choice(_DIARY_DUEL_PHRASES).capitalize()} ({duels_7} побед)")
 
@@ -16421,7 +16446,7 @@ async def finalize_giveaway(gid: int, ctx):
             # Текстовый приз — монеты не начисляем
             result_text = (
                 f"🎉 <b>Розыгрыш завершён!</b>\n\n"
-                f"🏆 Победители: {', '.join(winners_names)}\n"
+                f"{_E_TROPHY} Победители: {', '.join(winners_names)}\n"
                 f"🎁 Приз: <b>{_html.escape(prize_text)}</b>\n\n"
                 f"<i>Свяжитесь с организатором для получения приза</i>\n"
                 f"<i>Всего участников: {len(participants)}</i>"
@@ -16441,7 +16466,7 @@ async def finalize_giveaway(gid: int, ctx):
                     await db_save(first_f)
             result_text = (
                 f"🎉 <b>Розыгрыш завершён!</b>\n\n"
-                f"🏆 Победители: {', '.join(winners_names)}\n"
+                f"{_E_TROPHY} Победители: {', '.join(winners_names)}\n"
                 f"💰 Каждый получил <b>{prize_each}{coin_emoji()}</b>"
                 + (f" (+{remainder} первому победителю)" if remainder > 0 else "")
                 + f"\n\n<i>Всего участников: {len(participants)}</i>"
@@ -16500,8 +16525,8 @@ async def finalize_giveaway(gid: int, ctx):
                     f"🎉 <b>Розыгрыш завершён</b> (ID: {gid})\n\n"
                     f"📝 Создатель: <b>{he(_creator_name)}</b> ({_creator_uname})\n"
                     f"💰 Призовой фонд: <b>{total}🪙</b>\n"
-                    f"👥 Участников: <b>{len(participants)}</b>\n"
-                    f"🏆 Победители ({len(winners)}):\n {_winners_str}\n"
+                    f"{_E_USERS} Участников: <b>{len(participants)}</b>\n"
+                    f"{_E_TROPHY} Победители ({len(winners)}):\n {_winners_str}\n"
                     f"💵 Каждому: <b>{prize_each}🪙</b>\n"
                     f"🕐 {datetime.now(timezone.utc).strftime('%d.%m.%Y %H:%M')} UTC"
                 )
@@ -17470,7 +17495,7 @@ async def ach_grant(uid: int, ach_id: str, bot=None) -> bool:
         try:
             await bot.send_message(
                 uid,
-                f"🏆 <b>Достижение!</b>\n\n{a['emoji']} <b>{a['name']}</b>\n<i>{a['desc']}</i>",
+                f"{_E_TROPHY} <b>Достижение!</b>\n\n{a['emoji']} <b>{a['name']}</b>\n<i>{a['desc']}</i>",
                 parse_mode=ParseMode.HTML,
             )
         except Exception:
@@ -17645,7 +17670,7 @@ async def ach_check(f: dict, bot=None):
             try:
                 await bot.send_message(
                     uid,
-                    f"🏆 <b>Достижение!</b>\n\n{a['emoji']} <b>{a['name']}</b>\n<i>{a['desc']}</i>",
+                    f"{_E_TROPHY} <b>Достижение!</b>\n\n{a['emoji']} <b>{a['name']}</b>\n<i>{a['desc']}</i>",
                     parse_mode=ParseMode.HTML,
                 )
             except Exception:
@@ -18668,7 +18693,7 @@ async def _run_chat_auto_giveaway(chat_id: int, fund: int, ctx):
                 chat_id,
                 f"🎉 <b>Авторозыгрыш фонда чата!</b>\n\n"
                 f"Накоплено: <b>{fund}{_E_COIN}</b>\n"
-                f"Победитель: <b>{he(w_name)}</b> 🏆\n"
+                f"Победитель: <b>{he(w_name)}</b> {_E_TROPHY}\n"
                 f"Приз: <b>+{fund}{_E_COIN}</b>",
                 parse_mode=ParseMode.HTML,
             )
@@ -19312,8 +19337,8 @@ async def maybe_big_win_announce(
     msg = (
         f"💰 <b>Крупный выигрыш!</b>\n\n"
         f"<tg-emoji emoji-id='5341367834935075028'>🐸</tg-emoji> <b>{player_name}</b>\n"
-        f"🎮 Игра: {game_label}\n"
-        f"🏆 Выиграл: <b>{amount}{_E_COIN}</b>{stake_part}"
+        f"{_E_GAMES} Игра: {game_label}\n"
+        f"{_E_TROPHY} Выиграл: <b>{amount}{_E_COIN}</b>{stake_part}"
     )
     # Только главный игровой чат — удалять через 2 минуты
     try:
@@ -19512,7 +19537,7 @@ async def cmd_activate(update: Update, ctx: ContextTypes.DEFAULT_TYPE):
                 f"Я — Frog Tamagotchi Bot! Каждый участник этого чата может завести свою лягушку прямо сейчас.\n\n"
                 f"📌 <b>Как начать:</b> нажми кнопку ниже или напиши мне <code>/start</code> в личку.\n"
                 f"Все игроки из этого чата автоматически попадут в <b>локальный топ чата</b>!\n\n"
-                f"🏆 <b>Доступные команды в чате:</b>\n"
+                f"{_E_TROPHY} <b>Доступные команды в чате:</b>\n"
                 f"• /top — глобальный топ\n"
                 f"• /toplocal — топ игроков <b>этого чата</b>\n"
                 f"• /duel — дуэль\n"
@@ -19574,7 +19599,7 @@ def _chatadmin_main_text(s: dict, chat_title: str) -> str:
     return (
         f"🏘 <b>Панель чата: {he(chat_title)}</b>\n\n"
         f"🎭 Режим: <b>{mode_lbl}</b> · 📢 Анонсы: <b>{al_lbl}</b>{susp}\n"
-        f"🗑 Автоудаление: <b>{ad}</b> · ⚔️ Дуэли: <b>{duels}</b> 🎰 Казино: <b>{casino}</b>\n"
+        f"🗑 Автоудаление: <b>{ad}</b> · ⚔️ Дуэли: <b>{duels}</b> {_E_CASINO} Казино: <b>{casino}</b>\n"
         f"💰 Фонд: <b>{fund:,}🪙</b>"
         + (f"  (авторозыгрыш при {threshold:,}🪙)" if threshold else "") + "\n"
         f"📊 Налог: <b>{tax}%</b>\n\n"
@@ -19644,7 +19669,7 @@ async def cmd_kvastat(update: Update, ctx: ContextTypes.DEFAULT_TYPE):
         f"{_E_STARS} Stars потрачено: <b>{row['retry_stars'] * NFT_KVA_STARS}</b>\n"
         f"🎯 Всего бросков: <b>{total_tries}</b>\n\n"
         f"🏅 Лучший бросок: <b>{row['best_roll']}/{NFT_KVA_TOTAL}</b> ({proximity}% от победы)\n"
-        f"🏆 Выиграл NFT: {won}\n\n"
+        f"{_E_TROPHY} Выиграл NFT: {won}\n\n"
         f"<i>Шанс победы: 1/{NFT_KVA_TOTAL} за каждый бросок</i>",
         parse_mode=ParseMode.HTML,
     )
@@ -19690,14 +19715,14 @@ async def cmd_kvaadmin(update: Update, ctx: ContextTypes.DEFAULT_TYPE):
 
     lines = [
         f"📊 <b>Статистика NFT Chill Flame ивента</b>\n",
-        f"👥 Участников: <b>{s['players'] or 0}</b>",
+        f"{_E_USERS} Участников: <b>{s['players'] or 0}</b>",
         f"🎲 Всего бросков: <b>{s['total_tries'] or 0}</b>",
         f"🐸 ├ ква в доверенных: <b>{s['total_kva'] or 0}</b>",
         f"🔄 ├ повторов за монеты: <b>{s['total_retry_coins'] or 0}</b>",
         f"{_E_STARS} └ повторов за Stars: <b>{s['total_retry_stars'] or 0}</b>",
         f"🪙 Монет потрачено: <b>{s['total_coins'] or 0}</b>",
         f"{_E_STARS} Stars потрачено: <b>{(s['total_retry_stars'] or 0) * NFT_KVA_STARS}</b>",
-        f"🏆 Победителей: <b>{s['total_winners'] or 0}</b>",
+        f"{_E_TROPHY} Победителей: <b>{s['total_winners'] or 0}</b>",
         f"🎯 Рекордный бросок: <b>{s['top_roll'] or 0}/{NFT_KVA_TOTAL}</b>",
         f"📈 Среднее бросков на игрока: <b>{int(s['avg_tries'] or 0)}</b>",
         f"\n<b>Топ-5 активных:</b>",
@@ -19710,8 +19735,8 @@ async def cmd_kvaadmin(update: Update, ctx: ContextTypes.DEFAULT_TYPE):
         total_tries = r['kva_count'] + r['retry_coins'] + r['retry_stars']
         lines.append(
             f"{i}. <b>{_html.escape(name)}</b>{uname}{nft_mark}\n"
-            f"   🐸{r['kva_count']} 🔄{r['retry_coins']} ⭐{r['retry_stars']} "
-            f"({r['retry_stars'] * NFT_KVA_STARS}⭐ потрачено) "
+            f"   🐸{r['kva_count']} 🔄{r['retry_coins']} {_E_STARS}{r['retry_stars']} "
+            f"({r['retry_stars'] * NFT_KVA_STARS}{_E_STARS} потрачено) "
             f"| 🎯{r['best_roll']}/{NFT_KVA_TOTAL} | всего: {total_tries}"
         )
 
@@ -19830,7 +19855,7 @@ async def cmd_reset_stats(update: Update, ctx: ContextTypes.DEFAULT_TYPE):
 
         if dry:
             await msg.edit_text(
-                f"🔍 <b>Dry run:</b> найдено <b>{count}</b> игроков с параметрами 100%.\n"
+                f"{_E_SEARCH} <b>Dry run:</b> найдено <b>{count}</b> игроков с параметрами 100%.\n"
                 f"Запусти без <code>dry</code> чтобы применить.",
                 parse_mode=ParseMode.HTML,
             )
@@ -19892,7 +19917,7 @@ async def cmd_nftadmin(update: Update, ctx: ContextTypes.DEFAULT_TYPE):
     elif cmd == "stars" and len(args) > 1:
         try:
             NFT_KVA_STARS = max(1, int(args[1]))
-            await update.message.reply_text(f"⭐ Цена повтора: <b>{NFT_KVA_STARS} Stars</b>.", parse_mode=ParseMode.HTML)
+            await update.message.reply_text(f"{_E_STARS} Цена повтора: <b>{NFT_KVA_STARS} Stars</b>.", parse_mode=ParseMode.HTML)
         except ValueError:
             await update.message.reply_text("⚠️ Укажи число: /nftadmin stars 2")
     elif cmd == "coins" and len(args) > 1:
@@ -20311,7 +20336,7 @@ async def _handle_chatadmin_callback(q, uid: int, ctx):
         dm   = s.get("delay_medium", 120)
         dh   = s.get("delay_high", 300)
         return (
-            f"⚙️ <b>Настройки — {he(chat_title)}</b>\n\n"
+            f"{_E_GEAR} <b>Настройки — {he(chat_title)}</b>\n\n"
             f"🗑 Автоудаление ответов бота: <b>{ad}</b>\n"
             f"   ⏱ Средние: <b>{dm}с</b> · Важные: <b>{dh}с</b>\n"
             f"🎲 Удалять казино-эмодзи (🎲🎯🏀): <b>{dc}</b>\n"
@@ -20401,9 +20426,9 @@ async def _handle_chatadmin_callback(q, uid: int, ctx):
         casino = "разрешено"  if s.get("allow_casino", 1) else "запрещено"
         lvl    = s.get("min_level_to_play", 1)
         return (
-            f"🎮 <b>Игры — {he(chat_title)}</b>\n\n"
+            f"{_E_GAMES} <b>Игры — {he(chat_title)}</b>\n\n"
             f"⚔️ Дуэли: <b>{duels}</b>\n"
-            f"🎰 Казино: <b>{casino}</b>\n"
+            f"{_E_CASINO} Казино: <b>{casino}</b>\n"
             f"🔒 Мин. уровень для игр: <b>{lvl}</b>\n\n"
             f"<i>Игроки ниже мин. уровня не могут начинать игры в этом чате.</i>"
         )
@@ -20571,10 +20596,10 @@ async def _handle_chatadmin_callback(q, uid: int, ctx):
         try:
             await q.message.edit_text(
                 f"📊 <b>Статистика — {he(chat_title)}</b>\n\n"
-                f"👥 Всего игроков: <b>{total_m}</b>\n"
+                f"{_E_USERS} Всего игроков: <b>{total_m}</b>\n"
                 f"🟢 Активных 24ч: <b>{act24}</b> · 7д: <b>{act7d}</b>\n"
                 f"💸 Потрачено всего: <b>{total_spent:,}{_E_COIN}</b>\n\n"
-                f"<b>🏆 Топ-5:</b>\n{top_txt}",
+                f"<b>{_E_TROPHY} Топ-5:</b>\n{top_txt}",
                 parse_mode=ParseMode.HTML,
                 reply_markup=InlineKeyboardMarkup([[btn("◀️ Назад", callback_data=f"ca_main_{cid}")]]),
             )
@@ -21247,7 +21272,7 @@ async def cmd_referral(update: Update, ctx: ContextTypes.DEFAULT_TYPE):
         f"<b>Этапы наград за каждого реферала:</b>",
         *stage_lines,
         f"\n<i>Максимум {MAX_REFERRAL_COINS}{coin_emoji()} с одного реферала. </i>\n",
-        f"👥 Приглашено: <b>{total}</b>",
+        f"{_E_USERS} Приглашено: <b>{total}</b>",
         f"✅ Этапов выполнено: <b>{total_stages}</b>",
         f"{coin_emoji()}{_E_COIN} заработано: <b>{total_earned}</b>",
     ]
@@ -21828,12 +21853,12 @@ async def handle_antibot_callback(q, d, uid, ctx):
         coins = (rf.get("coins", 0) or 0) if rf else 0
 
         text = (
-            f"🔍 <b>Расследование реферера</b>\n"
+            f"{_E_SEARCH} <b>Расследование реферера</b>\n"
             f"👤 <b>{_html.escape(rname)}</b> <code>{ref_er}</code>"
             f"{' 🚫 уже забанен' if is_banned else ''}\n"
             f"💰 Монет сейчас: <b>{coins}</b>\n"
             f"📤 Раздал за 7 дней: <b>{int(coins_given)}🪙</b> → {recipients} игрокам\n"
-            f"🤖 Подозрительных рефералов: <b>{len(suspects)}</b>\n\n"
+            f"{_E_BOT} Подозрительных рефералов: <b>{len(suspects)}</b>\n\n"
             f"<b>Что делают кнопки (читай по порядку):</b>\n\n"
             f"1️⃣ <b>Сухой откат</b> — показывает что будет удалено (монеты и скины у ботов), "
             f"<u>ничего не меняет</u>. Смотри отчёт и убедись что всё верно.\n\n"
@@ -21869,11 +21894,11 @@ async def handle_antibot_callback(q, d, uid, ctx):
         ])
         try:
             await q.message.edit_text(
-                f"🔍 <b>Сухой запуск — изменений нет</b>\n\n{report}",
+                f"{_E_SEARCH} <b>Сухой запуск — изменений нет</b>\n\n{report}",
                 parse_mode=ParseMode.HTML, reply_markup=kb
             )
         except Exception:
-            await ctx.bot.send_message(uid, f"🔍 <b>Сухой запуск</b>\n{report}", parse_mode=ParseMode.HTML, reply_markup=kb)
+            await ctx.bot.send_message(uid, f"{_E_SEARCH} <b>Сухой запуск</b>\n{report}", parse_mode=ParseMode.HTML, reply_markup=kb)
         return
 
     # ── Только забанить мошенника + всех его ботов (без отката монет) ────────
@@ -21914,7 +21939,7 @@ async def handle_antibot_callback(q, d, uid, ctx):
             await q.message.edit_text(
                 f"✅ <b>Шаг 2 выполнен</b>\n\n"
                 f"🚫 Мошенник <b>{_html.escape(rname)}</b> <code>{ref_er}</code> забанен, монеты обнулены\n"
-                f"🤖 Помечено ботами: <b>{len(bot_ids)}</b>\n\n"
+                f"{_E_BOT} Помечено ботами: <b>{len(bot_ids)}</b>\n\n"
                 f"Теперь можно откатить монеты и скины у всех ботов (шаг 3).",
                 parse_mode=ParseMode.HTML, reply_markup=kb
             )
@@ -21971,7 +21996,7 @@ async def handle_antibot_callback(q, d, uid, ctx):
         summary = (
             f"⚡ <b>Всё выполнено</b>\n\n"
             f"🚫 Мошенник <code>{ref_er}</code> забанен\n"
-            f"🤖 Помечено ботами: <b>{len(bot_ids)}</b>\n\n"
+            f"{_E_BOT} Помечено ботами: <b>{len(bot_ids)}</b>\n\n"
             f"{report}"
         )
         try:
@@ -22045,7 +22070,7 @@ async def cmd_adminfraud(update: Update, ctx: ContextTypes.DEFAULT_TYPE):
     name = tf.get("first_name", "?") if tf else "?"
     is_trusted = await is_trusted_referrer(ref_id)
     lines = [
-        f"🔍 <b>Реферер {_html.escape(name)}</b> <code>{ref_id}</code>\n"
+        f"{_E_SEARCH} <b>Реферер {_html.escape(name)}</b> <code>{ref_id}</code>\n"
         f"Всего рефералов: {total_refs} · Whitelist: {'⭐ ДА' if is_trusted else '❌ Нет'}\n"
     ]
     for ref_ed, reason, det_at, verdict in rows:
@@ -22835,7 +22860,7 @@ async def _send_bot_contacts_page(bot, admin_id: int, bot_uid: int, bot_name: st
         return
 
     lines = [
-        f"🤖 <b>Контакты бота</b> <code>{bot_uid}</code> {_html.escape(bot_name)}\n"
+        f"{_E_BOT} <b>Контакты бота</b> <code>{bot_uid}</code> {_html.escape(bot_name)}\n"
         f"Всего контактов: <b>{total}</b> (стр {page+1}/{(total-1)//per+1})\n"
     ]
     buttons = []
@@ -22953,7 +22978,7 @@ async def handle_bot_contacts_callback(q, d: str, uid: int, ctx) -> None:
                 btn("🔨 Подтвердить откат ВСЕХ", callback_data=f"bcp_fullrb_{bot_uid}_{page}", style="danger"),
                 btn("❌ Отмена", callback_data=f"bcp_page_{bot_uid}_{page}", style="primary"),
             ]])
-            await ctx.bot.send_message(uid, f"🔍 <b>Сухой откат ботовода</b>\n{report}", parse_mode=ParseMode.HTML, reply_markup=kb)
+            await ctx.bot.send_message(uid, f"{_E_SEARCH} <b>Сухой откат ботовода</b>\n{report}", parse_mode=ParseMode.HTML, reply_markup=kb)
             return
 
         if action == "fullrb":
@@ -23042,7 +23067,7 @@ async def handle_bot_contacts_callback(q, d: str, uid: int, ctx) -> None:
         cname = (cf.get("first_name") or str(contact_uid)) if cf else str(contact_uid)
         is_bot_f = (cf.get("is_bot", 0) or 0) if cf else 0
         lines = [
-            f"🔗 <b>Цепочка</b> {'🤖' if is_bot_f else '👤'} <b>{_html.escape(cname)}</b> <code>{contact_uid}</code>\n"
+            f"🔗 <b>Цепочка</b> {'{_E_BOT}' if is_bot_f else '👤'} <b>{_html.escape(cname)}</b> <code>{contact_uid}</code>\n"
         ]
         if gifts_out:
             lines.append(f"📤 Отправил {int(sum(r[1] or 0 for r in gifts_out))}🪙 → {len(gifts_out)} игрокам:")
@@ -23069,7 +23094,7 @@ async def handle_bot_contacts_callback(q, d: str, uid: int, ctx) -> None:
             btn("🔨 Подтвердить откат", callback_data=f"bcp_rollbackconfirm_{bot_uid}_{contact_uid}_{page}", style="danger"),
             btn("❌ Отмена", callback_data=f"bcp_page_{bot_uid}_{page}", style="primary"),
         ]])
-        await ctx.bot.send_message(uid, f"🔍 <b>Сухой откат</b>\n{report}", parse_mode=ParseMode.HTML, reply_markup=kb)
+        await ctx.bot.send_message(uid, f"{_E_SEARCH} <b>Сухой откат</b>\n{report}", parse_mode=ParseMode.HTML, reply_markup=kb)
         return
 
     if action == "rollbackconfirm":
@@ -23204,7 +23229,7 @@ async def handle_risk_callback(q, d: str, uid: int, ctx) -> None:
 
         lines = [
             f"🔗 <b>Цепочка переводов</b> ({hours}ч)\n"
-            f"{'🤖' if is_bot_flag else '👤'} <b>{_html.escape(bname)}</b> <code>{target}</code>\n"
+            f"{'{_E_BOT}' if is_bot_flag else '👤'} <b>{_html.escape(bname)}</b> <code>{target}</code>\n"
         ]
 
         if gifts_out:
@@ -23360,14 +23385,14 @@ async def cmd_admingiftchain(update: Update, ctx: ContextTypes.DEFAULT_TYPE):
 
     if not gifts:
         await update.message.reply_text(
-            f"🔍 <b>{_html.escape(bname)}</b> <code>{bot_uid}</code>\n"
+            f"{_E_SEARCH} <b>{_html.escape(bname)}</b> <code>{bot_uid}</code>\n"
             f"Нет переводов за последние {hours} ч.",
             parse_mode=ParseMode.HTML
         )
         return
 
     lines = [
-        f"🔍 <b>Расследование ботовода</b>\n"
+        f"{_E_SEARCH} <b>Расследование ботовода</b>\n"
         f"Отправитель: <b>{_html.escape(bname)}</b> <code>{bot_uid}</code>"
         f"  {'🚫 Забанен' if is_banned else '⚠️ Активен'}\n"
         f"Период: последние {hours} ч\n"
@@ -23467,7 +23492,7 @@ async def _do_rollback(bot_uid: int, hours: int, dry_run: bool, bot) -> str:
         return f"Нет переводов от <code>{bot_uid}</code> за последние {hours} ч."
 
     report_lines = [
-        f"{'🔍 Сухой запуск — изменений нет' if dry_run else '🔨 Откат выполнен'}\n"
+        f"{'{_E_SEARCH} Сухой запуск — изменений нет' if dry_run else '🔨 Откат выполнен'}\n"
         f"Ботовод: <code>{bot_uid}</code> Период: {hours} ч\n"
         f"Жертв: {len(gifts)}\n"
     ]
@@ -23698,7 +23723,7 @@ async def cmd_adminundo(update: Update, ctx: ContextTypes.DEFAULT_TYPE):
         if not rows:
             await update.message.reply_text(f"❌ Стай с названием «{query}» не найдено.")
             return
-        lines = [f"🔍 Найдено стай: {len(rows)}\n"]
+        lines = [f"{_E_SEARCH} Найдено стай: {len(rows)}\n"]
         for r in rows:
             lines.append(f"{r[2]} <b>{he(r[1])}</b> ID: <code>{r[0]}</code> Ур.{r[3]}")
         await update.message.reply_text("\n".join(lines), parse_mode=ParseMode.HTML)
@@ -24287,7 +24312,7 @@ async def cmd_start(update: Update, ctx: ContextTypes.DEFAULT_TYPE):
                         f"🤝 <b>Случайная встреча в пути!</b>\n"
                         f"Путник попросил присоединиться к вашей экспедиции...\n\n"
                         f"{_mid_bc['emoji']} <b>{_mid_bc['name']}</b>\n"
-                        f"👥 Участники: {_active_count}/{_mid_exp['max_players']}\n"
+                        f"{_E_USERS} Участники: {_active_count}/{_mid_exp['max_players']}\n"
                         f"⏱ До конца: <b>{left_h}ч {left_m}м</b>\n\n"
                         f"<i>Максимум {EXP_MAX_SUPPLY_TOTAL} припасов.</i>\n"
                     ]
@@ -24835,7 +24860,7 @@ async def cmd_revive(update: Update, ctx: ContextTypes.DEFAULT_TYPE):  # plog in
         f"<b>Выбери способ воскрешения:</b>\n\n"
         f"За <b>{cost}{_E_COIN}</b> — лягушка ожьёт с 50% показателей\n"
         f"  {coins_txt}\n\n"
-        f"⭐ За <b>15 Stars</b> — мгновенно, 100% показателей\n\n"
+        f"{_E_STARS} За <b>15 Stars</b> — мгновенно, 100% показателей\n\n"
         f"⚔️ <b>Испытание</b> — бесплатно, выполни 3 задания→ полные показатели + бонусы"
     )
     kb = InlineKeyboardMarkup([
@@ -25091,7 +25116,7 @@ async def cmd_tournament(update: Update, ctx: ContextTypes.DEFAULT_TYPE):
         ]
     )
     tourn_msg = await update.message.reply_text(
-        f"🏆 <b>Турнир #{tid} открыт!</b>\n\n"
+        f"{_E_TROPHY} <b>Турнир #{tid} открыт!</b>\n\n"
         f"Создатель: <b>{user.first_name}</b>\n"
         f"Ставка входа: <b>{stake}{coin_emoji()}</b>\n"
         f"Участников: <b>1</b>\n\n"
@@ -25329,7 +25354,7 @@ async def _casino_auto_loop(
 
         net = win - stake
         net_str = f"+{net}" if net >= 0 else str(net)
-        jackpot_line = f"\n🎰 <b>ДЖЕКПОТ! +{jackpot_won:,}🪙</b>" if jackpot_won > 0 else ""
+        jackpot_line = f"\n{_E_CASINO} <b>ДЖЕКПОТ! +{jackpot_won:,}🪙</b>" if jackpot_won > 0 else ""
         if gtype == "slots" and _slot_desc:
             comb_str = f" {_slot_desc}"
         elif gtype == "slots":
@@ -26479,7 +26504,7 @@ async def cmd_nft(update: Update, ctx: ContextTypes.DEFAULT_TYPE):
     if pending_review:
         lines.append(f"⏳ <b>На проверку отправлено {len(pending_review)}:</b>")
         for num, mn in pending_review:
-            lines.append(f"  🔍 KissedFrog #{num} — модель: <i>{mn}</i>")
+            lines.append(f"  {_E_SEARCH} KissedFrog #{num} — модель: <i>{mn}</i>")
         lines.append("")
 
     if already_done:
@@ -26654,11 +26679,11 @@ async def cmd_buy(update: Update, ctx: ContextTypes.DEFAULT_TYPE):
             continue
         coins_d = int(p["coins"] * stars_mult_b)
         if p.get("newbie"):
-            lbl = f"🎁 {p['stars']}⭐ → {coins_d}🪙 Первая покупка!"
+            lbl = f"🎁 {p['stars']}{_E_STARS} → {coins_d}🪙 Первая покупка!"
         elif p.get("daily_deal"):
-            lbl = f"🌅 {p['stars']}⭐ → {coins_d}🪙 Выгодно"
+            lbl = f"🌅 {p['stars']}{_E_STARS} → {coins_d}🪙 Выгодно"
         else:
-            lbl = f"⭐ {p['stars']} → {coins_d}🪙"
+            lbl = f"{_E_STARS} {p['stars']} → {coins_d}🪙"
             if stars_mult_b > 1.0:
                 lbl += " ✨"
         coin_rows.append([btn(lbl, callback_data=f"buy_stars_{i}")])
@@ -26666,7 +26691,7 @@ async def cmd_buy(update: Update, ctx: ContextTypes.DEFAULT_TYPE):
     # ── Раздел 3: Гача-билеты ─────────────────────────────────────────
     ticket_rows = []
     for j, tp in enumerate(TICKET_PACKAGES):
-        lbl = f"🎟 {tp['stars']}⭐ → {tp['label']}"
+        lbl = f"🎟 {tp['stars']}{_E_STARS} → {tp['label']}"
         ticket_rows.append([btn(lbl, callback_data=f"buy_ticket_{j}")])
 
     # ── Текст ─────────────────────────────────────────────────────────
@@ -26680,7 +26705,7 @@ async def cmd_buy(update: Update, ctx: ContextTypes.DEFAULT_TYPE):
     text = (
         f"💫 <b>Магазин</b>\n"
         f"<i>💰 {f['coins']}🪙{ticket_str}</i>\n\n"
-        f"<b>Курс:</b> 1⭐ = {int(2 * stars_mult_b)}🪙{rate_note}"
+        f"<b>Курс:</b> 1{_E_STARS} = {int(2 * stars_mult_b)}🪙{rate_note}"
         f"{sub_hint}"
     )
 
@@ -26994,7 +27019,7 @@ async def cmd_trial(update: Update, ctx: ContextTypes.DEFAULT_TYPE):
         f"🎉 <b>1 день Трудяги — бесплатно!</b>\n\n"
         f"🏪 <b>{he(frog_name)}</b> уже собирает корзинку и идёт на Болотный Рынок!\n\n"
         f"Каждый вечер она будет приносить домой <b>300–400{_E_COIN}</b>.\n"
-        f"Дожди, ярмарки, выгодные сделки — каждый день своя история 🌿\n\n"
+        f"Дожди, ярмарки, выгодные сделки — каждый день своя история {_E_LEAF}\n\n"
         f"📅 Пробный период до: <b>{until_dt}</b>\n\n"
         f"<i>После окончания продлить можно через /subscribe</i>",
         parse_mode=ParseMode.HTML,
@@ -27040,7 +27065,7 @@ async def cmd_broadcast_sub(update: Update, ctx: ContextTypes.DEFAULT_TYPE):
             f"🏪 <b>Трудяга</b> — \n"
             f"<b>{name_esc}</b> ходит на <b>Болотный Рынок</b> и каждый вечер\n"
             f"приносит домой <b>400–700{_E_COIN}</b>.\n"
-            f"Дожди, ярмарки, богатые тритоны — каждый день своя история 🌿\n\n"
+            f"Дожди, ярмарки, богатые тритоны — каждый день своя история {_E_LEAF}\n\n"
             "\n"
             f"🎁 Хочешь попробовать? <b>3 дня Трудяги — бесплатно</b>\n\n"
             f"👉 /trial — забрать пробный период\n"
@@ -27179,8 +27204,8 @@ async def show_admin_panel(message, edit=False, bot_data=None):
 
     text = (
         f"🔧 <b>Панель администратора</b>\n\n"
-        f"👥 Игроков: <b>{total_users}</b> 🐸 Живых: <b>{alive_count}</b> 🚫 Бан: <b>{banned_count}</b> 🤖 Ботов: <b>{bot_count}</b>\n"
-        f"🪙 В экономике: <b>{total_coins:,}</b> ⭐ Stars: <b>{total_stars}</b>\n"
+        f"{_E_USERS} Игроков: <b>{total_users}</b> 🐸 Живых: <b>{alive_count}</b> 🚫 Бан: <b>{banned_count}</b> {_E_BOT} Ботов: <b>{bot_count}</b>\n"
+        f"🪙 В экономике: <b>{total_coins:,}</b> {_E_STARS} Stars: <b>{total_stars}</b>\n"
         f"🔗 Рефералов: <b>{total_refs}</b> (выдано: {total_ref_coins}{coin_emoji()})\n"
         f"⏳ NFT на проверке: <b>{pending_nft}</b>"
     )
@@ -27271,15 +27296,15 @@ async def show_player_card(
         f"👤 <b>{he(p['first_name'])}</b> ({uname})\n"
         f"ID: <code>{target_uid}</code>\n\n"
         f"🐸 <b>{he(p.get('frog_name') or '(без имени)')}</b> {alive_s}\n"
-        f"⭐️ Уровень: <b>{p['level']}</b> · Опыт: <b>{p.get('xp',0)}/{xp_need(p['level'])}</b> {league_badge(p.get('league',0))}\n"
+        f"{_E_XP} Уровень: <b>{p['level']}</b> · Опыт: <b>{p.get('xp',0)}/{xp_need(p['level'])}</b> {league_badge(p.get('league',0))}\n"
         f"🪙 КваКоины: <b>{p['coins']:,}</b>\n"
         f"❤️ HP: {p.get('health',100)}% 🍖 Голод: {p.get('hunger',100)}% 😄 Настр: {p.get('happiness',100)}%\n"
         f"🎨 Облик: {p['skin']} ({s['rarity']}) · Коллекция: {len(coll)}/50\n"
         f"📅 Возраст: {days}д · Стрик: {p.get('streak',0)}д\n"
-        f"🔥 Стрик: {p.get('streak',0)}д · ⭐ Stars: {p.get('stars_spent',0)}\n"
-        f"🚫 Бан: {ban_s} · 🤖 Бот: {bot_s}\n\n"
+        f"🔥 Стрик: {p.get('streak',0)}д · {_E_STARS} Stars: {p.get('stars_spent',0)}\n"
+        f"🚫 Бан: {ban_s} · {_E_BOT} Бот: {bot_s}\n\n"
         f"🍎 Кормлений: {p.get('total_feeds',0)} · КД корм: {last_feed_cd}\n"
-        f"🎰 Гача: {p.get('total_gacha',0)} · 🃏 Казино: {p.get('total_casino',0)} (побед: {p.get('total_casino_wins',0)})\n"
+        f"{_E_CASINO} Гача: {p.get('total_gacha',0)} · 🃏 Казино: {p.get('total_casino',0)} (побед: {p.get('total_casino_wins',0)})\n"
         f"⚔️ Дуэлей: {p.get('total_duels',0)} (побед: {p.get('total_duel_wins',0)})\n"
         f"💸 Потрачено: {p.get('coins_spent',0)}{coin_emoji()}"
     )
@@ -27627,7 +27652,7 @@ async def cmd_admincasino(update: Update, ctx: ContextTypes.DEFAULT_TYPE):
     if not ctx.args:
         state_str = "🔴 <b>Отключено</b>" if is_disabled else "🟢 <b>Работает</b>"
         await update.message.reply_text(
-            f"🎰 <b>Казино</b> — {state_str}\n\n"
+            f"{_E_CASINO} <b>Казино</b> — {state_str}\n\n"
             f"<code>/admincasino off</code> — отключить\n"
             f"<code>/admincasino on</code> — включить",
             parse_mode=ParseMode.HTML,
@@ -27730,7 +27755,7 @@ async def cmd_givestreak(update: Update, ctx: ContextTypes.DEFAULT_TYPE) -> None
         await update.message.reply_text(
             f"📊 <b>Стрики {he(target_name)}</b>\n\n"
             f"🔥 Ежедневный вход: <b>{daily}</b> дн.\n"
-            f"🎰 Победы в казино: <b>{casino}</b> подряд\n"
+            f"{_E_CASINO} Победы в казино: <b>{casino}</b> подряд\n"
             f"⛏ Рабочих дней: <b>{worker}</b> подряд",
             parse_mode=ParseMode.HTML,
         )
@@ -28517,7 +28542,7 @@ async def cmd_setprice(update: Update, ctx: ContextTypes.DEFAULT_TYPE):
     if len(ctx.args) < 2:
         keys_list = "\n".join(f"• {k} — {v}" for k, v in ALLOWED_KEYS.items())
         await update.message.reply_text(
-            f"⚙️ <b>Настройка экономики</b>\n\nИспользование: /setprice ключ значение\n\n<b>Доступные ключи:</b>\n{keys_list}\n\n"
+            f"{_E_GEAR} <b>Настройка экономики</b>\n\nИспользование: /setprice ключ значение\n\n<b>Доступные ключи:</b>\n{keys_list}\n\n"
             f"Пример: <code>/setprice gacha_cost 75</code>",
             parse_mode=ParseMode.HTML,
         )
@@ -29200,10 +29225,10 @@ async def cmd_chatstats(update: Update, ctx: ContextTypes.DEFAULT_TYPE):
     ) or "  —"
     reply = await msg.reply_text(
         f"📊 <b>Статистика — {he(chat_title)}</b>\n\n"
-        f"👥 Всего игроков: <b>{total_m}</b>\n"
+        f"{_E_USERS} Всего игроков: <b>{total_m}</b>\n"
         f"🟢 Активных 24ч: <b>{act24}</b> · 7д: <b>{act7d}</b>\n"
         f"💸 Потрачено всего: <b>{total_spent:,}{_E_COIN}</b>\n\n"
-        f"<b>🏆 Топ-5:</b>\n{top_txt}",
+        f"<b>{_E_TROPHY} Топ-5:</b>\n{top_txt}",
         parse_mode=ParseMode.HTML,
     )
     if reply and is_group(update):
@@ -29684,11 +29709,11 @@ async def cmd_stats(update: Update, ctx: ContextTypes.DEFAULT_TYPE):
             # Счётчики ухода — один блок из двух строк, а не два блока:
             # между строками одного смысла пустая строка не нужна.
             ui_line(f"{_E_FOOD} {f['total_feeds']}",
-                    f"🎮 {f['total_plays']}",
+                    f"{_E_GAMES} {f['total_plays']}",
                     f"{_E_SOAP} {f['total_washes']}")
             + "\n"
             + ui_line(f"😴 {f['total_sleeps']}",
-                      f"🎰 {f['total_gacha']}",
+                      f"{_E_CASINO} {f['total_gacha']}",
                       f"🦟 {f.get('total_mosquitoes', 0)}"),
             # Процент в скобках, а не через SEP: иначе разделитель означает
             # и «следующая колонка», и «уточнение к числу».
@@ -30522,7 +30547,7 @@ async def cmd_checkgroup(update: Update, ctx: ContextTypes.DEFAULT_TYPE):
         target_chat_id = NFT_CLUB_CHAT_ID
 
     msg = await update.message.reply_text(
-        f"🔍 <i>Начинаю проверку участников чата {target_chat_id} "
+        f"{_E_SEARCH} <i>Начинаю проверку участников чата {target_chat_id} "
         f"на владение <b>{_html.escape(slug)}</b>...</i>\n"
         f"Это может занять несколько минут.",
         parse_mode=ParseMode.HTML,
@@ -30588,7 +30613,7 @@ async def cmd_checkgroup(update: Update, ctx: ContextTypes.DEFAULT_TYPE):
         if checked % 10 == 0 or checked == len(unique_holders):
             try:
                 await msg.edit_text(
-                    f"🔍 <i>Проверяю... {checked}/{len(unique_holders)}</i>\n"
+                    f"{_E_SEARCH} <i>Проверяю... {checked}/{len(unique_holders)}</i>\n"
                     f"✅ держат: {still_holding_count} · "
                     f"❌ нет NFT: {len(no_nft_entries)} · "
                     f"🚪 вышли: {left_group_count}",
@@ -30677,7 +30702,7 @@ async def cmd_checkgroup(update: Update, ctx: ContextTypes.DEFAULT_TYPE):
         f"❌ Нет NFT (в группе): <b>{len(no_nft_entries)}</b>\n"
         f"🚪 Вышли из группы: <b>{left_group_count}</b>\n"
         + (f"⚠️ Ошибки API: <b>{error_count}</b>\n" if error_count else "")
-        + f"👥 Проверено: <b>{len(unique_holders)}</b>"
+        + f"{_E_USERS} Проверено: <b>{len(unique_holders)}</b>"
     )
 
     if not no_nft_entries:
@@ -31077,7 +31102,7 @@ async def cmd_nft_contest_start(update: Update, ctx: ContextTypes.DEFAULT_TYPE):
     prizes_text = "\n".join(f"  {i}. {p}" for i, p in enumerate(prizes, 1))
 
     await update.message.reply_text(
-        f"🏆 <b>NFT-конкурс #{contest_id} запущен!</b>\n\n"
+        f"{_E_TROPHY} <b>NFT-конкурс #{contest_id} запущен!</b>\n\n"
         f"Название: <b>{_html.escape(title)}</b>\n"
         f"Лиги: {league_names}\n\n"
         f"<b>Призы:</b>\n{prizes_text}\n\n"
@@ -31115,7 +31140,7 @@ async def cmd_nft_contest_end(update: Update, ctx: ContextTypes.DEFAULT_TYPE):
     except Exception:
         prizes = []
 
-    lines = [f"🏆 <b>NFT-конкурс #{contest['id']} завершён!</b>\n", "<b>🥇 Победители:</b>"]
+    lines = [f"{_E_TROPHY} <b>NFT-конкурс #{contest['id']} завершён!</b>\n", "<b>🥇 Победители:</b>"]
     medals = ["🥇", "🥈", "🥉"]
     for i, row in enumerate(top_rows):
         name = row.get("frog_name") or row.get("first_name") or str(row.get("user_id", "?"))
@@ -31161,7 +31186,7 @@ async def cmd_nft_contest_status(update: Update, ctx: ContextTypes.DEFAULT_TYPE)
     )
 
     lines = [
-        f"🏆 <b>{_html.escape(contest['title'])}</b> #{contest['id']}",
+        f"{_E_TROPHY} <b>{_html.escape(contest['title'])}</b> #{contest['id']}",
         f"Запущен: {started} UTC",
         f"Конкурсная лига: {league_label}",
         f"Участников: {total_players}",
@@ -31945,7 +31970,7 @@ async def cmd_mymenu(update: Update, ctx: ContextTypes.DEFAULT_TYPE):
         f"{_E_BOLT} Энергия: <code>{bar(energy)}</code> {energy}%\n\n"
         f"{_E_LEVEL} Ур.{f['level']} · {f['xp']}/{xp_need(f['level'])} XP\n"
         f"🗂 Обликов: {len(coll)}/50\n\n"
-        f"КД: {feed_cd}🍎 {play_cd}🎮 {wash_cd}🛁 {sleep_cd}😴 {heal_cd}💊 {daily_cd}📅\n\n"
+        f"КД: {feed_cd}🍎 {play_cd}{_E_GAMES} {wash_cd}🛁 {sleep_cd}😴 {heal_cd}💊 {daily_cd}📅\n\n"
         f"<i>Для полного меню напиши боту: /frog</i>"
     )
     await group_reply(
@@ -31973,7 +31998,7 @@ async def cmd_help(update: Update, ctx: ContextTypes.DEFAULT_TYPE):
         "<code>/gift @user сумма</code> — подарить КваКоины\n"
         f"<code>/feed @user</code> — покормить чужую лягушку (+5{coin_emoji()})\n"
         "<code>/nft ссылка</code> — добавить KissedFrog NFT\n"
-        "<code>/buy</code> — купить КваКоины за Stars ⭐\n\n"
+        f"<code>/buy</code> — купить КваКоины за Stars {_E_STARS}\n\n"
         "💡 <b>Как зарабатывать КваКоины:</b>\n"
         "Кормёжка, игра, ежедневный бонус, квесты,\n"
         "казино, дуэли, поимка комаров, квак в чате\n\n"
@@ -32611,7 +32636,7 @@ async def on_callback(update: Update, ctx: ContextTypes.DEFAULT_TYPE):
                 _uname_rr = f"@{f['username']}" if f.get("username") else f"ID:{uid}"
                 await ctx.bot.send_message(
                     ADMIN_CHAT_ID,
-                    f"🌿 <b>Возвратное воскрешение</b>\n\n"
+                    f"{_E_LEAF} <b>Возвратное воскрешение</b>\n\n"
                     f"Игрок: <b>{_html.escape(fname(f))}</b> ({_uname_rr})\n"
                     f"Уровень: {f.get('level', 1)} | Был мёртв\n"
                     f"🧑‍🍼 Выдано 3 дня Болотной Няни\n"
@@ -32622,7 +32647,7 @@ async def on_callback(update: Update, ctx: ContextTypes.DEFAULT_TYPE):
                 pass
         try:
             await q.message.edit_text(
-                f"🌿 <b>{fname(f)} вернулась на болото!</b>\n\n"
+                f"{_E_LEAF} <b>{fname(f)} вернулась на болото!</b>\n\n"
                 f"❤️ Здоровье восстановлено\n"
                 f"🧑‍🍼 Болотная Няня активна на <b>3 дня</b> — она позаботится о лягушке!\n\n"
                 f"<i>Зайди в /frog чтобы увидеть свою лягушку 🐸</i>",
@@ -32643,7 +32668,7 @@ async def on_callback(update: Update, ctx: ContextTypes.DEFAULT_TYPE):
         is_overfeed = f.get("death_reason", "") == "overfeed"
         cost = OVERFEED_REVIVE_COST if is_overfeed else 100
         if f["coins"] < cost:
-            await q.answer((f"💸 Нужно {cost}{_E_COIN}, у тебя {f['coins']}.")[:200], show_alert=True)
+            await q.answer((f"💸 Нужно {cost}🪙, у тебя {f['coins']}.")[:200], show_alert=True)
             return
         revive_data = {
             "alive": 1,
@@ -32886,7 +32911,7 @@ async def on_callback(update: Update, ctx: ContextTypes.DEFAULT_TYPE):
         await ach_check(f, ctx.bot)
         await check_referral_stages(f, ctx.bot)
         mult_str = f"  ✨×{mult:.2f}" if mult > 1.0 else ""
-        result = f"🪰 <b>Съела муху!</b> <i>Ням-ням...</i>\n🍖+{food['hunger']} ⭐+{int(base_xp*mult)} {coin_emoji()}+{int(base_coins*mult)}{mult_str}"
+        result = f"🪰 <b>Съела муху!</b> <i>Ням-ням...</i>\n🍖+{food['hunger']} {_E_XP}+{int(base_xp*mult)} {coin_emoji()}+{int(base_coins*mult)}{mult_str}"
         for lvl, skin in rewards:
             result += f"\n🎉 <b>Уровень {lvl}!</b> Открыт облик: {display_skin(skin)}"
             await announce(
@@ -33128,7 +33153,7 @@ async def on_callback(update: Update, ctx: ContextTypes.DEFAULT_TYPE):
         lparts = label.split(None, 1)
         mult_str = f"  ✨×{mult:.2f}" if mult > 1.0 else ""
         _play_reaction = _frog_reaction("play")
-        result = f"{lparts[0]} <b>{he(lparts[1]) if len(lparts) > 1 else he(label)}!</b>\n😄+{hap_b} ⭐+{int(xp_b*mult)} {coin_emoji()}+{int(3*mult)}{mult_str}\n\n🐸 <i>{_play_reaction}</i>"
+        result = f"{lparts[0]} <b>{he(lparts[1]) if len(lparts) > 1 else he(label)}!</b>\n😄+{hap_b} {_E_XP}+{int(xp_b*mult)} {coin_emoji()}+{int(3*mult)}{mult_str}\n\n🐸 <i>{_play_reaction}</i>"
         for lvl, skin in rewards:
             result += f"\n🎉 <b>Уровень {lvl}!</b> Облик: {display_skin(skin)}"
         # После игры — открываем меню ухода (КД начал действовать)
@@ -33388,7 +33413,7 @@ async def on_callback(update: Update, ctx: ContextTypes.DEFAULT_TYPE):
                             _partner_id,
                             f"{icon} <b>Болотная Связь!</b>\n\n"
                             f"<b>{fname(f)}</b> и <b>{he(pname)}</b> — {new_streak} дней вместе!\n"
-                            f"Оба получают +{bond_reward}{_E_COIN} 🌿",
+                            f"Оба получают +{bond_reward}{_E_COIN} {_E_LEAF}",
                             parse_mode=ParseMode.HTML,
                         )
                         partner["coins"] = partner.get("coins", 0) + bond_reward
@@ -33539,10 +33564,10 @@ async def on_callback(update: Update, ctx: ContextTypes.DEFAULT_TYPE):
             )
         pity_line = f"\n🎯 Питти: <b>{f.get('gacha_pity', 0)}/{PITY_THRESHOLD}</b>" if not pity_triggered else "\n🌟 <b>Питти сработал!</b> Гарантированная легенда!"
         text = (
-            f"🎰 <b>Результат гачи!</b>{new_tag}\n\n"
+            f"{_E_CASINO} <b>Результат гачи!</b>{new_tag}\n\n"
             f"{R_ICON[s['rarity']]} {display_skin(skin, use_st)}\n"
             f"Редкость: <b>{R_NAME[s['rarity']]}</b>\n"
-            f"Осталось: {f['coins']}{coin_emoji()} · ⭐ +20 XP"
+            f"Осталось: {f['coins']}{coin_emoji()} · {_E_XP} +20 XP"
             f"{pity_line}"
         )
         for lvl, rskin in rewards:
@@ -33581,7 +33606,7 @@ async def on_callback(update: Update, ctx: ContextTypes.DEFAULT_TYPE):
             return
         try:
             dots = "✨ · " * count
-            await q.message.edit_text(f"🎰 <b>Крутим ×{count}...</b>\n\n{dots.strip()}", parse_mode=ParseMode.HTML)
+            await q.message.edit_text(f"{_E_CASINO} <b>Крутим ×{count}...</b>\n\n{dots.strip()}", parse_mode=ParseMode.HTML)
         except Exception:
             pass
         await asyncio.sleep(2)
@@ -33631,7 +33656,7 @@ async def on_callback(update: Update, ctx: ContextTypes.DEFAULT_TYPE):
         # ── Итоговое сообщение ──────────────────────────────────────────
         from collections import Counter
         result_counts = Counter(results)
-        lines = [f"🎰 <b>Результат гачи ×{count}!</b>\n"]
+        lines = [f"{_E_CASINO} <b>Результат гачи ×{count}!</b>\n"]
         for skin_r, cnt in sorted(result_counts.items(), key=lambda x: SKINS[x[0]]["chance"]):
             s_r = SKINS[skin_r]
             qty_total = coll_qty.get(skin_r, cnt)
@@ -33639,7 +33664,7 @@ async def on_callback(update: Update, ctx: ContextTypes.DEFAULT_TYPE):
             new_tag_r = " 🆕" if skin_r not in (set(coll_before) - set(results)) and qty_total <= cnt else ""
             lines.append(f"{R_ICON[s_r['rarity']]} {display_skin(skin_r, use_st)}{cnt_tag}{new_tag_r}")
         lines.append(f"\nПотрачено: <b>{total_cost}{coin_emoji()}</b> · Осталось: <b>{f['coins']}{coin_emoji()}</b>")
-        lines.append(f"⭐ +{count * 20} XP")
+        lines.append(f"{_E_XP} +{count * 20} XP")
         pity_now = f.get('gacha_pity', 0)
         pity_suffix = f"🌟 ×{pity_count} питти!" if pity_count else f"🎯 Питти: {pity_now}/{PITY_THRESHOLD}"
         lines.append(pity_suffix)
@@ -33753,7 +33778,7 @@ async def on_callback(update: Update, ctx: ContextTypes.DEFAULT_TYPE):
 
         pity_now = f.get("gacha_pity", 0)
         lines.append(f"\nПотрачено: <b>{total_cost:,}{coin_emoji()}</b> Осталось: <b>{f['coins']:,}{coin_emoji()}</b>")
-        lines.append(f"⭐ +{count*20:,} XP 🎯 Питти: {pity_now}/{PITY_THRESHOLD}")
+        lines.append(f"{_E_XP} +{count*20:,} XP 🎯 Питти: {pity_now}/{PITY_THRESHOLD}")
         for lvl, rskin in rewards:
             lines.append(f"🎉 <b>Уровень {lvl}!</b> {display_skin(rskin, use_st)}")
 
@@ -33819,7 +33844,7 @@ async def on_callback(update: Update, ctx: ContextTypes.DEFAULT_TYPE):
             )
         new_ticket_count = (await inv_get(uid)).get("gacha_ticket", 0)
         text = (
-            f"🎰 <b>Результат (билет)!</b>{new_tag}\n\n"
+            f"{_E_CASINO} <b>Результат (билет)!</b>{new_tag}\n\n"
             f"{R_ICON[s['rarity']]} {display_skin(skin, use_st)}\n"
             f"Редкость: <b>{R_NAME[s['rarity']]}</b>\n"
             f"{_E_COSMETIC} Осталось билетов: {new_ticket_count} · {_E_XP} +20 XP"
@@ -34756,7 +34781,7 @@ async def on_callback(update: Update, ctx: ContextTypes.DEFAULT_TYPE):
                 f"Параметры держатся на 85% — тебе всегда есть чем заняться.\n\n"
                 f"🏪 <b>Трудяга</b> — 800{_E_XP}/мес\n"
                 f"Всё то же + <b>{he(frog_name_ss)}</b> каждый вечер приносит <b>400–700{_E_COIN}</b>\n"
-                f"с Болотного Рынка и рассказывает что там было 🌿\n\n"
+                f"с Болотного Рынка и рассказывает что там было {_E_LEAF}\n\n"
                 "\n"
                 f"{status_ss}"
                 f"{workday_block_ss}",
@@ -34893,7 +34918,7 @@ async def on_callback(update: Update, ctx: ContextTypes.DEFAULT_TYPE):
         )
         try:
             await q.message.edit_text(
-                f"🛒 <b>Подтверждение покупки</b>\n\n"
+                f"{_E_SHOP} <b>Подтверждение покупки</b>\n\n"
                 f"{food_bulk['emoji']} <b>{he(food_bulk['name'])}</b> ×{qty_bulk}\n"
                 f"Стоимость: <b>{total_cost}{coin_emoji()}</b>\n"
                 f"💼 У тебя: {f['coins']}{coin_emoji()}\n\n"
@@ -34938,7 +34963,7 @@ async def on_callback(update: Update, ctx: ContextTypes.DEFAULT_TYPE):
             qty2 = inv.get(fid2, 0)
             lines.append(
                 f"{food2['emoji']} <b>{food2['name']}</b> — {food2['price']}{coin_emoji()} ×{qty2}\n"
-                f"   🍖+{food2['hunger']} 😄+{food2['happy']} ❤️+{food2['health']} ⭐+{food2['xp']}\n"
+                f"   🍖+{food2['hunger']} 😄+{food2['happy']} ❤️+{food2['health']} {_E_XP}+{food2['xp']}\n"
                 f"   <i>{food2['desc']}</i>\n"
             )
             rows.append(
@@ -34995,7 +35020,7 @@ async def on_callback(update: Update, ctx: ContextTypes.DEFAULT_TYPE):
             qty = inv.get(fid2, 0)
             lines.append(
                 f"{food2['emoji']} <b>{food2['name']}</b> — {food2['price']}{coin_emoji()} ×{qty}\n"
-                f"   🍖+{food2['hunger']} 😄+{food2['happy']} ❤️+{food2['health']} ⭐+{food2['xp']}\n"
+                f"   🍖+{food2['hunger']} 😄+{food2['happy']} ❤️+{food2['health']} {_E_XP}+{food2['xp']}\n"
                 f"   <i>{food2['desc']}</i>\n"
             )
             rows.append(
@@ -35283,7 +35308,7 @@ async def on_callback(update: Update, ctx: ContextTypes.DEFAULT_TYPE):
             f"⚡ <b>Скрафтить всё — готово!</b>\n\n"
             f"Операций: <b>{n_ops}</b>\n"
             f"{results_text}\n\n"
-            f"⭐ +{total_xp} XP 💸 -{CRAFT_ALL_COST}🪙"
+            f"{_E_XP} +{total_xp} XP 💸 -{CRAFT_ALL_COST}🪙"
         )
         for lvl, rskin in rewards:
             text += f"\n🎉 <b>Уровень {lvl}!</b> Облик: {display_skin(rskin)}"
@@ -35363,7 +35388,7 @@ async def on_callback(update: Update, ctx: ContextTypes.DEFAULT_TYPE):
                 f"Использовано: <i>{removed_display}</i>\n\n"
                 f"🔮 Получен: <b>Осколок Мифика</b>\n"
                 f"Осколков в инвентаре: <b>{shard_now}/{MYTHIC_SHARDS_NEEDED}</b>\n"
-                f"⭐ +100 XP\n\n"
+                f"{_E_XP} +100 XP\n\n"
                 + (f"<i>✅ Достаточно для сборки! Жми «Собрать Мифический»</i>"
                    if shard_now >= MYTHIC_SHARDS_NEEDED
                    else f"<i>Ещё {MYTHIC_SHARDS_NEEDED - shard_now} осколков до мифического облика</i>")
@@ -35431,7 +35456,7 @@ async def on_callback(update: Update, ctx: ContextTypes.DEFAULT_TYPE):
             f"✨ Получен:\n"
             f"{R_ICON[recipe['result_rarity']]} {display_skin(result_skin, use_st)}\n"
             f"Редкость: <b>{R_NAME[recipe['result_rarity']]}</b>\n"
-            f"⭐ +50 XP"
+            f"{_E_XP} +50 XP"
         )
         for lvl, rskin in rewards:
             text += f"\n🎉 <b>Уровень {lvl}!</b> Облик: {display_skin(rskin, use_st)}"
@@ -35493,7 +35518,7 @@ async def on_callback(update: Update, ctx: ContextTypes.DEFAULT_TYPE):
             f"5 осколков слились воедино...\n\n"
             f"🔴 {display_skin(result_skin, use_st)}\n"
             f"Редкость: <b>Мифический</b>\n"
-            f"⭐ +500 XP"
+            f"{_E_XP} +500 XP"
         )
         for lvl, rskin in rewards:
             text += f"\n🎉 <b>Уровень {lvl}!</b> Облик: {display_skin(rskin, use_st)}"
@@ -35546,7 +35571,7 @@ async def on_callback(update: Update, ctx: ContextTypes.DEFAULT_TYPE):
             )
             lines.append(
                 f"{'✅' if is_cl else '🔸'} {qd['desc']}\n"
-                f"   {status} → +{qd['coins']}{coin_emoji()} +{qd['xp']}⭐\n"
+                f"   {status} → +{qd['coins']}{coin_emoji()} +{qd['xp']}{_E_XP}\n"
             )
             if done and not is_cl:
                 rows.append(
@@ -35976,11 +36001,11 @@ async def on_callback(update: Update, ctx: ContextTypes.DEFAULT_TYPE):
             farm_min = p.get("farm_min", 0)
             farm_str = f"≈{farm_min}мин" if farm_min < 60 else f"≈{farm_min//60}ч"
             if p.get("newbie"):
-                lbl_quick = f"🎁 {p['stars']}⭐ → {coins_display_quick}🪙 ({farm_str})"
+                lbl_quick = f"🎁 {p['stars']}{_E_STARS} → {coins_display_quick}🪙 ({farm_str})"
             elif p.get("daily_deal"):
-                lbl_quick = f"🌅 {p['stars']}⭐ → {coins_display_quick}🪙 (ежедн.)"
+                lbl_quick = f"🌅 {p['stars']}{_E_STARS} → {coins_display_quick}🪙 (ежедн.)"
             else:
-                lbl_quick = f"⭐ {p['stars']} Stars → {coins_display_quick}🪙 ({farm_str})"
+                lbl_quick = f"{_E_STARS} {p['stars']} Stars → {coins_display_quick}🪙 ({farm_str})"
             if stars_mult_quick > 1.0 and not p.get("newbie") and not p.get("daily_deal"):
                 lbl_quick += " ✨"
             kb_rows.append([btn(lbl_quick, callback_data=f"buy_pkg_{i}")])
@@ -36019,7 +36044,7 @@ async def on_callback(update: Update, ctx: ContextTypes.DEFAULT_TYPE):
             await ctx.bot.send_invoice(
                 chat_id=uid,
                 title=f"🪙 {pkg['label']} — Frog Tamagotchi",
-                description=f"Получить {pkg['coins']}{_E_COIN} · {farm_label}",
+                description=f"Получить {pkg['coins']}🪙 · {farm_label}",
                 payload=f"coins_{pkg_idx}",
                 provider_token="",
                 currency="XTR",
@@ -36510,9 +36535,9 @@ async def on_callback(update: Update, ctx: ContextTypes.DEFAULT_TYPE):
                 ctx.bot, s5_name, total_winnings, "Казино 5×Слотов",
                 stake=total_cost, source_chat_id=f.get("source_chat_id", 0),
             ))
-        jp_line = f"\n🎰 <b>+{jackpot_won_total:,}{coin_emoji()} из банка казино!</b>" if jackpot_won_total > 0 else ""
+        jp_line = f"\n{_E_CASINO} <b>+{jackpot_won_total:,}{coin_emoji()} из банка казино!</b>" if jackpot_won_total > 0 else ""
         result = (
-            f"🎰 <b>5 круток — ставка {stake}{coin_emoji()} × 5 = {total_cost}{coin_emoji()}</b>\n\n"
+            f"{_E_CASINO} <b>5 круток — ставка {stake}{coin_emoji()} × 5 = {total_cost}{coin_emoji()}</b>\n\n"
             + "\n".join(spin_results)
             + f"\n\n📊 Выиграно: <b>{total_winnings}{coin_emoji()}</b> ({wins_count}/5 побед)"
             + f"\n{'✅' if net >= 0 else '💸'} Чистый профит: <b>{'+' if net >= 0 else ''}{net}{coin_emoji()}</b>"
@@ -36877,7 +36902,7 @@ async def on_callback(update: Update, ctx: ContextTypes.DEFAULT_TYPE):
                     )
                     jackpot_msg = (
                         f"🎉💥 <b>Джекпот В слотах!</b> 💥🎉\n\n"
-                        f"Игрок {jackpot_winner_name} выбил 🎰 64 и забирает весь банк казино!\n"
+                        f"Игрок {jackpot_winner_name} выбил {_E_CASINO} 64 и забирает весь банк казино!\n"
                         f"🎯 Ставка была: <b>{stake}{coin_emoji()}</b>\n"
                         f"💰 Джекпот: <b>{jackpot_won_amount:,}{coin_emoji()}</b>\n"
                         f"📈 Чистый профит: <b>+{jackpot_won_amount + winnings - stake:,}{coin_emoji()}</b>\n\n"
@@ -36888,7 +36913,7 @@ async def on_callback(update: Update, ctx: ContextTypes.DEFAULT_TYPE):
                     # Уведомляем в адмчат через admin_notify
                     await admin_notify(
                         ctx.bot,
-                        f"🎰 Джекпот сорван! {jackpot_winner_name} забрал <b>{jackpot_won_amount:,}{coin_emoji()}</b> (ставка: {stake}🪙)",
+                        f"{_E_CASINO} Джекпот сорван! {jackpot_winner_name} забрал <b>{jackpot_won_amount:,}{coin_emoji()}</b> (ставка: {stake}🪙)",
                         "🎰",
                     )
             if f.get("casino_win_streak", 0) >= 5:
@@ -36915,7 +36940,7 @@ async def on_callback(update: Update, ctx: ContextTypes.DEFAULT_TYPE):
             {"game": gtype, "dice_value": val, "net": net, "jackpot": jackpot_won_amount},
         ))
         jackpot_line = (
-            f"\n🎰 <b>+{jackpot_won_amount:,}{coin_emoji()} из банка казино!</b>"
+            f"\n{_E_CASINO} <b>+{jackpot_won_amount:,}{coin_emoji()} из банка казино!</b>"
             if jackpot_won_amount > 0
             else ""
         )
@@ -37447,7 +37472,7 @@ async def on_callback(update: Update, ctx: ContextTypes.DEFAULT_TYPE):
         else:
             try:
                 await q.message.edit_text(
-                    f"🚢 <b>Морской бой vs 🤖 Бот</b> · {size}×{size}\n\n"
+                    f"🚢 <b>Морской бой vs {_E_BOT} Бот</b> · {size}×{size}\n\n"
                     "📨 Расставь флот в <b>личных сообщениях</b> бота!",
                     parse_mode=ParseMode.HTML,
                     reply_markup=InlineKeyboardMarkup([[btn("◀️ Назад", callback_data="bs_menu")]]),
@@ -38096,7 +38121,7 @@ async def on_callback(update: Update, ctx: ContextTypes.DEFAULT_TYPE):
         ])
         try:
             await q.message.edit_text(
-                f"👥 <b>Крестики-нолики в чате</b>\n\nУ тебя: {f['coins']}{coin_emoji()}",
+                f"{_E_USERS} <b>Крестики-нолики в чате</b>\n\nУ тебя: {f['coins']}{coin_emoji()}",
                 parse_mode=ParseMode.HTML,
                 reply_markup=kb,
             )
@@ -38245,7 +38270,7 @@ async def on_callback(update: Update, ctx: ContextTypes.DEFAULT_TYPE):
                 lf = await db_get(loser_uid)
                 if lf:
                     await db_save(lf)
-                res_txt = f"🏆 <b>{he(winner_name)}</b> победил и забирает <b>{prize}{coin_emoji()}</b>!"
+                res_txt = f"{_E_TROPHY} <b>{he(winner_name)}</b> победил и забирает <b>{prize}{coin_emoji()}</b>!"
             else:
                 # Ничья — возвращаем ставки
                 for puid in (gdata_ttt["creator"], gdata_ttt["opponent"]):
@@ -38356,7 +38381,7 @@ async def on_callback(update: Update, ctx: ContextTypes.DEFAULT_TYPE):
             await q.message.edit_text(
                 f"❌ <b>Крестики-нолики завершены!</b>\n"
                 f"🏳 <b>{he(loser_name)}</b> сдался!\n"
-                f"🏆 <b>{he(winner_name_ttt)}</b> забирает <b>{prize_ttt}{coin_emoji()}</b>!",
+                f"{_E_TROPHY} <b>{he(winner_name_ttt)}</b> забирает <b>{prize_ttt}{coin_emoji()}</b>!",
                 parse_mode=ParseMode.HTML,
                 reply_markup=InlineKeyboardMarkup([[btn(t("btn_back_games", f), callback_data="menu_games")]]),
             )
@@ -38456,7 +38481,7 @@ async def on_callback(update: Update, ctx: ContextTypes.DEFAULT_TYPE):
                 lf_t5 = await db_get(loser_uid_t5)
                 if lf_t5:
                     await db_save(lf_t5)
-                res_txt_t5 = f"🏆 <b>{he(winner_name_t5)}</b> победил и забирает <b>{prize_t5}{coin_emoji()}</b>!"
+                res_txt_t5 = f"{_E_TROPHY} <b>{he(winner_name_t5)}</b> победил и забирает <b>{prize_t5}{coin_emoji()}</b>!"
             else:
                 for puid_t5 in (gdata_t5["creator"], gdata_t5["opponent"]):
                     pf_t5 = await db_get(puid_t5)
@@ -38564,7 +38589,7 @@ async def on_callback(update: Update, ctx: ContextTypes.DEFAULT_TYPE):
             await q.message.edit_text(
                 f"⬛ <b>Крестики-нолики 5×5 завершены!</b>\n"
                 f"🏳 <b>{he(loser_name_t5)}</b> сдался!\n"
-                f"🏆 <b>{he(winner_name_t5)}</b> забирает <b>{prize_t5}{coin_emoji()}</b>!",
+                f"{_E_TROPHY} <b>{he(winner_name_t5)}</b> забирает <b>{prize_t5}{coin_emoji()}</b>!",
                 parse_mode=ParseMode.HTML,
                 reply_markup=InlineKeyboardMarkup([[btn(t("btn_back_games", f), callback_data="menu_games")]]),
             )
@@ -38998,7 +39023,7 @@ async def on_callback(update: Update, ctx: ContextTypes.DEFAULT_TYPE):
                 result_text = (
                     f"🎉 <b>{he(_gname)}</b> угадал(а) слово <b>{word_h}</b>!\n"
                     f"Ошибок: {errors}/6\n"
-                    f"{_prize_txt}⭐ +20 XP"
+                    f"{_prize_txt}{_E_XP} +20 XP"
                 )
             else:
                 result_text = (
@@ -39179,7 +39204,7 @@ async def on_callback(update: Update, ctx: ContextTypes.DEFAULT_TYPE):
             if can_earn_xp:
                 add_xp(f, 10)
                 f["last_rps_solo"] = now_rps
-            res_rps = f"🏆 <b>Победа! +{stake_rps}{coin_emoji()}</b>"
+            res_rps = f"{_E_TROPHY} <b>Победа! +{stake_rps}{coin_emoji()}</b>"
         else:
             if can_earn_xp:
                 add_xp(f, 2)
@@ -39190,7 +39215,7 @@ async def on_callback(update: Update, ctx: ContextTypes.DEFAULT_TYPE):
         try:
             await q.message.edit_text(
                 f"✊ Ты: <b>{RPS_EMOJI[choice_rps]}</b>\n"
-                f"🤖 Бот: <b>{RPS_EMOJI[bot_rps]}</b>\n\n"
+                f"{_E_BOT} Бот: <b>{RPS_EMOJI[bot_rps]}</b>\n\n"
                 f"{res_rps}\n"
                 f"💼 Баланс: {f['coins']}{coin_emoji()}",
                 parse_mode=ParseMode.HTML,
@@ -39234,7 +39259,7 @@ async def on_callback(update: Update, ctx: ContextTypes.DEFAULT_TYPE):
         ])
         try:
             await q.message.edit_text(
-                f"👥 <b>КНБ в чате</b>\n\nУ тебя: {f['coins']}{coin_emoji()}",
+                f"{_E_USERS} <b>КНБ в чате</b>\n\nУ тебя: {f['coins']}{coin_emoji()}",
                 parse_mode=ParseMode.HTML,
                 reply_markup=kb,
             )
@@ -39420,10 +39445,10 @@ async def on_callback(update: Update, ctx: ContextTypes.DEFAULT_TYPE):
             round_result = f"🤝 Раунд {gdata_rps['round_num']}: <b>Ничья!</b>"
         elif RPS_BEATS[creator_choice] == joiner_choice:
             gdata_rps["rounds_creator"] += 1
-            round_result = f"🏆 Раунд {gdata_rps['round_num']}: победил <b>{he(creator_name)}</b>"
+            round_result = f"{_E_TROPHY} Раунд {gdata_rps['round_num']}: победил <b>{he(creator_name)}</b>"
         else:
             gdata_rps["rounds_opponent"] += 1
-            round_result = f"🏆 Раунд {gdata_rps['round_num']}: победил <b>{he(joiner_name)}</b>"
+            round_result = f"{_E_TROPHY} Раунд {gdata_rps['round_num']}: победил <b>{he(joiner_name)}</b>"
 
         rc = gdata_rps["rounds_creator"]
         ro = gdata_rps["rounds_opponent"]
@@ -39431,8 +39456,8 @@ async def on_callback(update: Update, ctx: ContextTypes.DEFAULT_TYPE):
 
         round_info = (
             f"✊ <b>КНБ — Раунд {gdata_rps['round_num']}</b>\n\n"
-            f"🎮 {he(creator_name)}: <b>{RPS_EMOJI[creator_choice]}</b>\n"
-            f"🎮 {he(joiner_name)}: <b>{RPS_EMOJI[joiner_choice]}</b>\n\n"
+            f"{_E_GAMES} {he(creator_name)}: <b>{RPS_EMOJI[creator_choice]}</b>\n"
+            f"{_E_GAMES} {he(joiner_name)}: <b>{RPS_EMOJI[joiner_choice]}</b>\n\n"
             f"{round_result}\n\n"
             f"📊 Счёт: {he(creator_name)} <b>{rc}</b> : <b>{ro}</b> {he(joiner_name)}\n"
         )
@@ -39463,7 +39488,7 @@ async def on_callback(update: Update, ctx: ContextTypes.DEFAULT_TYPE):
                 await db_save(f2_rps)
 
             if winner_name:
-                final_txt = f"{round_info}🏆 <b>{he(winner_name)}</b> побеждает в матче и забирает <b>{prize_rps}{coin_emoji()}</b>!"
+                final_txt = f"{round_info}{_E_TROPHY} <b>{he(winner_name)}</b> побеждает в матче и забирает <b>{prize_rps}{coin_emoji()}</b>!"
             else:
                 final_txt = f"{round_info}🤝 <b>Матч завершён вничью!</b> Ставки возвращены."
             try:
@@ -39494,11 +39519,11 @@ async def on_callback(update: Update, ctx: ContextTypes.DEFAULT_TYPE):
             ])
             next_msg = f"{round_info}⚔️ <b>Раунд {gdata_rps['round_num']}!</b> Организатор выбирает знак в личке, соперник ждёт..."
             try:
-                await q.message.edit_text(next_msg + f"\n\n🎮 {he(joiner_name)}: выбери знак для следующего раунда:", parse_mode=ParseMode.HTML, reply_markup=next_round_kb)
+                await q.message.edit_text(next_msg + f"\n\n{_E_GAMES} {he(joiner_name)}: выбери знак для следующего раунда:", parse_mode=ParseMode.HTML, reply_markup=next_round_kb)
             except Exception:
                 pass
             try:
-                await ctx.bot.send_message(gdata_rps["creator"], next_msg + f"\n\n🎮 Выбери знак для раунда {gdata_rps['round_num']}:", parse_mode=ParseMode.HTML, reply_markup=next_round_creator_kb)
+                await ctx.bot.send_message(gdata_rps["creator"], next_msg + f"\n\n{_E_GAMES} Выбери знак для раунда {gdata_rps['round_num']}:", parse_mode=ParseMode.HTML, reply_markup=next_round_creator_kb)
             except Exception:
                 pass
         return
@@ -39527,7 +39552,7 @@ async def on_callback(update: Update, ctx: ContextTypes.DEFAULT_TYPE):
                 await q.message.edit_text(
                     f"🔮 <b>Угадай число от 1 до 10</b>\n\n"
                     f"У тебя осталось попыток: <b>{attempts_a}</b>\n"
-                    f"🏆 За победу: <b>+15{coin_emoji()} +25XP</b>{cd_notice}",
+                    f"{_E_TROPHY} За победу: <b>+15{coin_emoji()} +25XP</b>{cd_notice}",
                     parse_mode=ParseMode.HTML,
                     reply_markup=kb,
                 )
@@ -39560,7 +39585,7 @@ async def on_callback(update: Update, ctx: ContextTypes.DEFAULT_TYPE):
             await q.message.edit_text(
                 "🔮 <b>Угадай число от 1 до 10</b>\n\n"
                 "У тебя 3 попытки!\n"
-                f"🏆 За победу: <b>+15{coin_emoji()} +25XP</b>{cd_notice}",
+                f"{_E_TROPHY} За победу: <b>+15{coin_emoji()} +25XP</b>{cd_notice}",
                 parse_mode=ParseMode.HTML,
                 reply_markup=kb,
             )
@@ -39958,7 +39983,7 @@ async def on_callback(update: Update, ctx: ContextTypes.DEFAULT_TYPE):
         sosedi_str = f"{len(friends)} соседей"
         if pending_cnt:
             sosedi_str += f" · <b>+{pending_cnt} заявки!</b>"
-        header_lines.append(f"👥 {sosedi_str}")
+        header_lines.append(f"{_E_USERS} {sosedi_str}")
 
         # Лента последних действий в болоте (из летописи)
         recent = await letopis_recent(3)
@@ -39975,7 +40000,7 @@ async def on_callback(update: Update, ctx: ContextTypes.DEFAULT_TYPE):
 
         kb_rows = []
         # Соседи с бейджем если есть заявки
-        sosedi_label = f"👥 Соседи +{pending_cnt}🔴" if pending_cnt else "👥 Соседи"
+        sosedi_label = f"{_E_USERS} Соседи +{pending_cnt}🔴" if pending_cnt else "👥 Соседи"
         kb_rows.append([
             btn(sosedi_label, callback_data="plaza_sosedi"),
             btn("🌿 Стая", callback_data="plaza_staya"),
@@ -40035,9 +40060,9 @@ async def on_callback(update: Update, ctx: ContextTypes.DEFAULT_TYPE):
 
         total_fr = len(friends)
         page_friends = friends[page*per:(page+1)*per]
-        lines = [f"👥 <b>Болотные Соседи</b> — {total_fr} чел."]
+        lines = [f"{_E_USERS} <b>Болотные Соседи</b> — {total_fr} чел."]
         if pending:
-            lines.append(f"📬 Новых заявок: <b>{len(pending)}</b>")
+            lines.append(f"{_E_MAIL} Новых заявок: <b>{len(pending)}</b>")
         kb_rows = []
         if pending:
             kb_rows.append([btn(f"📬 Заявки ({len(pending)})", callback_data="plaza_requests")])
@@ -40108,7 +40133,7 @@ async def on_callback(update: Update, ctx: ContextTypes.DEFAULT_TYPE):
         hunger_str = f"🍖{tf.get('hunger',50)}"
 
         staya_tf = await staya_of_user(target_id)
-        staya_line = f"\n🌿 Стая: {he(staya_tf['name'])}" if staya_tf else ""
+        staya_line = f"\n{_E_LEAF} Стая: {he(staya_tf['name'])}" if staya_tf else ""
         locked_line = "\n🔒 <i>Лягушка в походе</i>" if adv_locked else ""
 
         text = (
@@ -40268,7 +40293,7 @@ async def on_callback(update: Update, ctx: ContextTypes.DEFAULT_TYPE):
             except Exception: pass
             return
 
-        lines = [f"🌿 <b>Болотные Стаи</b> — стр.{page+1}\n"]
+        lines = [f"{_E_LEAF} <b>Болотные Стаи</b> — стр.{page+1}\n"]
         kb_rows = []
         for s in page_stayas:
             cnt  = s.get("member_count", 0)
@@ -40336,7 +40361,7 @@ async def on_callback(update: Update, ctx: ContextTypes.DEFAULT_TYPE):
             f"{s['emoji']} <b>Стая «{he(s['name'])}»</b>\n\n"
             f"🏔️ Уровень болота: <b>{s['level']}</b>\n"
             f"🪙 Котёл: <b>{s['cauldron']}🪙</b>\n"
-            f"👥 Участников: <b>{len(members)}/{s_max_members}</b>\n"
+            f"{_E_USERS} Участников: <b>{len(members)}/{s_max_members}</b>\n"
             f"{bonus_line}\n\n"
             f"<b>Участники:</b> {members_short}"
         )
@@ -40408,7 +40433,7 @@ async def on_callback(update: Update, ctx: ContextTypes.DEFAULT_TYPE):
         if not apps:
             try:
                 await q.message.edit_text(
-                    f"📬 <b>Заявки в стаю «{he(staya['name'])}»</b>\n\nНет новых заявок.",
+                    f"{_E_MAIL} <b>Заявки в стаю «{he(staya['name'])}»</b>\n\nНет новых заявок.",
                     parse_mode=ParseMode.HTML,
                     reply_markup=InlineKeyboardMarkup([[
                         btn("◀️ Назад", callback_data="plaza_staya")
@@ -40417,7 +40442,7 @@ async def on_callback(update: Update, ctx: ContextTypes.DEFAULT_TYPE):
             except Exception: pass
             return
 
-        lines = [f"📬 <b>Заявки в стаю «{he(staya['name'])}»</b> — {len(apps)} шт.\n"]
+        lines = [f"{_E_MAIL} <b>Заявки в стаю «{he(staya['name'])}»</b> — {len(apps)} шт.\n"]
         kb_rows = []
         for app in apps:
             name = app.get("frog_name") or app.get("first_name") or "?"
@@ -40462,7 +40487,7 @@ async def on_callback(update: Update, ctx: ContextTypes.DEFAULT_TYPE):
                 await ctx.bot.send_message(
                     applicant_id,
                     f"🎉 <b>Заявка принята!</b>\n\nТы теперь в стае {staya['emoji']} <b>{he(staya['name'])}</b>!\n"
-                    f"Добро пожаловать на болото! 🌿",
+                    f"Добро пожаловать на болото! {_E_LEAF}",
                     parse_mode=ParseMode.HTML,
                 )
             except Exception: pass
@@ -40488,7 +40513,7 @@ async def on_callback(update: Update, ctx: ContextTypes.DEFAULT_TYPE):
             await ctx.bot.send_message(
                 applicant_id,
                 f"😔 Твоя заявка в стаю <b>{he(staya['name'])}</b> отклонена.\n"
-                f"Попробуй другую стаю или создай свою! 🌿",
+                f"Попробуй другую стаю или создай свою! {_E_LEAF}",
                 parse_mode=ParseMode.HTML,
             )
         except Exception: pass
@@ -40520,9 +40545,9 @@ async def on_callback(update: Update, ctx: ContextTypes.DEFAULT_TYPE):
             ]])
             await ctx.bot.send_message(
                 target_id,
-                f"🌿 <b>{he(my_name)}</b> приглашает тебя в стаю "
+                f"{_E_LEAF} <b>{he(my_name)}</b> приглашает тебя в стаю "
                 f"<b>«{he(staya['name'])}»</b> (ур.{staya['level']})!\n\n"
-                f"👥 {len(members)}/{staya.get('max_members') or STAYA_MAX_MEMBERS} участников\n"
+                f"{_E_USERS} {len(members)}/{staya.get('max_members') or STAYA_MAX_MEMBERS} участников\n"
                 f"{_E_COIN} Котёл: {staya['cauldron']}{_E_COIN}",
                 parse_mode=ParseMode.HTML, reply_markup=kb,
             )
@@ -40556,7 +40581,7 @@ async def on_callback(update: Update, ctx: ContextTypes.DEFAULT_TYPE):
         await q.answer(f"🌿 Ты вступил в стаю «{s['name'] if s else '?'}»")
         try:
             await q.message.edit_text(
-                f"🌿 Добро пожаловать в стаю <b>«{he(s['name'] if s else '?')}»</b>!\n"
+                f"{_E_LEAF} Добро пожаловать в стаю <b>«{he(s['name'] if s else '?')}»</b>!\n"
                 f"Открой Болотную Площадь чтобы участвовать в событиях.",
                 parse_mode=ParseMode.HTML,
                 reply_markup=InlineKeyboardMarkup([[
@@ -40635,7 +40660,7 @@ async def on_callback(update: Update, ctx: ContextTypes.DEFAULT_TYPE):
             f"{staya['emoji']} <b>Стая «{he(staya['name'])}»</b>\n\n"
             f"🏔️ Уровень болота: <b>{lvl}</b>{boost_st_line}\n"
             f"{next_line_pl}\n\n"
-            f"👥 Участников: <b>{len(members)}/{staya.get('max_members') or STAYA_MAX_MEMBERS}</b>\n"
+            f"{_E_USERS} Участников: <b>{len(members)}/{staya.get('max_members') or STAYA_MAX_MEMBERS}</b>\n"
             f"Ты: {my_role_label}\n\n"
             f"<i>🪙 Пополняйте котёл — болото растёт! "
             f"5% монет трудяги уходит автоматически.</i>"
@@ -40769,7 +40794,7 @@ async def on_callback(update: Update, ctx: ContextTypes.DEFAULT_TYPE):
             return
         members = await staya_get_members(staya["id"])
         role_map = {"chief": "🐸 Вожак", "elder": "🦎 Старейшина", "member": "🐟 Житель"}
-        lines = [f"👥 <b>Участники стаи «{he(staya['name'])}»</b>\n"]
+        lines = [f"{_E_USERS} <b>Участники стаи «{he(staya['name'])}»</b>\n"]
         today_start = (datetime.now(timezone.utc)
                       .replace(hour=0,minute=0,second=0,microsecond=0).timestamp())
         for m in members:
@@ -40911,7 +40936,7 @@ async def on_callback(update: Update, ctx: ContextTypes.DEFAULT_TYPE):
                 await q.message.edit_text(
                     f"⏳ <b>Экспедиция уже была сегодня</b>\n\n"
                     f"Следующая откроется через <b>{left_h}ч {left_m_cd}м</b>.\n\n"
-                    f"⭐ За 10 Stars можно идти ещё раз сегодня.",
+                    f"{_E_STARS} За 10 Stars можно идти ещё раз сегодня.",
                     parse_mode=ParseMode.HTML,
                     reply_markup=InlineKeyboardMarkup([
                         [btn("⭐ Открыть доступ (10 Stars)", callback_data="exp_buy_extra_slot", style="primary")],
@@ -40970,7 +40995,7 @@ async def on_callback(update: Update, ctx: ContextTypes.DEFAULT_TYPE):
                 f"Ставка: <b>{FISH_COST}{_E_COIN}</b> с каждого.\n\n"
                 f"Возможные исходы:\n"
                 f"🐟 <b>35%</b> — совместный улов, каждый получает ставку + бонус\n"
-                f"🏆 <b>30%</b> — ты победил, берёшь обе ставки\n"
+                f"{_E_TROPHY} <b>30%</b> — ты победил, берёшь обе ставки\n"
                 f"🤝 <b>25%</b> — сосед победил, берёт обе ставки\n"
                 f"💨 <b>10%</b> — рыба не клюёт, ставки теряются\n\n"
                 f"Кулдаун: раз в сутки. <b>Выбери соседа:</b>",
@@ -41037,7 +41062,7 @@ async def on_callback(update: Update, ctx: ContextTypes.DEFAULT_TYPE):
             sent = await ctx.bot.send_message(
                 target_id,
                 f"⚔️ <b>{he(my_name)}</b> зовёт в болотный поход!\n\n"
-                f"📜 Логи каждые 15 мин · 🎲 Развилки\n🏆 Награды в конце\n"
+                f"📜 Логи каждые 15 мин · 🎲 Развилки\n{_E_TROPHY} Награды в конце\n"
                 f"🔒 Лягушки заняты на всё время похода.\n\n"
                 f"<b>Выбери длительность:</b> (есть 15 минут)",
                 parse_mode=ParseMode.HTML, reply_markup=kb,
@@ -41181,7 +41206,7 @@ async def on_callback(update: Update, ctx: ContextTypes.DEFAULT_TYPE):
                 text += "\n\n<b>Пригласить ещё партнёра:</b>"
                 for fr in eligible[:3]:
                     kb_rows_bond.append([btn(
-                        f"➕ {he(fr.get('frog_name') or fr.get('first_name','?'))}",
+                        f"{_E_PLUS} {he(fr.get('frog_name') or fr.get('first_name','?'))}",
                         callback_data=f"plaza_bond_invite_{fr['user_id']}"
                     )])
             kb_rows_bond.append([btn("◀️ Назад", callback_data="plaza")])
@@ -41580,7 +41605,7 @@ async def on_callback(update: Update, ctx: ContextTypes.DEFAULT_TYPE):
                     await q.answer(
                         f"⛔ {check_name}: лимит {total_str}ч/день "
                         f"(использовано {used_str}ч). "
-                        f"За {ADV_EXTRA_STARS}⭐ можно докупить ещё слот.",
+                        f"За {ADV_EXTRA_STARS}{_E_STARS} можно докупить ещё слот.",
                         show_alert=True
                     )
                     # Если это сам пользователь — предлагаем купить
@@ -41590,7 +41615,7 @@ async def on_callback(update: Update, ctx: ContextTypes.DEFAULT_TYPE):
                                 f"⛔ <b>Дневной лимит похода исчерпан</b>\n\n"
                                 f"Сегодня использовано <b>{used_str}ч</b> из {total_str}ч.\n"
                                 f"Лимит обновится в полночь UTC (03:00 МСК).\n\n"
-                                f"⭐ За <b>{ADV_EXTRA_STARS} Stars</b> — ещё {ADV_DAILY_LIMIT_H} часов прямо сейчас!",
+                                f"{_E_STARS} За <b>{ADV_EXTRA_STARS} Stars</b> — ещё {ADV_DAILY_LIMIT_H} часов прямо сейчас!",
                                 parse_mode="HTML",
                                 reply_markup=InlineKeyboardMarkup([[
                                     btn(f"⭐ Докупить слот ({ADV_EXTRA_STARS} Stars)",
@@ -42275,7 +42300,7 @@ async def on_callback(update: Update, ctx: ContextTypes.DEFAULT_TYPE):
         my_name = f.get("frog_name") or f.get("first_name") or "Кто-то"
         try:
             await q.message.edit_text(
-                f"✅ Вы теперь болотные соседи! 🌿",
+                f"✅ Вы теперь болотные соседи! {_E_LEAF}",
                 parse_mode=ParseMode.HTML,
             )
         except Exception:
@@ -42468,7 +42493,7 @@ async def on_callback(update: Update, ctx: ContextTypes.DEFAULT_TYPE):
         ctx.user_data["staya_creating"] = True
         try:
             await q.message.edit_text(
-                f"🌿 <b>Создание стаи</b>\n\n"
+                f"{_E_LEAF} <b>Создание стаи</b>\n\n"
                 f"Напиши название стаи в чат (до 30 символов).\n"
                 f"Стоимость: <b>{STAYA_CREATE_COST}{_E_COIN}</b>\n\n"
                 f"<i>Отправь текст прямо сейчас 👇</i>",
@@ -42552,7 +42577,7 @@ async def on_callback(update: Update, ctx: ContextTypes.DEFAULT_TYPE):
         await db_save(f)
         try:
             await q.message.edit_text(
-                f"🚪 Ты покинул стаю «{he(staya['name'])}». Удачи на болоте! 🌿",
+                f"🚪 Ты покинул стаю «{he(staya['name'])}». Удачи на болоте! {_E_LEAF}",
                 reply_markup=InlineKeyboardMarkup([[btn("Площадь", callback_data="plaza")]])
             )
         except Exception: pass
@@ -42703,7 +42728,7 @@ async def on_callback(update: Update, ctx: ContextTypes.DEFAULT_TYPE):
                 f"  (накоплено {staya['cauldron']:,}/{_upgrade_c['cost']:,}🪙)\n"
             )
         else:
-            _prog_c = f"\n🏆 <b>Уровень болота максимальный!</b>\n"
+            _prog_c = f"\n{_E_TROPHY} <b>Уровень болота максимальный!</b>\n"
 
         try:
             await q.message.edit_text(
@@ -42728,7 +42753,7 @@ async def on_callback(update: Update, ctx: ContextTypes.DEFAULT_TYPE):
         ctx.user_data[f"staya_cauldron_input_{uid}"] = staya["id"]
         try:
             await q.message.edit_text(
-                f"✏️ Введи сумму для взноса в котёл (у тебя <b>{f['coins']}{_E_COIN}</b>):",
+                f"{_E_PENCIL} Введи сумму для взноса в котёл (у тебя <b>{f['coins']}{_E_COIN}</b>):",
                 parse_mode=ParseMode.HTML,
                 reply_markup=InlineKeyboardMarkup([[
                     btn("❌ Отмена", callback_data="staya_cauldron")
@@ -42799,7 +42824,7 @@ async def on_callback(update: Update, ctx: ContextTypes.DEFAULT_TYPE):
             try:
                 await q.message.edit_text(
                     f"🎭 <b>События стаи «{he(staya['name'])}»</b>\n\n"
-                    f"Сейчас нет активных событий.\nСледи за обновлениями 🌿",
+                    f"Сейчас нет активных событий.\nСледи за обновлениями {_E_LEAF}",
                     parse_mode=ParseMode.HTML,
                     reply_markup=InlineKeyboardMarkup([[
                         btn("🪙 Котёл", callback_data="staya_cauldron"),
@@ -42918,7 +42943,7 @@ async def on_callback(update: Update, ctx: ContextTypes.DEFAULT_TYPE):
         invite_preview = f"\n\n<i>Текст приглашения:</i>\n{he(invite_text[:80])}" if invite_text else ""
 
         text = (
-            f"⚙️ <b>Управление стаей «{he(staya['name'])}»</b>\n\n"
+            f"{_E_GEAR} <b>Управление стаей «{he(staya['name'])}»</b>\n\n"
             f"Участников: {len(members)}/{staya.get('max_members') or STAYA_MAX_MEMBERS}\n"
             f"XP болота: {staya['xp']}"
             f"{invite_preview}"
@@ -42967,9 +42992,9 @@ async def on_callback(update: Update, ctx: ContextTypes.DEFAULT_TYPE):
         invite_text = staya.get("invite_text") or ""
         my_name = fname(f)
         default_text = (
-            f"🌿 <b>Стая «{he(staya['name'])}» объявляет набор!</b>\n\n"
+            f"{_E_LEAF} <b>Стая «{he(staya['name'])}» объявляет набор!</b>\n\n"
             f"🏔️ Уровень болота: {staya['level']}\n"
-            f"👥 {len(members_rec)}/{staya.get('max_members') or STAYA_MAX_MEMBERS} участников\n"
+            f"{_E_USERS} {len(members_rec)}/{staya.get('max_members') or STAYA_MAX_MEMBERS} участников\n"
             f"{_E_COIN} Котёл: {staya['cauldron']}{_E_COIN}\n\n"
             + (f"<i>{he(invite_text)}</i>\n\n" if invite_text else "") +
             f"Вожак: {my_name}\n\n"
@@ -43007,7 +43032,7 @@ async def on_callback(update: Update, ctx: ContextTypes.DEFAULT_TYPE):
         my_role_mm = next((m["role"] for m in members_mm if m["user_id"] == uid), "member")
         if my_role_mm not in ("chief", "elder"):
             await q.answer("Только Вожак и Старейшина", show_alert=True); return
-        lines_mm = [f"👥 <b>Управление участниками «{he(staya['name'])}»</b>\n"]
+        lines_mm = [f"{_E_USERS} <b>Управление участниками «{he(staya['name'])}»</b>\n"]
         kb_mm = []
         for m in members_mm:
             mn = m.get("frog_name") or m.get("first_name") or "?"
@@ -43015,7 +43040,7 @@ async def on_callback(update: Update, ctx: ContextTypes.DEFAULT_TYPE):
             if m["user_id"] != uid:
                 lines_mm.append(f"{role_icon} {he(mn)}")
                 kb_mm.append([btn(
-                    f"⚙️ {role_icon} {he(mn)[:12]}",
+                    f"{_E_GEAR} {role_icon} {he(mn)[:12]}",
                     callback_data=f"staya_member_action_{m['user_id']}"
                 )])
         kb_mm.append([btn("◀️ Назад", callback_data="staya_manage")])
@@ -43043,7 +43068,7 @@ async def on_callback(update: Update, ctx: ContextTypes.DEFAULT_TYPE):
         ]
         try:
             await q.message.edit_text(
-                f"⚙️ Управление участником <b>{he(tname_ma)}</b>\n"
+                f"{_E_GEAR} Управление участником <b>{he(tname_ma)}</b>\n"
                 f"Роль: {'🦎 Старейшина' if target_role=='elder' else '🐟 Житель'}",
                 parse_mode=ParseMode.HTML, reply_markup=InlineKeyboardMarkup(kb_ma)
             )
@@ -43150,7 +43175,7 @@ async def on_callback(update: Update, ctx: ContextTypes.DEFAULT_TYPE):
         await q.answer()
         try:
             await q.message.edit_text(
-                f"✏️ Введи новое название для роли <b>{role_defaults[role_key]}</b>\n"
+                f"{_E_PENCIL} Введи новое название для роли <b>{role_defaults[role_key]}</b>\n"
                 f"(до 20 символов, или «-» чтобы вернуть стандартное):",
                 parse_mode=ParseMode.HTML,
                 reply_markup=InlineKeyboardMarkup([[btn("❌ Отмена", callback_data="staya_roles_rename")]]),
@@ -43188,7 +43213,7 @@ async def on_callback(update: Update, ctx: ContextTypes.DEFAULT_TYPE):
                 vote_rows = {r["boost_type"]: r["cnt"] for r in await _vc.fetchall()}
         total_votes = sum(vote_rows.values()) or 1
         text_sh = (
-            f"🛒 <b>Магазин стаи «{he(staya['name'])}»</b>\n"
+            f"{_E_SHOP} <b>Магазин стаи «{he(staya['name'])}»</b>\n"
             f"Котёл: <b>{staya['cauldron']}🪙</b>{boost_line}\n\n"
             f"<i>Участники могут голосовать за бустер который хотят. "
             f"Вожак видит результаты и активирует нужный.</i>\n\n"
@@ -43278,7 +43303,7 @@ async def on_callback(update: Update, ctx: ContextTypes.DEFAULT_TYPE):
         ctx.user_data[f"staya_rename_{uid}"] = staya["id"]
         try:
             await q.message.edit_text(
-                f"✏️ <b>Переименование стаи</b> — стоит <b>800{_E_COIN}</b>\n"
+                f"{_E_PENCIL} <b>Переименование стаи</b> — стоит <b>800{_E_COIN}</b>\n"
                 f"У тебя: {f['coins']}{_E_COIN}\n\nНапиши новое название (2–30 символов):",
                 parse_mode=ParseMode.HTML,
                 reply_markup=InlineKeyboardMarkup([[btn("❌ Отмена", callback_data="staya_manage")]])
@@ -43743,12 +43768,12 @@ async def on_callback(update: Update, ctx: ContextTypes.DEFAULT_TYPE):
             await q.message.edit_text(
                 f"{_E_FIRE} <b>Жертвоприношение болота</b>\n\n"
                 f"💰 Банк: <b>{ev['total_bank']}{coin_emoji()}</b>\n"
-                f"🏆 Приз победителю: <b>{prize}{coin_emoji()}</b> (30%)\n"
-                f"👥 Участников: <b>{total_participants}</b>\n"
+                f"{_E_TROPHY} Приз победителю: <b>{prize}{coin_emoji()}</b> (30%)\n"
+                f"{_E_USERS} Участников: <b>{total_participants}</b>\n"
                 f"{_E_SKULL} Всего сожжено: <b>{total_burned}</b> эпиков\n"
                 f"🕒 До конца: <b>{time_str}</b>\n\n"
                 f"{my_status}\n\n"
-                f"<b>🏆 Топ участников:</b>\n{top_block}\n\n"
+                f"<b>{_E_TROPHY} Топ участников:</b>\n{top_block}\n\n"
                 f"<i>Чем больше эпиков сжёг — тем выше шанс победы</i>",
                 parse_mode=ParseMode.HTML,
                 reply_markup=kb_sac,
@@ -44003,7 +44028,7 @@ async def on_callback(update: Update, ctx: ContextTypes.DEFAULT_TYPE):
             f"🔥 <b>{FUNNEL_NAME}</b>\n\n"
             f"💰 Выплаты за сожжённый облик:\n{ranges_text}\n\n"
             f"{_E_FIRE} Ты сжёг: <b>{my_burned}</b> обликов\n"
-            f"👥 Участников: <b>{len(participants)}</b>\n"
+            f"{_E_USERS} Участников: <b>{len(participants)}</b>\n"
             f"⏳ До конца: <b>{h}ч {m}м</b>\n\n"
             f"<i>Выбери облик для сжигания</i>"
         )
@@ -44365,9 +44390,9 @@ async def on_callback(update: Update, ctx: ContextTypes.DEFAULT_TYPE):
             f"Ссылка:\n<code>{ref_link}</code>\n\n"
             f"<b>Этапы (за каждого реферала):</b>\n"
             + "\n".join(stage_lines_r)
-            + f"\n\n👥 Приглашено: <b>{total_r}</b> ✅ Этапов: <b>{total_stages_r}</b>\n"
+            + f"\n\n{_E_USERS} Приглашено: <b>{total_r}</b> ✅ Этапов: <b>{total_stages_r}</b>\n"
             f"Заработано: <b>{total_earned_r}{coin_emoji()}</b>\n\n"
-            f"⭐ <b>Stars-баланс от покупок рефералов: {ref_stars_bal} ⭐</b>\n"
+            f"{_E_STARS} <b>Stars-баланс от покупок рефералов: {ref_stars_bal} {_E_STARS}</b>\n"
             f"<i>10% с каждой покупки Stars твоих рефералов</i>"
         )
         if refs_preview:
@@ -44377,7 +44402,7 @@ async def on_callback(update: Update, ctx: ContextTypes.DEFAULT_TYPE):
         kb_rows = []
         if ref_stars_bal >= 50:
             kb_rows.append([btn(
-                f"💸 Подать заявку на вывод ({ref_stars_bal}⭐)",
+                f"💸 Подать заявку на вывод ({ref_stars_bal}{_E_STARS})",
                 callback_data="ref_withdraw_request"
             )])
         kb_rows.append([btn(
@@ -44425,9 +44450,9 @@ async def on_callback(update: Update, ctx: ContextTypes.DEFAULT_TYPE):
             f"🔗 <b>Реферальная программа</b>\n\n"
             f"Ссылка:\n<code>{ref_link}</code>\n\n"
             f"<b>Этапы (за каждого реферала):</b>\n" + "\n".join(stage_lines_r)
-            + f"\n\n👥 Приглашено: <b>{total_r}</b> ✅ Этапов: <b>{total_stages_r}</b>\n"
+            + f"\n\n{_E_USERS} Приглашено: <b>{total_r}</b> ✅ Этапов: <b>{total_stages_r}</b>\n"
             f"Заработано: <b>{total_earned_r}{coin_emoji()}</b>\n\n"
-            f"⭐ <b>Stars-баланс от покупок рефералов: {ref_stars_bal} ⭐</b>\n"
+            f"{_E_STARS} <b>Stars-баланс от покупок рефералов: {ref_stars_bal} {_E_STARS}</b>\n"
             f"<i>10% с каждой покупки Stars твоих рефералов</i>"
         )
         kb_rows = []
@@ -44557,7 +44582,7 @@ async def on_callback(update: Update, ctx: ContextTypes.DEFAULT_TYPE):
 
         total_pages = max(1, len(pages))
         page_info = f"{SEP}стр. {page+1}/{total_pages}" if total_pages > 1 else ""
-        header = f"🏆 <b>Достижения</b>{SEP}<b>{n_earned}</b>/{total}{page_info}\n"
+        header = f"{_E_TROPHY} <b>Достижения</b>{SEP}<b>{n_earned}</b>/{total}{page_info}\n"
         text = header + body
 
         # Кнопки вкладок
@@ -44610,17 +44635,17 @@ async def on_callback(update: Update, ctx: ContextTypes.DEFAULT_TYPE):
             casino_wr = int(f.get("total_casino_wins", 0) / f["total_casino"] * 100)
         text = (
             f"📊 <b>{fname(f)}</b>\n\n"
-            f"⭐ Уровень: {f['level']}\n"
+            f"{_E_LEVEL} Уровень: {f['level']}\n"
             f"{coin_emoji()}{_E_COIN}: {f['coins']}\n"
             f"💸 Потрачено: {f.get('coins_spent', 0)}{coin_emoji()}\n"
-            f"⭐ Stars потрачено: {f.get('stars_spent', 0)}\n"
+            f"{_E_STARS} Stars потрачено: {f.get('stars_spent', 0)}\n"
             f"🔥 Стрик: {f['streak']} дней\n"
             f"📅 Дней живёт: {days}\n\n"
             f"🍎 Покормлено: {f['total_feeds']} раз\n"
-            f"🎮 Поиграно: {f['total_plays']} раз\n"
+            f"{_E_GAMES} Поиграно: {f['total_plays']} раз\n"
             f"🛁 Помыто: {f['total_washes']} раз\n"
             f"😴 Спало: {f['total_sleeps']} раз\n"
-            f"🎰 Гач: {f['total_gacha']}\n"
+            f"{_E_CASINO} Гач: {f['total_gacha']}\n"
             f"🦟 Комаров: {f.get('total_mosquitoes', 0)}\n\n"
             f"⚔️ Дуэлей: {f.get('total_duels', 0)} | Побед: {f.get('total_duel_wins', 0)} ({win_rate}%)\n"
             f"🃏 В казино: {f.get('total_casino', 0)} | Побед: {f.get('total_casino_wins', 0)} ({casino_wr}%)\n\n"
@@ -44825,7 +44850,7 @@ async def on_callback(update: Update, ctx: ContextTypes.DEFAULT_TYPE):
             rarity_key = _nft_rarity(item["rarity"])
             rarity_icon = R_ICON.get(rarity_key, "⚪")
             stars_fmt = f"{item['stars']:,}".replace(",", "\u202f")  # narrow no-break space
-            label = f"{item['model']} {rarity_icon} {stars_fmt}⭐"
+            label = f"{item['model']} {rarity_icon} {stars_fmt}{_E_STARS}"
             buttons.append([btn(
                 label,
                 url=item["url"],
@@ -44877,14 +44902,14 @@ async def on_callback(update: Update, ctx: ContextTypes.DEFAULT_TYPE):
 
         boost_line = ""
         if is_boosted:
-            boost_line = f"\n✨ <b>Золотая лягушка:</b> 1⭐ = {int(5 * stars_mult)}{coin_emoji()} (+{int((stars_mult-1)*100)}%)\n"
+            boost_line = f"\n✨ <b>Золотая лягушка:</b> 1{_E_STARS} = {int(5 * stars_mult)}{coin_emoji()} (+{int((stars_mult-1)*100)}%)\n"
 
         header = "💫 <b>Магазин Telegram Stars</b>\n\n"
         header += f"{coin_emoji()}{_E_COIN}: {f['coins']}\n"
         if boost_line:
             header += boost_line
         else:
-            header += f"<b>КваКоины:</b> 1⭐ = 5{coin_emoji()} (объём даёт бонус)\n"
+            header += f"<b>КваКоины:</b> 1{_E_STARS} = 5{coin_emoji()} (объём даёт бонус)\n"
         header += "<i>В скобках — примерное время фарма монет в игре</i>\n\n"
 
         user_is_newbie = f.get("stars_spent", 0) == 0
@@ -44904,11 +44929,11 @@ async def on_callback(update: Update, ctx: ContextTypes.DEFAULT_TYPE):
             farm_min = p.get("farm_min", 0)
             farm_str = f"≈{farm_min}мин" if farm_min < 60 else f"≈{farm_min//60}ч{farm_min%60 or ''}мин"
             if p.get("newbie"):
-                lbl = f"🎁 {p['stars']}⭐ → {coins_display}🪙 ({farm_str})"
+                lbl = f"🎁 {p['stars']}{_E_STARS} → {coins_display}🪙 ({farm_str})"
             elif p.get("daily_deal"):
-                lbl = f"🌅 {p['stars']}⭐ → {coins_display}🪙 Ежедн. предложение"
+                lbl = f"🌅 {p['stars']}{_E_STARS} → {coins_display}🪙 Ежедн. предложение"
             else:
-                lbl = f"⭐ {p['stars']} Stars → {coins_display}🪙 ({farm_str})"
+                lbl = f"{_E_STARS} {p['stars']} Stars → {coins_display}🪙 ({farm_str})"
                 if is_boosted:
                     lbl += " ✨"
             coin_rows.append(
@@ -44956,8 +44981,8 @@ async def on_callback(update: Update, ctx: ContextTypes.DEFAULT_TYPE):
         try:
             await ctx.bot.send_invoice(
                 chat_id=uid,
-                title=f"{coins_display}{_E_COIN} — Frog Tamagotchi",
-                description=f"Получить {coins_display}{_E_COIN} · {farm_label}{boost_desc}",
+                title=f"{coins_display}🪙 — Frog Tamagotchi",
+                description=f"Получить {coins_display}🪙 · {farm_label}{boost_desc}",
                 payload=f"coins_{pkg_idx}",
                 provider_token="",  # Telegram Stars не требует токена провайдера
                 currency="XTR",
@@ -45885,7 +45910,7 @@ async def on_callback(update: Update, ctx: ContextTypes.DEFAULT_TYPE):
             f"⚔️ <b>Дуэль завершена!</b>\n\n"
             f"🎲 {w_name}: <b>{w_roll}</b>\n"
             f"🎲 {l_name}: <b>{l_roll}</b>\n\n"
-            f"🏆 <b>{w_name}</b> победила!\n"
+            f"{_E_TROPHY} <b>{w_name}</b> победила!\n"
             f"+{duel['stake']}{coin_emoji()} победителю"
         )
         try:
@@ -46208,7 +46233,7 @@ async def on_callback(update: Update, ctx: ContextTypes.DEFAULT_TYPE):
 
         # ── Шаг 5: Результат ──
         result_text = (
-            f"🏆 <b>ПОБЕДИТЕЛЬ — @{he(w_user)}!</b>\n"
+            f"{_E_TROPHY} <b>ПОБЕДИТЕЛЬ — @{he(w_user)}!</b>\n"
             f"{stake_txt}"
             f"\n"
             f"🐸 <b>{he(c_name)}</b> vs <b>{he(t_name)}</b> 🐸\n"
@@ -46238,7 +46263,7 @@ async def on_callback(update: Update, ctx: ContextTypes.DEFAULT_TYPE):
             try:
                 await ctx.bot.send_message(
                     winner_id,
-                    f"🏆 Ты <b>победил</b> в батле!{stake_result}\n{_E_BOLT} +0.3 Power → {w_final_power}",
+                    f"{_E_TROPHY} Ты <b>победил</b> в батле!{stake_result}\n{_E_BOLT} +0.3 Power → {w_final_power}",
                     parse_mode=ParseMode.HTML,
                 )
             except Exception:
@@ -46292,7 +46317,7 @@ async def on_callback(update: Update, ctx: ContextTypes.DEFAULT_TYPE):
         kb_rows.append([btn("◀️ Назад", callback_data="menu_games")])
         try:
             await q.message.edit_text(
-                f"🏆 <b>Создать турнир</b>\n\n"
+                f"{_E_TROPHY} <b>Создать турнир</b>\n\n"
                 f"У тебя: {f['coins']}{coin_emoji()}\n\n"
                 f"Выбери ставку для входа (с каждого участника):",
                 parse_mode=ParseMode.HTML,
@@ -46334,7 +46359,7 @@ async def on_callback(update: Update, ctx: ContextTypes.DEFAULT_TYPE):
             ]
         )
         await q.message.edit_text(
-            f"🏆 <b>Турнир открыт!</b>\n\n"
+            f"{_E_TROPHY} <b>Турнир открыт!</b>\n\n"
             f"Создатель: <b>{he(q.from_user.first_name)}</b>\n"
             f"Ставка: <b>{stake}{coin_emoji()}</b>\n"
             f"Участников: <b>1</b>\n\n"
@@ -46398,7 +46423,7 @@ async def on_callback(update: Update, ctx: ContextTypes.DEFAULT_TYPE):
         )
         try:
             await q.message.edit_text(
-                f"🏆 <b>Турнир #{tid}</b>\n\n"
+                f"{_E_TROPHY} <b>Турнир #{tid}</b>\n\n"
                 f"Ставка: <b>{stake}{coin_emoji()}</b>\n"
                 f"Участников: <b>{len(parts)}</b>\n\n"
                 + "\n".join(f"• {he(n)}" for n in names)
@@ -46448,7 +46473,7 @@ async def on_callback(update: Update, ctx: ContextTypes.DEFAULT_TYPE):
             await db.commit()
         try:
             await q.message.edit_text(
-                f"🏆 <b>Турнир #{tid} начался!</b>\n\n"
+                f"{_E_TROPHY} <b>Турнир #{tid} начался!</b>\n\n"
                 f"Участников: {len(valid_parts)}\n"
                 f"Ставка каждого: {stake}{coin_emoji()}\n"
                 f"Приз: {stake * len(valid_parts)}{coin_emoji()}\n\n"
@@ -46499,7 +46524,7 @@ async def on_callback(update: Update, ctx: ContextTypes.DEFAULT_TYPE):
 
         sorted_results = sorted(results.items(), key=lambda x: x[1][0], reverse=True)
         medals = ["🥇", "🥈", "🥉"] + ["🔹"] * 10
-        lines = [f"🏆 <b>Результаты турнира #{tid}!</b>\n"]
+        lines = [f"{_E_TROPHY} <b>Результаты турнира #{tid}!</b>\n"]
         for i, (p_uid, (roll_val, name, bonus)) in enumerate(sorted_results):
             bonus_s = f" +{bonus}🎨" if bonus else ""
             lines.append(f"{medals[i]} {he(name)}: <b>{roll_val}</b>{bonus_s}")
@@ -46577,7 +46602,7 @@ async def on_callback(update: Update, ctx: ContextTypes.DEFAULT_TYPE):
             try:
                 await ctx.bot.send_message(
                     winner_uid,
-                    f"🏆 <b>Ты победил в турнире!</b>\n+{prize}{coin_emoji()}",
+                    f"{_E_TROPHY} <b>Ты победил в турнире!</b>\n+{prize}{coin_emoji()}",
                     parse_mode=ParseMode.HTML,
                 )
             except Exception:
@@ -47443,7 +47468,7 @@ async def on_callback(update: Update, ctx: ContextTypes.DEFAULT_TYPE):
 
         text = (
             f"📊 <b>Статистика бота</b>\n\n"
-            f"<b>👥 Игроки</b> <i>(без банов и ботов)</i>\n"
+            f"<b>{_E_USERS} Игроки</b> <i>(без банов и ботов)</i>\n"
             f"Всего: <b>{total}</b> · 🐸 Живых: <b>{alive}</b> · 💀 Мёртвых: <b>{dead}</b>\n"
             f"🚫 Забанено (отдельно, не в счёт): <b>{banned_cnt}</b>\n"
             f"Новых за 24ч: <b>{new_24h}</b> · за 7д: <b>{new_7d}</b>\n"
@@ -47459,10 +47484,10 @@ async def on_callback(update: Update, ctx: ContextTypes.DEFAULT_TYPE):
             f"КваКоинов в обороте: <b>{total_coins:,}</b>\n"
             f"Среднее у живого: <b>{avg_coins:.0f}🪙</b>\n"
             f"Всего потрачено: <b>{total_spent:,}🪙</b>\n"
-            f"⭐ Stars: <b>{total_stars}</b>\n\n"
-            f"<b>🎮 Активность</b>\n"
+            f"{_E_STARS} Stars: <b>{total_stars}</b>\n\n"
+            f"<b>{_E_GAMES} Активность</b>\n"
             f"🍎 Кормлений: <b>{total_feeds:,}</b>\n"
-            f"🎰 Гача: <b>{total_gacha:,}</b>\n"
+            f"{_E_CASINO} Гача: <b>{total_gacha:,}</b>\n"
             f"🎲 Казино: <b>{total_casino:,}</b> (побед: {total_casino_wins:,} / {casino_wr})\n"
             f"⚔️ Дуэлей: <b>{total_duels:,}</b> (побед: {total_duel_wins:,} / {duel_wr})\n"
             f"🦟 Комаров поймано: <b>{total_mosquitoes:,}</b> · событий 24ч: {mosquito_events_24h} · поймано событий: {mosquito_caught}\n"
@@ -47478,9 +47503,9 @@ async def on_callback(update: Update, ctx: ContextTypes.DEFAULT_TYPE):
             f"  ├ Никогда не кормили (брошены): <b>{stuck_never_fed}</b>\n"
             f"  └ Неактивны > 7д (вероятно ушли): <b>{stuck_inactive_7d}</b>\n"
             f"% от всех игроков: <b>{total_dead_for_stuck*100//max(total,1)}%</b>\n\n"
-            f"<b>🏆 Топ-5 по уровню:</b>\n{top_txt}\n\n"
+            f"<b>{_E_TROPHY} Топ-5 по уровню:</b>\n{top_txt}\n\n"
             f"<b>💰 Топ-3 богатейших:</b>\n{top_rich_txt}\n\n"
-            f"<b>🎰 Топ-3 по гаче:</b>\n{top_gacha_txt}\n\n"
+            f"<b>{_E_CASINO} Топ-3 по гаче:</b>\n{top_gacha_txt}\n\n"
             f"<b>👗 Топ-5 популярных скинов:</b>\n{top_skins_txt}"
         )
         try:
@@ -47618,7 +47643,7 @@ async def on_callback(update: Update, ctx: ContextTypes.DEFAULT_TYPE):
             kb.append([btn("◀️ Назад", callback_data="admin_skin_browse_")])
             try:
                 await q.message.edit_text(
-                    f"🔍 {icon} <b>{name_r}</b> — выбери облик:",
+                    f"{_E_SEARCH} {icon} <b>{name_r}</b> — выбери облик:",
                     parse_mode=ParseMode.HTML,
                     reply_markup=InlineKeyboardMarkup(kb),
                 )
@@ -47645,9 +47670,9 @@ async def on_callback(update: Update, ctx: ContextTypes.DEFAULT_TYPE):
                     owners = [dict(r) for r in await _c.fetchall()]
             icon = R_ICON.get(rarity, "⚪")
             if not owners:
-                lines = [f"🔍 {icon} <b>{he(skin_name)}</b>\n\n😶 Владельцев не найдено."]
+                lines = [f"{_E_SEARCH} {icon} <b>{he(skin_name)}</b>\n\n😶 Владельцев не найдено."]
             else:
-                lines = [f"🔍 {icon} <b>{he(skin_name)}</b> — владельцы ({len(owners)}):\n"]
+                lines = [f"{_E_SEARCH} {icon} <b>{he(skin_name)}</b> — владельцы ({len(owners)}):\n"]
                 for o in owners:
                     alive_icon = "🐸" if o["alive"] else "💀"
                     fname_o = he(o["frog_name"] or o["first_name"] or "?")
@@ -47751,7 +47776,7 @@ async def on_callback(update: Update, ctx: ContextTypes.DEFAULT_TYPE):
         import math as _math
 
         total_pages = max(1, _math.ceil(total / per))
-        text = f"👥 <b>Игроки (стр. {page+1}/{total_pages})</b>\nНажми на игрока — открыть карточку\n💀 = мёртвый 🚫 = забанен\n(Боты скрыты → раздел 🤖 Управление ботами)\n"
+        text = f"{_E_USERS} <b>Игроки (стр. {page+1}/{total_pages})</b>\nНажми на игрока — открыть карточку\n💀 = мёртвый 🚫 = забанен\n(Боты скрыты → раздел {_E_BOT} Управление ботами)\n"
         kb_rows = []
         for r in rows:
             alive_icon = "🐸" if r[5] else "💀"
@@ -47956,14 +47981,14 @@ async def on_callback(update: Update, ctx: ContextTypes.DEFAULT_TYPE):
         import math as _math
         total_pages_b = max(1, _math.ceil(total_b / per_b))
         text_b = (
-            f"🤖 <b>Помеченные боты ({total_b} шт., стр. {page_b+1}/{total_pages_b})</b>\n"
+            f"{_E_BOT} <b>Помеченные боты ({total_b} шт., стр. {page_b+1}/{total_pages_b})</b>\n"
             f"Боты скрыты из топов /top /topw /topm.\n"
             f"Нажми на бота — открыть карточку (снять метку или удалить).\n"
         )
         kb_rows_b = []
         for r in rows_b:
             uname_b = f"@{r[2]}" if r[2] else f"id{r[0]}"
-            label_b = f"🤖 {r[1]} ({uname_b}) ур.{r[3]}"
+            label_b = f"{_E_BOT} {r[1]} ({uname_b}) ур.{r[3]}"
             kb_rows_b.append([
                 btn(label_b, callback_data=f"admin_pcard_{r[0]}_{page_b}")
             ])
@@ -48811,7 +48836,7 @@ async def on_callback(update: Update, ctx: ContextTypes.DEFAULT_TYPE):
         ]
         if best_today:
             name_bt = f"@{best_today[1]}" if best_today[1] else he(best_today[0] or "?")
-            lines.append(f"  🏆 Лучший выигрыш: <b>{best_today[1]:,}</b>🪙 ({name_bt})")
+            lines.append(f"  {_E_TROPHY} Лучший выигрыш: <b>{best_today[1]:,}</b>🪙 ({name_bt})")
         lines += [
             "",
             "📅 <b>За 7 дней</b>",
@@ -48940,7 +48965,7 @@ async def on_callback(update: Update, ctx: ContextTypes.DEFAULT_TYPE):
             kb_rows.append(
                 [
                     btn(
-                        f"✏️ {label}", callback_data=f"admin_sticker_edit_{action}"
+                        f"{_E_PENCIL} {label}", callback_data=f"admin_sticker_edit_{action}"
                     )
                 ]
             )
@@ -48975,7 +49000,7 @@ async def on_callback(update: Update, ctx: ContextTypes.DEFAULT_TYPE):
         await q.answer()
         try:
             await q.message.edit_text(
-                f"✏️ <b>Редактирование: {label}</b>\n\n"
+                f"{_E_PENCIL} <b>Редактирование: {label}</b>\n\n"
                 f"Текущие индексы: <code>{current}</code>\n\n"
                 f"Чтобы изменить, используй команду:\n"
                 f"<code>/setsticker {action} 0,1,2,3</code>\n\n"
@@ -49027,7 +49052,7 @@ async def on_callback(update: Update, ctx: ContextTypes.DEFAULT_TYPE):
             lines.append(f"{'⚠️' if cnt > 50 else '👤'} <b>{name}</b> ({uname}) — {cnt} чел., {earned or 0}{coin_emoji()}{flag}")
             if cnt > 50:
                 kb_rows_ref.append([btn(
-                    f"🔍 {name[:20]} ({cnt} реф.)",
+                    f"{_E_SEARCH} {name[:20]} ({cnt} реф.)",
                     callback_data=f"admin_refdetail_{ref_uid}"
                 )])
         if not kb_rows_ref:
@@ -49077,12 +49102,12 @@ async def on_callback(update: Update, ctx: ContextTypes.DEFAULT_TYPE):
                     suspicious_ids.append(rr[0])
                 prev_ts = ts
             lines = [
-                f"🔍 <b>Расследование: {name} ({uname})</b>\n",
+                f"{_E_SEARCH} <b>Расследование: {name} ({uname})</b>\n",
                 f"ID: <code>{suspect_id}</code>",
                 f"💰 Баланс: {rf['coins'] if rf else '?'} 🪙",
-                f"👥 Всего рефералов: <b>{len(ref_list)}</b>",
+                f"{_E_USERS} Всего рефералов: <b>{len(ref_list)}</b>",
                 f"🪙 Заработано с рефералов: <b>{total_earned} 🪙</b>",
-                f"🤖 Подозрительных (регистрации &lt; 5 мин): <b>{len(suspicious_ids)}</b>\n",
+                f"{_E_BOT} Подозрительных (регистрации &lt; 5 мин): <b>{len(suspicious_ids)}</b>\n",
                 f"<b>Последние 20 рефералов:</b>",
             ]
             for rr in ref_list[:20]:
@@ -49168,7 +49193,7 @@ async def on_callback(update: Update, ctx: ContextTypes.DEFAULT_TYPE):
             # Списываем ровно столько, сколько заработано с рефералов
             await db.execute("UPDATE frogs SET coins = MAX(0, coins - ?) WHERE user_id=?", (earned, suspect_id))
             await db.commit()
-        await q.answer((f"💸 Списано {earned}{_E_COIN} с ID:{suspect_id}")[:200], show_alert=True)
+        await q.answer((f"💸 Списано {earned}🪙 с ID:{suspect_id}")[:200], show_alert=True)
         await admin_log(uid, "strip_refcoins", suspect_id, details=f"stripped {earned} ref coins")
         return
 
@@ -49345,7 +49370,7 @@ async def on_callback(update: Update, ctx: ContextTypes.DEFAULT_TYPE):
             f"🎟 <b>Лотерея — панель управления</b>\n",
             f"📅 Розыгрыш: <b>{draw_date}</b>",
             f"🎫 Билетов: <b>{total_tickets}</b> · 💰 Банк: <b>{pool}{coin_emoji()}</b>",
-            f"👥 Участников: <b>{len(participants)}</b>\n",
+            f"{_E_USERS} Участников: <b>{len(participants)}</b>\n",
         ]
         if participants:
             lines.append("<b>Участники (имя в игре — билетов):</b>")
@@ -49662,7 +49687,7 @@ async def on_callback(update: Update, ctx: ContextTypes.DEFAULT_TYPE):
         await q.answer()
         try:
             await q.message.edit_text(
-                f"✏️ <b>Изменить цели легенды</b>\n\n"
+                f"{_E_PENCIL} <b>Изменить цели легенды</b>\n\n"
                 f"Текущие цели:\n<code>{goals_str}</code>\n\n"
                 f"Отправь новые цели командой:\n"
                 f"<code>/legend_goals feeds:300 washes:50 plays:40</code>\n\n"
@@ -49900,7 +49925,7 @@ async def on_callback(update: Update, ctx: ContextTypes.DEFAULT_TYPE):
                 f"💽 <b>Диск</b>\n"
                 f"  Занято: <b>{_disk.percent:.1f}%</b>  "
                 f"({_disk.used // 1024**3}/{_disk.total // 1024**3} ГБ)\n\n"
-                f"🤖 <b>Процесс бота</b>\n"
+                f"{_E_BOT} <b>Процесс бота</b>\n"
                 f"  Uptime: <b>{_uptime_str}</b>\n"
                 f"  RAM процесса: <b>{_proc_mem} МБ</b>\n\n"
                 f"🌐 <b>Сеть</b>\n"
@@ -50408,7 +50433,7 @@ async def on_callback(update: Update, ctx: ContextTypes.DEFAULT_TYPE):
         try:
             await ctx.bot.send_message(
                 fw["chat_id"],
-                f"🌿 <b>{user_name}</b> воскресил(а) лягушку <b>{frog_name}</b> "
+                f"{_E_LEAF} <b>{user_name}</b> воскресил(а) лягушку <b>{frog_name}</b> "
                 f"в честь прощальной церемонии!",
                 parse_mode=ParseMode.HTML,
             )
@@ -50734,7 +50759,7 @@ async def successful_payment(update: Update, ctx: ContextTypes.DEFAULT_TYPE):
             ]]),
         )
         await announce(ctx.bot,
-            f"⭐ <b>Stars: доп. экспедиция!</b> {user.first_name} купил слот за {stars_paid}⭐",
+            f"{_E_STARS} <b>Stars: доп. экспедиция!</b> {user.first_name} купил слот за {stars_paid}{_E_STARS}",
             admin_only=True,
         )
         return
@@ -50798,7 +50823,7 @@ async def successful_payment(update: Update, ctx: ContextTypes.DEFAULT_TYPE):
         try:
             await ctx.bot.send_message(
                 ADMIN_CHAT_ID,
-                f"🔄 <b>Повторный ква ×10 за ⭐ Stars</b>\n"
+                f"🔄 <b>Повторный ква ×10 за {_E_STARS} Stars</b>\n"
                 f"👤 {_uname_10} (<code>{user.id}</code>)\n"
                 f"💰 Оплачено: <b>{stars_paid} Stars</b>\n"
                 f"🎲 Лучший бросок: <b>{_best_display}/{NFT_KVA_TOTAL}</b>"
@@ -50858,7 +50883,7 @@ async def successful_payment(update: Update, ctx: ContextTypes.DEFAULT_TYPE):
         try:
             await ctx.bot.send_message(
                 ADMIN_CHAT_ID,
-                f"🔄 <b>Повторный ква за ⭐ Stars</b>\n"
+                f"🔄 <b>Повторный ква за {_E_STARS} Stars</b>\n"
                 f"👤 {_uname_s1} (<code>{user.id}</code>)\n"
                 f"💰 Оплачено: <b>{stars_paid} Stars</b>\n"
                 f"🎲 Бросок: <b>{_roll}/{NFT_KVA_TOTAL}</b>"
@@ -50926,7 +50951,7 @@ async def successful_payment(update: Update, ctx: ContextTypes.DEFAULT_TYPE):
             parse_mode=ParseMode.HTML,
         )
         await announce(ctx.bot,
-            f"⭐ <b>Stars: доп. слот похода!</b> {user.first_name} купил +8ч за {stars_paid}⭐",
+            f"{_E_STARS} <b>Stars: доп. слот похода!</b> {user.first_name} купил +8ч за {stars_paid}{_E_STARS}",
             admin_only=True,
         )
         return
@@ -50949,7 +50974,7 @@ async def successful_payment(update: Update, ctx: ContextTypes.DEFAULT_TYPE):
             parse_mode=ParseMode.HTML,
         )
         await announce(ctx.bot,
-            f"⭐ <b>Stars-воскрешение!</b> {user.first_name} воскресил лягушку за {stars_paid}⭐",
+            f"{_E_STARS} <b>Stars-воскрешение!</b> {user.first_name} воскресил лягушку за {stars_paid}{_E_STARS}",
             admin_only=True,
         )
         return
@@ -51024,7 +51049,7 @@ async def successful_payment(update: Update, ctx: ContextTypes.DEFAULT_TYPE):
         )
         await announce(ctx.bot,
             f"💳 <b>Подписка!</b> {user.first_name} (@{user.username or '—'}) [{user.id}]\n"
-            f"Тариф: {sub_name} | {days} дней | {stars_paid}⭐",
+            f"Тариф: {sub_name} | {days} дней | {stars_paid}{_E_STARS}",
             admin_only=True,
         )
         return
@@ -51052,7 +51077,7 @@ async def successful_payment(update: Update, ctx: ContextTypes.DEFAULT_TYPE):
             f"✅ <b>Оплата получена!</b>\n\n"
             f"{_E_TICKET} Получено <b>{qty} гача-билетов</b>\n"
             f"Всего билетов: {total_tickets}\n\n"
-            f"<i>Используй их в меню гачи → /frog → 🎰 Гача</i>",
+            f"<i>Используй их в меню гачи → /frog → {_E_CASINO} Гача</i>",
             parse_mode=ParseMode.HTML,
         )
         return
@@ -51838,7 +51863,7 @@ async def on_message(update: Update, ctx: ContextTypes.DEFAULT_TYPE):
         my_name = fname(await db_get(user.id))
         await update.message.reply_text(
             f"📝 Заявка в стаю <b>«{he(s['name'])}»</b> подана!\n"
-            f"Ждём ответа Вожака 🌿",
+            f"Ждём ответа Вожака {_E_LEAF}",
             parse_mode=ParseMode.HTML,
         )
         # Уведомляем вожака
@@ -51847,7 +51872,7 @@ async def on_message(update: Update, ctx: ContextTypes.DEFAULT_TYPE):
             try:
                 await ctx.bot.send_message(
                     chief["user_id"],
-                    f"📬 Новая заявка в стаю <b>«{he(s['name'])}»</b>!\n\n"
+                    f"{_E_MAIL} Новая заявка в стаю <b>«{he(s['name'])}»</b>!\n\n"
                     f"<tg-emoji emoji-id='5341367834935075028'>🐸</tg-emoji> <b>{he(my_name)}</b>: <i>{he(app_text)}</i>\n\n"
                     f"Открой управление стаей чтобы принять или отклонить.",
                     parse_mode=ParseMode.HTML,
@@ -51895,7 +51920,7 @@ async def on_message(update: Update, ctx: ContextTypes.DEFAULT_TYPE):
 
         # Несколько результатов — показываем список
         if not row and len(rows_fn) > 1:
-            lines_fn = [f"🔍 <b>Результаты поиска «{he(query_find)}»</b>\n"]
+            lines_fn = [f"{_E_SEARCH} <b>Результаты поиска «{he(query_find)}»</b>\n"]
             kb_rows_fn = []
             for (fid,) in rows_fn[:8]:
                 tf_fn = await db_get(fid)
@@ -51919,7 +51944,7 @@ async def on_message(update: Update, ctx: ContextTypes.DEFAULT_TYPE):
 
         if not row:
             await update.message.reply_text(
-                f"🔍 Никого не найдено по запросу <b>«{he(query_find)}»</b>.\n\n"
+                f"{_E_SEARCH} Никого не найдено по запросу <b>«{he(query_find)}»</b>.\n\n"
                 f"<i>Попробуй @username или игровое имя лягушки</i>",
                 parse_mode=ParseMode.HTML,
                 reply_markup=InlineKeyboardMarkup([[
@@ -52050,7 +52075,7 @@ async def on_message(update: Update, ctx: ContextTypes.DEFAULT_TYPE):
                 if reply_target_id:
                     await update.message.reply_text("Этот игрок ещё не зарегистрировался в боте 🐸")
                 else:
-                    await update.message.reply_text(f"Игрок @{uname_from_msg} не найден 🔍")
+                    await update.message.reply_text(f"Игрок @{uname_from_msg} не найден {_E_SEARCH}")
                 return
 
     # ── Ввод произвольной суммы в котёл ─────────────────────────────────────
@@ -52223,9 +52248,9 @@ async def on_message(update: Update, ctx: ContextTypes.DEFAULT_TYPE):
         f_s["coins_spent"] = f_s.get("coins_spent", 0) + STAYA_CREATE_COST
         f_s["staya_id"] = staya_id
         await db_save(f_s)
-        await letopis_add(user.id, "staya_win", f"🌿 Основана новая стая «{name}»!")
+        await letopis_add(user.id, "staya_win", f"{_E_LEAF} Основана новая стая «{name}»!")
         await update.message.reply_text(
-            f"🌿 <b>Стая «{he(name)}» создана!</b>\n\n"
+            f"{_E_LEAF} <b>Стая «{he(name)}» создана!</b>\n\n"
             f"Ты — Вожак. Приглашай соседей командой /staya\n"
             f"Пополняй котёл, участвуй в событиях — и болото расцветёт! <tg-emoji emoji-id='5341367834935075028'>🐸</tg-emoji>",
             parse_mode=ParseMode.HTML,
@@ -52403,15 +52428,15 @@ async def on_message(update: Update, ctx: ContextTypes.DEFAULT_TYPE):
                 add_xp(f_fresh, 20)
                 result_txt = (
                     f"🎳 <b>Боулинг завершён!</b>\n\n"
-                    f"🤖 Бот: <b>{bot_pins}</b> кеглей\n"
+                    f"{_E_BOT} Бот: <b>{bot_pins}</b> кеглей\n"
                     f"🐸 Ты: <b>{player_pins}</b> кеглей\n\n"
-                    f"🏆 <b>Победа!</b> +{prize}{coin_emoji()}"
+                    f"{_E_TROPHY} <b>Победа!</b> +{prize}{coin_emoji()}"
                 )
             elif player_pins < bot_pins:
                 add_xp(f_fresh, 5)
                 result_txt = (
                     f"🎳 <b>Боулинг завершён!</b>\n\n"
-                    f"🤖 Бот: <b>{bot_pins}</b> кеглей\n"
+                    f"{_E_BOT} Бот: <b>{bot_pins}</b> кеглей\n"
                     f"🐸 Ты: <b>{player_pins}</b> кеглей\n\n"
                     f"😔 <b>Проигрыш.</b> Ставка потеряна."
                 )
@@ -52420,7 +52445,7 @@ async def on_message(update: Update, ctx: ContextTypes.DEFAULT_TYPE):
                 add_xp(f_fresh, 10)
                 result_txt = (
                     f"🎳 <b>Боулинг завершён!</b>\n\n"
-                    f"🤖 Бот: <b>{bot_pins}</b> кеглей\n"
+                    f"{_E_BOT} Бот: <b>{bot_pins}</b> кеглей\n"
                     f"<tg-emoji emoji-id='5341367834935075028'>🐸</tg-emoji> Ты: <b>{player_pins}</b> кеглей\n\n"
                     f"🤝 <b>Ничья!</b> Ставка возвращена."
                 )
@@ -52473,7 +52498,7 @@ async def on_message(update: Update, ctx: ContextTypes.DEFAULT_TYPE):
                     lines_bg.append(f"{crown}{he(name_bg)}: {pins} кеглей")
                 lines_bg.append(f"\n💰 Призовой фонд: {total_pot}{coin_emoji()}")
                 if len(winners_bg) == 1:
-                    lines_bg.append(f"🏆 Победитель забирает всё: +{prize_each}{coin_emoji()}")
+                    lines_bg.append(f"{_E_TROPHY} Победитель забирает всё: +{prize_each}{coin_emoji()}")
                 else:
                     lines_bg.append(f"🤝 Ничья между {len(winners_bg)} игроками: +{prize_each}{coin_emoji()} каждому")
                 for w_id in winners_bg:
@@ -52593,13 +52618,13 @@ async def on_message(update: Update, ctx: ContextTypes.DEFAULT_TYPE):
                         s1, s2, s3 = _SYM[_v & 3], _SYM[(_v >> 2) & 3], _SYM[_v >> 4]
                         combo = f"{s1} {s2} {s3}"
                         if val == 64:
-                            return int(stake * 7), f"🎰 7️⃣ 7️⃣ 7️⃣ — ДЖЕКПОТ!!! ×7 🎉"
+                            return int(stake * 7), f"{_E_CASINO} 7️⃣ 7️⃣ 7️⃣ — ДЖЕКПОТ!!! ×7 🎉"
                         if s1 == s2 == s3:
-                            return int(stake * 3.4), f"🎰 <b>Три одинаковых!</b> {combo} ×3.4"
+                            return int(stake * 3.4), f"{_E_CASINO} <b>Три одинаковых!</b> {combo} ×3.4"
                         _sevens = (s1 == "7️⃣") + (s2 == "7️⃣") + (s3 == "7️⃣")
                         if _sevens == 2:
-                            return int(stake * 3.8), f"🎰 <b>Два 7️⃣!</b> {combo} ×3.8 🔥"
-                        return 0, f"🎰 {combo} — ничего"
+                            return int(stake * 3.8), f"{_E_CASINO} <b>Два 7️⃣!</b> {combo} ×3.8 🔥"
+                        return 0, f"{_E_CASINO} {combo} — ничего"
                     return 0, "?"
                 winnings, desc = _cr(cw_gtype, dice_val, cw_stake)
                 if winnings > 0:
@@ -52617,7 +52642,7 @@ async def on_message(update: Update, ctx: ContextTypes.DEFAULT_TYPE):
                             _jp_winner_name = f"@{user.username}" if user.username else he(user.first_name)
                             asyncio.create_task(admin_notify(
                                 ctx.bot,
-                                f"🎰 Джекпот сорван! {_jp_winner_name} забрал <b>{_jp_won_msg:,}{coin_emoji()}</b>",
+                                f"{_E_CASINO} Джекпот сорван! {_jp_winner_name} забрал <b>{_jp_won_msg:,}{coin_emoji()}</b>",
                                 "🎰",
                             ))
                 else:
@@ -52634,7 +52659,7 @@ async def on_message(update: Update, ctx: ContextTypes.DEFAULT_TYPE):
                 await legend_track(user.id, "casino", bot=ctx.bot)  # ИСПРАВЛЕНО: legend_track отсутствовал в режиме «брошу сам»
                 await quest_update(user.id, "casino")
                 net = winnings - cw_stake
-                jackpot_line = f"\n🎰 <b>+{_jp_won_msg:,}{coin_emoji()} из банка казино!</b>" if _jp_won_msg > 0 else ""
+                jackpot_line = f"\n{_E_CASINO} <b>+{_jp_won_msg:,}{coin_emoji()} из банка казино!</b>" if _jp_won_msg > 0 else ""
                 if winnings > 0:
                     result_line = f"<b>Выигрыш! Получено: {winnings}{coin_emoji()}</b> (профит: +{net}{coin_emoji()}){jackpot_line}"
                 else:
@@ -53672,8 +53697,8 @@ async def _legend_finish(bot, leg: dict):
         f"{leg['emoji']} <b>Болотная Легенда завершена!</b>\n\n"
         f"<b>{leg['title']}</b>\n\n"
         f"{'🎉' if win else '😔'} {result_txt}\n\n"
-        f"👥 Участников: <b>{participants}</b>\n"
-        f"⭐ XP победителям: +{win_xp}\n"
+        f"{_E_USERS} Участников: <b>{participants}</b>\n"
+        f"{_E_XP} XP победителям: +{win_xp}\n"
         f"{reward_desc}\n\n"
         + ("<b>Топ участников:</b>\n" + "\n".join(top_lines) if top_lines else "")
     )
@@ -53791,7 +53816,7 @@ async def job_staya_events(ctx: ContextTypes.DEFAULT_TYPE):
             event_text = (
                 f"{ev_data['emoji']} <b>Событие стаи «{he(staya['name'])}»!</b>\n\n"
                 f"{ev_data['text']}\n\n"
-                f"<i>Проголосуй прямо здесь или в меню Площадь → 🌿 Стая → Событие</i>"
+                f"<i>Проголосуй прямо здесь или в меню Площадь → {_E_LEAF} Стая → Событие</i>"
             )
             for m in members:
                 try:
@@ -53863,7 +53888,7 @@ async def job_staya_resolve_single(ev_id: int, bot):
                 pass
         if winner_choice.get("win"):
             await letopis_add(staya["creator_id"], "staya_win",
-                              f"🏆 Стая «{staya['name']}» победила в событии!")
+                              f"{_E_TROPHY} Стая «{staya['name']}» победила в событии!")
     except Exception as _e:
         logger.warning("staya_resolve_single ev_id=%s: %s", ev_id, _e)
 
@@ -53956,7 +53981,7 @@ async def job_staya_resolve(ctx: ContextTypes.DEFAULT_TYPE):
             if winner_choice.get("win"):
                 await letopis_add(
                     staya["creator_id"], "staya_win",
-                    f"🏆 Стая «{staya['name']}» победила в событии — {result_text[:50]}"
+                    f"{_E_TROPHY} Стая «{staya['name']}» победила в событии — {result_text[:50]}"
                 )
 
         except Exception as _e:
@@ -54203,12 +54228,12 @@ async def job_adventure_tick(ctx: ContextTypes.DEFAULT_TYPE):
                 agree_note = f"\n🤝 Согласованность: {agree_count}/{len(choice_plan)} — бонус!" if agree_count else ""
 
                 final_msg = (
-                    f"🏆 <b>Поход завершён!</b>\n\n"
+                    f"{_E_TROPHY} <b>Поход завершён!</b>\n\n"
                     f"{ending}\n\n"
                     f"<b>Итоги решений:</b>\n{result_text}"
                     f"{agree_note}\n\n"
                     f"Каждый получает: <b>+{total_reward}{_E_COIN}</b>\n"
-                    f"⭐ <b>+{xp_reward} XP</b>"
+                    f"{_E_XP} <b>+{xp_reward} XP</b>"
                 )
 
                 for frog, frog_id in [(u1, adv["user1_id"]), (u2, adv["user2_id"])]:
@@ -54391,7 +54416,7 @@ async def job_sub_expiry_offer(ctx: ContextTypes.DEFAULT_TYPE):
                     callback_data=cb_buy,
                 )],
                 [btn(
-                    f"💸 Обычная цена ({orig_price}⭐)",
+                    f"💸 Обычная цена ({orig_price}{_E_STARS})",
                     callback_data="sub_buy_worker" if is_worker else "sub_buy_nanny",
                 )],
             ])
@@ -54548,7 +54573,7 @@ async def job_tutorial_nudge(ctx: ContextTypes.DEFAULT_TYPE):
             )
         elif target_day == 2:
             text_t = (
-                f"🎰 <b>День второй, {name_t}!</b>\n\n"
+                f"{_E_CASINO} <b>День второй, {name_t}!</b>\n\n"
                 f"Ты уже знаешь основы — теперь про заработок:\n\n"
                 f"• <b>Гача</b> — крути и получай редкие облики. Каждые 50 круток — гарантированная легенда!\n"
                 f"• <b>Дуэли</b> — сражайся с другими лягушками и забирай монеты\n"
@@ -54558,7 +54583,7 @@ async def job_tutorial_nudge(ctx: ContextTypes.DEFAULT_TYPE):
             )
         else:  # день 3
             text_t = (
-                f"🌿 <b>Третий день — {name_t} освоилась!</b>\n\n"
+                f"{_E_LEAF} <b>Третий день — {name_t} освоилась!</b>\n\n"
                 f"Теперь про социальное:\n\n"
                 f"• <b>Болотная Связь</b> — найди напарника и заходите оба каждый день. "
                 f"Стрик растёт → вехи 3/7/14/30/100 дней → монеты обоим\n"
@@ -54826,7 +54851,7 @@ async def job_mosquito(ctx: ContextTypes.DEFAULT_TYPE):
                 f"🐛 Размер: <b>{mosq_size}</b>\n"
                 f"📤 Уведомлено игроков в ЛС: <b>{sent_count}</b>\n"
                 f"❌ Не доставлено: <b>{failed_count}</b>\n"
-                f"👥 Всего активных: <b>{len(users)}</b>\n"
+                f"{_E_USERS} Всего активных: <b>{len(users)}</b>\n"
                 f"⏱ Рассылка заняла: <b>{_bulk_elapsed:.1f} сек</b>\n"
                 f"🎁 Награда 1-го места: <b>{reward}{_E_COIN}</b>\n"
                 f"🛡 Антибот: мин. реакция {MOSQUITO_MIN_REACT_MS}ms, лимит {MOSQUITO_DAILY_LIMIT}/день",
@@ -55832,8 +55857,8 @@ async def job_detect_botnet(ctx: ContextTypes.DEFAULT_TYPE):
                     f"👤 Источник: <code>{src_id}</code> ({_html.escape(src_name)})\n"
                     f"📤 Переводов разным игрокам за 24ч: <b>{fan_out}</b>\n"
                     f"💰 Итого раздано: <b>{total}</b> монет\n"
-                    f"🎰 Быстрых гача-пуллов после перевода: <b>{quick_cashout_count}</b>\n\n"
-                    f"🔍 Проверь: <code>/admingiftchain {src_id}</code>\n"
+                    f"{_E_CASINO} Быстрых гача-пуллов после перевода: <b>{quick_cashout_count}</b>\n\n"
+                    f"{_E_SEARCH} Проверь: <code>/admingiftchain {src_id}</code>\n"
                     f"↩️ Откат: <code>/adminrollbackdry {src_id}</code>"
                 )
                 alerts.append(alert_text)
@@ -56035,7 +56060,7 @@ async def job_lottery_draw(ctx: ContextTypes.DEFAULT_TYPE):
     # Строим сообщение с результатами (используем имена из игры)
     place_icons = ["🥇", "🥈", "🥉"]
     result_lines = [
-        f"🏆 <b>Розыгрыш лотереи завершён!</b>",
+        f"{_E_TROPHY} <b>Розыгрыш лотереи завершён!</b>",
         f"🎫 Участвовало билетов: <b>{len(tickets)}</b>",
         f"💰 Общий банк: <b>{total_pool}{coin_emoji()}</b>",
         "",
@@ -56065,7 +56090,7 @@ async def job_lottery_draw(ctx: ContextTypes.DEFAULT_TYPE):
                         prize_lines.append(f"{place_icons[i]} Приз: <b>{w_amount}{coin_emoji()}</b>")
                 prize_text = "\n".join(prize_lines)
                 msg = (
-                    f"🏆 <b>Результаты лотереи</b>\n\n"
+                    f"{_E_TROPHY} <b>Результаты лотереи</b>\n\n"
                     f"🎉 Ты выиграл!\n{prize_text}\n\n"
                     f"{_E_TICKET} Твоих билетов было: <b>{user_tickets_count}</b>\n\n"
                     + result_msg
@@ -56128,7 +56153,7 @@ async def job_league_week(ctx: ContextTypes.DEFAULT_TYPE):
             msg = (
                 f"🎉 <b>Ты повысил лигу!</b>\n\n"
                 f"{oe} {on} → {ne} {nn}\n\n"
-                f"⭐ За неделю: <b>{xp_w:,} XP</b>\n"
+                f"{_E_XP} За неделю: <b>{xp_w:,} XP</b>\n"
                 f"Так держать! Лезь выше 🐸"
             )
         elif new_l < old_l:
@@ -56137,7 +56162,7 @@ async def job_league_week(ctx: ContextTypes.DEFAULT_TYPE):
             msg = (
                 f"📉 <b>Лига понижена</b>\n\n"
                 f"{oe} {on} → {ne} {nn}\n\n"
-                f"⭐ За неделю: <b>{xp_w:,} XP</b>\n"
+                f"{_E_XP} За неделю: <b>{xp_w:,} XP</b>\n"
                 f"{need_str}"
             )
         else:
@@ -56147,7 +56172,7 @@ async def job_league_week(ctx: ContextTypes.DEFAULT_TYPE):
             coins_r = league_info(new_l)[3]
             msg = (
                 f"{ne} <b>{nn}</b> — удержано!\n\n"
-                f"⭐ За неделю: <b>{xp_w:,} XP</b>"
+                f"{_E_XP} За неделю: <b>{xp_w:,} XP</b>"
                 + (f"\n💰 Награда за лигу: <b>+{coins_r}🪙</b>" if coins_r else "")
             )
 
@@ -56793,7 +56818,7 @@ async def cmd_ttt5_group(update: Update, ctx: ContextTypes.DEFAULT_TYPE):
     }
     pub_kb = InlineKeyboardMarkup([[
         btn(
-            f"🎮 Принять вызов ({stake}{coin_plain()})",
+            f"{_E_GAMES} Принять вызов ({stake}{coin_plain()})",
             callback_data=f"ttt5_join_{game_id}"
         ),
         btn("🚫 Отменить", callback_data=f"ttt5_cancel_{game_id}"),
@@ -56802,7 +56827,7 @@ async def cmd_ttt5_group(update: Update, ctx: ContextTypes.DEFAULT_TYPE):
         f"⬛ <b>{he(user.first_name)}</b> вызывает на крестики-нолики 5×5!\n"
         f"Ставка: <b>{stake}{coin_emoji()}</b> с каждого\n"
         f"Победитель заберёт <b>{stake*2}{coin_emoji()}</b>!\n"
-        f"<i>🏆 Нужно выстроить 4 в ряд</i>\n\n"
+        f"<i>{_E_TROPHY} Нужно выстроить 4 в ряд</i>\n\n"
         f"",
         parse_mode=ParseMode.HTML,
         reply_markup=pub_kb,
@@ -57102,7 +57127,7 @@ async def _sacrifice_finish(event_id: int, bot, chat_id: int):
     try:
         await bot.send_message(
             chat_id,
-            f"🏆 <b>Итоги «{SACRIFICE_EVENT_NAME}»!</b>\n\n"
+            f"{_E_TROPHY} <b>Итоги «{SACRIFICE_EVENT_NAME}»!</b>\n\n"
             f"{_E_FIRE} Всего сожжено: <b>{total_burned}</b> эпиков\n"
             f"💰 Общий банк: <b>{total_bank}{coin_emoji()}</b>\n\n"
             f"🎉 Победитель: <b>{he(winner_name)}</b>{winner_tag}\n"
@@ -57118,7 +57143,7 @@ async def _sacrifice_finish(event_id: int, bot, chat_id: int):
     try:
         await bot.send_message(
             winner_uid,
-            f"🏆 <b>Ты выиграл ивент «{SACRIFICE_EVENT_NAME}»!</b>\n\n"
+            f"{_E_TROPHY} <b>Ты выиграл ивент «{SACRIFICE_EVENT_NAME}»!</b>\n\n"
             f"На твой счёт зачислено <b>{winner_prize}{coin_emoji()}</b>\n"
             f"<i>Болото запомнит твою жертву.</i> {_E_FIRE}",
             parse_mode=ParseMode.HTML,
@@ -57164,7 +57189,7 @@ async def _sacrifice_reminder_job(ctx: ContextTypes.DEFAULT_TYPE):
             chat_id,
             f"⏰ <b>До конца «{SACRIFICE_EVENT_NAME}» остался 1 час!</b>\n\n"
             f"💰 Банк: <b>{total_bank}{coin_emoji()}</b>\n"
-            f"👥 Участников: <b>{len(parts)}</b>\n\n"
+            f"{_E_USERS} Участников: <b>{len(parts)}</b>\n\n"
             f"<i>Жги эпики — используй кнопку в сообщении ивента</i>",
             parse_mode=ParseMode.HTML,
         )
@@ -57267,7 +57292,7 @@ async def cmd_sacrifice_start(update: Update, ctx: ContextTypes.DEFAULT_TYPE):
                 f"{_E_FIRE} <b>Новый ивент: «{SACRIFICE_EVENT_NAME}»!</b>\n\n"
                 f"Сожги эпические облики, пополни общий банк и побори за главный приз!\n\n"
                 f"💰 За каждый эпик в банк → <b>{SACRIFICE_COINS_PER_EPIC}{coin_emoji()}</b>\n"
-                f"🏆 30% банка — победителю (рандом по весам)\n"
+                f"{_E_TROPHY} 30% банка — победителю (рандом по весам)\n"
                 f"🤝 60% — поровну всем остальным участникам\n\n"
                 f"⏳ Ивент идёт <b>{hours} ч</b>. Не пропусти!",
                 parse_mode=ParseMode.HTML,
@@ -57317,7 +57342,7 @@ async def cmd_sacrifice_status(update: Update, ctx: ContextTypes.DEFAULT_TYPE):
         f"{_E_FIRE} <b>«{SACRIFICE_EVENT_NAME}»</b>\n\n"
         f"💰 Банк: <b>{ev['total_bank']}{coin_emoji()}</b>\n"
         f"{_E_FIRE} Сожжено эпиков: <b>{total_burned}</b>\n"
-        f"👥 Участников: <b>{len(parts)}</b>\n"
+        f"{_E_USERS} Участников: <b>{len(parts)}</b>\n"
         f"⏳ До конца: <b>{h}ч {m}м</b>",
         parse_mode=ParseMode.HTML,
     )
@@ -57437,7 +57462,7 @@ async def cmd_funnel_status(update: Update, ctx: ContextTypes.DEFAULT_TYPE):
         f"{_E_FIRE} <b>«{FUNNEL_NAME}»</b>\n\n"
         f"💰 Выплаты: {ranges_str}\n"
         f"{_E_FIRE} Сожжено: <b>{total_burned}</b> обликов\n"
-        f"👥 Участников: <b>{len(participants)}</b>\n"
+        f"{_E_USERS} Участников: <b>{len(participants)}</b>\n"
         f"⏳ До конца: <b>{h}ч {m}м</b>",
         parse_mode=ParseMode.HTML,
     )
@@ -57509,7 +57534,7 @@ async def cmd_pgiveaway(update: Update, ctx: ContextTypes.DEFAULT_TYPE):
     msg = await update.message.reply_text(
         f"🎁 <b>Розыгрыш от {he(user.first_name)}!</b>\n\n"
         f"🎁 Приз: <b>{_html.escape(prize_text)}</b>\n"
-        f"👥 Участников: <b>0</b>"
+        f"{_E_USERS} Участников: <b>0</b>"
         f"{kva_note}\n\n"
         f"Нажми кнопку чтобы участвовать!\n"
         f"<i>⏱ Розыгрыш завершится через 5 минут.</i>",
@@ -57592,8 +57617,8 @@ async def cmd_giveaway(update: Update, ctx: ContextTypes.DEFAULT_TYPE):
     msg = await update.message.reply_text(
         f"🎁 <b>Розыгрыш от {he(user.first_name)}!</b>\n\n"
         f"💰 Приз: <b>{total}{coin_emoji()}</b>\n"
-        f"🏆 Победителей: <b>{winners_count}</b>\n"
-        f"👥 Участников: <b>0</b>\n\n"
+        f"{_E_TROPHY} Победителей: <b>{winners_count}</b>\n"
+        f"{_E_USERS} Участников: <b>0</b>\n\n"
         f"Нажми кнопку, чтобы участвовать!\n"
         f"<i>⏱ Розыгрыш завершится через 5 минут.</i>",
         parse_mode=ParseMode.HTML,
@@ -57638,7 +57663,7 @@ async def farewell_phase2(ctx: ContextTypes.DEFAULT_TYPE):
             f"🕯️ <b>Церемония прощания начинается!</b>\n\n"
             f"Час воспоминаний завершён. Теперь каждый может зажечь свечу в память о "
             f"<b>{name}</b>.\n\n"
-            f"🌿 <b>В честь этого события</b> каждый игрок может бесплатно воскресить "
+            f"{_E_LEAF} <b>В честь этого события</b> каждый игрок может бесплатно воскресить "
             f"свою лягушку — один раз, пока идёт церемония.\n\n"
             f"<i>Нажми кнопку ниже — огонь будет гореть вечно в болотной книге памяти.</i>",
             parse_mode=ParseMode.HTML,
@@ -58151,7 +58176,7 @@ async def on_inline_query(update: Update, ctx: ContextTypes.DEFAULT_TYPE):
     cd_left = max(0, int((last_inline + 300 - now_inl)))
 
     staya_max_inl = staya.get("max_members") or STAYA_MAX_MEMBERS
-    full_str = "🔒 Стая заполнена" if len(members) >= staya_max_inl else f"👥 {len(members)}/{staya_max_inl}"
+    full_str = "🔒 Стая заполнена" if len(members) >= staya_max_inl else f"{_E_USERS} {len(members)}/{staya_max_inl}"
 
     msg_text = (
         f"{staya['emoji']} <b>Стая «{he(staya['name'])}» приглашает!</b>\n\n"
@@ -58387,7 +58412,7 @@ async def cmd_staya_top(update: Update, ctx: ContextTypes.DEFAULT_TYPE):
         bonus_line = f"\n   <i>✨ {bonus}</i>" if bonus else ""
         lines.append(
             f"{medals[i]} {badge}{s['emoji']} <b>{he(s['name'])}</b>\n"
-            f"   🏔️ ур.{s['level']} · 👥 {cnt}/{s_max} · 🪙 <b>{total:,}</b> вложено"
+            f"   🏔️ ур.{s['level']} · {_E_USERS} {cnt}/{s_max} · 🪙 <b>{total:,}</b> вложено"
             f"{bonus_line}"
         )
 
@@ -58947,7 +58972,7 @@ async def cmd_fix_workers(update: Update, ctx: ContextTypes.DEFAULT_TYPE):
     total = len(uids)
     await update.message.reply_text(
         f"✅ <b>Исправление завершено</b>\n\n"
-        f"👥 Всего трудяг: <b>{total}</b>\n"
+        f"{_E_USERS} Всего трудяг: <b>{total}</b>\n"
         f"⏭ Пропущено (всё ок): <b>{stats['skipped']}</b>\n"
         f"🌅 Утро+обед отправлено: <b>{stats['morning_sent']}</b>\n"
         f"🕛 Обед отправлено: <b>{stats['midday_sent']}</b>\n"
@@ -59009,7 +59034,7 @@ async def cmd_staya(update: Update, ctx: ContextTypes.DEFAULT_TYPE):
             kb_rows.append([btn("🚪 Покинуть стаю", callback_data="staya_leave")])
     else:
         text = (
-            f"🌿 <b>Болотные Стаи</b>\n\n"
+            f"{_E_LEAF} <b>Болотные Стаи</b>\n\n"
             f"Ты не состоишь ни в одной стае.\n\n"
             f"Создай свою за <b>{STAYA_CREATE_COST}{_E_COIN}</b> или вступи по приглашению.\n"
             f"Стая — это болото до 15 лягушек с общим котлом и событиями!\n\n"
@@ -59051,7 +59076,7 @@ async def cmd_sosedi(update: Update, ctx: ContextTypes.DEFAULT_TYPE):
         lines.append(f"{icon} {he(name)} — {label}")
 
     if pending_in:
-        lines.append(f"\n📬 Входящие заявки: {len(pending_in)}")
+        lines.append(f"\n{_E_MAIL} Входящие заявки: {len(pending_in)}")
 
     lines.append("\n<i>Добавить соседа: /add_soseda @username</i>")
     lines.append("<i>Подарить монеты: /gift @username сумма</i>")
@@ -59103,7 +59128,7 @@ async def cmd_add_soseda(update: Update, ctx: ContextTypes.DEFAULT_TYPE):
         await db.commit()
     tname_disp = tname or tfirst or uname
     await update.message.reply_text(
-        f"✅ Заявка отправлена {he(tname_disp)}!\nКак только они примут — станете соседями 🌿"
+        f"✅ Заявка отправлена {he(tname_disp)}!\nКак только они примут — станете соседями {_E_LEAF}"
     )
     try:
         my_name = f.get("frog_name") or f.get("first_name") or "Кто-то"
@@ -59254,7 +59279,7 @@ async def cmd_gift_friend(update: Update, ctx: ContextTypes.DEFAULT_TYPE):
         await ctx.bot.send_message(
             target_id,
             f"🎁 <b>{he(my_name)}</b> прислал тебе <b>{actual}{_E_COIN}</b>!\n"
-            f"<i>Болотные соседи заботятся друг о друге 🌿</i>",
+            f"<i>Болотные соседи заботятся друг о друге {_E_LEAF}</i>",
             parse_mode=ParseMode.HTML,
         )
     except Exception:
@@ -59380,7 +59405,7 @@ async def _show_frog_profile(bot, requester_uid: int, target_uid: int, send_fn):
     alive_icon = "🐸" if tf.get("alive") else "💀"
     text = (
         f"{alive_icon} <b>{he(name)}</b> ур.{tf.get('level',1)}\n"
-        f"⭐ {tf.get('xp',0)} XP · 🪙 {tf.get('coins',0)}\n"
+        f"{_E_XP} {tf.get('xp',0)} XP · 🪙 {tf.get('coins',0)}\n"
         f"❤️ {tf.get('health',100)}% 🍖 {tf.get('hunger',50)}% 😄 {tf.get('happiness',50)}%\n"
         f"📅 {days} дней на болоте\n"
         f"{zodiac['name']}{pers_line}"
@@ -59501,7 +59526,7 @@ async def cmd_pohod(update: Update, ctx: ContextTypes.DEFAULT_TYPE):
             f"<tg-emoji emoji-id='5341367834935075028'>🐸</tg-emoji> Во время похода лягушки недоступны — ни кормить, ни играть.\n"
             f"📜 Каждые 15–20 мин вы получаете логи о приключениях.\n"
             f"🎲 Будут развилки — нужно принять решение.\n"
-            f"🏆 В конце — монеты и XP по итогам!\n\n"
+            f"{_E_TROPHY} В конце — монеты и XP по итогам!\n\n"
             f"<b>Выбери длительность:</b>",
             parse_mode=ParseMode.HTML,
             reply_markup=kb,
@@ -59651,7 +59676,7 @@ async def cmd_broadcast_return(update: Update, ctx: ContextTypes.DEFAULT_TYPE):
         "\n"
         f"{preview}\n"
         "\n"
-        f"👥 <b>Получателей: {total}</b>\n"
+        f"{_E_USERS} <b>Получателей: {total}</b>\n"
         f"  └ умерли ≤7д: <b>{day7}</b>\n"
         f"  └ умерли ≤14д: <b>{day14}</b>\n"
         f"  └ умерли ≤30д: <b>{total}</b>\n\n"
@@ -60288,7 +60313,7 @@ async def _chk_do_bot_move(gid, gd, q, ctx):
         ctx.bot_data.pop(f"chk|{gid}", None)
         try:
             await q.message.edit_text(
-                f"♟️ <b>Шашки vs Бот</b>\n\n🏆 <b>{h_name}</b> победил(а)!\nБот не может ходить.",
+                f"♟️ <b>Шашки vs Бот</b>\n\n{_E_TROPHY} <b>{h_name}</b> победил(а)!\nБот не может ходить.",
                 parse_mode=ParseMode.HTML,
             )
         except Exception: pass
@@ -60318,7 +60343,7 @@ async def _chk_do_bot_move(gid, gd, q, ctx):
         if (human_p == 1 and p1 == 0) or (human_p == 2 and p2 == 0) or not next_m:
             result = "🤖 <b>Бот победил!</b> Попробуй ещё раз."
         else:
-            result = f"🏆 <b>{_html.escape(gd['p1n'])}</b> победил(а)!"
+            result = f"{_E_TROPHY} <b>{_html.escape(gd['p1n'])}</b> победил(а)!"
         ctx.bot_data.pop(f"chk|{gid}", None)
         try:
             await q.message.edit_text(
@@ -60603,7 +60628,7 @@ async def handle_checkers_callback(q, d, uid, ctx):
                     await q.message.edit_text(
                         f"♟️ <b>Шашки завершены!</b>\n"
                         f"⚫ {_html.escape(gd['p1n'])} vs ⚪ {_html.escape(gd['p2n'])}\n\n"
-                        f"🏆 <b>{_html.escape(w_name)}</b> победил(а)! +{prize}{_E_COIN}",
+                        f"{_E_TROPHY} <b>{_html.escape(w_name)}</b> победил(а)! +{prize}{_E_COIN}",
                         parse_mode=ParseMode.HTML,
                     )
                 except Exception: pass
@@ -60612,7 +60637,7 @@ async def handle_checkers_callback(q, d, uid, ctx):
                 human_p = gd.get("human_player", 1)
                 human_lost = (human_p == 1 and (p1 == 0 or (not next_m and gd["turn"] == human_p))) or \
                              (human_p == 2 and (p2 == 0 or (not next_m and gd["turn"] == human_p)))
-                result = "🤖 <b>Бот победил!</b>" if human_lost else f"🏆 <b>{_html.escape(gd['p1n'])}</b> победил(а)!"
+                result = "🤖 <b>Бот победил!</b>" if human_lost else f"{_E_TROPHY} <b>{_html.escape(gd['p1n'])}</b> победил(а)!"
                 ctx.bot_data.pop(f"chk|{gid}", None)
                 try:
                     await q.message.edit_text(
@@ -60776,7 +60801,7 @@ async def handle_checkers_callback(q, d, uid, ctx):
             await q.message.edit_text(
                 f"♟️ <b>Шашки</b>\n"
                 f"🏳 <b>{_html.escape(l_name)}</b> сдался!\n"
-                f"🏆 Победа <b>{_html.escape(w_name)}</b>! +{prize}{_E_COIN}",
+                f"{_E_TROPHY} Победа <b>{_html.escape(w_name)}</b>! +{prize}{_E_COIN}",
                 parse_mode=ParseMode.HTML,
             )
         except Exception: pass
@@ -61149,7 +61174,7 @@ async def handle_battleship_callback(q, d, uid, ctx):
                 kb = _bs_fire_kb(gid, ships_opp, shots_cur, size)
                 try:
                     await q.message.edit_text(
-                        f"🚢 <b>Морской бой vs 🤖 Бот</b> · {size}×{size}\n\n"
+                        f"🚢 <b>Морской бой vs {_E_BOT} Бот</b> · {size}×{size}\n\n"
                         f"💥 Твой ход — тапни ⬜ чтобы выстрелить!",
                         parse_mode=ParseMode.HTML, reply_markup=kb,
                     )
@@ -61262,8 +61287,8 @@ async def handle_battleship_callback(q, d, uid, ctx):
             if is_bot_game:
                 try:
                     await q.message.edit_text(
-                        f"🚢 <b>Морской бой vs 🤖 Бот</b>\n\n"
-                        f"🏆 <b>Ты победил!</b> Весь флот потоплен!\n\n{board_txt}",
+                        f"🚢 <b>Морской бой vs {_E_BOT} Бот</b>\n\n"
+                        f"{_E_TROPHY} <b>Ты победил!</b> Весь флот потоплен!\n\n{board_txt}",
                         parse_mode=ParseMode.HTML,
                     )
                 except Exception: pass
@@ -61272,7 +61297,7 @@ async def handle_battleship_callback(q, d, uid, ctx):
                     await q.message.edit_text(
                         f"🚢 <b>Морской бой завершён!</b>\n"
                         f"⚓ {_html.escape(gd['p1n'])} vs ⚓ {_html.escape(gd['p2n'])}\n\n"
-                        f"🏆 <b>{_html.escape(cur_name)}</b> потопил весь флот!\n"
+                        f"{_E_TROPHY} <b>{_html.escape(cur_name)}</b> потопил весь флот!\n"
                         f"+{prize}{_E_COIN}",
                         parse_mode=ParseMode.HTML,
                     )
@@ -61314,7 +61339,7 @@ async def handle_battleship_callback(q, d, uid, ctx):
                     board_txt2 = _bs_render_fire(gd["ships1"], gd["shots2"], size)
                     try:
                         await q.message.edit_text(
-                            f"🚢 <b>Морской бой vs 🤖 Бот</b>\n\n"
+                            f"🚢 <b>Морской бой vs {_E_BOT} Бот</b>\n\n"
                             f"{_E_SKULL} <b>Бот потопил твой флот!</b>\n"
                             f"Ходы бота: {', '.join(bot_log)}\n\n{board_txt2}",
                             parse_mode=ParseMode.HTML,
@@ -61325,14 +61350,14 @@ async def handle_battleship_callback(q, d, uid, ctx):
                     break  # промах — ход переходит к игроку
             gd["turn"] = 1
             # Строим доску для следующего хода игрока
-            bot_summary = f"🤖 Бот: {', '.join(bot_log)}\n" if bot_log else ""
+            bot_summary = f"{_E_BOT} Бот: {', '.join(bot_log)}\n" if bot_log else ""
             next_shots = gd["shots1"]
             next_ships_opp = gd["ships2"]
             kb = _bs_fire_kb(gid, next_ships_opp, next_shots, size)
             board_txt3 = _bs_render_fire(next_ships_opp, next_shots, size)
             try:
                 await q.message.edit_text(
-                    f"🚢 <b>Морской бой vs 🤖 Бот</b> · {size}×{size}\n\n"
+                    f"🚢 <b>Морской бой vs {_E_BOT} Бот</b> · {size}×{size}\n\n"
                     f"{result_txt}\n{bot_summary}\n"
                     f"💥 Твой ход — тапни ⬜!\n\n{board_txt3}",
                     parse_mode=ParseMode.HTML, reply_markup=kb,
@@ -61350,7 +61375,7 @@ async def handle_battleship_callback(q, d, uid, ctx):
             board_txt4 = _bs_render_fire(next_ships_opp, next_shots, size)
             try:
                 await q.message.edit_text(
-                    f"🚢 <b>Морской бой vs 🤖 Бот</b> · {size}×{size}\n\n"
+                    f"🚢 <b>Морской бой vs {_E_BOT} Бот</b> · {size}×{size}\n\n"
                     f"{result_txt}\n\n"
                     f"💥 Стреляй ещё — тапни ⬜!\n\n{board_txt4}",
                     parse_mode=ParseMode.HTML, reply_markup=kb,
@@ -61396,7 +61421,7 @@ async def handle_battleship_callback(q, d, uid, ctx):
             await q.message.edit_text(
                 f"🚢 <b>Морской бой</b>\n"
                 f"🏳 <b>{_html.escape(l_name)}</b> сдался!\n"
-                f"🏆 Победа <b>{_html.escape(w_name)}</b>! +{prize}{_E_COIN}",
+                f"{_E_TROPHY} Победа <b>{_html.escape(w_name)}</b>! +{prize}{_E_COIN}",
                 parse_mode=ParseMode.HTML,
             )
         except Exception:
@@ -64638,7 +64663,7 @@ async def _exp_lobby_text(exp: dict, members: list[dict], bot) -> str:
     return (
         f"{biome['emoji']} <b>{biome['name']}</b>\n"
         f"<i>{biome['desc']}</i>\n\n"
-        f"👥 <b>Команда</b> {len(members)}/{exp['max_players']}:\n"
+        f"{_E_USERS} <b>Команда</b> {len(members)}/{exp['max_players']}:\n"
         f"{names_str}\n\n"
         f"⏳ Сбор закроется через: <b>{time_str}</b> (в {start_msk_str} МСК)\n"
         f"⚔️ Длительность: <b>{EXP_BIOMES[exp['biome']]['duration_h']} ч</b>  "        f"🪙 До <b>{biome['max_coins']}🪙</b>"
@@ -64738,7 +64763,7 @@ async def _exp_start(exp_id: int, bot):
         f"🗺️ <b>Экспедиция начинается!</b>\n\n"
         f"{biome_cfg['emoji']} <b>{biome_cfg['name']}</b>\n"
         "\n"
-        f"👥 Команда: {', '.join(names_list)}\n\n"
+        f"{_E_USERS} Команда: {', '.join(names_list)}\n\n"
         f"⏱ Длительность: <b>{biome_cfg['duration_h']} ч</b>\n"
         f"📅 Возвращение: <b>{datetime.fromtimestamp(ends_at).strftime('%H:%M')}</b>\n\n"
         f"<i>События будут приходить тебе в личку по ходу экспедиции. "
@@ -65031,7 +65056,7 @@ async def _exp_fire_event(bot, exp: dict, ev: dict):
                     f"{torch_note}"
                     f"⚔️ <b>Победа над {he(ev_data['enemy'])}!</b>\n"
                     f"💰 <b>+{coins}🪙</b>\n"
-                    f"⭐ <b>+5 XP</b>"
+                    f"{_E_XP} <b>+5 XP</b>"
                 )
                 m["coins_gained"] = m.get("coins_gained", 0) + coins
                 f["coins"] = f.get("coins", 0) + coins
@@ -65817,7 +65842,7 @@ async def _exp_finish(bot, exp: dict, force_wipe: bool = False):
             f"💸 Потеряно: -{m['coins_lost']}🪙{lost_breakdown}\n"
             "\n"
             f"🪙 Итого монет: <b>{max(0, total_coins)}🪙</b>\n"
-            f"⭐ Получено XP: <b>+{xp_earned}</b>\n"
+            f"{_E_XP} Получено XP: <b>+{xp_earned}</b>\n"
             f"{contribution_emoji} Вклад: <b>{m['contribution']} действий</b>"
             f"{clean_line}"
             f"{betrayal_line}"
@@ -66107,7 +66132,7 @@ async def job_canteen_daily_report(ctx: ContextTypes.DEFAULT_TYPE):
 
             auto_status = "✅ ВКЛ" if canteen.get("auto_feed", 1) else "❌ ВЫКЛ"
             lines.append("")
-            lines.append(f"⚙️ Авто-кормление: {auto_status}")
+            lines.append(f"{_E_GEAR} Авто-кормление: {auto_status}")
 
             try:
                 await ctx.bot.send_message(
@@ -66623,7 +66648,7 @@ async def _show_exp_status(msg_or_query, user_id: int, exp: dict):
         f"❤️ HP: {_hp_bar_pct(m["hp_current"])}\n"
         f"🎒 {_supply_text(sup)}\n"
         f"💰 Взял: {m['coins_taken']}🪙  "        f"💎 +{m['coins_gained']}🪙 💸 -{m['coins_lost']}🪙\n\n"
-        f"👥 <b>Команда:</b>\n"
+        f"{_E_USERS} <b>Команда:</b>\n"
         f"{''.join(chr(10) + l for l in members_lines)}\n\n"
         f"<i>💬 /m текст — написать команде</i>"
     )
@@ -67008,7 +67033,7 @@ async def exp_handle_callback(q, uid: int, d: str,
         pub_text = (
             f"🗺️ <b>Новая экспедиция!</b>\n"
             f"{bc['emoji']} <b>{bc['name']}</b>\n"
-            f"👥 Мест: {max_players} | ⏳ Сбор: {gather_min} мин\n"
+            f"{_E_USERS} Мест: {max_players} | ⏳ Сбор: {gather_min} мин\n"
             f"Создал(а): {fname(f)}\n\n"
             f"<i>Нажми кнопку чтобы вступить</i>"
         )
@@ -67204,7 +67229,7 @@ async def exp_handle_callback(q, uid: int, d: str,
         pub_text = (
             f"🗺️ <b>Экспедиция ищет команду!</b>\n"
             f"{bc['emoji']} <b>{bc['name']}</b>\n"
-            f"👥 {len(members)}/{exp['max_players']} участников\n"
+            f"{_E_USERS} {len(members)}/{exp['max_players']} участников\n"
             f"Зовёт: {fname(f)}\n\n"
             f"<i>Нажми чтобы вступить</i>"
         )
@@ -67873,7 +67898,7 @@ async def exp_handle_callback(q, uid: int, d: str,
                 f"🤝 <b>Путник на дороге просит помощи!</b>\n"
                 f"Экспедиция ищет попутчика в пути:\n\n"
                 f"{bc['emoji']} <b>{bc['name']}</b>\n"
-                f"👥 {active_cnt}/{exp['max_players']} участников\n"
+                f"{_E_USERS} {active_cnt}/{exp['max_players']} участников\n"
                 f"⏱ До конца: <b>{left_h}ч {left_m2}м</b>\n\n"
                 f"<i>Нажми чтобы присоединиться</i>"
             )
@@ -68459,7 +68484,7 @@ async def _war_callbacks_v2(q, d: str, uid: int, f: dict, ctx) -> bool:
             f"💰 Украдено: {ws.get('coins_stolen',0)}🪙\n"
             "\n"
             f"⚔️ Дуэлей: {ws.get('duels_won',0)+ws.get('duels_lost',0)}\n"
-            f"🏆 Побед в дуэлях: {ws.get('duels_won',0)}\n"
+            f"{_E_TROPHY} Побед в дуэлях: {ws.get('duels_won',0)}\n"
             f"💀 Поражений: {ws.get('duels_lost',0)}"
         )
         try:
@@ -69712,7 +69737,7 @@ async def _war_callbacks_v2(q, d: str, uid: int, f: dict, ctx) -> bool:
             side_ru = "⚔️ нападение" if side_c == "attacker" else "🛡️ защиту"
             await q.message.edit_text(
                 f"{q.message.text or ''}\n\n"
-                f"✏️ Напиши <b>число</b> — сумму ставки на {side_ru}.\n"
+                f"{_E_PENCIL} Напиши <b>число</b> — сумму ставки на {side_ru}.\n"
                 f"Баланс: <b>{bal}{_E_COIN}</b>",
                 parse_mode=ParseMode.HTML,
                 reply_markup=InlineKeyboardMarkup([[
