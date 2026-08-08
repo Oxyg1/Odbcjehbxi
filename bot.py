@@ -1690,7 +1690,7 @@ async def cmd_fzrepost(update: Update, ctx: ContextTypes.DEFAULT_TYPE) -> None:
             row = await c.fetchone()
     if row:
         await update.message.reply_text(
-            "✅ Ты уже получил кубики за репост! Лимит — 1 репост на ивент."
+            "✅ Ты уже получил кубики за репост. Лимит — 1 репост на ивент."
         )
         return
 
@@ -2397,7 +2397,7 @@ async def _fz_on_callback(update: Update, ctx: ContextTypes.DEFAULT_TYPE) -> Non
                 total_nft=FZ_TOTAL_NFT, remaining_nft=FZ_TOTAL_NFT,
                 heat=50, daily_throws=0, pool_throws=0,
             )
-            await q.answer("✅ Ивент запущен!", show_alert=True)
+            await q.answer("✅ Ивент запущен", show_alert=True)
             return
         if d == "fzadm_stop":
             state = await _fz_state()
@@ -2556,7 +2556,7 @@ async def _fz_on_callback(update: Update, ctx: ContextTypes.DEFAULT_TYPE) -> Non
 
         state = await _fz_state()
         if state.get("status") not in (FZ_ACTIVE, FZ_SOLD_OUT, FZ_FINALE):
-            await q.answer("Ивент не активен!", show_alert=True)
+            await q.answer("Ивент не активен", show_alert=True)
             return
 
         # Проверка one_time: пакет за 1⭐ — только раз на ивент
@@ -2710,7 +2710,7 @@ async def _fz_on_callback(update: Update, ctx: ContextTypes.DEFAULT_TYPE) -> Non
                 (uid, time.time()),
             )
             await db.commit()
-        await q.answer("🔔 Напомним за 6 часов до конца ивента!", show_alert=True)
+        await q.answer("🔔 Напомним за 6 часов до конца ивента", show_alert=True)
         return
 
     # ── Квиз ─────────────────────────────────────────────────────────────────
@@ -2790,7 +2790,7 @@ async def _fz_handle_forward(update: Update, ctx: ContextTypes.DEFAULT_TYPE) -> 
             row = await c.fetchone()
         if row:
             await msg.reply_text(
-                "✅ Ты уже получил кубики за репост! Лимит — 1 раз на ивент."
+                "✅ Ты уже получил кубики за репост. Лимит — 1 раз на ивент."
             )
             return
 
@@ -4959,7 +4959,7 @@ _LANGS = {
         "yes":             "✅ Да",
         "no":              "❌ Нет",
         "error":           "⚠️ Ошибка",
-        "no_frog":         "Сначала напиши /start!",
+        "no_frog":         "Сначала напиши /start",
         "dead_frog":       _E_SKULL + " Лягушка мертва! /revive",
         "cooldown":        "⏳",
         "coins":           "🪙",
@@ -5057,7 +5057,7 @@ _LANGS = {
         "hm_win":          "🎉 Угадал(а)!",
         "hm_lose":         "😢 Проигрыш! Слово было",
         "hm_hint":         "💡 Подсказка",
-        "hm_letter_used":  "Эта буква уже была!",
+        "hm_letter_used":  "Эта буква уже была",
         "hm_not_in_word":  "Нет такой буквы!",
         # ── Магазин ──
         "shop_title":      "🛒 Магазин",
@@ -7520,7 +7520,7 @@ async def handle_interactive_event_choice(query, uid: int, event_id: str, choice
     # Дополнительная проверка — если last_interactive_event очень свежий (< 5 сек),
     # значит кнопку нажали дважды и первый запрос уже сохранился
     if now_iev - frog.get("last_interactive_event", 0) < 5.0:
-        await query.answer("Выбор уже засчитан!", show_alert=True)
+        await query.answer("Выбор уже засчитан", show_alert=True)
         return
 
     # Применяем награды и сохраняем — всегда, независимо от edit_text
@@ -8541,7 +8541,7 @@ async def _raid_scout_phase(bot, raid_id: int, att_staya: dict, target: dict,
                 f"среагируешь — добыча врага упадёт вдвое",
                 parse_mode=ParseMode.HTML,
                 reply_markup=InlineKeyboardMarkup([[
-                    btn("🛡️ Защищать котёл!", callback_data=f"raid_guard_{raid_id}", style="success"),
+                    btn("🛡️ Защищать котёл", callback_data=f"raid_guard_{raid_id}", style="success"),
                 ]]),
             )
         except Exception:
@@ -9084,7 +9084,7 @@ def reaction_wait_text(att_name: str, def_name: str, duel: dict, round_num: int)
 
 def reaction_fire_keyboard(duel_id: int) -> InlineKeyboardMarkup:
     return InlineKeyboardMarkup([[
-        InlineKeyboardButton("💥 ОГОНЬ!", callback_data=f"react_{duel_id}_fire"),
+        InlineKeyboardButton("💥 ОГОНЬ", callback_data=f"react_{duel_id}_fire"),
     ]])
 
 
@@ -10215,7 +10215,7 @@ async def _sk_duel_timeout(bot, sk_id: int, duel_id: int, deadline: float):
         for uid_d, col in ((duel["att_uid"], "att_choice"), (duel["def_uid"], "def_choice")):
             if not duel[col]:
                 try:
-                    await bot.send_message(uid_d, "⏳ <b>Время вышло!</b> Ход сделан автоматически.",
+                    await bot.send_message(uid_d, "⏳ <b>Время вышло.</b> Ход сделан автоматически.",
                                            parse_mode=ParseMode.HTML)
                 except Exception:
                     pass
@@ -10230,7 +10230,7 @@ async def _sk_duel_timeout(bot, sk_id: int, duel_id: int, deadline: float):
         for uid_d, col in ((duel["att_uid"], "att_choice"), (duel["def_uid"], "def_choice")):
             if not duel[col] or "?" in (duel[col] or ""):
                 try:
-                    await bot.send_message(uid_d, "⏳ <b>Время вышло!</b> Ход сделан автоматически.",
+                    await bot.send_message(uid_d, "⏳ <b>Время вышло.</b> Ход сделан автоматически.",
                                            parse_mode=ParseMode.HTML)
                 except Exception:
                     pass
@@ -10945,7 +10945,7 @@ def hs_grid_text(event: dict, players: list[dict], phase: str,
         m, s = divmod(hide_left, 60)
         hiders_total = len([p for p in players if p.get("uid") != event.get("seeker_uid")])
         return (
-            f"🙈 <b>ПРЯТКИ — выбирай клетку!</b>\n"
+            f"🙈 <b>Прятки</b> · выбор укрытия\n"
             f"\n"
             f"Нажми на 🌿 — спрячешься там. Ищущий не видит твой выбор.\n"
             f"\n"
@@ -11324,10 +11324,9 @@ async def _hs_recruiting_ticker(bot, event_id: int, chat_id: int, msg_id: int) -
             f"Кто доживёт до конца — победит!\n\n"
             + (f"🏆 Приз: <b>{he(prize_text)}</b>\n\n" if prize_text else "")
             + f"Участники ({len(players)}):\n{participants_block}\n\n"
-            f"👇 Нажми чтобы вступить"
         )
         join_kb = InlineKeyboardMarkup([[
-            btn("🙋 Участвовать!", callback_data=f"hs_join_{event_id}", style="primary"),
+            btn("🙋 Участвовать", callback_data=f"hs_join_{event_id}", style="primary"),
         ]])
         try:
             await bot.edit_message_text(
@@ -11895,10 +11894,9 @@ async def cmd_newsdigest(update: Update, ctx: ContextTypes.DEFAULT_TYPE) -> None
         f"Кто доживёт до конца — победит!\n\n"
         + (f"🏆 Приз: <b>{he(prize_text)}</b>\n\n" if prize_text else "")
         + f"Участники ({len(players)}):\n{participants_block}\n\n"
-        f"👇 Нажми чтобы вступить"
     )
     join_kb = InlineKeyboardMarkup([[
-        btn("🙋 Участвовать!", callback_data=f"hs_join_{event['id']}", style="primary"),
+        btn("🙋 Участвовать", callback_data=f"hs_join_{event['id']}", style="primary"),
     ]])
 
     try:
@@ -11938,7 +11936,7 @@ async def hs_callbacks(q, d: str, uid: int, ctx) -> bool:
         except ValueError:
             await q.answer(); return True
         if uid != setup_uid:
-            await q.answer("Не твоя панель!", show_alert=True); return True
+            await q.answer("Не твоя панель", show_alert=True); return True
         ctx.bot_data.get("hs_setup", {}).pop(uid, None)
         await q.answer("Отменено")
         try:
@@ -11953,7 +11951,7 @@ async def hs_callbacks(q, d: str, uid: int, ctx) -> bool:
         except ValueError:
             await q.answer(); return True
         if uid != setup_uid:
-            await q.answer("Не твоя панель!", show_alert=True); return True
+            await q.answer("Не твоя панель", show_alert=True); return True
         setup = ctx.bot_data.setdefault("hs_setup", {}).setdefault(uid, {})
         setup["broadcast"] = not setup.get("broadcast", True)
         await q.answer("✅ Изменено")
@@ -11972,7 +11970,7 @@ async def hs_callbacks(q, d: str, uid: int, ctx) -> bool:
         except ValueError:
             await q.answer(); return True
         if uid != setup_uid:
-            await q.answer("Не твоя панель!", show_alert=True); return True
+            await q.answer("Не твоя панель", show_alert=True); return True
         ctx.bot_data.setdefault("hs_pending_input", {})[uid] = {
             "type": "hs_prize", "ts": time.time()
         }
@@ -11985,7 +11983,7 @@ async def hs_callbacks(q, d: str, uid: int, ctx) -> bool:
         except ValueError:
             await q.answer(); return True
         if uid != setup_uid:
-            await q.answer("Не твоя панель!", show_alert=True); return True
+            await q.answer("Не твоя панель", show_alert=True); return True
         ctx.bot_data.setdefault("hs_pending_input", {})[uid] = {
             "type": "hs_limit", "ts": time.time()
         }
@@ -11998,7 +11996,7 @@ async def hs_callbacks(q, d: str, uid: int, ctx) -> bool:
         except ValueError:
             await q.answer(); return True
         if uid != setup_uid:
-            await q.answer("Не твоя панель!", show_alert=True); return True
+            await q.answer("Не твоя панель", show_alert=True); return True
         ctx.bot_data.setdefault("hs_pending_input", {})[uid] = {
             "type": "hs_chat", "ts": time.time()
         }
@@ -12011,7 +12009,7 @@ async def hs_callbacks(q, d: str, uid: int, ctx) -> bool:
         except ValueError:
             await q.answer(); return True
         if uid != setup_uid:
-            await q.answer("Не твоя панель!", show_alert=True); return True
+            await q.answer("Не твоя панель", show_alert=True); return True
 
         setup = ctx.bot_data.get("hs_setup", {}).get(uid, {})
         prize_text = setup.get("prize") or ""
@@ -12021,7 +12019,7 @@ async def hs_callbacks(q, d: str, uid: int, ctx) -> bool:
 
         active = await hs_get_active()
         if active:
-            await q.answer(f"Уже есть активный ивент #{active['id']}!", show_alert=True)
+            await q.answer(f"Уже есть активный ивент #{active['id']}", show_alert=True)
             return True
 
         now = time.time()
@@ -12042,10 +12040,9 @@ async def hs_callbacks(q, d: str, uid: int, ctx) -> bool:
             f"Ищущий вскрывает клетки одну за другой.\n"
             f"Кто доживёт до конца — победит!\n\n"
             + (f"🏆 Приз: <b>{he(prize_text)}</b>\n\n" if prize_text else "")
-            + f"Нажми кнопку чтобы участвовать 👇"
         )
         join_kb = InlineKeyboardMarkup([[
-            btn("🙋 Участвовать!", callback_data=f"hs_join_{event_id}", style="primary"),
+            btn("🙋 Участвовать", callback_data=f"hs_join_{event_id}", style="primary"),
         ]])
 
         sent = 0
@@ -12100,7 +12097,7 @@ async def hs_callbacks(q, d: str, uid: int, ctx) -> bool:
             await q.answer("Запускаю рассылку...")
             await asyncio.gather(*[_notify_hs(u) for u in all_uids])
         else:
-            await q.answer("✅ Запущено!")
+            await q.answer("✅ Запущено")
 
         # Также постим в чат если задан
         recruit_msg_id = 0
@@ -12149,7 +12146,7 @@ async def hs_callbacks(q, d: str, uid: int, ctx) -> bool:
 
         event = await hs_get(event_id)
         if not event or event["status"] != "recruiting":
-            await q.answer("Набор уже закрыт!", show_alert=True)
+            await q.answer("Набор уже закрыт", show_alert=True)
             return True
 
         already = False
@@ -12168,7 +12165,7 @@ async def hs_callbacks(q, d: str, uid: int, ctx) -> bool:
             await q.answer("Ты уже участвуешь! 🙋", show_alert=True)
             return True
 
-        await q.answer("✅ Ты в игре! Жди начала.", show_alert=True)
+        await q.answer("✅ Ты в игре. Жди начала.", show_alert=True)
 
         # Обновляем сообщение в чате — показываем список участников
         # Кнопку НЕ меняем — она остаётся "Участвовать" для всех
@@ -12190,10 +12187,9 @@ async def hs_callbacks(q, d: str, uid: int, ctx) -> bool:
             f"Кто доживёт до конца — победит!\n\n"
             + (f"🏆 Приз: <b>{he(prize_text)}</b>\n\n" if prize_text else "")
             + f"Участники ({len(players)}):\n{participants_block}\n\n"
-            f"👇 Нажми чтобы вступить"
         )
         join_kb = InlineKeyboardMarkup([[
-            btn("🙋 Участвовать!", callback_data=f"hs_join_{event_id}", style="primary"),
+            btn("🙋 Участвовать", callback_data=f"hs_join_{event_id}", style="primary"),
         ]])
 
         try:
@@ -12232,11 +12228,11 @@ async def hs_callbacks(q, d: str, uid: int, ctx) -> bool:
 
         event = await hs_get(event_id)
         if not event or event["status"] != "hiding":
-            await q.answer("Фаза пряток уже закончилась!", show_alert=True)
+            await q.answer("Фаза пряток уже закончилась", show_alert=True)
             return True
 
         if uid == event["seeker_uid"]:
-            await q.answer("Ты ищущий — тебе прятаться нельзя!", show_alert=True)
+            await q.answer("Ты ищущий — тебе прятаться нельзя", show_alert=True)
             return True
 
         # Проверяем что игрок участвует
@@ -12248,7 +12244,7 @@ async def hs_callbacks(q, d: str, uid: int, ctx) -> bool:
                 row = await c.fetchone()
 
         if not row:
-            await q.answer("Ты не участник этого ивента!", show_alert=True)
+            await q.answer("Ты не участник этого ивента", show_alert=True)
             return True
 
         old_cell = row[0]
@@ -12290,11 +12286,11 @@ async def hs_callbacks(q, d: str, uid: int, ctx) -> bool:
 
         event = await hs_get(event_id)
         if not event or event["status"] not in ("seeking", "final"):
-            await q.answer("Фаза вскрытия недоступна!", show_alert=True)
+            await q.answer("Фаза вскрытия недоступна", show_alert=True)
             return True
 
         if uid != event["seeker_uid"]:
-            await q.answer("Ты не ищущий!", show_alert=True)
+            await q.answer("Ты не ищущий", show_alert=True)
             return True
 
         await q.answer()
@@ -12480,7 +12476,7 @@ async def hs_callbacks(q, d: str, uid: int, ctx) -> bool:
 
         event = await hs_get(event_id)
         if not event or uid != event["seeker_uid"]:
-            await q.answer("Только ищущий может завершить раунд!", show_alert=True)
+            await q.answer("Только ищущий может завершить раунд", show_alert=True)
             return True
 
         await q.answer()
@@ -12499,7 +12495,7 @@ async def hs_callbacks(q, d: str, uid: int, ctx) -> bool:
 
         event = await hs_get(event_id)
         if not event or event["status"] not in ("seeking", "final"):
-            await q.answer("Сейчас нельзя перепрятаться!", show_alert=True)
+            await q.answer("Сейчас нельзя перепрятаться", show_alert=True)
             return True
 
         # Проверяем что игрок участвует и не выбыл
@@ -12512,17 +12508,17 @@ async def hs_callbacks(q, d: str, uid: int, ctx) -> bool:
             ) as c:
                 row = await c.fetchone()
         if not row:
-            await q.answer("Ты не участник!", show_alert=True); return True
+            await q.answer("Ты не участник", show_alert=True); return True
         if row["eliminated"]:
-            await q.answer("Ты уже выбыл!", show_alert=True); return True
+            await q.answer("Ты уже выбыл", show_alert=True); return True
         if row["escape_pending"]:
-            await q.answer("Сначала реши — бежать или нет!", show_alert=True); return True
+            await q.answer("Сначала реши — бежать или нет", show_alert=True); return True
         if row["relocate_left"] <= 0:
-            await q.answer("У тебя нет перемещений!", show_alert=True); return True
+            await q.answer("У тебя нет перемещений", show_alert=True); return True
 
         kb = await _hs_build_relocate_kb(event_id, event, exclude_uid=uid, mode="relocate")
         if not kb:
-            await q.answer("Нет свободных клеток!", show_alert=True); return True
+            await q.answer("Нет свободных клеток", show_alert=True); return True
 
         await q.answer()
         grid = event["grid_size"]
@@ -12560,7 +12556,7 @@ async def hs_callbacks(q, d: str, uid: int, ctx) -> bool:
 
         event = await hs_get(event_id)
         if not event or event["status"] not in ("seeking", "final"):
-            await q.answer("Уже поздно!", show_alert=True); return True
+            await q.answer("Уже поздно", show_alert=True); return True
 
         async with aiosqlite.connect(DB_PATH) as db:
             db.row_factory = aiosqlite.Row
@@ -12571,7 +12567,7 @@ async def hs_callbacks(q, d: str, uid: int, ctx) -> bool:
             ) as c:
                 row = await c.fetchone()
         if not row or row["eliminated"] or row["relocate_left"] <= 0:
-            await q.answer("Нельзя перепрятаться!", show_alert=True); return True
+            await q.answer("Нельзя перепрятаться", show_alert=True); return True
 
         # Проверяем что клетка ещё свободна (быстрая защита от двойного нажатия)
         raw_empty_r = event.get("revealed_empty") or "[]"
@@ -12593,7 +12589,7 @@ async def hs_callbacks(q, d: str, uid: int, ctx) -> bool:
             pend_r = set()
 
         if new_cell in known_empty_r or new_cell in pend_r or occupied_r:
-            await q.answer("Эта клетка уже занята или открыта!", show_alert=True)
+            await q.answer("Эта клетка уже занята или открыта", show_alert=True)
             return True
 
         async with aiosqlite.connect(DB_PATH) as db:
@@ -12641,9 +12637,9 @@ async def hs_callbacks(q, d: str, uid: int, ctx) -> bool:
                 esc_row = await c.fetchone()
 
         if not esc_row or not esc_row["escape_pending"]:
-            await q.answer("Побег уже завершён!", show_alert=True); return True
+            await q.answer("Побег уже завершён", show_alert=True); return True
         if time.time() > esc_row["escape_deadline"]:
-            await q.answer("Время вышло!", show_alert=True); return True
+            await q.answer("Время вышло", show_alert=True); return True
 
         # Проверяем что клетка ещё свободна
         raw_empty_e = event.get("revealed_empty") or "[]"
@@ -12660,7 +12656,7 @@ async def hs_callbacks(q, d: str, uid: int, ctx) -> bool:
                 occ_e = await c.fetchone()
 
         if to_cell in known_empty_e or occ_e:
-            await q.answer("Эта клетка уже занята или открыта! Выбери другую.", show_alert=True)
+            await q.answer("Эта клетка уже занята или открыта. Выбери другую.", show_alert=True)
             return True
 
         await q.answer("⏳ Пытаешься убежать...", show_alert=True)
@@ -13281,7 +13277,7 @@ async def _hs_final_timeout(bot, event_id: int, round_n: int) -> None:
             try:
                 await bot.send_message(
                     p["uid"],
-                    "⏰ Время вышло! Тебя спрятали случайно.",
+                    "⏰ Время вышло. Тебя спрятали случайно.",
                     parse_mode=ParseMode.HTML,
                 )
             except Exception:
@@ -16269,7 +16265,6 @@ async def update_giveaway_message(gid: int, ctx):
         f"Победителей: {winners}\n"
         f"Участников: <b>{len(participants)}</b>"
         f"{kva_note}\n\n"
-        f"<i>Нажми кнопку, чтобы участвовать!</i>"
     )
     kb = InlineKeyboardMarkup([
         [btn(
@@ -19411,7 +19406,7 @@ async def cmd_activate(update: Update, ctx: ContextTypes.DEFAULT_TYPE):
                 f"<tg-emoji emoji-id='5341367834935075028'>🐸</tg-emoji> Frog Tamagotchi активирован! Напиши /frog чтобы начать.",
                 parse_mode=ParseMode.HTML,
                 reply_markup=InlineKeyboardMarkup([[
-                    InlineKeyboardButton("🐸 Начать!", url=bot_link),
+                    InlineKeyboardButton("🐸 Начать", url=bot_link),
                 ]]) if bot_link else None,
             )
         except Exception:
@@ -19433,7 +19428,7 @@ async def cmd_activate(update: Update, ctx: ContextTypes.DEFAULT_TYPE):
                 f"<i>Твои прогресс, монеты и достижения сохраняются даже если выйдешь из чата!</i>",
                 parse_mode=ParseMode.HTML,
                 reply_markup=InlineKeyboardMarkup([[
-                    InlineKeyboardButton("🐸 Начать игру!", url=bot_link),
+                    InlineKeyboardButton("🐸 Начать игру", url=bot_link),
                 ]]) if bot_link else None,
             )
         except Exception:
@@ -19891,7 +19886,7 @@ async def cmd_chatadmin(update: Update, ctx: ContextTypes.DEFAULT_TYPE):
         rows.append(nav)
     rows.append([btn("❌ Закрыть", callback_data="ca_close", style="danger")])
     await msg.reply_text(
-        f"🏘 <b>Выбери чат для управления</b>\n\nВсего чатов: <b>{total}</b> · Страница {page+1}/{max(1,(total+_CA_PAGE_SIZE-1)//_CA_PAGE_SIZE)}\n"
+        f"🏘 <b>Чаты</b>\n\nВсего чатов: <b>{total}</b> · Страница {page+1}/{max(1,(total+_CA_PAGE_SIZE-1)//_CA_PAGE_SIZE)}\n"
         f"<i>✅ — доверенный чат (допущен к NFT-розыгрышам)</i>",
         parse_mode=ParseMode.HTML,
         reply_markup=InlineKeyboardMarkup(rows),
@@ -19939,7 +19934,7 @@ async def _handle_chatadmin_callback(q, uid: int, ctx):
         rows.append([btn("❌ Закрыть", callback_data="ca_close", style="danger")])
         try:
             await q.message.edit_text(
-                f"🏘 <b>Выбери чат для управления</b>\n\nВсего чатов: <b>{total}</b> · Страница {page+1}/{max(1,(total+_CA_PAGE_SIZE-1)//_CA_PAGE_SIZE)}\n"
+                f"🏘 <b>Чаты</b>\n\nВсего чатов: <b>{total}</b> · Страница {page+1}/{max(1,(total+_CA_PAGE_SIZE-1)//_CA_PAGE_SIZE)}\n"
                 f"<i>✅ — доверенный чат (допущен к NFT-розыгрышам)</i>",
                 parse_mode=ParseMode.HTML,
                 reply_markup=InlineKeyboardMarkup(rows),
@@ -19972,7 +19967,7 @@ async def _handle_chatadmin_callback(q, uid: int, ctx):
             )
             await db.commit()
         status = "✅ Доверие выдано" if new_trust else "❌ Доверие снято"
-        await q.answer((f"{status}!")[:200], show_alert=True)
+        await q.answer((f"{status}")[:200], show_alert=True)
         # Обновить главный экран чата
         s = await get_chat_settings(cid)
         s["chat_id"] = cid
@@ -19996,7 +19991,7 @@ async def _handle_chatadmin_callback(q, uid: int, ctx):
         try:
             cid = int(d[len("ca_select_"):])
         except ValueError:
-            await q.answer("Ошибка!", show_alert=True); return
+            await q.answer("Ошибка", show_alert=True); return
         if not await _chatadmin_check_access(uid, cid, ctx.bot):
             await q.answer("⛔ Нет доступа к этому чату.", show_alert=True); return
         s = await get_chat_settings(cid)
@@ -20032,13 +20027,13 @@ async def _handle_chatadmin_callback(q, uid: int, ctx):
     )
     prefix = next((p for p in _CA_PREFIXES if d.startswith(p)), None)
     if not prefix:
-        await q.answer("Неизвестное действие!", show_alert=True); return
+        await q.answer("Неизвестное действие", show_alert=True); return
 
     rest = d[len(prefix):]
     try:
         cid = int(rest.split("_")[-1]) if "_" in rest else int(rest)
     except (ValueError, IndexError):
-        await q.answer("Ошибка данных!", show_alert=True); return
+        await q.answer("Ошибка данных", show_alert=True); return
 
     if not await _chatadmin_check_access(uid, cid, ctx.bot):
         await q.answer("⛔ Нет прав для этого чата.", show_alert=True); return
@@ -20420,9 +20415,9 @@ async def _handle_chatadmin_callback(q, uid: int, ctx):
     if d == f"ca_giveaway_now_{cid}":
         fund = s.get("local_fund", 0)
         if fund < 10:
-            await q.answer("Фонд пуст (< 10🪙)!", show_alert=True); return
+            await q.answer("Фонд пуст (< 10🪙)", show_alert=True); return
         asyncio.create_task(_run_chat_auto_giveaway(cid, fund, ctx))
-        await q.answer((f"🎉 Розыгрыш {fund:,}🪙 запущен!")[:200], show_alert=True)
+        await q.answer((f"🎉 Розыгрыш {fund:,}🪙 запущен")[:200], show_alert=True)
         return
 
     # ── 🛡 Модерация ──────────────────────────────────────────────────────────
@@ -21426,7 +21421,7 @@ async def show_antibot_panel(message, ctx, edit: bool = False):
 
 async def handle_antibot_callback(q, d, uid, ctx):
     if uid not in ADMIN_IDS:
-        await q.answer("Нет доступа!", show_alert=True); return
+        await q.answer("Нет доступа", show_alert=True); return
 
     if d == "aab_refresh":
         await show_antibot_panel(q.message, ctx, edit=True); return
@@ -21460,7 +21455,7 @@ async def handle_antibot_callback(q, d, uid, ctx):
             ) as c:
                 total = (await c.fetchone())[0]
         if not rows:
-            await q.answer("Нет подозрительных рефералов!", show_alert=True); return
+            await q.answer("Нет подозрительных рефералов", show_alert=True); return
         lines = [f"⏳ <b>Подозрительные рефералы</b> (стр {page+1}, всего {total})\n"]
         for ref_er, ref_ed, reason, det_at in rows:
             dt = datetime.fromtimestamp(det_at).strftime("%d.%m %H:%M")
@@ -21492,7 +21487,7 @@ async def handle_antibot_callback(q, d, uid, ctx):
         parts = d.split("_")
         ref_er, ref_ed = int(parts[2]), int(parts[3])
         await _unfreeze_ref_reward(ref_er, ref_ed, ctx.bot)
-        await q.answer(f"✅ Одобрено! Награда выдана рефереру {ref_er}.")
+        await q.answer(f"✅ Одобрено. Награда выдана рефереру {ref_er}.")
         await show_antibot_panel(q.message, ctx, edit=True)
         return
 
@@ -21523,7 +21518,7 @@ async def handle_antibot_callback(q, d, uid, ctx):
             ) as c:
                 rows = await c.fetchall()
         if not rows:
-            await q.answer("Нет pending рефералов!", show_alert=True)
+            await q.answer("Нет pending рефералов", show_alert=True)
             return
         ok_count = 0
         for ref_er, ref_ed in rows:
@@ -21532,7 +21527,7 @@ async def handle_antibot_callback(q, d, uid, ctx):
                 ok_count += 1
             except Exception as _e:
                 logger.warning("aab_approve_all %s→%s: %s", ref_er, ref_ed, _e)
-        await q.answer((f"✅ Одобрено {ok_count} рефералов!")[:200], show_alert=True)
+        await q.answer((f"✅ Одобрено {ok_count} рефералов")[:200], show_alert=True)
         await show_antibot_panel(q.message, ctx, edit=True)
         return
 
@@ -21550,7 +21545,7 @@ async def handle_antibot_callback(q, d, uid, ctx):
                 total = (await c.fetchone())[0]
 
         if not rows and page == 0:
-            await q.answer("Нет забаненых игроков!", show_alert=True)
+            await q.answer("Нет забаненых игроков", show_alert=True)
             return
 
         lines = [f"🚫 <b>Забаненые игроки</b> (стр {page+1}, всего {total})\n"]
@@ -21588,12 +21583,12 @@ async def handle_antibot_callback(q, d, uid, ctx):
         target_id = int(d[10:])
         f_unban = await db_get(target_id)
         if not f_unban:
-            await q.answer("Игрок не найден!", show_alert=True)
+            await q.answer("Игрок не найден", show_alert=True)
             return
         f_unban["banned"] = 0
         await db_save(f_unban)
         name = fname(f_unban)
-        await q.answer((f"🔓 {name} разбанен!")[:200], show_alert=True)
+        await q.answer((f"🔓 {name} разбанен")[:200], show_alert=True)
         # Обновляем текущую страницу
         page_str = "0"
         try:
@@ -21656,7 +21651,7 @@ async def handle_antibot_callback(q, d, uid, ctx):
             ) as c:
                 total = (await c.fetchone())[0]
         if not rows and page == 0:
-            await q.answer("Нет отклонённых рефералов!", show_alert=True)
+            await q.answer("Нет отклонённых рефералов", show_alert=True)
             return
         lines = [f"🚫 <b>Отклонённые рефералы</b> (стр {page+1}, всего {total})\n"]
         buttons = []
@@ -21684,7 +21679,7 @@ async def handle_antibot_callback(q, d, uid, ctx):
         ref_er, ref_ed = int(parts[2]), int(parts[3])
         # Переводим из rejected → pending и выдаём награду
         await _unfreeze_ref_reward(ref_er, ref_ed, ctx.bot)
-        await q.answer((f"↩️ Восстановлено! Награда выдана рефереру {ref_er}.")[:200], show_alert=True)
+        await q.answer((f"↩️ Восстановлено. Награда выдана рефереру {ref_er}.")[:200], show_alert=True)
         await show_antibot_panel(q.message, ctx, edit=True)
         return
 
@@ -21816,7 +21811,7 @@ async def handle_antibot_callback(q, d, uid, ctx):
             rf["coins"] = 0
             await db_save(rf)
         await set_user_risk(ref_er, 3, "Мошенник — накрутка рефералов")
-        await q.answer((f"🚫 Мошенник забанен, {len(bot_ids)} ботов помечено!")[:200], show_alert=True)
+        await q.answer((f"🚫 Мошенник забанен, {len(bot_ids)} ботов помечено")[:200], show_alert=True)
         kb = InlineKeyboardMarkup([
             [btn("🔨 Теперь откатить монеты и скины", callback_data=f"aab_rollbackonly_{ref_er}", style="danger")],
             [btn("◀️ Готово", callback_data="aab_refresh", style="primary")],
@@ -21903,7 +21898,7 @@ async def cmd_adminaddtrust(update: Update, ctx: ContextTypes.DEFAULT_TYPE):
     try:
         target_id = int(args[1])
     except ValueError:
-        await update.message.reply_text("ID должен быть числом!"); return
+        await update.message.reply_text("ID должен быть числом"); return
     note = args[2] if len(args) > 2 else ""
     async with aiosqlite.connect(DB_PATH) as db:
         await db.execute(
@@ -21929,7 +21924,7 @@ async def cmd_adminremovetrust(update: Update, ctx: ContextTypes.DEFAULT_TYPE):
     try:
         target_id = int(args[1])
     except ValueError:
-        await update.message.reply_text("ID должен быть числом!"); return
+        await update.message.reply_text("ID должен быть числом"); return
     async with aiosqlite.connect(DB_PATH) as db:
         await db.execute("DELETE FROM trusted_referrers WHERE user_id=?", (target_id,))
         await db.commit()
@@ -21945,7 +21940,7 @@ async def cmd_adminfraud(update: Update, ctx: ContextTypes.DEFAULT_TYPE):
     try:
         ref_id = int(args[1])
     except ValueError:
-        await update.message.reply_text("ID должен быть числом!"); return
+        await update.message.reply_text("ID должен быть числом"); return
     async with aiosqlite.connect(DB_PATH) as db:
         async with db.execute(
             "SELECT referred_id, reason, detected_at, verdict FROM ref_fraud_suspects WHERE referrer_id=? ORDER BY detected_at DESC LIMIT 50",
@@ -21974,7 +21969,7 @@ async def cmd_adminapprove(update: Update, ctx: ContextTypes.DEFAULT_TYPE):
     args = update.message.text.split()
     if len(args) < 2: await update.message.reply_text("Использование: /adminapprove 123456789"); return
     try: ref_id = int(args[1])
-    except ValueError: await update.message.reply_text("ID числом!"); return
+    except ValueError: await update.message.reply_text("ID числом"); return
     async with aiosqlite.connect(DB_PATH) as db:
         async with db.execute(
             "SELECT referred_id FROM ref_fraud_suspects WHERE referrer_id=? AND verdict='pending'", (ref_id,)
@@ -21993,7 +21988,7 @@ async def cmd_adminreject(update: Update, ctx: ContextTypes.DEFAULT_TYPE):
     args = update.message.text.split()
     if len(args) < 2: await update.message.reply_text("Использование: /adminreject 123456789"); return
     try: ref_id = int(args[1])
-    except ValueError: await update.message.reply_text("ID числом!"); return
+    except ValueError: await update.message.reply_text("ID числом"); return
     async with aiosqlite.connect(DB_PATH) as db:
         async with db.execute(
             "SELECT referred_id FROM ref_fraud_suspects WHERE referrer_id=? AND verdict='pending'", (ref_id,)
@@ -22312,7 +22307,7 @@ async def cmd_adminlogs(update: Update, ctx: ContextTypes.DEFAULT_TYPE):
                 lines = f.readlines()
             error_lines = [l for l in lines if " | ERROR    |" in l or " | CRITICAL |" in l]
             if not error_lines:
-                await msg.reply_text("✅ Ошибок в логах не найдено!")
+                await msg.reply_text("✅ Ошибок в логах не найдено")
                 return
             content = "".join(error_lines[-500:])  # не более 500 строк ошибок
             out_name = "bot_errors.txt"
@@ -22810,7 +22805,7 @@ async def _send_bot_contacts_page(bot, admin_id: int, bot_uid: int, bot_name: st
 async def handle_bot_contacts_callback(q, d: str, uid: int, ctx) -> None:
     """Обработчик кнопок bcp_ (bot contacts page)"""
     if uid not in ADMIN_IDS:
-        await q.answer("Нет доступа!", show_alert=True)
+        await q.answer("Нет доступа", show_alert=True)
         return
 
     parts = d.split("_")
@@ -22888,7 +22883,7 @@ async def handle_bot_contacts_callback(q, d: str, uid: int, ctx) -> None:
         await set_user_risk(contact_uid, 2, f"Забанен как контакт бота {bot_uid}")
         cf = await db_get(contact_uid)
         nm = (cf.get("first_name") or str(contact_uid)) if cf else str(contact_uid)
-        await q.answer((f"🚫 {nm} забанен!")[:200], show_alert=True)
+        await q.answer((f"🚫 {nm} забанен")[:200], show_alert=True)
         # Обновляем страницу
         contacts = ctx.bot_data.get(cache_key, [])
         bf = await db_get(bot_uid)
@@ -22906,7 +22901,7 @@ async def handle_bot_contacts_callback(q, d: str, uid: int, ctx) -> None:
             f2["banned"] = 0
             await db_save(f2)
         await set_user_risk(contact_uid, 0, "Разбанен администратором")
-        await q.answer("🔓 Разбанен!", show_alert=True)
+        await q.answer("🔓 Разбанен", show_alert=True)
         contacts = ctx.bot_data.get(cache_key, [])
         bf = await db_get(bot_uid)
         bname = (bf.get("first_name") or str(bot_uid)) if bf else str(bot_uid)
@@ -22925,7 +22920,7 @@ async def handle_bot_contacts_callback(q, d: str, uid: int, ctx) -> None:
         await set_user_risk(contact_uid, 3, f"Помечен ботом (контакт {bot_uid})")
         cf = await db_get(contact_uid)
         nm = (cf.get("first_name") or str(contact_uid)) if cf else str(contact_uid)
-        await q.answer((f"🤖 {nm} помечен ботом!")[:200], show_alert=True)
+        await q.answer((f"🤖 {nm} помечен ботом")[:200], show_alert=True)
         contacts = ctx.bot_data.get(cache_key, [])
         bf = await db_get(bot_uid)
         bname = (bf.get("first_name") or str(bot_uid)) if bf else str(bot_uid)
@@ -22995,7 +22990,7 @@ async def handle_bot_contacts_callback(q, d: str, uid: int, ctx) -> None:
 async def handle_risk_callback(q, d: str, uid: int, ctx) -> None:
     """Обработчик кнопок из /adminrisk: risk_bump_, risk_reset_, risk_markbot_, risk_chain_"""
     if uid not in ADMIN_IDS:
-        await q.answer("Нет доступа!", show_alert=True)
+        await q.answer("Нет доступа", show_alert=True)
         return
 
     # risk_bump_{target_uid} — поднять риск на 1
@@ -23030,7 +23025,7 @@ async def handle_risk_callback(q, d: str, uid: int, ctx) -> None:
             await db.commit()
         _user_cache.invalidate(target)
         await set_user_risk(target, 3, f"Помечен ботом администратором {uid}")
-        await q.answer("🤖 Помечен ботом! Генерирую отчёт по контактам...")
+        await q.answer("🤖 Помечен ботом. Генерирую отчёт по контактам...")
 
         # Собираем всех кто контактировал с этим ботом
         hours = 168
@@ -23243,7 +23238,7 @@ async def cmd_admingiftchain(update: Update, ctx: ContextTypes.DEFAULT_TYPE):
     try:
         bot_uid = int(args[1])
     except ValueError:
-        await update.message.reply_text("ID должен быть числом!"); return
+        await update.message.reply_text("ID должен быть числом"); return
     hours = 72
     if len(args) > 2:
         try: hours = max(1, min(8760, int(args[2])))
@@ -23496,7 +23491,7 @@ async def cmd_adminrollbackdry(update: Update, ctx: ContextTypes.DEFAULT_TYPE):
     if len(args) < 2:
         await update.message.reply_text("Использование: /adminrollbackdry 123456789 [часов]"); return
     try: bot_uid = int(args[1])
-    except ValueError: await update.message.reply_text("ID числом!"); return
+    except ValueError: await update.message.reply_text("ID числом"); return
     hours = int(args[2]) if len(args) > 2 else 72
     msg = await update.message.reply_text("🔍 Анализирую (без изменений)...")
     report = await _do_rollback(bot_uid, hours, dry_run=True, bot=ctx.bot)
@@ -23510,7 +23505,7 @@ async def cmd_adminrollback(update: Update, ctx: ContextTypes.DEFAULT_TYPE):
     if len(args) < 2:
         await update.message.reply_text("Использование: /adminrollback 123456789 [часов]\n⚠️ Действие необратимо!"); return
     try: bot_uid = int(args[1])
-    except ValueError: await update.message.reply_text("ID числом!"); return
+    except ValueError: await update.message.reply_text("ID числом"); return
     hours = int(args[2]) if len(args) > 2 else 72
 
     # Требуем подтверждение через кнопку
@@ -23534,7 +23529,7 @@ async def cmd_adminrollback(update: Update, ctx: ContextTypes.DEFAULT_TYPE):
         f"Период: {hours} ч\n"
         f"Жертв: ~{victim_count}  Монет в раздаче: {total_coins}{_E_COIN}\n\n"
         f"Это удалит скины из гачи и заберёт монеты у всех получателей.\n"
-        f"<b>Необратимо.</b> Сначала сделай /backup!",
+        f"<b>Необратимо.</b> Сначала сделай /backup",
         parse_mode=ParseMode.HTML, reply_markup=kb,
     )
 
@@ -23818,7 +23813,7 @@ async def cmd_adminundo(update: Update, ctx: ContextTypes.DEFAULT_TYPE):
 
 
 async def handle_rollback_callback(q, d, uid, ctx):
-    if uid not in ADMIN_IDS: await q.answer("Нет доступа!", show_alert=True); return
+    if uid not in ADMIN_IDS: await q.answer("Нет доступа", show_alert=True); return
 
     if d == "rollback_cancel":
         try: await q.message.edit_text("❌ Откат отменён.")
@@ -24125,7 +24120,7 @@ async def cmd_start(update: Update, ctx: ContextTypes.DEFAULT_TYPE):
                         f"🗺️ <b>{bc['emoji']} {bc['name']}</b>\n"
                         f"Вступаешь в экспедицию!\n"
                         "\n"
-                        f"<i>Выбери снаряжение. Максимум {EXP_MAX_SUPPLY_TOTAL} припасов.</i>\n"
+                        f"<i>Максимум {EXP_MAX_SUPPLY_TOTAL} припасов.</i>\n"
                     ]
                     for k, info in SUPPLY_TYPES.items():
                         if "emoji" not in info:
@@ -24180,7 +24175,7 @@ async def cmd_start(update: Update, ctx: ContextTypes.DEFAULT_TYPE):
                         await update.message.reply_text("😔 Команда уже заполнена — места не осталось.", parse_mode=ParseMode.HTML)
                         return
                     if any(_mm["user_id"] == user.id for _mm in _mid_members):
-                        await update.message.reply_text("Ты уже в этой экспедиции!", parse_mode=ParseMode.HTML)
+                        await update.message.reply_text("Ты уже в этой экспедиции", parse_mode=ParseMode.HTML)
                         return
                     _mid_bc = EXP_BIOMES[_mid_exp["biome"]]
                     if f.get("level", 1) < _mid_bc["min_level"]:
@@ -24202,7 +24197,7 @@ async def cmd_start(update: Update, ctx: ContextTypes.DEFAULT_TYPE):
                         f"{_mid_bc['emoji']} <b>{_mid_bc['name']}</b>\n"
                         f"👥 Участники: {_active_count}/{_mid_exp['max_players']}\n"
                         f"⏱ До конца: <b>{left_h}ч {left_m}м</b>\n\n"
-                        f"<i>Выбери снаряжение перед тем как присоединиться. Максимум {EXP_MAX_SUPPLY_TOTAL} припасов.</i>\n"
+                        f"<i>Максимум {EXP_MAX_SUPPLY_TOTAL} припасов.</i>\n"
                     ]
                     for k, info in SUPPLY_TYPES.items():
                         if "emoji" not in info:
@@ -24356,7 +24351,7 @@ async def cmd_topsponsors(update: Update, ctx: ContextTypes.DEFAULT_TYPE):
     user = update.effective_user
     f = await db_get(user.id)
     if not f:
-        await update.message.reply_text("Сначала напиши /start!")
+        await update.message.reply_text("Сначала напиши /start")
         return
 
     # Определяем чат для фильтрации (в группе — текущий, в ЛС — source_chat_id игрока)
@@ -24504,7 +24499,7 @@ async def cmd_forbes(update: Update, ctx: ContextTypes.DEFAULT_TYPE):
     user = update.effective_user
     f = await db_get(user.id)
     if not f:
-        await update.message.reply_text("Сначала напиши /start!")
+        await update.message.reply_text("Сначала напиши /start")
         return
     text, kb = await _build_forbes_text(user.id)
     msg = await update.message.reply_text(text, parse_mode=ParseMode.HTML, reply_markup=kb)
@@ -24785,7 +24780,7 @@ async def cmd_gift(update: Update, ctx: ContextTypes.DEFAULT_TYPE):
             async with db.execute("SELECT * FROM frogs WHERE user_id=?", (reply.from_user.id,)) as c:
                 row = await c.fetchone()
         if not row:
-            await update.message.reply_text(f"😕 {he(reply.from_user.first_name)} ещё не завёл лягушку!")
+            await update.message.reply_text(f"😕 {he(reply.from_user.first_name)} ещё не завёл лягушку")
             return
         target = dict(row)
         amount_arg = ctx.args[0] if ctx.args else None
@@ -24824,7 +24819,7 @@ async def cmd_gift(update: Update, ctx: ContextTypes.DEFAULT_TYPE):
         await update.message.reply_text(f"💸 У тебя {f['coins']}{coin_emoji()}!", parse_mode=ParseMode.HTML)
         return
     if target["user_id"] == user.id:
-        await update.message.reply_text("❌ Нельзя подарить себе!")
+        await update.message.reply_text("❌ Нельзя подарить себе")
         return
 
     # ── Проверка риска отправителя ────────────────────────────────────────────
@@ -25418,7 +25413,7 @@ async def cmd_battle(update: Update, ctx: ContextTypes.DEFAULT_TYPE):
     if now - f.get("last_battle", 0) < cd:
         left = int(cd - (now - f.get("last_battle", 0)))
         await update.message.reply_text(
-            f"⏳ Подожди ещё {left} сек перед следующим батлом!"
+            f"⏳ Подожди ещё {left} сек перед следующим батлом"
         )
         return
 
@@ -25432,7 +25427,7 @@ async def cmd_battle(update: Update, ctx: ContextTypes.DEFAULT_TYPE):
     target = dict(row)
 
     if target["user_id"] == user.id:
-        await update.message.reply_text("❌ Нельзя биться с самим собой!")
+        await update.message.reply_text("❌ Нельзя биться с самим собой")
         return
     if not target["alive"]:
         await update.message.reply_text(f"💀 Лягушка @{mention} мертва!")
@@ -25504,7 +25499,7 @@ async def cmd_battle(update: Update, ctx: ContextTypes.DEFAULT_TYPE):
     try:
         await ctx.bot.send_message(
             target["user_id"],
-            challenge_text + f"\n\n<i>Прими вызов в чате или нажми кнопку:</i>",
+            challenge_text + f"",
             parse_mode=ParseMode.HTML,
             reply_markup=kb,
         )
@@ -25582,7 +25577,7 @@ async def cmd_duel(update: Update, ctx: ContextTypes.DEFAULT_TYPE):
                 row = await c.fetchone()
         if not row:
             tname = he(target_user_obj.first_name)
-            await update.message.reply_text(f"😕 {tname} ещё не завёл лягушку!")
+            await update.message.reply_text(f"😕 {tname} ещё не завёл лягушку")
             return
         target = dict(row)
     elif ctx.args and ctx.args[0].startswith("@"):
@@ -25624,7 +25619,7 @@ async def cmd_duel(update: Update, ctx: ContextTypes.DEFAULT_TYPE):
 
         use_st = bool(f.get("use_static", 0))
         kb = InlineKeyboardMarkup([[
-            btn("⚔️ Принять вызов!", callback_data=f"duel_open_{duel_id}", style="success"),
+            btn("⚔️ Принять вызов", callback_data=f"duel_open_{duel_id}", style="success"),
         ]])
         await update.message.reply_text(
             f"⚔️ <b>{he(user.first_name)}</b> бросает открытый вызов всем!\n\n"
@@ -25650,7 +25645,7 @@ async def cmd_duel(update: Update, ctx: ContextTypes.DEFAULT_TYPE):
 
     # ── Общие проверки ────────────────────────────────────────────────────
     if target["user_id"] == user.id:
-        await update.message.reply_text("❌ Нельзя вызвать себя!")
+        await update.message.reply_text("❌ Нельзя вызвать себя")
         return
     if not target["alive"]:
         t_display = f"@{target['username']}" if target.get("username") else he(target.get("first_name", ""))
@@ -25755,20 +25750,20 @@ async def cmd_feed(update: Update, ctx: ContextTypes.DEFAULT_TYPE):
     if reply and reply.from_user and not reply.from_user.is_bot:
         # Режим ответа: /feed в ответ на сообщение
         if reply.from_user.id == user.id:
-            await update.message.reply_text("❌ Нельзя кормить свою лягушку этой командой!")
+            await update.message.reply_text("❌ Нельзя кормить свою лягушку этой командой")
             return
         async with aiosqlite.connect(DB_PATH) as db:
             db.row_factory = aiosqlite.Row
             async with db.execute("SELECT * FROM frogs WHERE user_id=?", (reply.from_user.id,)) as c:
                 row = await c.fetchone()
         if not row:
-            await update.message.reply_text(f"😕 {he(reply.from_user.first_name)} ещё не завёл лягушку!")
+            await update.message.reply_text(f"😕 {he(reply.from_user.first_name)} ещё не завёл лягушку")
             return
         target = dict(row)
     elif ctx.args and ctx.args[0].startswith("@"):
         mention = ctx.args[0].lstrip("@")
         if mention.lower() == (user.username or "").lower():
-            await update.message.reply_text("❌ Нельзя кормить свою лягушку этой командой!")
+            await update.message.reply_text("❌ Нельзя кормить свою лягушку этой командой")
             return
         async with aiosqlite.connect(DB_PATH) as db:
             db.row_factory = aiosqlite.Row
@@ -25833,7 +25828,7 @@ async def cmd_feed(update: Update, ctx: ContextTypes.DEFAULT_TYPE):
         return
     # ── Антибот-проверка ─────────────────────────────────────────────────────
     if not await antibot_check(user.id, "feed", ctx.bot):
-        await update.message.reply_text("🔐 Сначала пройди проверку в личных сообщениях бота!")
+        await update.message.reply_text("🔐 Сначала пройди проверку в личных сообщениях бота")
         return
     # ── КД 30 мин: кормящий не кормил никого за 30 мин ─────────────────────
     cd = 30 * 60
@@ -27008,7 +27003,7 @@ async def cmd_adminsubscription(update: Update, ctx: ContextTypes.DEFAULT_TYPE):
         async with db.execute("SELECT * FROM frogs WHERE username=?", (mention,)) as c:
             row = await c.fetchone()
     if not row:
-        await update.message.reply_text(f"❌ @{mention} не найден!")
+        await update.message.reply_text(f"❌ @{mention} не найден")
         return
     target = dict(row)
     tid = target["user_id"]
@@ -27719,13 +27714,13 @@ async def cmd_givecoin(update: Update, ctx: ContextTypes.DEFAULT_TYPE):
         async with db.execute("SELECT user_id FROM frogs WHERE username=?", (mention,)) as c:
             row = await c.fetchone()
     if not row:
-        await update.message.reply_text(f"❌ @{mention} не найден!")
+        await update.message.reply_text(f"❌ @{mention} не найден")
         return
     target_uid = row[0]
     # Читаем полные данные через db_get — уважаем кеш, избегаем затирания
     target = await db_get(target_uid)
     if not target:
-        await update.message.reply_text(f"❌ @{mention} не найден!")
+        await update.message.reply_text(f"❌ @{mention} не найден")
         return
     target["coins"] = max(0, target["coins"] + amount)
     await db_save(target)
@@ -27773,12 +27768,12 @@ async def cmd_givexp(update: Update, ctx: ContextTypes.DEFAULT_TYPE):
         async with db.execute("SELECT user_id FROM frogs WHERE username=?", (mention,)) as c:
             row = await c.fetchone()
     if not row:
-        await update.message.reply_text(f"❌ @{mention} не найден!")
+        await update.message.reply_text(f"❌ @{mention} не найден")
         return
     target_uid = row[0]
     tf = await db_get(target_uid)
     if not tf:
-        await update.message.reply_text(f"❌ @{mention} не найден!")
+        await update.message.reply_text(f"❌ @{mention} не найден")
         return
 
     old_xp  = tf.get("xp", 0)
@@ -27992,7 +27987,7 @@ async def cmd_giveskin(update: Update, ctx: ContextTypes.DEFAULT_TYPE):
         similar = [s for s in SKINS if skin_name.lower() in s.lower()][:5]
         hint = "\n".join(similar) if similar else "Нет похожих"
         await update.message.reply_text(
-            f"❌ Облик '{skin_name}' не найден!\nПохожие:\n{hint}"
+            f"❌ Облик '{skin_name}' не найден\nПохожие:\n{hint}"
         )
         return
     async with aiosqlite.connect(DB_PATH) as db:
@@ -28000,7 +27995,7 @@ async def cmd_giveskin(update: Update, ctx: ContextTypes.DEFAULT_TYPE):
         async with db.execute("SELECT * FROM frogs WHERE username=?", (mention,)) as c:
             row = await c.fetchone()
     if not row:
-        await update.message.reply_text(f"❌ @{mention} не найден!")
+        await update.message.reply_text(f"❌ @{mention} не найден")
         return
     target = dict(row)
     await db_add_skin(target["user_id"], skin_name)
@@ -28036,7 +28031,7 @@ async def cmd_removeskin(update: Update, ctx: ContextTypes.DEFAULT_TYPE):
         async with db.execute("SELECT * FROM frogs WHERE username=?", (mention,)) as c:
             row = await c.fetchone()
     if not row:
-        await update.message.reply_text(f"❌ @{mention} не найден!")
+        await update.message.reply_text(f"❌ @{mention} не найден")
         return
     target = dict(row)
     # Проверяем коллекцию из таблицы collections (не устаревшее поле skins)
@@ -28469,7 +28464,7 @@ async def cmd_bowl_go(update: Update, ctx: ContextTypes.DEFAULT_TYPE):
         await update.message.reply_text("Игра не найдена или уже завершена.")
         return
     if user.id != gdata_b["creator"]:
-        await update.message.reply_text("Только создатель может запустить бросок!")
+        await update.message.reply_text("Только создатель может запустить бросок")
         return
     if len(gdata_b["players"]) < 2:
         await update.message.reply_text("Нужно минимум 2 игрока!")
@@ -28510,7 +28505,7 @@ async def cmd_ref_approve(update: Update, ctx: ContextTypes.DEFAULT_TYPE):
         ) as c:
             row = await c.fetchone()
         if not row:
-            await update.message.reply_text("Ожидающей заявки не найдено!")
+            await update.message.reply_text("Ожидающей заявки не найдено")
             return
         req_id, amount = row
         await db.execute(
@@ -28554,7 +28549,7 @@ async def cmd_ref_decline(update: Update, ctx: ContextTypes.DEFAULT_TYPE):
         ) as c:
             row = await c.fetchone()
         if not row:
-            await update.message.reply_text("Ожидающей заявки не найдено!")
+            await update.message.reply_text("Ожидающей заявки не найдено")
             return
         req_id, amount = row
         await db.execute(
@@ -28597,7 +28592,7 @@ async def cmd_chatban(update: Update, ctx: ContextTypes.DEFAULT_TYPE):
         async with db.execute("SELECT * FROM frogs WHERE username=?", (mention,)) as c:
             row = await c.fetchone()
     if not row:
-        await msg.reply_text(f"❌ @{mention} не найден в базе игроков!")
+        await msg.reply_text(f"❌ @{mention} не найден в базе игроков")
         return
     target = dict(row)
     uid_target = target["user_id"]
@@ -28650,7 +28645,7 @@ async def cmd_chatunban(update: Update, ctx: ContextTypes.DEFAULT_TYPE):
         async with db.execute("SELECT * FROM frogs WHERE username=?", (mention,)) as c:
             row = await c.fetchone()
     if not row:
-        await msg.reply_text(f"❌ @{mention} не найден в базе игроков!")
+        await msg.reply_text(f"❌ @{mention} не найден в базе игроков")
         return
     target    = dict(row)
     uid_target = target["user_id"]
@@ -28753,7 +28748,7 @@ async def cmd_chatmute(update: Update, ctx: ContextTypes.DEFAULT_TYPE):
                 async with db.execute("SELECT * FROM frogs WHERE username=?", (mention,)) as c:
                     row = await c.fetchone()
         if not row:
-            await msg.reply_text(f"❌ @{mention} не найден в базе игроков!")
+            await msg.reply_text(f"❌ @{mention} не найден в базе игроков")
             return
         target = dict(row)
         uid_target = target["user_id"]
@@ -28810,7 +28805,7 @@ async def cmd_chatunmute(update: Update, ctx: ContextTypes.DEFAULT_TYPE):
         async with db.execute("SELECT * FROM frogs WHERE username=?", (mention,)) as c:
             row = await c.fetchone()
     if not row:
-        await msg.reply_text(f"❌ @{mention} не найден в базе игроков!")
+        await msg.reply_text(f"❌ @{mention} не найден в базе игроков")
         return
     target = dict(row)
     uid_target = target["user_id"]
@@ -28862,7 +28857,7 @@ async def cmd_chatwarn(update: Update, ctx: ContextTypes.DEFAULT_TYPE):
                 async with db.execute("SELECT user_id, first_name FROM frogs WHERE username=?", (mention,)) as c:
                     row = await c.fetchone()
         if not row:
-            await msg.reply_text(f"❌ @{mention} не найден в базе игроков!")
+            await msg.reply_text(f"❌ @{mention} не найден в базе игроков")
             return
         target_user = type("U", (), {"id": row["user_id"], "first_name": row["first_name"], "mention_html": lambda s=None: f"<b>{he(row['first_name'])}</b>"})()
     else:
@@ -28962,7 +28957,7 @@ async def cmd_chatwarnlist(update: Update, ctx: ContextTypes.DEFAULT_TYPE):
             async with db.execute("SELECT user_id, first_name FROM frogs WHERE username=?", (mention,)) as c:
                 row = await c.fetchone()
         if not row:
-            await msg.reply_text(f"❌ @{mention} не найден!")
+            await msg.reply_text(f"❌ @{mention} не найден")
             return
         uid_target = row["user_id"]
         tname = he(row["first_name"])
@@ -29011,7 +29006,7 @@ async def cmd_chatwarnreset(update: Update, ctx: ContextTypes.DEFAULT_TYPE):
             async with db.execute("SELECT user_id, first_name FROM frogs WHERE username=?", (mention,)) as c:
                 row = await c.fetchone()
         if not row:
-            await msg.reply_text(f"❌ @{mention} не найден!")
+            await msg.reply_text(f"❌ @{mention} не найден")
             return
         uid_target = row["user_id"]
         tname = he(row["first_name"])
@@ -29191,7 +29186,7 @@ async def cmd_ban(update: Update, ctx: ContextTypes.DEFAULT_TYPE):
         async with db.execute("SELECT * FROM frogs WHERE username=?", (mention,)) as c:
             row = await c.fetchone()
     if not row:
-        await update.message.reply_text(f"❌ @{mention} не найден!")
+        await update.message.reply_text(f"❌ @{mention} не найден")
         return
     target = dict(row)
     async with aiosqlite.connect(DB_PATH) as db:
@@ -29229,7 +29224,7 @@ async def cmd_unban(update: Update, ctx: ContextTypes.DEFAULT_TYPE):
         async with db.execute("SELECT * FROM frogs WHERE username=?", (mention,)) as c:
             row = await c.fetchone()
     if not row:
-        await update.message.reply_text(f"❌ @{mention} не найден!")
+        await update.message.reply_text(f"❌ @{mention} не найден")
         return
     target = dict(row)
     async with aiosqlite.connect(DB_PATH) as db:
@@ -32153,7 +32148,7 @@ async def on_callback(update: Update, ctx: ContextTypes.DEFAULT_TYPE):
     if not f:
         if d and d.startswith("exp_"):
             logger.debug("[exp] db_get вернул None для uid=%s — нет лягушки", uid)
-        await q.answer("Сначала напиши /start!", show_alert=True)
+        await q.answer("Сначала напиши /start", show_alert=True)
         return
     f = decay(f)
 
@@ -32423,7 +32418,7 @@ async def on_callback(update: Update, ctx: ContextTypes.DEFAULT_TYPE):
     if not f["alive"] and not f.get("trial_active", 0):
         # Разрешаем только кнопки воскрешения/испытания
         if d not in ("revive_confirm", "revive_stars", "trial_start", "refresh", "return_revive"):
-            await q.answer("💀 Лягушка мертва! Используй /revive или начни испытание.", show_alert=True)
+            await q.answer("💀 Лягушка мертва. Используй /revive или начни испытание.", show_alert=True)
             return
     if not f["alive"] and f.get("trial_active", 0):
         TRIAL_ALLOWED = (
@@ -32517,7 +32512,7 @@ async def on_callback(update: Update, ctx: ContextTypes.DEFAULT_TYPE):
             f["subscription_type"] = 1
         f["subscription_auto"] = 1
         await db_save(f)
-        await q.answer("🌿 Лягушка воскресла!", show_alert=True)
+        await q.answer("🌿 Лягушка воскресла", show_alert=True)
         # Уведомление в админ-чат
         if ADMIN_CHAT_ID:
             try:
@@ -32590,7 +32585,7 @@ async def on_callback(update: Update, ctx: ContextTypes.DEFAULT_TYPE):
         #     reason="Тётя Жаба слышала о беде — один день бесплатного ухода пока Квакуся восстанавливается 🧑‍🍼"
         # ))
         revive_note = "🤢 Желудок промыт, счётчик обжорства сброшен!" if is_overfeed else ""
-        await q.answer("✨ Воскрешена!", show_alert=True)
+        await q.answer("✨ Воскрешена", show_alert=True)
         try:
             await q.message.edit_text(
                 f"✨ <b>Воскрешена!</b>  <b>-{cost}{coin_emoji()}</b>\n"
@@ -32610,7 +32605,7 @@ async def on_callback(update: Update, ctx: ContextTypes.DEFAULT_TYPE):
             return
         if f.get("trial_active", 0):
             # Показать текущий статус
-            await q.answer("Испытание уже активно!", show_alert=False)
+            await q.answer("Испытание уже активно", show_alert=False)
             try:
                 await q.message.edit_text(
                     status_text(f),
@@ -32678,13 +32673,13 @@ async def on_callback(update: Update, ctx: ContextTypes.DEFAULT_TYPE):
             )
         except Exception:
             pass
-        await q.answer("✅ Испытание обновлено!", show_alert=False)
+        await q.answer("✅ Испытание обновлено", show_alert=False)
         return
 
     # ── СТАТУС ИСПЫТАНИЯ ────────────────────────────
     if d == "trial_cancel":
         if uid not in ADMIN_IDS:
-            await q.answer("Только администратор!", show_alert=True); return
+            await q.answer("Только администратор", show_alert=True); return
         await q.answer()
         # Отменяем испытание игрока — target uid из callback data
         # /trial_cancel через admin_lookup — просто сбрасываем trial
@@ -32698,7 +32693,7 @@ async def on_callback(update: Update, ctx: ContextTypes.DEFAULT_TYPE):
             tf_tc["hunger"] = 50
             tf_tc["happiness"] = 50
             await db_save(tf_tc)
-            await q.answer("✅ Испытание отменено, лягушка воскрешена!", show_alert=True)
+            await q.answer("✅ Испытание отменено, лягушка воскрешена", show_alert=True)
         return
 
     if d == "trial_status":
@@ -32769,7 +32764,7 @@ async def on_callback(update: Update, ctx: ContextTypes.DEFAULT_TYPE):
         f["overfeed_total"] = f.get("overfeed_total", 0) + food["hunger"]
         if check_overfeed(f):
             await db_save(f)
-            await q.answer("🤢 Лягушка лопнула от обжорства!", show_alert=True)
+            await q.answer("🤢 Лягушка лопнула от обжорства", show_alert=True)
             try:
                 await q.message.edit_text(
                     f"🤢 <b>{fname(f)}</b> съела слишком много и лопнула!\n\n"
@@ -32827,11 +32822,11 @@ async def on_callback(update: Update, ctx: ContextTypes.DEFAULT_TYPE):
             return
         food = FOOD.get(fid)
         if not food:
-            await q.answer("Неизвестная еда!", show_alert=True)
+            await q.answer("Неизвестная еда", show_alert=True)
             return
         ok = await inv_use(uid, fid)
         if not ok:
-            await q.answer("Нет в инвентаре!", show_alert=True)
+            await q.answer("Нет в инвентаре", show_alert=True)
             return
         await send_action_sticker(ctx.bot, q.message.chat.id, "feed")
         await send_feed_sticker(ctx.bot, q.message.chat.id)
@@ -32847,7 +32842,7 @@ async def on_callback(update: Update, ctx: ContextTypes.DEFAULT_TYPE):
         f["total_feeds"] += 1
         if check_overfeed(f):
             await db_save(f)
-            await q.answer("🤢 Лягушка лопнула от обжорства!", show_alert=True)
+            await q.answer("🤢 Лягушка лопнула от обжорства", show_alert=True)
             try:
                 await q.message.edit_text(
                     f"🤢 <b>{fname(f)}</b> объелась и лопнула!\n\n"
@@ -32890,7 +32885,7 @@ async def on_callback(update: Update, ctx: ContextTypes.DEFAULT_TYPE):
         inv = await inv_get(uid)
         food_items = {fid: qty for fid, qty in inv.items() if fid in FOOD and qty > 0}
         if not food_items:
-            await q.answer("В инвентаре нет еды!", show_alert=True)
+            await q.answer("В инвентаре нет еды", show_alert=True)
             return
         total_hunger = 0
         total_happy = 0
@@ -32917,12 +32912,12 @@ async def on_callback(update: Update, ctx: ContextTypes.DEFAULT_TYPE):
                 total_fed += 1
                 add_power(f, 0.2)  # кормление
         if total_fed == 0:
-            await q.answer("Нечего скормить!", show_alert=True)
+            await q.answer("Нечего скормить", show_alert=True)
             return
         # Проверяем смерть от переедания после скармливания всего
         if check_overfeed(f):
             await db_save(f)
-            await q.answer("🤢 Лягушка объелась и лопнула!", show_alert=True)
+            await q.answer("🤢 Лягушка объелась и лопнула", show_alert=True)
             try:
                 await q.message.edit_text(
                     f"🤢 <b>{fname(f)}</b> съела всё подряд и лопнула от обжорства!\n\n"
@@ -33065,7 +33060,7 @@ async def on_callback(update: Update, ctx: ContextTypes.DEFAULT_TYPE):
         cd = 2 * 3600
         if now - f.get("last_wash", 0) < cd:
             await q.answer(
-                f"🛁 Ещё чистая! Подожди {int((cd-(now-f['last_wash']))/60)} мин.",
+                f"🛁 Ещё чистая. Подожди {int((cd-(now-f['last_wash']))/60)} мин.",
                 show_alert=True,
             )
             return
@@ -33111,7 +33106,7 @@ async def on_callback(update: Update, ctx: ContextTypes.DEFAULT_TYPE):
         cd = 3 * 3600
         if now - f.get("last_sleep", 0) < cd:
             await q.answer(
-                f"😴 Не хочет спать! Подожди {int((cd-(now-f['last_sleep']))/60)} мин.",
+                f"😴 Не хочет спать. Подожди {int((cd-(now-f['last_sleep']))/60)} мин.",
                 show_alert=True,
             )
             return
@@ -33180,7 +33175,7 @@ async def on_callback(update: Update, ctx: ContextTypes.DEFAULT_TYPE):
         # Атомарно списываем монеты
         new_bal = await db_coins_delta(uid, -cost)
         if new_bal is None:
-            await q.answer((f"Нужно {cost} 🪙! Недостаточно монет.")[:200], show_alert=True)
+            await q.answer((f"Нужно {cost} 🪙. Недостаточно монет.")[:200], show_alert=True)
             return
         f["coins"] = new_bal
         await send_action_sticker(ctx.bot, q.message.chat.id, "heal")
@@ -33224,7 +33219,7 @@ async def on_callback(update: Update, ctx: ContextTypes.DEFAULT_TYPE):
         if f["last_daily"] >= today_start:
             nxt = today_start + 86400
             h, m = int((nxt - now) / 3600), int(((nxt - now) % 3600) / 60)
-            await q.answer((f"Уже получен! Через {h}ч {m}мин")[:200], show_alert=True)
+            await q.answer((f"Уже получен. Через {h}ч {m}мин")[:200], show_alert=True)
             return
         yesterday = today_start - 86400
         prev_streak = f["streak"]
@@ -33402,7 +33397,7 @@ async def on_callback(update: Update, ctx: ContextTypes.DEFAULT_TYPE):
     if d == "gacha_confirm":
         cost = 50
         if f["coins"] < cost:
-            await q.answer((f"Нужно {cost} 🪙! Зарабатывай через /daily и квесты.")[:200], show_alert=True)
+            await q.answer((f"Нужно {cost} 🪙. Зарабатывай через /daily и квесты.")[:200], show_alert=True)
             return
         try:
             await q.message.edit_text("🎰 <b>Крутим гачу...</b>\n\n✨  ·  ✨  ·  ✨", parse_mode=ParseMode.HTML)
@@ -33490,7 +33485,7 @@ async def on_callback(update: Update, ctx: ContextTypes.DEFAULT_TYPE):
         cost_per = 50
         total_cost = cost_per * count
         if f["coins"] < total_cost:
-            await q.answer((f"Нужно {total_cost} 🪙! Недостаточно монет.")[:200], show_alert=True)
+            await q.answer((f"Нужно {total_cost} 🪙. Недостаточно монет.")[:200], show_alert=True)
             return
         try:
             dots = "✨ · " * count
@@ -33586,7 +33581,7 @@ async def on_callback(update: Update, ctx: ContextTypes.DEFAULT_TYPE):
         count = max(1, min(count, f["coins"] // cost_per))
         total_cost = cost_per * count
         if f["coins"] < total_cost:
-            await q.answer("Недостаточно монет!", show_alert=True); return
+            await q.answer("Недостаточно монет", show_alert=True); return
 
         try:
             await q.message.edit_text(
@@ -33679,13 +33674,13 @@ async def on_callback(update: Update, ctx: ContextTypes.DEFAULT_TYPE):
                                       link_preview_options=LinkPreviewOptions(is_disabled=True))
         except Exception:
             pass
-        await q.answer(f"🌀 {count:,} круток — готово!")
+        await q.answer(f"🌀 {count:,} круток — готово")
         return
 
     if d == "gacha_use_ticket":
         ticket_count = inv.get("gacha_ticket", 0)
         if ticket_count <= 0:
-            await q.answer("У тебя нет гача-билетов! Купи в магазине Stars.", show_alert=True)
+            await q.answer("У тебя нет гача-билетов. Купи в магазине Stars.", show_alert=True)
             return
         try:
             await q.message.edit_text("🎰 <b>Используем билет...</b>\n\n<tg-emoji emoji-id='5341688243790323773'>🎟</tg-emoji> ·  ✨  ·  <tg-emoji emoji-id='5341688243790323773'>🎟</tg-emoji>", parse_mode=ParseMode.HTML)
@@ -33782,7 +33777,7 @@ async def on_callback(update: Update, ctx: ContextTypes.DEFAULT_TYPE):
                 ) as c:
                     nft_row = await c.fetchone()
             if not nft_row:
-                await q.answer("У тебя нет этого облика!", show_alert=True)
+                await q.answer("У тебя нет этого облика", show_alert=True)
                 return
         # Ищем NFT URL для этого скина у этого пользователя
         nft_url_for_skin = ""
@@ -33805,7 +33800,7 @@ async def on_callback(update: Update, ctx: ContextTypes.DEFAULT_TYPE):
         f["equipped_nft_url"] = nft_url_for_skin
         await db_save(f)
         nft_tag = " 🪸 NFT" if nft_url_for_skin else ""
-        await q.answer(f"✅ Надет {skin}{nft_tag}!")
+        await q.answer(f"✅ Надет {skin}{nft_tag}")
         await show_status(q, f, edit=True)
         return
 
@@ -34287,7 +34282,7 @@ async def on_callback(update: Update, ctx: ContextTypes.DEFAULT_TYPE):
         listings_v = await market_get_listings(limit=100)
         lot_v = next((l for l in listings_v if l["id"] == lid), None)
         if not lot_v:
-            await q.answer("Лот уже куплен или снят!", show_alert=True)
+            await q.answer("Лот уже куплен или снят", show_alert=True)
             return
         s_v = SKINS.get(lot_v["skin"], {})
         seller_f_v = await db_get(lot_v["seller_id"])
@@ -34322,11 +34317,11 @@ async def on_callback(update: Update, ctx: ContextTypes.DEFAULT_TYPE):
         lid = int(d[len("market_confirm_"):])
         lot_c = await market_buy(lid, uid)
         if not lot_c:
-            await q.answer("😔 Облик уже купили — опередили!", show_alert=True)
+            await q.answer("😔 Облик уже купили — опередили", show_alert=True)
             return
         price_c = lot_c["price"]
         if f["coins"] < price_c:
-            await q.answer((f"❌ Не хватает монет! Нужно {price_c}🪙, у тебя {f['coins']}🪙")[:200], show_alert=True)
+            await q.answer((f"❌ Не хватает монет. Нужно {price_c}🪙, у тебя {f['coins']}🪙")[:200], show_alert=True)
             # Откатываем — возвращаем статус active
             async with aiosqlite.connect(DB_PATH) as _rdb:
                 await _rdb.execute("UPDATE market_listings SET status='active' WHERE id=?", (lid,))
@@ -34392,7 +34387,7 @@ async def on_callback(update: Update, ctx: ContextTypes.DEFAULT_TYPE):
         sellable = [(skin, qty) for skin, qty in coll_m.items()
                     if qty > 1 or (qty == 1 and skin != equipped)]
         if not sellable:
-            await q.answer("Нет обликов для продажи. Нужен хотя бы один дубль!", show_alert=True)
+            await q.answer("Нет обликов для продажи. Нужен хотя бы один дубль", show_alert=True)
             return
         # Сортируем по редкости (редкие выше)
         rarity_order = {"mythic": 0, "legendary": 1, "epic": 2, "rare": 3, "uncommon": 4, "common": 5, "secret": 0}
@@ -34554,11 +34549,11 @@ async def on_callback(update: Update, ctx: ContextTypes.DEFAULT_TYPE):
             await q.answer("Облик не найден.", show_alert=True)
             return
         if sdata["ends_at"] < time.time():
-            await q.answer("⏰ Сезон закончился — этот облик больше недоступен!", show_alert=True)
+            await q.answer("⏰ Сезон закончился — этот облик больше недоступен", show_alert=True)
             return
         owned_s = await db_coll(uid)
         if sname_raw in owned_s:
-            await q.answer("У тебя уже есть этот облик!", show_alert=True)
+            await q.answer("У тебя уже есть этот облик", show_alert=True)
             return
         try:
             await ctx.bot.send_invoice(
@@ -34783,7 +34778,7 @@ async def on_callback(update: Update, ctx: ContextTypes.DEFAULT_TYPE):
         qty_bulk = int(parts_bulk[1]) if len(parts_bulk) > 1 else 10
         food_bulk = FOOD.get(fid_bulk)
         if not food_bulk:
-            await q.answer("Неизвестный товар!", show_alert=True)
+            await q.answer("Неизвестный товар", show_alert=True)
             return
         total_cost = food_bulk["price"] * qty_bulk
         if f["coins"] < total_cost:
@@ -34824,14 +34819,14 @@ async def on_callback(update: Update, ctx: ContextTypes.DEFAULT_TYPE):
         qty_conf = int(parts_conf[1]) if len(parts_conf) > 1 else 10
         food_conf = FOOD.get(fid_conf)
         if not food_conf:
-            await q.answer("Неизвестный товар!", show_alert=True)
+            await q.answer("Неизвестный товар", show_alert=True)
             return
         # Жадная -10% к стоимости еды
         _pers_gr2 = PERSONALITIES.get(f.get("personality", ""), {})
         _price_disc2 = _pers_gr2.get("feed_cost_discount", 1.0)
         total_conf = max(qty_conf, int(food_conf["price"] * qty_conf * _price_disc2))
         if f["coins"] < total_conf:
-            await q.answer((f"Нужно {total_conf}{coin_plain()}!")[:200], show_alert=True)
+            await q.answer((f"Нужно {total_conf}{coin_plain()}")[:200], show_alert=True)
             return
         f["coins"] -= total_conf
         f["coins_spent"] = f.get("coins_spent", 0) + total_conf
@@ -34882,13 +34877,13 @@ async def on_callback(update: Update, ctx: ContextTypes.DEFAULT_TYPE):
         fid = d[9:]
         food = FOOD.get(fid)
         if not food:
-            await q.answer("Неизвестный товар!", show_alert=True)
+            await q.answer("Неизвестный товар", show_alert=True)
             return
         # Жадная -10% к стоимости еды
         _pers_gr = PERSONALITIES.get(f.get("personality", ""), {})
         _food_price = max(1, int(food["price"] * _pers_gr.get("feed_cost_discount", 1.0)))
         if f["coins"] < _food_price:
-            await q.answer((f"Нужно {_food_price}{coin_plain()}!")[:200], show_alert=True)
+            await q.answer((f"Нужно {_food_price}{coin_plain()}")[:200], show_alert=True)
             return
         f["coins"] -= _food_price
         f["coins_spent"] = f.get("coins_spent", 0) + _food_price
@@ -34990,19 +34985,19 @@ async def on_callback(update: Update, ctx: ContextTypes.DEFAULT_TYPE):
     if d.startswith("buy_skin_"):
         skin = d[9:]
         if skin not in SKINS:
-            await q.answer("Неизвестный облик!", show_alert=True)
+            await q.answer("Неизвестный облик", show_alert=True)
             return
         s = SKINS[skin]
         if s["rarity"] not in ("common", "uncommon"):
-            await q.answer("Этот облик можно только выбить в гаче!", show_alert=True)
+            await q.answer("Этот облик можно только выбить в гаче", show_alert=True)
             return
         coll = await db_coll(uid)
         if skin in coll:
-            await q.answer("Уже есть в коллекции!", show_alert=True)
+            await q.answer("Уже есть в коллекции", show_alert=True)
             return
         price = SHOP_SKIN_PRICES[s["rarity"]]
         if f["coins"] < price:
-            await q.answer((f"Нужно {price}{coin_plain()}!")[:200], show_alert=True)
+            await q.answer((f"Нужно {price}{coin_plain()}")[:200], show_alert=True)
             return
         f["coins"] -= price
         f["coins_spent"] = f.get("coins_spent", 0) + price
@@ -35091,7 +35086,7 @@ async def on_callback(update: Update, ctx: ContextTypes.DEFAULT_TYPE):
     if d == "craft_all":
         CRAFT_ALL_COST = 1000
         if f.get("coins", 0) < CRAFT_ALL_COST:
-            await q.answer((f"Нужно {CRAFT_ALL_COST}🪙 для «Скрафтить всё»!")[:200], show_alert=True)
+            await q.answer((f"Нужно {CRAFT_ALL_COST}🪙 для «Скрафтить всё»")[:200], show_alert=True)
             return
 
         # ── Загружаем коллекцию один раз ──────────────────────────────────
@@ -35167,7 +35162,7 @@ async def on_callback(update: Update, ctx: ContextTypes.DEFAULT_TYPE):
                 break  # перезапускаем цикл чтобы учесть новые материалы
 
         if not crafted_results:
-            await q.answer("Нет доступных рецептов!", show_alert=True)
+            await q.answer("Нет доступных рецептов", show_alert=True)
             return
 
         # ── Один батч в БД для всех изменений ─────────────────────────────
@@ -35217,7 +35212,7 @@ async def on_callback(update: Update, ctx: ContextTypes.DEFAULT_TYPE):
     if d.startswith("craft_") and d != "craft_assemble_mythic":
         rar = d[6:]
         if rar not in CRAFT_RECIPES:
-            await q.answer("Неизвестный рецепт!", show_alert=True)
+            await q.answer("Неизвестный рецепт", show_alert=True)
             return
         recipe = CRAFT_RECIPES[rar]
         coll_qty = await db_coll_qty(uid)
@@ -35228,11 +35223,11 @@ async def on_callback(update: Update, ctx: ContextTypes.DEFAULT_TYPE):
         ]
         total_available = sum(qty for _, qty in owned_by_rarity)
         if total_available < recipe["needs"]:
-            await q.answer((f"Нужно {recipe['needs']} обликов {R_NAME[rar]}!")[:200], show_alert=True)
+            await q.answer((f"Нужно {recipe['needs']} обликов {R_NAME[rar]}")[:200], show_alert=True)
             return
         extra = recipe.get("price_coins", 0)
         if extra and f["coins"] < extra:
-            await q.answer((f"Нужно {extra}{coin_plain()}!")[:200], show_alert=True)
+            await q.answer((f"Нужно {extra}{coin_plain()}")[:200], show_alert=True)
             return
 
         # Списываем материалы
@@ -35289,7 +35284,7 @@ async def on_callback(update: Update, ctx: ContextTypes.DEFAULT_TYPE):
             ])
             if shard_now >= MYTHIC_SHARDS_NEEDED:
                 kb = InlineKeyboardMarkup([
-                    [InlineKeyboardButton("🔮 Собрать Мифический!", callback_data="craft_assemble_mythic")],
+                    [InlineKeyboardButton("🔮 Собрать Мифический", callback_data="craft_assemble_mythic")],
                     [InlineKeyboardButton("🔨 Крафтить ещё", callback_data="craft_menu")],
                 ])
             try:
@@ -35493,20 +35488,20 @@ async def on_callback(update: Update, ctx: ContextTypes.DEFAULT_TYPE):
             ) as c:
                 row = await c.fetchone()
         if not row:
-            await q.answer("Квест не найден!", show_alert=True)
+            await q.answer("Квест не найден", show_alert=True)
             return
         row = dict(row)
         prog = json.loads(row["progress"] or "{}")
         claimed = json.loads(row["claimed"] or "[]")
         if qid in claimed:
-            await q.answer("Уже получено!", show_alert=True)
+            await q.answer("Уже получено", show_alert=True)
             return
         qd = next((q2 for q2 in QUEST_POOL if q2["id"] == qid), None)
         if not qd:
-            await q.answer("Квест не найден!", show_alert=True)
+            await q.answer("Квест не найден", show_alert=True)
             return
         if prog.get(qid, 0) < qd["goal"]:
-            await q.answer("Квест ещё не выполнен!", show_alert=True)
+            await q.answer("Квест ещё не выполнен", show_alert=True)
             return
         claimed.append(qid)
         async with aiosqlite.connect(DB_PATH) as db:
@@ -35784,10 +35779,10 @@ async def on_callback(update: Update, ctx: ContextTypes.DEFAULT_TYPE):
         try:
             gift_idx = int(idx_str)
         except ValueError:
-            await q.answer("Ошибка!", show_alert=True)
+            await q.answer("Ошибка", show_alert=True)
             return
         if gift_idx < 0 or gift_idx >= len(SECRET_GIFTS):
-            await q.answer("Подарок не найден!", show_alert=True)
+            await q.answer("Подарок не найден", show_alert=True)
             return
         gift = SECRET_GIFTS[gift_idx]
         await q.answer("📩 Создаём счёт...", show_alert=False)
@@ -35808,16 +35803,16 @@ async def on_callback(update: Update, ctx: ContextTypes.DEFAULT_TYPE):
     # Бесплатная выдача для админа — sgift_<index>_free
     if d.startswith("sgift_") and d.endswith("_free"):
         if uid not in ADMIN_IDS:
-            await q.answer("Нет доступа!", show_alert=True)
+            await q.answer("Нет доступа", show_alert=True)
             return
         idx_str = d[6:-5]  # убираем "sgift_" и "_free"
         try:
             gift_idx = int(idx_str)
         except ValueError:
-            await q.answer("Ошибка!", show_alert=True)
+            await q.answer("Ошибка", show_alert=True)
             return
         if gift_idx < 0 or gift_idx >= len(SECRET_GIFTS):
-            await q.answer("Подарок не найден!", show_alert=True)
+            await q.answer("Подарок не найден", show_alert=True)
             return
         gift = SECRET_GIFTS[gift_idx]
         await q.answer("⏳ Отправляем подарок...", show_alert=False)
@@ -35838,7 +35833,7 @@ async def on_callback(update: Update, ctx: ContextTypes.DEFAULT_TYPE):
         else:
             try:
                 await q.message.edit_text(
-                    f"❌ <b>Ошибка отправки подарка!</b>\n\n"
+                    f"❌ <b>Ошибка отправки подарка</b>\n\n"
                     f"<code>{_html.escape(str(err))}</code>\n\n"
                     f"<i>Возможно, неверный gift_id или у бота нет Stars.</i>",
                     parse_mode=ParseMode.HTML,
@@ -35852,7 +35847,7 @@ async def on_callback(update: Update, ctx: ContextTypes.DEFAULT_TYPE):
 
     if d == "sgift_admin_reopen":
         if uid not in ADMIN_IDS:
-            await q.answer("Нет доступа!", show_alert=True)
+            await q.answer("Нет доступа", show_alert=True)
             return
         await q.answer()
         lines = "\n".join(
@@ -35864,7 +35859,7 @@ async def on_callback(update: Update, ctx: ContextTypes.DEFAULT_TYPE):
                 "🔓 <b>Админ-магазин подарков</b>\n\n"
                 "Выдача <b>удалённых подарков Telegram</b> без оплаты.\n\n"
                 f"{lines}\n\n"
-                "👇 <i>Выбери подарок для отправки себе:</i>",
+                "",
                 parse_mode=ParseMode.HTML,
                 reply_markup=_secretgift_keyboard(admin_free=True),
             )
@@ -35913,16 +35908,16 @@ async def on_callback(update: Update, ctx: ContextTypes.DEFAULT_TYPE):
     if d.startswith("buy_pkg_"):
         pkg_idx = int(d[8:])
         if pkg_idx >= len(STAR_PACKAGES):
-            await q.answer("Ошибка!", show_alert=True)
+            await q.answer("Ошибка", show_alert=True)
             return
         pkg = STAR_PACKAGES[pkg_idx]
         if pkg.get("newbie") and f.get("stars_spent", 0) > 0:
-            await q.answer("❌ Пакет «Новичок» доступен только при первой покупке!", show_alert=True)
+            await q.answer("❌ Пакет «Новичок» доступен только при первой покупке", show_alert=True)
             return
         if pkg.get("daily_deal"):
             today_s_q2 = today_str()
             if await db_setting(f"deal_{uid}") == today_s_q2:
-                await q.answer("❌ Ежедневное предложение уже использовано сегодня!", show_alert=True)
+                await q.answer("❌ Ежедневное предложение уже использовано сегодня", show_alert=True)
                 return
         price_stars = pkg["stars"]
         farm_min = pkg.get("farm_min", 0)
@@ -36033,7 +36028,7 @@ async def on_callback(update: Update, ctx: ContextTypes.DEFAULT_TYPE):
     if d.startswith("casino_pick_"):
         gtype = d[12:]
         if gtype not in CASINO:
-            await q.answer("Неизвестная игра!", show_alert=True)
+            await q.answer("Неизвестная игра", show_alert=True)
             return
         g = CASINO[gtype]
         if gtype == "double":
@@ -36144,11 +36139,11 @@ async def on_callback(update: Update, ctx: ContextTypes.DEFAULT_TYPE):
             await q.answer("⏳ Подожди секунду перед следующей игрой.", show_alert=True)
             return
         if f["coins"] < stake:
-            await q.answer((f"Нужно {stake}{coin_plain()}!")[:200], show_alert=True)
+            await q.answer((f"Нужно {stake}{coin_plain()}")[:200], show_alert=True)
             return
         # Проверяем, нет ли уже активного ожидания
         if f"casino_wait_{uid}" in ctx.user_data:
-            await q.answer("У тебя уже есть незавершённая игра — брось кубик!", show_alert=True)
+            await q.answer("У тебя уже есть незавершённая игра — брось кубик", show_alert=True)
             return
         f["coins"] -= stake
         f["coins_spent"] = f.get("coins_spent", 0) + stake
@@ -36182,7 +36177,7 @@ async def on_callback(update: Update, ctx: ContextTypes.DEFAULT_TYPE):
     if d.startswith("casino_self_cancel_"):
         target_uid = int(d.split("_")[-1])
         if target_uid != uid:
-            await q.answer("Это не твоя игра!", show_alert=True)
+            await q.answer("Это не твоя игра", show_alert=True)
             return
         cw = ctx.user_data.pop(f"casino_wait_{uid}", None)
         if not cw:
@@ -36226,7 +36221,7 @@ async def on_callback(update: Update, ctx: ContextTypes.DEFAULT_TYPE):
                 f"Ты ставишь монеты и сам выбираешь сумму выигрыша.\n"
                 f"Бот рассчитает твой шанс и запустит испытание!\n\n"
                 f"💼 Твой баланс: <b>{f['coins']}{coin_emoji()}</b>\n\n"
-                f"Выбери ставку:",
+                f"",
                 parse_mode=ParseMode.HTML,
                 reply_markup=InlineKeyboardMarkup(stake_rows),
             )
@@ -36238,10 +36233,10 @@ async def on_callback(update: Update, ctx: ContextTypes.DEFAULT_TYPE):
         try:
             wish_stake = int(d[len("casino_wish_bet_"):])
         except ValueError:
-            await q.answer("Ошибка!", show_alert=True)
+            await q.answer("Ошибка", show_alert=True)
             return
         if f["coins"] < wish_stake:
-            await q.answer((f"❌ Не хватает монет! У тебя {f['coins']}🪙")[:200], show_alert=True)
+            await q.answer((f"❌ Не хватает монет. У тебя {f['coins']}🪙")[:200], show_alert=True)
             return
         # Запоминаем ставку и просим ввести желаемую сумму текстом
         ctx.user_data[f"casino_wish_input_{uid}"] = {
@@ -36269,20 +36264,20 @@ async def on_callback(update: Update, ctx: ContextTypes.DEFAULT_TYPE):
     if d.startswith("casino_wish_play_"):
         parts_wp = d[len("casino_wish_play_"):].split("_")
         if len(parts_wp) != 2:
-            await q.answer("Ошибка!", show_alert=True)
+            await q.answer("Ошибка", show_alert=True)
             return
         try:
             wish_stake_p = int(parts_wp[0])
             wish_target_p = int(parts_wp[1])
         except ValueError:
-            await q.answer("Ошибка!", show_alert=True)
+            await q.answer("Ошибка", show_alert=True)
             return
         now_wp = time.time()
         if now_wp - f.get("last_casino", 0) < 5:
-            await q.answer("⏳ Подожди немного!", show_alert=True)
+            await q.answer("⏳ Подожди немного", show_alert=True)
             return
         if f["coins"] < wish_stake_p:
-            await q.answer((f"❌ Недостаточно монет! У тебя {f['coins']}🪙")[:200], show_alert=True)
+            await q.answer((f"❌ Недостаточно монет. У тебя {f['coins']}🪙")[:200], show_alert=True)
             return
         # wish_target_p — это ИТОГОВЫЙ возврат при победе
         # Честный шанс: stake / target. Фактический: × 0.80 (RTP 80%)
@@ -36356,7 +36351,7 @@ async def on_callback(update: Update, ctx: ContextTypes.DEFAULT_TYPE):
             await q.answer("⏳ Подожди секунду перед следующей игрой.", show_alert=True)
             return
         if f["coins"] < total_cost:
-            await q.answer((f"Нужно {total_cost}{coin_plain()} для 5 круток!")[:200], show_alert=True)
+            await q.answer((f"Нужно {total_cost}{coin_plain()} для 5 круток")[:200], show_alert=True)
             return
         f["coins"] -= total_cost
         f["coins_spent"] = f.get("coins_spent", 0) + total_cost
@@ -36474,11 +36469,11 @@ async def on_callback(update: Update, ctx: ContextTypes.DEFAULT_TYPE):
                     reply_markup=kb_d,
                 )
             except Exception:
-                await q.answer((f"⚠️ Игра уже идёт! Банк: {cur_bank}{coin_plain()}")[:200], show_alert=True)
+                await q.answer((f"⚠️ Игра уже идёт. Банк: {cur_bank}{coin_plain()}")[:200], show_alert=True)
             return
 
         if f["coins"] < stake:
-            await q.answer((f"Нужно {stake}{coin_plain()}!")[:200], show_alert=True)
+            await q.answer((f"Нужно {stake}{coin_plain()}")[:200], show_alert=True)
             return
         f["coins"] -= stake
         f["coins_spent"] = f.get("coins_spent", 0) + stake
@@ -36535,11 +36530,11 @@ async def on_callback(update: Update, ctx: ContextTypes.DEFAULT_TYPE):
     if d.startswith("double_take_"):
         target_uid = int(d.split("_")[-1])
         if target_uid != uid:
-            await q.answer("Это не твоя игра!", show_alert=True)
+            await q.answer("Это не твоя игра", show_alert=True)
             return
         state = ctx.user_data.pop(f"double_{uid}", None)
         if not state:
-            await q.answer("Игра не найдена или уже завершена!", show_alert=True)
+            await q.answer("Игра не найдена или уже завершена", show_alert=True)
             return
         f2 = await db_get(uid)
         if f2:
@@ -36575,17 +36570,17 @@ async def on_callback(update: Update, ctx: ContextTypes.DEFAULT_TYPE):
             )
         except Exception:
             pass
-        await q.answer(f"✅ Забрал {state['bank']}{coin_plain()}!")
+        await q.answer(f"✅ Забрал {state['bank']}{coin_plain()}")
         return
 
     if d.startswith("double_risk_"):
         target_uid = int(d.split("_")[-1])
         if target_uid != uid:
-            await q.answer("Это не твоя игра!", show_alert=True)
+            await q.answer("Это не твоя игра", show_alert=True)
             return
         state = ctx.user_data.get(f"double_{uid}")
         if not state:
-            await q.answer("Игра не найдена или уже завершена!", show_alert=True)
+            await q.answer("Игра не найдена или уже завершена", show_alert=True)
             return
         # Проверяем лимит раундов
         if state["round"] > state["max_rounds"]:
@@ -36600,7 +36595,7 @@ async def on_callback(update: Update, ctx: ContextTypes.DEFAULT_TYPE):
             await db_save(f)
             await quest_update(uid, "casino_win")
             asyncio.create_task(update_trial_progress(uid, "casino_win", bot=ctx.bot))
-            await q.answer((f"🎉 Максимум! Банк {state['bank']}{coin_plain()} забран!")[:200], show_alert=True)
+            await q.answer((f"🎉 Максимум. Банк {state['bank']}{coin_plain()} забран")[:200], show_alert=True)
             try:
                 await q.message.edit_text(
                     f"🎉 <b>Double or Nothing — МАКСИМУМ!</b>\n\n"
@@ -36621,7 +36616,7 @@ async def on_callback(update: Update, ctx: ContextTypes.DEFAULT_TYPE):
             state["round"] += 1
             new_bank = state["bank"]
             rounds_left = state["max_rounds"] - state["round"] + 1
-            await q.answer(f"🎉 Удача! Банк удвоен → {new_bank}{coin_plain()}!")
+            await q.answer(f"🎉 Удача. Банк удвоен → {new_bank}{coin_plain()}")
             kb_d = InlineKeyboardMarkup([
                 [
                     coin_btn(f"✅ Забрать {new_bank}🪙", f"double_take_{uid}"),
@@ -36668,7 +36663,7 @@ async def on_callback(update: Update, ctx: ContextTypes.DEFAULT_TYPE):
                 uid, "casino", lost, 0,
                 "loss", {"game": "double", "rounds": state["round"] - 1, "net": -lost},
             ))
-            await q.answer(f"💥 Не повезло! Всё потеряно.")
+            await q.answer(f"💥 Не повезло. Всё потеряно.")
             try:
                 await q.message.edit_text(
                     f"💥 <b>Double or Nothing — проигрыш!</b>\n\n"
@@ -36693,14 +36688,14 @@ async def on_callback(update: Update, ctx: ContextTypes.DEFAULT_TYPE):
             # Handled above by casino_bet_double_ block
             return
         if gtype not in CASINO:
-            await q.answer("Ошибка!", show_alert=True)
+            await q.answer("Ошибка", show_alert=True)
             return
         now = time.time()
         if now - f.get("last_casino", 0) < 5:
             await q.answer("⏳ Подожди секунду перед следующей игрой.", show_alert=True)
             return
         if f["coins"] < stake:
-            await q.answer((f"Нужно {stake}{coin_plain()}!")[:200], show_alert=True)
+            await q.answer((f"Нужно {stake}{coin_plain()}")[:200], show_alert=True)
             return
         f["coins"] -= stake
         f["coins_spent"] = f.get("coins_spent", 0) + stake
@@ -36881,11 +36876,11 @@ async def on_callback(update: Update, ctx: ContextTypes.DEFAULT_TYPE):
 
         # Если авто уже запущен — игнорируем
         if ctx.user_data.get(auto_key, {}).get("running"):
-            await q.answer("🔁 Авто-режим уже запущен!", show_alert=True)
+            await q.answer("🔁 Авто-режим уже запущен", show_alert=True)
             return
 
         if f["coins"] < stake_a:
-            await q.answer((f"❌ Недостаточно монет! Нужно {stake_a}🪙")[:200], show_alert=True)
+            await q.answer((f"❌ Недостаточно монет. Нужно {stake_a}🪙")[:200], show_alert=True)
             return
 
         ctx.user_data[auto_key] = {"running": True, "gtype": gtype_a, "stake": stake_a, "count": 0}
@@ -36902,7 +36897,7 @@ async def on_callback(update: Update, ctx: ContextTypes.DEFAULT_TYPE):
     if d.startswith("casino_auto_stop_"):
         target_uid = int(d[17:])
         if target_uid != uid:
-            await q.answer("Это не твоя игра!", show_alert=True)
+            await q.answer("Это не твоя игра", show_alert=True)
             return
         auto_key = f"casino_auto_{uid}"
         state = ctx.user_data.pop(auto_key, None)
@@ -37017,11 +37012,11 @@ async def on_callback(update: Update, ctx: ContextTypes.DEFAULT_TYPE):
     if d.startswith("memo_go_"):
         target_uid = int(d[8:])
         if target_uid != uid:
-            await q.answer("Это не твоя игра!", show_alert=True)
+            await q.answer("Это не твоя игра", show_alert=True)
             return
         gdata = ctx.user_data.get(f"memo_{uid}")
         if not gdata:
-            await q.answer("Начни заново!", show_alert=True)
+            await q.answer("Начни заново", show_alert=True)
             return
         pool = [
             "🐸",
@@ -37088,11 +37083,11 @@ async def on_callback(update: Update, ctx: ContextTypes.DEFAULT_TYPE):
         chosen_emoji = parts_m[2]
         target_uid = int(parts_m[3])
         if target_uid != uid:
-            await q.answer("Это не твоя игра!", show_alert=True)
+            await q.answer("Это не твоя игра", show_alert=True)
             return
         gdata = ctx.user_data.get(f"memo_{uid}")
         if not gdata:
-            await q.answer("Начни заново!", show_alert=True)
+            await q.answer("Начни заново", show_alert=True)
             return
         seq = gdata["seq"]
         step = gdata["step"]
@@ -37369,7 +37364,7 @@ async def on_callback(update: Update, ctx: ContextTypes.DEFAULT_TYPE):
         return
 
     if d == "bs_pvp_info":
-        await q.answer("Используй /bs [ставка] в чате чтобы вызвать соперника!", show_alert=True)
+        await q.answer("Используй /bs [ставка] в чате чтобы вызвать соперника", show_alert=True)
         return
 
     if d == "ttt_menu":
@@ -37404,7 +37399,7 @@ async def on_callback(update: Update, ctx: ContextTypes.DEFAULT_TYPE):
         return
 
     if d == "ttt5_info":
-        await q.answer("⬛ /ttt5 работает только в группе! Введи /ttt5 в группе чтобы создать игру.", show_alert=True)
+        await q.answer("⬛ /ttt5 работает только в группе. Введи /ttt5 в группе чтобы создать игру.", show_alert=True)
         return
 
     # ── 5×5 СОЛО vs БОТ ────────────────────────────────────────────
@@ -37572,7 +37567,7 @@ async def on_callback(update: Update, ctx: ContextTypes.DEFAULT_TYPE):
     if d == "ttt5_solo_start":
         # Показываем экран выбора стороны
         if ctx.user_data.get(f"ttt5_solo_{uid}"):
-            await q.answer("Игра уже запущена!", show_alert=True)
+            await q.answer("Игра уже запущена", show_alert=True)
             return
         try:
             await q.message.edit_text(
@@ -37595,7 +37590,7 @@ async def on_callback(update: Update, ctx: ContextTypes.DEFAULT_TYPE):
 
     if d in ("ttt5_solo_choose_X", "ttt5_solo_choose_O"):
         if ctx.user_data.get(f"ttt5_solo_{uid}"):
-            await q.answer("Игра уже запущена!", show_alert=True)
+            await q.answer("Игра уже запущена", show_alert=True)
             return
         now_t5 = time.time()
         cd_t5 = 10 * 60
@@ -37681,7 +37676,7 @@ async def on_callback(update: Update, ctx: ContextTypes.DEFAULT_TYPE):
         BSYM = "❌" if bot_mark_5s == "X" else "⭕"
 
         if board_5s[idx_5s] != "":
-            await q.answer("Клетка занята!", show_alert=True)
+            await q.answer("Клетка занята", show_alert=True)
             return
         board_5s[idx_5s] = player_mark_5s
         winner_5s = _ttt5_check_winner(board_5s)
@@ -37856,7 +37851,7 @@ async def on_callback(update: Update, ctx: ContextTypes.DEFAULT_TYPE):
 
     if d in ("ttt_solo_side_X", "ttt_solo_side_O"):
         if ctx.user_data.get(f"ttt_solo_{uid}"):
-            await q.answer("Игра уже запущена!", show_alert=True)
+            await q.answer("Игра уже запущена", show_alert=True)
             return
         player_mark = "X" if d == "ttt_solo_side_X" else "O"
         bot_mark = "O" if player_mark == "X" else "X"
@@ -37910,7 +37905,7 @@ async def on_callback(update: Update, ctx: ContextTypes.DEFAULT_TYPE):
         player_mark_ttt = gdata_ttt.get("player_mark", "X")
         bot_mark_ttt = gdata_ttt.get("bot_mark", "O")
         if board_ttt[idx_ttt] != "":
-            await q.answer("Эта клетка занята!", show_alert=True)
+            await q.answer("Эта клетка занята", show_alert=True)
             return
         # Ход игрока
         board_ttt[idx_ttt] = player_mark_ttt
@@ -38009,7 +38004,7 @@ async def on_callback(update: Update, ctx: ContextTypes.DEFAULT_TYPE):
         ])
         try:
             await q.message.edit_text(
-                f"👥 <b>Крестики-нолики в чате</b>\n\nУ тебя: {f['coins']}{coin_emoji()}\n\nВыбери ставку:",
+                f"👥 <b>Крестики-нолики в чате</b>\n\nУ тебя: {f['coins']}{coin_emoji()}",
                 parse_mode=ParseMode.HTML,
                 reply_markup=kb,
             )
@@ -38020,7 +38015,7 @@ async def on_callback(update: Update, ctx: ContextTypes.DEFAULT_TYPE):
     if d.startswith("ttt_group_start_"):
         stake_ttt = int(d[16:])
         if f["coins"] < stake_ttt:
-            await q.answer((f"Нужно {stake_ttt}🪙!")[:200], show_alert=True)
+            await q.answer((f"Нужно {stake_ttt}🪙")[:200], show_alert=True)
             return
         f["coins"] -= stake_ttt
         f["coins_spent"] = f.get("coins_spent", 0) + stake_ttt
@@ -38045,12 +38040,12 @@ async def on_callback(update: Update, ctx: ContextTypes.DEFAULT_TYPE):
             f"❌ <b>{he(q.from_user.first_name)}</b> вызывает на крестики-нолики!\n"
             f"Ставка: <b>{stake_ttt}{coin_emoji()}</b> с каждого\n"
             f"Победитель заберёт <b>{stake_ttt*2}{coin_emoji()}</b>!\n\n"
-            f"<i>Нажми кнопку чтобы принять вызов.</i>",
+            f"",
             parse_mode=ParseMode.HTML,
             reply_markup=pub_kb,
         )
         ctx.bot_data[f"ttt_group_{game_id_ttt}"]["msg_id"] = pub_msg.message_id if pub_msg else None
-        await q.answer("✅ Вызов опубликован!")
+        await q.answer("✅ Вызов опубликован")
         try:
             await q.message.edit_text(
                 "❌ Вызов опубликован в чат! Жди соперника...",
@@ -38068,13 +38063,13 @@ async def on_callback(update: Update, ctx: ContextTypes.DEFAULT_TYPE):
         game_id_ttt = d[9:]
         gdata_ttt = ctx.bot_data.get(f"ttt_group_{game_id_ttt}")
         if not gdata_ttt:
-            await q.answer("Игра уже завершена!", show_alert=True)
+            await q.answer("Игра уже завершена", show_alert=True)
             return
         if uid == gdata_ttt["creator"]:
-            await q.answer("Нельзя принять свой вызов!", show_alert=True)
+            await q.answer("Нельзя принять свой вызов", show_alert=True)
             return
         if gdata_ttt["opponent"]:
-            await q.answer("В игре уже есть соперник!", show_alert=True)
+            await q.answer("В игре уже есть соперник", show_alert=True)
             return
         stake_ttt = gdata_ttt["stake"]
         # Резервируем место до проверки баланса — защита от одновременного вступления
@@ -38085,7 +38080,7 @@ async def on_callback(update: Update, ctx: ContextTypes.DEFAULT_TYPE):
             # Откатываем резервирование
             gdata_ttt["opponent"] = None
             gdata_ttt["opponent_name"] = None
-            await q.answer((f"Нужно {stake_ttt}🪙!")[:200], show_alert=True)
+            await q.answer((f"Нужно {stake_ttt}🪙")[:200], show_alert=True)
             return
         f2_ttt["coins"] -= stake_ttt
         f2_ttt["coins_spent"] = f2_ttt.get("coins_spent", 0) + stake_ttt
@@ -38122,18 +38117,18 @@ async def on_callback(update: Update, ctx: ContextTypes.DEFAULT_TYPE):
         idx_ttt = int(rest_ttt[last_under+1:])
         gdata_ttt = ctx.bot_data.get(f"ttt_group_{game_id_ttt}")
         if not gdata_ttt:
-            await q.answer("Игра уже завершена!", show_alert=True)
+            await q.answer("Игра уже завершена", show_alert=True)
             return
         # Проверяем, что это игрок этой игры
         if uid not in (gdata_ttt["creator"], gdata_ttt.get("opponent")):
-            await q.answer("Ты не участник этой игры!", show_alert=True)
+            await q.answer("Ты не участник этой игры", show_alert=True)
             return
         if gdata_ttt["turn"] != uid:
-            await q.answer("Сейчас не твой ход!", show_alert=True)
+            await q.answer("Сейчас не твой ход", show_alert=True)
             return
         board_ttt = gdata_ttt["board"]
         if board_ttt[idx_ttt] != "":
-            await q.answer("Клетка занята!", show_alert=True)
+            await q.answer("Клетка занята", show_alert=True)
             return
         # Определяем символ игрока
         symbol = "X" if uid == gdata_ttt["creator"] else "O"
@@ -38204,13 +38199,13 @@ async def on_callback(update: Update, ctx: ContextTypes.DEFAULT_TYPE):
         game_id_ttt = d[11:]
         gdata_ttt = ctx.bot_data.get(f"ttt_group_{game_id_ttt}")
         if not gdata_ttt:
-            await q.answer("Игра уже завершена!", show_alert=True)
+            await q.answer("Игра уже завершена", show_alert=True)
             return
         if uid != gdata_ttt["creator"]:
-            await q.answer("Только создатель может отменить вызов!", show_alert=True)
+            await q.answer("Только создатель может отменить вызов", show_alert=True)
             return
         if gdata_ttt.get("opponent"):
-            await q.answer("Соперник уже принял вызов — нельзя отменить!", show_alert=True)
+            await q.answer("Соперник уже принял вызов — нельзя отменить", show_alert=True)
             return
         # Возвращаем ставку создателю
         stake_ttt = gdata_ttt["stake"]
@@ -38245,10 +38240,10 @@ async def on_callback(update: Update, ctx: ContextTypes.DEFAULT_TYPE):
         game_id_ttt = d[14:]
         gdata_ttt = ctx.bot_data.get(f"ttt_group_{game_id_ttt}")
         if not gdata_ttt:
-            await q.answer("Игра уже завершена!", show_alert=True)
+            await q.answer("Игра уже завершена", show_alert=True)
             return
         if uid not in (gdata_ttt["creator"], gdata_ttt.get("opponent")):
-            await q.answer("Ты не участник этой игры!", show_alert=True)
+            await q.answer("Ты не участник этой игры", show_alert=True)
             return
         if not gdata_ttt.get("opponent"):
             await q.answer("Используй «Отменить вызов» — соперник ещё не принял.", show_alert=True)
@@ -38282,13 +38277,13 @@ async def on_callback(update: Update, ctx: ContextTypes.DEFAULT_TYPE):
         game_id_t5 = d[10:]
         gdata_t5 = ctx.bot_data.get(f"ttt5_group_{game_id_t5}")
         if not gdata_t5:
-            await q.answer("Игра уже завершена!", show_alert=True)
+            await q.answer("Игра уже завершена", show_alert=True)
             return
         if uid == gdata_t5["creator"]:
-            await q.answer("Нельзя принять свой вызов!", show_alert=True)
+            await q.answer("Нельзя принять свой вызов", show_alert=True)
             return
         if gdata_t5["opponent"]:
-            await q.answer("В игре уже есть соперник!", show_alert=True)
+            await q.answer("В игре уже есть соперник", show_alert=True)
             return
         stake_t5 = gdata_t5["stake"]
         # Резервируем место до проверки баланса — защита от одновременного вступления
@@ -38299,7 +38294,7 @@ async def on_callback(update: Update, ctx: ContextTypes.DEFAULT_TYPE):
             # Откатываем резервирование
             gdata_t5["opponent"] = None
             gdata_t5["opponent_name"] = None
-            await q.answer((f"Нужно {stake_t5}🪙!")[:200], show_alert=True)
+            await q.answer((f"Нужно {stake_t5}🪙")[:200], show_alert=True)
             return
         f2_t5["coins"] -= stake_t5
         f2_t5["coins_spent"] = f2_t5.get("coins_spent", 0) + stake_t5
@@ -38335,17 +38330,17 @@ async def on_callback(update: Update, ctx: ContextTypes.DEFAULT_TYPE):
         idx_t5 = int(rest_t5[last_u + 1:])
         gdata_t5 = ctx.bot_data.get(f"ttt5_group_{game_id_t5}")
         if not gdata_t5:
-            await q.answer("Игра уже завершена!", show_alert=True)
+            await q.answer("Игра уже завершена", show_alert=True)
             return
         if uid not in (gdata_t5["creator"], gdata_t5.get("opponent")):
-            await q.answer("Ты не участник этой игры!", show_alert=True)
+            await q.answer("Ты не участник этой игры", show_alert=True)
             return
         if gdata_t5["turn"] != uid:
-            await q.answer("Сейчас не твой ход!", show_alert=True)
+            await q.answer("Сейчас не твой ход", show_alert=True)
             return
         board_t5 = gdata_t5["board"]
         if board_t5[idx_t5] != "":
-            await q.answer("Клетка занята!", show_alert=True)
+            await q.answer("Клетка занята", show_alert=True)
             return
         symbol_t5 = "X" if uid == gdata_t5["creator"] else "O"
         board_t5[idx_t5] = symbol_t5
@@ -38414,13 +38409,13 @@ async def on_callback(update: Update, ctx: ContextTypes.DEFAULT_TYPE):
         game_id_t5 = d[12:]
         gdata_t5 = ctx.bot_data.get(f"ttt5_group_{game_id_t5}")
         if not gdata_t5:
-            await q.answer("Игра уже завершена!", show_alert=True)
+            await q.answer("Игра уже завершена", show_alert=True)
             return
         if uid != gdata_t5["creator"]:
-            await q.answer("Только создатель может отменить вызов!", show_alert=True)
+            await q.answer("Только создатель может отменить вызов", show_alert=True)
             return
         if gdata_t5.get("opponent"):
-            await q.answer("Соперник уже принял — нельзя отменить!", show_alert=True)
+            await q.answer("Соперник уже принял — нельзя отменить", show_alert=True)
             return
         stake_t5 = gdata_t5["stake"]
         f_ct5 = await db_get(uid)
@@ -38453,10 +38448,10 @@ async def on_callback(update: Update, ctx: ContextTypes.DEFAULT_TYPE):
         game_id_t5 = d[15:]
         gdata_t5 = ctx.bot_data.get(f"ttt5_group_{game_id_t5}")
         if not gdata_t5:
-            await q.answer("Игра уже завершена!", show_alert=True)
+            await q.answer("Игра уже завершена", show_alert=True)
             return
         if uid not in (gdata_t5["creator"], gdata_t5.get("opponent")):
-            await q.answer("Ты не участник этой игры!", show_alert=True)
+            await q.answer("Ты не участник этой игры", show_alert=True)
             return
         if not gdata_t5.get("opponent"):
             await q.answer("Используй «Отменить» — соперник ещё не принял вызов.", show_alert=True)
@@ -38527,7 +38522,7 @@ async def on_callback(update: Update, ctx: ContextTypes.DEFAULT_TYPE):
         cells_s = gdata["cells"]
         revealed_s = set(gdata["revealed"])
         if i_s in revealed_s:
-            await q.answer("Уже открыто!", show_alert=True)
+            await q.answer("Уже открыто", show_alert=True)
             return
         # ── Первый клик: гарантируем что не мина — перегенерируем если нужно ──
         if not revealed_s and cells_s[i_s] == -1:
@@ -38826,9 +38821,9 @@ async def on_callback(update: Update, ctx: ContextTypes.DEFAULT_TYPE):
                 parse_mode=ParseMode.HTML,
             )
             ctx.user_data[f"hm_create_{uid}"] = {"chat_id": q.message.chat.id, "msg_id": q.message.message_id}
-            await q.answer("📨 Проверь личку — там нужно написать слово!", show_alert=True)
+            await q.answer("📨 Проверь личку — там нужно написать слово", show_alert=True)
         except Forbidden:
-            await q.answer("❌ Сначала напиши боту в личку!", show_alert=True)
+            await q.answer("❌ Сначала напиши боту в личку", show_alert=True)
         return
 
     if d.startswith("hm_letter_"):
@@ -38855,7 +38850,7 @@ async def on_callback(update: Update, ctx: ContextTypes.DEFAULT_TYPE):
         word_h = gdata["word"]
         guessed = gdata["guessed"]
         if letter in guessed:
-            await q.answer("Эта буква уже была!", show_alert=True)
+            await q.answer("Эта буква уже была", show_alert=True)
             return
 
         # Групповая: проверяем кулдаун ДО изменения состояния игры
@@ -38924,7 +38919,7 @@ async def on_callback(update: Update, ctx: ContextTypes.DEFAULT_TYPE):
             if gdata["mode"] == "group":
                 await q.answer(f"🎉 Слово угадано! +{prize}🪙", show_alert=False)
             else:
-                await q.answer(f"🎉 Победа!", show_alert=False)
+                await q.answer(f"🎉 Победа", show_alert=False)
             try:
                 await q.message.edit_text(result_text, parse_mode=ParseMode.HTML,
                                            reply_markup=InlineKeyboardMarkup([[InlineKeyboardButton("◀️ Назад", callback_data="menu_games")]]))
@@ -38947,7 +38942,7 @@ async def on_callback(update: Update, ctx: ContextTypes.DEFAULT_TYPE):
                 ctx.bot_data.pop(_hm_key, None)
             else:
                 ctx.user_data.pop(_hm_key, None)
-            await q.answer("💀 Повесили!", show_alert=False)
+            await q.answer("💀 Повесили", show_alert=False)
             try:
                 await q.message.edit_text(
                     f"{_E_SKULL} <b>Повесили!</b> Слово было: <b>{word_h}</b>\n\n"
@@ -38961,7 +38956,7 @@ async def on_callback(update: Update, ctx: ContextTypes.DEFAULT_TYPE):
         else:
             # Обычный ход — обязательно отвечаем, чтобы убрать спиннер
             if is_hit:
-                await q.answer(f"✅ «{letter}» есть в слове!", show_alert=False)
+                await q.answer(f"✅ «{letter}» есть в слове", show_alert=False)
             else:
                 await q.answer(f"❌ «{letter}» — нет такой буквы", show_alert=False)
             letter_rows = _hangman_kb(word_h, guessed, game_id)
@@ -38993,7 +38988,7 @@ async def on_callback(update: Update, ctx: ContextTypes.DEFAULT_TYPE):
             return
         # Только создатель или любой могут сдаться в групповой игре
         if gdata["mode"] == "group" and uid != gdata["owner"]:
-            await q.answer("Только загадавший может завершить игру!", show_alert=True)
+            await q.answer("Только загадавший может завершить игру", show_alert=True)
             return
         if gdata["mode"] == "solo":
             f["last_hangman"] = time.time()
@@ -39056,7 +39051,7 @@ async def on_callback(update: Update, ctx: ContextTypes.DEFAULT_TYPE):
         ])
         try:
             await q.message.edit_text(
-                f"✊ <b>КНБ — Соло</b>\n\nУ тебя: {f['coins']}{coin_emoji()}\n\nВыбери ставку:",
+                f"✊ <b>КНБ — Соло</b>\n\nУ тебя: {f['coins']}{coin_emoji()}",
                 parse_mode=ParseMode.HTML,
                 reply_markup=kb,
             )
@@ -39071,7 +39066,7 @@ async def on_callback(update: Update, ctx: ContextTypes.DEFAULT_TYPE):
         choice_rps = rest_rps[:last_u]
         stake_rps = int(rest_rps[last_u+1:])
         if f["coins"] < stake_rps:
-            await q.answer((f"Нужно {stake_rps}{coin_plain()}!")[:200], show_alert=True)
+            await q.answer((f"Нужно {stake_rps}{coin_plain()}")[:200], show_alert=True)
             return
         bot_rps = random.choice(["rock", "scissors", "paper"])
         f["coins"] -= stake_rps
@@ -39119,7 +39114,7 @@ async def on_callback(update: Update, ctx: ContextTypes.DEFAULT_TYPE):
     if d.startswith("rps_solo_"):
         stake_rps = int(d[9:])
         if f["coins"] < stake_rps:
-            await q.answer((f"Нужно {stake_rps}{coin_plain()}!")[:200], show_alert=True)
+            await q.answer((f"Нужно {stake_rps}{coin_plain()}")[:200], show_alert=True)
             return
         kb = InlineKeyboardMarkup([
             [
@@ -39147,7 +39142,7 @@ async def on_callback(update: Update, ctx: ContextTypes.DEFAULT_TYPE):
         ])
         try:
             await q.message.edit_text(
-                f"👥 <b>КНБ в чате</b>\n\nУ тебя: {f['coins']}{coin_emoji()}\n\nВыбери ставку:",
+                f"👥 <b>КНБ в чате</b>\n\nУ тебя: {f['coins']}{coin_emoji()}",
                 parse_mode=ParseMode.HTML,
                 reply_markup=kb,
             )
@@ -39158,7 +39153,7 @@ async def on_callback(update: Update, ctx: ContextTypes.DEFAULT_TYPE):
     if d.startswith("rps_group_") and not d.startswith("rps_group_pick_"):
         stake_rpsg = int(d[10:])
         if f["coins"] < stake_rpsg:
-            await q.answer((f"Нужно {stake_rpsg}{coin_plain()}!")[:200], show_alert=True)
+            await q.answer((f"Нужно {stake_rpsg}{coin_plain()}")[:200], show_alert=True)
             return
         # Списываем ставку с создателя
         f["coins"] -= stake_rpsg
@@ -39202,7 +39197,7 @@ async def on_callback(update: Update, ctx: ContextTypes.DEFAULT_TYPE):
             )
         except Forbidden:
             pass
-        await q.answer("✅ Вызов опубликован в чат!")
+        await q.answer("✅ Вызов опубликован в чат")
         try:
             await q.message.edit_text(
                 "✊ Вызов опубликован! Жди соперника...",
@@ -39228,10 +39223,10 @@ async def on_callback(update: Update, ctx: ContextTypes.DEFAULT_TYPE):
             await q.answer("Игра не найдена.", show_alert=True)
             return
         if gdata_rps["creator"] != uid:
-            await q.answer("Это не твоя игра!", show_alert=True)
+            await q.answer("Это не твоя игра", show_alert=True)
             return
         if gdata_rps.get("creator_choice") is not None:
-            await q.answer("Ты уже выбрал знак!", show_alert=True)
+            await q.answer("Ты уже выбрал знак", show_alert=True)
             return
         gdata_rps["creator_choice"] = choice_rc
         try:
@@ -39247,9 +39242,9 @@ async def on_callback(update: Update, ctx: ContextTypes.DEFAULT_TYPE):
         game_id_rps = d[11:]
         gdata_rps = ctx.bot_data.get(f"rps_{game_id_rps}")
         if not gdata_rps:
-            await q.answer("Игра уже завершена!", show_alert=True); return
+            await q.answer("Игра уже завершена", show_alert=True); return
         if uid != gdata_rps["creator"]:
-            await q.answer("Только создатель может отменить!", show_alert=True); return
+            await q.answer("Только создатель может отменить", show_alert=True); return
         stake_rps = gdata_rps["stake"]
         f_c_rps = await db_get(uid)
         if f_c_rps:
@@ -39277,29 +39272,29 @@ async def on_callback(update: Update, ctx: ContextTypes.DEFAULT_TYPE):
             return
         gdata_rps = ctx.bot_data.get(f"rps_{game_id_rps}")
         if not gdata_rps:
-            await q.answer("Игра уже завершена!", show_alert=True)
+            await q.answer("Игра уже завершена", show_alert=True)
             return
         if uid == gdata_rps["creator"]:
-            await q.answer("Нельзя принять свой вызов!", show_alert=True)
+            await q.answer("Нельзя принять свой вызов", show_alert=True)
             return
         stake_rpsg = gdata_rps["stake"]
         f2_rps = await db_get(uid)
         if not f2_rps or f2_rps["coins"] < stake_rpsg:
-            await q.answer((f"Нужно {stake_rpsg}{coin_plain()}!")[:200], show_alert=True)
+            await q.answer((f"Нужно {stake_rpsg}{coin_plain()}")[:200], show_alert=True)
             return
 
         # ── Блокируем вступление пока организатор не выбрал знак ──
         creator_choice = gdata_rps.get("creator_choice")
         if not creator_choice:
             await q.answer(
-                "⏳ Организатор ещё не выбрал знак! Подожди немного.",
+                "⏳ Организатор ещё не выбрал знак. Подожди немного.",
                 show_alert=True,
             )
             return
 
         # Если соперник уже есть (многораундовая игра) - это ход текущего раунда
         if gdata_rps.get("opponent") and gdata_rps["opponent"] != uid:
-            await q.answer("В игре уже есть соперник!", show_alert=True)
+            await q.answer("В игре уже есть соперник", show_alert=True)
             return
 
         # Первый вход соперника — атомарно резервируем место, потом списываем монеты
@@ -39313,7 +39308,7 @@ async def on_callback(update: Update, ctx: ContextTypes.DEFAULT_TYPE):
                 # Отменяем резервирование если монет не хватает
                 gdata_rps["opponent"] = None
                 gdata_rps["opponent_name"] = None
-                await q.answer((f"Нужно {stake_rpsg}{coin_plain()}!")[:200], show_alert=True)
+                await q.answer((f"Нужно {stake_rpsg}{coin_plain()}")[:200], show_alert=True)
                 return
             f2_rps["coins"] -= stake_rpsg
             f2_rps["coins_spent"] = f2_rps.get("coins_spent", 0) + stake_rpsg
@@ -39489,7 +39484,7 @@ async def on_callback(update: Update, ctx: ContextTypes.DEFAULT_TYPE):
         if not is_on_cd_g:
             f["last_guess"] = time.time()
             await db_save(f)
-        await q.answer("🏳 Сдался!", show_alert=False)
+        await q.answer("🏳 Сдался", show_alert=False)
         try:
             await q.message.edit_text(
                 f"🏳 Ты сдался! Загаданное число было <b>{secret_f}</b>",
@@ -39504,7 +39499,7 @@ async def on_callback(update: Update, ctx: ContextTypes.DEFAULT_TYPE):
         guess = int(d[6:])
         gdata = ctx.user_data.get(f"guess_{uid}")
         if not gdata:
-            await q.answer("Начни игру заново!", show_alert=True)
+            await q.answer("Начни игру заново", show_alert=True)
             await show_status(q, f, edit=True)
             return
         secret = gdata["secret"]
@@ -39742,17 +39737,17 @@ async def on_callback(update: Update, ctx: ContextTypes.DEFAULT_TYPE):
             await q.answer("Этот облик не даёт бонуса — нечего замораживать.", show_alert=True)
             return
         if f.get("frozen_skin", ""):
-            await q.answer("Уже заморожен другой облик! Сначала разморозь.", show_alert=True)
+            await q.answer("Уже заморожен другой облик. Сначала разморозь.", show_alert=True)
             return
         if f.get("coins", 0) < 1000:
-            await q.answer("Не хватает монет! Нужно 1000🪙", show_alert=True)
+            await q.answer("Не хватает монет. Нужно 1000🪙", show_alert=True)
             return
         f["coins"] = f.get("coins", 0) - 1000
         f["coins_spent"] = f.get("coins_spent", 0) + 1000
         f["frozen_skin"] = skin
         await db_save(f)
         rarity_label = R_NAME.get(rarity, rarity)
-        await q.answer((f"❄️ Заморожено! Бонус +{skin_bonus_pct}% от «{skin}» сохранён.")[:200], show_alert=True)
+        await q.answer((f"❄️ Заморожено. Бонус +{skin_bonus_pct}% от «{skin}» сохранён.")[:200], show_alert=True)
         # Обновляем экран — показываем меню заморозки с новым статусом
         f2 = await db_get(uid)
         frozen_rarity = SKINS.get(skin, {}).get("rarity", "common")
@@ -39781,7 +39776,7 @@ async def on_callback(update: Update, ctx: ContextTypes.DEFAULT_TYPE):
             return
         f["frozen_skin"] = ""
         await db_save(f)
-        await q.answer((f"🔓 Разморожено! Теперь бонус от текущего облика.")[:200], show_alert=True)
+        await q.answer((f"🔓 Разморожено. Теперь бонус от текущего облика.")[:200], show_alert=True)
         # Возвращаем в меню заморозки с обновлённым состоянием
         skin = f.get("skin", "Brownie")
         rarity = SKINS.get(skin, {}).get("rarity", "common")
@@ -40112,7 +40107,7 @@ async def on_callback(update: Update, ctx: ContextTypes.DEFAULT_TYPE):
             ) as c:
                 rows = [dict(r) for r in await c.fetchall()]
         if not rows:
-            await q.answer("Нет входящих заявок!", show_alert=True)
+            await q.answer("Нет входящих заявок", show_alert=True)
             return
         lines = ["📬 <b>Входящие заявки в соседи</b>\n"]
         kb_rows = []
@@ -40221,7 +40216,7 @@ async def on_callback(update: Update, ctx: ContextTypes.DEFAULT_TYPE):
             async with db.execute("SELECT * FROM stayas WHERE id=?", (staya_id,)) as c:
                 s = await c.fetchone()
         if not s:
-            await q.answer("Стая не найдена!", show_alert=True); return
+            await q.answer("Стая не найдена", show_alert=True); return
         s = dict(s)
         members = await staya_get_members(staya_id)
 
@@ -40301,11 +40296,11 @@ async def on_callback(update: Update, ctx: ContextTypes.DEFAULT_TYPE):
         await q.answer()
         staya = await staya_of_user(uid)
         if not staya:
-            await q.answer("Ты не в стае!", show_alert=True); return
+            await q.answer("Ты не в стае", show_alert=True); return
         members = await staya_get_members(staya["id"])
         my_role = next((m["role"] for m in members if m["user_id"] == uid), "member")
         if my_role not in ("chief", "elder"):
-            await q.answer("Только Вожак и Старейшина могут управлять заявками!", show_alert=True); return
+            await q.answer("Только Вожак и Старейшина могут управлять заявками", show_alert=True); return
 
         async with aiosqlite.connect(DB_PATH) as db:
             db.row_factory = aiosqlite.Row
@@ -40352,10 +40347,10 @@ async def on_callback(update: Update, ctx: ContextTypes.DEFAULT_TYPE):
         applicant_id = int(d[13:])
         staya = await staya_of_user(uid)
         if not staya:
-            await q.answer("Ты не в стае!", show_alert=True); return
+            await q.answer("Ты не в стае", show_alert=True); return
         members = await staya_get_members(staya["id"])
         if len(members) >= (staya.get("max_members") or STAYA_MAX_MEMBERS):
-            await q.answer("Стая заполнена!", show_alert=True); return
+            await q.answer("Стая заполнена", show_alert=True); return
         now_app = time.time()
         async with aiosqlite.connect(DB_PATH) as db:
             await db.execute(
@@ -40379,7 +40374,7 @@ async def on_callback(update: Update, ctx: ContextTypes.DEFAULT_TYPE):
                     parse_mode=ParseMode.HTML,
                 )
             except Exception: pass
-        await q.answer(f"✅ Принят в стаю!")
+        await q.answer(f"✅ Принят в стаю")
         # Обновляем список
         if d.startswith("staya_app"):
             ctx_data_d = "staya_applications"
@@ -40390,7 +40385,7 @@ async def on_callback(update: Update, ctx: ContextTypes.DEFAULT_TYPE):
         applicant_id = int(d[13:])
         staya = await staya_of_user(uid)
         if not staya:
-            await q.answer("Ты не в стае!", show_alert=True); return
+            await q.answer("Ты не в стае", show_alert=True); return
         async with aiosqlite.connect(DB_PATH) as db:
             await db.execute(
                 "UPDATE staya_applications SET status='rejected' WHERE staya_id=? AND user_id=?",
@@ -40413,22 +40408,22 @@ async def on_callback(update: Update, ctx: ContextTypes.DEFAULT_TYPE):
         target_id = int(d[13:])
         staya = await staya_of_user(uid)
         if not staya:
-            await q.answer("Ты не в стае!", show_alert=True); return
+            await q.answer("Ты не в стае", show_alert=True); return
         members = await staya_get_members(staya["id"])
         my_role = next((m["role"] for m in members if m["user_id"] == uid), "member")
         if my_role not in ("chief", "elder"):
-            await q.answer("Только Вожак и Старейшина могут приглашать!", show_alert=True); return
+            await q.answer("Только Вожак и Старейшина могут приглашать", show_alert=True); return
         if len(members) >= (staya.get("max_members") or STAYA_MAX_MEMBERS):
-            await q.answer("Стая заполнена!", show_alert=True); return
+            await q.answer("Стая заполнена", show_alert=True); return
         tf = await db_get(target_id)
         if not tf:
-            await q.answer("Игрок не найден!", show_alert=True); return
+            await q.answer("Игрок не найден", show_alert=True); return
         tname = fname(tf)
         my_name = fname(f)
-        await q.answer(f"✉️ Приглашение отправлено {he(tname)}!")
+        await q.answer(f"✉️ Приглашение отправлено {he(tname)}")
         try:
             kb = InlineKeyboardMarkup([[
-                InlineKeyboardButton("✅ Вступить!", callback_data=f"staya_join_{staya['id']}_{uid}"),
+                InlineKeyboardButton("✅ Вступить", callback_data=f"staya_join_{staya['id']}_{uid}"),
                 InlineKeyboardButton("❌ Отказать", callback_data=f"staya_decline_{staya['id']}"),
             ]])
             await ctx.bot.send_message(
@@ -40447,15 +40442,15 @@ async def on_callback(update: Update, ctx: ContextTypes.DEFAULT_TYPE):
         staya_id, inviter_id = int(parts[0]), int(parts[1])
         # Если уже в этой же стае — сообщаем
         if f.get("staya_id") and f["staya_id"] == staya_id:
-            await q.answer("Ты уже в этой стае!", show_alert=True); return
+            await q.answer("Ты уже в этой стае", show_alert=True); return
         # Если в другой — нельзя (сначала покинь)
         if f.get("staya_id") and f["staya_id"] != staya_id:
-            await q.answer("Ты уже в другой стае! Сначала покинь её.", show_alert=True); return
+            await q.answer("Ты уже в другой стае. Сначала покинь её.", show_alert=True); return
         members = await staya_get_members(staya_id)
         join_staya_obj = await staya_get(staya_id)
         join_max = (join_staya_obj.get("max_members") or STAYA_MAX_MEMBERS) if join_staya_obj else STAYA_MAX_MEMBERS
         if len(members) >= join_max:
-            await q.answer("Стая уже заполнена!", show_alert=True); return
+            await q.answer("Стая уже заполнена", show_alert=True); return
         now_join = time.time()
         async with aiosqlite.connect(DB_PATH) as db:
             await db.execute(
@@ -40466,7 +40461,7 @@ async def on_callback(update: Update, ctx: ContextTypes.DEFAULT_TYPE):
         f["staya_id"] = staya_id
         await db_save(f)
         s = await staya_get(staya_id)
-        await q.answer(f"🌿 Ты вступил в стаю «{s['name'] if s else '?'}»!")
+        await q.answer(f"🌿 Ты вступил в стаю «{s['name'] if s else '?'}»")
         try:
             await q.message.edit_text(
                 f"🌿 Добро пожаловать в стаю <b>«{he(s['name'] if s else '?')}»</b>!\n"
@@ -40557,7 +40552,7 @@ async def on_callback(update: Update, ctx: ContextTypes.DEFAULT_TYPE):
 
         kb_rows = []
         if active_ev:
-            kb_rows.append([InlineKeyboardButton("🎭 Событие — голосуй!", callback_data="staya_events_view")])
+            kb_rows.append([InlineKeyboardButton("🎭 Событие — голосуй", callback_data="staya_events_view")])
         kb_rows.append([
             InlineKeyboardButton("👥 Участники", callback_data="plaza_staya_members"),
             InlineKeyboardButton("🪙 Котёл", callback_data="staya_cauldron"),
@@ -40596,7 +40591,7 @@ async def on_callback(update: Update, ctx: ContextTypes.DEFAULT_TYPE):
         await q.answer()
         staya = await staya_of_user(uid)
         if not staya:
-            await q.answer("Ты не в стае!", show_alert=True); return
+            await q.answer("Ты не в стае", show_alert=True); return
         lvl      = staya["level"]
         cauldron = staya["cauldron"]
         upgrade  = STAYA_UPGRADES.get(lvl + 1)
@@ -40659,7 +40654,7 @@ async def on_callback(update: Update, ctx: ContextTypes.DEFAULT_TYPE):
             return
         members_bc = await staya_get_members(staya["id"])
         if next((m["role"] for m in members_bc if m["user_id"] == uid), "member") not in ("chief", "elder"):
-            await q.answer("Только Вожак может делать рассылку!", show_alert=True); return
+            await q.answer("Только Вожак может делать рассылку", show_alert=True); return
         ctx.user_data[f"staya_bc_{uid}"] = staya["id"]
         try:
             await q.message.edit_text(
@@ -40678,7 +40673,7 @@ async def on_callback(update: Update, ctx: ContextTypes.DEFAULT_TYPE):
         await q.answer()
         staya = await staya_of_user(uid)
         if not staya:
-            await q.answer("Ты не в стае!", show_alert=True)
+            await q.answer("Ты не в стае", show_alert=True)
             return
         members = await staya_get_members(staya["id"])
         role_map = {"chief": "🐸 Вожак", "elder": "🦎 Старейшина", "member": "🐟 Житель"}
@@ -40734,7 +40729,7 @@ async def on_callback(update: Update, ctx: ContextTypes.DEFAULT_TYPE):
 
         if f.get("adventure_locked_until", 0) > time.time():
             left_m = int((f["adventure_locked_until"] - time.time()) / 60)
-            await q.answer((f"Лягушка уже в походе! Осталось {left_m} мин.")[:200], show_alert=True)
+            await q.answer((f"Лягушка уже в походе. Осталось {left_m} мин.")[:200], show_alert=True)
             return
 
         friends = await friend_list(uid, accepted_only=True)
@@ -40754,7 +40749,7 @@ async def on_callback(update: Update, ctx: ContextTypes.DEFAULT_TYPE):
                     "🎲 Будут развилки — решайте вместе!\n"
                     "🏆 В конце — монеты × длительность, XP, бонус за согласованность\n\n"
                     "<b>Для похода нужен сосед уровня Приятели и выше.</b>\n\n"
-                    "<i>Подружись с кем-нибудь сначала!</i>",
+                    "<i>Подружись с кем-нибудь сначала</i>",
                     parse_mode=ParseMode.HTML,
                     reply_markup=InlineKeyboardMarkup([
                         [InlineKeyboardButton("👥 К соседям", callback_data="plaza_sosedi")],
@@ -40798,7 +40793,7 @@ async def on_callback(update: Update, ctx: ContextTypes.DEFAULT_TYPE):
             try:
                 await q.message.edit_text(
                     "💀 <b>Мёртвая лягушка не может идти в экспедицию.</b>\n\n"
-                    "Сначала воскресни с помощью /revive!",
+                    "Сначала воскресни с помощью /revive",
                     parse_mode=ParseMode.HTML,
                     reply_markup=InlineKeyboardMarkup([
                         [InlineKeyboardButton("◀️ Назад", callback_data="plaza")],
@@ -40822,7 +40817,7 @@ async def on_callback(update: Update, ctx: ContextTypes.DEFAULT_TYPE):
             left_m_cd = int(((next_reset - time.time()) % 3600) / 60)
             try:
                 await q.message.edit_text(
-                    f"⏳ <b>Экспедиция уже была сегодня!</b>\n\n"
+                    f"⏳ <b>Экспедиция уже была сегодня</b>\n\n"
                     f"Следующая откроется через <b>{left_h}ч {left_m_cd}м</b>.\n\n"
                     f"⭐ За 10 Stars можно идти ещё раз сегодня.",
                     parse_mode=ParseMode.HTML,
@@ -40854,7 +40849,7 @@ async def on_callback(update: Update, ctx: ContextTypes.DEFAULT_TYPE):
         now_fish_p = time.time()
         if f.get("last_fish", 0) and now_fish_p - f["last_fish"] < FISH_COOLDOWN:
             left_h = int((FISH_COOLDOWN - (now_fish_p - f["last_fish"])) / 3600)
-            await q.answer((f"Уже рыбачили сегодня! Ещё {left_h}ч.")[:200], show_alert=True)
+            await q.answer((f"Уже рыбачили сегодня. Ещё {left_h}ч.")[:200], show_alert=True)
             return
         friends = await friend_list(uid, accepted_only=True)
         eligible_fish = [fr for fr in friends if fr.get("fr_level", 0) >= 1]
@@ -40911,7 +40906,7 @@ async def on_callback(update: Update, ctx: ContextTypes.DEFAULT_TYPE):
                 _inv_row = await _inv_c.fetchone()
         if _inv_row and (_inv_row[0] > time.time() or _inv_row[1]):
             left_m = max(0, int((_inv_row[0] - time.time()) / 60))
-            await q.answer((f"Твоя лягушка уже в походе! Осталось {left_m} мин.")[:200], show_alert=True)
+            await q.answer((f"Твоя лягушка уже в походе. Осталось {left_m} мин.")[:200], show_alert=True)
             return
         # Проверяем получателя напрямую из БД
         async with aiosqlite.connect(DB_PATH) as _tgt_db:
@@ -40920,7 +40915,7 @@ async def on_callback(update: Update, ctx: ContextTypes.DEFAULT_TYPE):
             ) as _tgt_c:
                 _tgt_row = await _tgt_c.fetchone()
         if _tgt_row and (_tgt_row[0] > time.time() or _tgt_row[1]):
-            await q.answer((f"Лягушка {he(tname)} уже в походе!")[:200], show_alert=True)
+            await q.answer((f"Лягушка {he(tname)} уже в походе")[:200], show_alert=True)
             return
         # Отменяем предыдущее приглашение этого отправителя если висит
         old_invite = ctx.bot_data.get(f"adv_invite_{uid}")
@@ -40939,7 +40934,7 @@ async def on_callback(update: Update, ctx: ContextTypes.DEFAULT_TYPE):
         ctx.bot_data[f"adv_invite_{uid}"] = {
             "inviter": uid, "target": target_id, "created": time.time(), "msg_id": None
         }
-        await q.answer(f"⚔️ Приглашение отправлено {he(tname)}!")
+        await q.answer(f"⚔️ Приглашение отправлено {he(tname)}")
         try:
             kb = InlineKeyboardMarkup([
                 [InlineKeyboardButton("⚔️ 2 часа", callback_data=f"adv_accept_{uid}_2"),
@@ -40985,10 +40980,10 @@ async def on_callback(update: Update, ctx: ContextTypes.DEFAULT_TYPE):
         now_fish = time.time()
         if f.get("last_fish", 0) and now_fish - f["last_fish"] < FISH_COOLDOWN:
             left_h = int((FISH_COOLDOWN - (now_fish - f["last_fish"])) / 3600)
-            await q.answer((f"Уже рыбачили сегодня! Ещё {left_h}ч.")[:200], show_alert=True)
+            await q.answer((f"Уже рыбачили сегодня. Ещё {left_h}ч.")[:200], show_alert=True)
             return
         if f["coins"] < FISH_COST:
-            await q.answer((f"Нужно {FISH_COST}🪙 на ставку!")[:200], show_alert=True)
+            await q.answer((f"Нужно {FISH_COST}🪙 на ставку")[:200], show_alert=True)
             return
         tname = fname(tf)
         my_name = fname(f)
@@ -41010,10 +41005,10 @@ async def on_callback(update: Update, ctx: ContextTypes.DEFAULT_TYPE):
             "inviter": uid, "target": target_id, "cost": FISH_COST,
             "created": now_fish, "msg_id": None,
         }
-        await q.answer("🎣 Приглашение отправлено!")
+        await q.answer("🎣 Приглашение отправлено")
         try:
             kb = InlineKeyboardMarkup([[
-                InlineKeyboardButton("🎣 Принять!", callback_data=f"fish_accept_{uid}_{FISH_COST}"),
+                InlineKeyboardButton("🎣 Принять", callback_data=f"fish_accept_{uid}_{FISH_COST}"),
                 InlineKeyboardButton("❌ Отказать", callback_data=f"fish_decline_{uid}"),
             ]])
             sent_fish = await ctx.bot.send_message(
@@ -41173,11 +41168,11 @@ async def on_callback(update: Update, ctx: ContextTypes.DEFAULT_TYPE):
         # Check if this specific bond already exists
         my_bonds = await get_user_bonds(uid)
         if any(b["partner_id"] == target_id for b in my_bonds):
-            await q.answer("💚 У вас уже есть Болотная Связь с этим игроком!", show_alert=True)
+            await q.answer("💚 У вас уже есть Болотная Связь с этим игроком", show_alert=True)
             return
         tname = fname(tf)
         my_name = fname(f)
-        await q.answer(f"💚 Предложение отправлено {he(tname)}!")
+        await q.answer(f"💚 Предложение отправлено {he(tname)}")
         try:
             kb = InlineKeyboardMarkup([[
                 InlineKeyboardButton("💚 Принять Связь", callback_data=f"bond_accept_{uid}"),
@@ -41277,11 +41272,11 @@ async def on_callback(update: Update, ctx: ContextTypes.DEFAULT_TYPE):
     if d.startswith("add_friend_"):
         target_id = int(d[11:])
         if target_id == uid:
-            await q.answer("Нельзя добавить себя!", show_alert=True)
+            await q.answer("Нельзя добавить себя", show_alert=True)
             return
         existing = await friend_get(uid, target_id)
         if existing:
-            await q.answer("Уже в списке соседей!", show_alert=True)
+            await q.answer("Уже в списке соседей", show_alert=True)
             return
         now = time.time()
         async with aiosqlite.connect(DB_PATH) as db:
@@ -41290,7 +41285,7 @@ async def on_callback(update: Update, ctx: ContextTypes.DEFAULT_TYPE):
                 (uid, target_id, now),
             )
             await db.commit()
-        await q.answer("✅ Заявка отправлена!")
+        await q.answer("✅ Заявка отправлена")
         my_name = f.get("frog_name") or f.get("first_name") or "Кто-то"
         try:
             kb = InlineKeyboardMarkup([[
@@ -41319,7 +41314,7 @@ async def on_callback(update: Update, ctx: ContextTypes.DEFAULT_TYPE):
             return
         fr = await friend_get(uid, target_id)
         if not fr or fr.get("pending"):
-            await q.answer("Это действие доступно только для соседей!", show_alert=True)
+            await q.answer("Это действие доступно только для соседей", show_alert=True)
             return
         # Кулдаун
         now = time.time()
@@ -41329,7 +41324,7 @@ async def on_callback(update: Update, ctx: ContextTypes.DEFAULT_TYPE):
         last = fr.get(_cd_cols.get(action_key, "last_social"), 0)
         if now - last < cd:
             left_m = int((cd - (now - last)) / 60)
-            await q.answer((f"⏳ Ещё {left_m} мин до следующего {action['label'].lower()}а!")[:200], show_alert=True)
+            await q.answer((f"⏳ Ещё {left_m} мин до следующего {action['label'].lower()}а")[:200], show_alert=True)
             return
         # Условие (если есть)
         tf = await db_get(target_id)
@@ -41338,7 +41333,7 @@ async def on_callback(update: Update, ctx: ContextTypes.DEFAULT_TYPE):
             return
         cond = action.get("condition")
         if cond and not cond(tf):
-            await q.answer(action.get("condition_fail", "Сейчас не нужно!"), show_alert=True)
+            await q.answer(action.get("condition_fail", "Сейчас не нужно"), show_alert=True)
             return
         # Применяем эффект
         for stat, val in action["effect"].items():
@@ -41435,7 +41430,7 @@ async def on_callback(update: Update, ctx: ContextTypes.DEFAULT_TYPE):
         # Это предотвращает дюп похода при двойном нажатии с плохим интернетом.
         invite = ctx.bot_data.get(invite_key, None)
         if not invite or time.time() - invite.get("created", 0) > 900:
-            await q.answer("Приглашение устарело или уже принято!", show_alert=True)
+            await q.answer("Приглашение устарело или уже принято", show_alert=True)
             return
         inv_f = await db_get(inviter_id)
         if not inv_f or not inv_f.get("alive"):
@@ -41453,10 +41448,10 @@ async def on_callback(update: Update, ctx: ContextTypes.DEFAULT_TYPE):
         _my_row  = _adv_rows.get(uid, {})
         _inv_row = _adv_rows.get(inviter_id, {})
         if _my_row.get("locked", 0) > _now_adv or _my_row.get("adv_id", 0):
-            await q.answer("Твоя лягушка уже в походе!", show_alert=True)
+            await q.answer("Твоя лягушка уже в походе", show_alert=True)
             return
         if _inv_row.get("locked", 0) > _now_adv or _inv_row.get("adv_id", 0):
-            await q.answer("Их лягушка уже в походе!", show_alert=True)
+            await q.answer("Их лягушка уже в походе", show_alert=True)
             return
 
         # ── Проверка дневного лимита 8 часов ─────────────────────────────────
@@ -41513,7 +41508,7 @@ async def on_callback(update: Update, ctx: ContextTypes.DEFAULT_TYPE):
                         except Exception:
                             pass
                     return
-        await q.answer("⚔️ Поход начинается!")
+        await q.answer("⚔️ Поход начинается")
         # Обновляем сообщение с приглашением — убираем кнопки
         try:
             await q.message.edit_reply_markup(reply_markup=None)
@@ -41568,7 +41563,7 @@ async def on_callback(update: Update, ctx: ContextTypes.DEFAULT_TYPE):
                     "UPDATE frogs SET adventure_id=0, adventure_locked_until=0 WHERE adventure_id=?", (adv_id,)
                 )
                 await _rb_db.commit()
-            await q.answer("❌ Кто-то уже ушёл в другой поход! Попробуй снова.", show_alert=True)
+            await q.answer("❌ Кто-то уже ушёл в другой поход. Попробуй снова.", show_alert=True)
             return
         # Обновляем часы и прочие поля через кэш
         for frog_id in (inviter_id, uid):
@@ -41645,7 +41640,7 @@ async def on_callback(update: Update, ctx: ContextTypes.DEFAULT_TYPE):
         await q.answer()
         fr = await friend_get(uid, target_id)
         if not fr or fr.get("pending") or fr.get("level", 0) < 1:
-            await q.answer("Сначала подружитесь!", show_alert=True)
+            await q.answer("Сначала подружитесь", show_alert=True)
             return
         tf = await db_get(target_id)
         if not tf:
@@ -41695,7 +41690,7 @@ async def on_callback(update: Update, ctx: ContextTypes.DEFAULT_TYPE):
             await q.answer("Нет активной развилки.", show_alert=True)
             return
         if choices_made.get(active_choice_id):
-            await q.answer("Ты уже выбрал!", show_alert=True)
+            await q.answer("Ты уже выбрал", show_alert=True)
             return
         choices_made[active_choice_id] = choice_key
         async with aiosqlite.connect(DB_PATH) as db:
@@ -41855,7 +41850,7 @@ async def on_callback(update: Update, ctx: ContextTypes.DEFAULT_TYPE):
                 (adv_id_tip,)
             )
             await db.commit()
-        await q.answer("🪙 Хозяин кивнул с благодарностью — монетку принял!", show_alert=True)
+        await q.answer("🪙 Хозяин кивнул с благодарностью — монетку принял", show_alert=True)
         try:
             await q.message.edit_reply_markup(reply_markup=None)
         except Exception:
@@ -41894,7 +41889,7 @@ async def on_callback(update: Update, ctx: ContextTypes.DEFAULT_TYPE):
                 )
             except Exception:
                 pass
-        await q.answer((f"🪙 +{amount_tip} отправлено {feeder_display}!")[:200], show_alert=True)
+        await q.answer((f"🪙 +{amount_tip} отправлено {feeder_display}")[:200], show_alert=True)
         try:
             await q.message.edit_reply_markup(reply_markup=None)
         except Exception:
@@ -41925,7 +41920,7 @@ async def on_callback(update: Update, ctx: ContextTypes.DEFAULT_TYPE):
         await q.answer()
         adv = await adv_get_active(uid)
         if not adv:
-            await q.answer("Нет активного похода!", show_alert=True)
+            await q.answer("Нет активного похода", show_alert=True)
             return
         logs = json.loads(adv.get("log_json") or "[]")
         last_logs = logs[-5:] if logs else []
@@ -41952,7 +41947,7 @@ async def on_callback(update: Update, ctx: ContextTypes.DEFAULT_TYPE):
     # ── Болотная связь — принять ──────────────────────────
     if d.startswith("bond_accept_"):
         requester_id = int(d[12:])
-        await q.answer("💚 Болотная Связь активирована!")
+        await q.answer("💚 Болотная Связь активирована")
         # Check if this specific bond already exists
         my_bonds = await get_user_bonds(uid)
         if any(b["partner_id"] == requester_id for b in my_bonds):
@@ -41993,7 +41988,7 @@ async def on_callback(update: Update, ctx: ContextTypes.DEFAULT_TYPE):
     # ── admin_msg — написать игроку из adminlookup ──────────────────────────
     if d.startswith("admin_msg_"):
         if uid not in ADMIN_IDS:
-            await q.answer("Нет доступа!", show_alert=True); return
+            await q.answer("Нет доступа", show_alert=True); return
         target_uid_msg = int(d[10:])
         ctx.user_data[f"admin_msg_{uid}"] = target_uid_msg
         await q.answer()
@@ -42008,11 +42003,11 @@ async def on_callback(update: Update, ctx: ContextTypes.DEFAULT_TYPE):
 
     if d.startswith("admin_ban_toggle_"):
         if uid not in ADMIN_IDS:
-            await q.answer("Нет доступа!", show_alert=True); return
+            await q.answer("Нет доступа", show_alert=True); return
         target_uid_bt = int(d[17:])
         tf_bt = await db_get(target_uid_bt)
         if not tf_bt:
-            await q.answer("Игрок не найден!", show_alert=True); return
+            await q.answer("Игрок не найден", show_alert=True); return
         tf_bt["banned"] = 0 if tf_bt.get("banned") else 1
         await db_save(tf_bt)
         status = "забанен 🚫" if tf_bt["banned"] else "разбанен ✅"
@@ -42142,7 +42137,7 @@ async def on_callback(update: Update, ctx: ContextTypes.DEFAULT_TYPE):
         target_id = int(d[10:])
         existing = await friend_get(uid, target_id)
         if existing:
-            await q.answer("Уже в списке соседей!", show_alert=True)
+            await q.answer("Уже в списке соседей", show_alert=True)
             return
         now_pa = time.time()
         async with aiosqlite.connect(DB_PATH) as db:
@@ -42154,7 +42149,7 @@ async def on_callback(update: Update, ctx: ContextTypes.DEFAULT_TYPE):
         tf = await db_get(target_id)
         tname = fname(tf) if tf else "?"
         my_name = fname(f)
-        await q.answer(f"🌱 Заявка отправлена {he(tname)}!")
+        await q.answer(f"🌱 Заявка отправлена {he(tname)}")
         try:
             kb = InlineKeyboardMarkup([[
                 InlineKeyboardButton("✅ Принять", callback_data=f"friend_accept_{uid}"),
@@ -42232,7 +42227,7 @@ async def on_callback(update: Update, ctx: ContextTypes.DEFAULT_TYPE):
             ) as c:
                 rows = [dict(r) for r in await c.fetchall()]
         if not rows:
-            await q.answer("Нет входящих заявок!", show_alert=True)
+            await q.answer("Нет входящих заявок", show_alert=True)
             return
         lines = ["📬 <b>Входящие заявки</b>\n"]
         kb_rows = []
@@ -42263,7 +42258,7 @@ async def on_callback(update: Update, ctx: ContextTypes.DEFAULT_TYPE):
             await q.answer("Приглашение устарело! (истекло 15 минут)", show_alert=True)
             return
         if f["coins"] < cost or (await db_get(inviter_id) or {}).get("coins", 0) < cost:
-            await q.answer("У кого-то не хватает монет!", show_alert=True)
+            await q.answer("У кого-то не хватает монет", show_alert=True)
             return
         await q.answer()
         # Убираем кнопки из приглашения
@@ -42373,10 +42368,10 @@ async def on_callback(update: Update, ctx: ContextTypes.DEFAULT_TYPE):
     if d == "staya_create_start":
         await q.answer()
         if f.get("staya_id"):
-            await q.answer("Ты уже в стае!", show_alert=True)
+            await q.answer("Ты уже в стае", show_alert=True)
             return
         if f["coins"] < STAYA_CREATE_COST:
-            await q.answer((f"Нужно {STAYA_CREATE_COST}🪙!")[:200], show_alert=True)
+            await q.answer((f"Нужно {STAYA_CREATE_COST}🪙")[:200], show_alert=True)
             return
         ctx.user_data["staya_creating"] = True
         try:
@@ -42423,7 +42418,7 @@ async def on_callback(update: Update, ctx: ContextTypes.DEFAULT_TYPE):
                 kb_transfer.append([InlineKeyboardButton("◀️ Отмена", callback_data="plaza_staya")])
                 try:
                     await q.message.edit_text(
-                        "👑 <b>Ты Вожак!</b>\n\nЧтобы покинуть стаю — сначала передай лидерство другому участнику:",
+                        "👑 <b>Ты Вожак</b>\n\nЧтобы покинуть стаю — сначала передай лидерство другому участнику:",
                         parse_mode=ParseMode.HTML,
                         reply_markup=InlineKeyboardMarkup(kb_transfer),
                     )
@@ -42480,7 +42475,7 @@ async def on_callback(update: Update, ctx: ContextTypes.DEFAULT_TYPE):
         members_tr = await staya_get_members(staya["id"])
         my_role_tr = next((m["role"] for m in members_tr if m["user_id"] == uid), "member")
         if my_role_tr != "chief":
-            await q.answer("Только Вожак может передать лидерство!", show_alert=True)
+            await q.answer("Только Вожак может передать лидерство", show_alert=True)
             return
         async with aiosqlite.connect(DB_PATH) as db:
             await db.execute("UPDATE staya_members SET role='member' WHERE staya_id=? AND user_id=?",
@@ -42660,7 +42655,7 @@ async def on_callback(update: Update, ctx: ContextTypes.DEFAULT_TYPE):
         if not staya:
             return
         if f["coins"] < amount:
-            await q.answer("Недостаточно монет!", show_alert=True)
+            await q.answer("Недостаточно монет", show_alert=True)
             return
         f["coins"] -= amount
         f["coins_spent"] = f.get("coins_spent", 0) + amount
@@ -42691,7 +42686,7 @@ async def on_callback(update: Update, ctx: ContextTypes.DEFAULT_TYPE):
                 reply_markup=InlineKeyboardMarkup(rows_upd),
             )
         except Exception:
-            await q.answer((f"✅ +{amount}🪙 в котёл!")[:200], show_alert=True)
+            await q.answer((f"✅ +{amount}🪙 в котёл")[:200], show_alert=True)
         return
 
     # ── События стаи ──────────────────────────────────
@@ -42699,7 +42694,7 @@ async def on_callback(update: Update, ctx: ContextTypes.DEFAULT_TYPE):
         await q.answer()
         staya = await staya_of_user(uid)
         if not staya:
-            await q.answer("Ты не в стае!", show_alert=True)
+            await q.answer("Ты не в стае", show_alert=True)
             return
         async with aiosqlite.connect(DB_PATH) as db:
             db.row_factory = aiosqlite.Row
@@ -42770,21 +42765,21 @@ async def on_callback(update: Update, ctx: ContextTypes.DEFAULT_TYPE):
         ev_id, choice_key = int(parts[0]), parts[1]
         staya = await staya_of_user(uid)
         if not staya:
-            await q.answer("Ты не в стае!", show_alert=True)
+            await q.answer("Ты не в стае", show_alert=True)
             return
         async with aiosqlite.connect(DB_PATH) as db:
             existing = await db.execute(
                 "SELECT 1 FROM staya_votes WHERE event_id=? AND user_id=?", (ev_id, uid)
             )
             if await existing.fetchone():
-                await q.answer("Ты уже проголосовал!", show_alert=True)
+                await q.answer("Ты уже проголосовал", show_alert=True)
                 return
             await db.execute(
                 "INSERT INTO staya_votes(event_id,user_id,choice,voted_at) VALUES(?,?,?,?)",
                 (ev_id, uid, choice_key, time.time()),
             )
             await db.commit()
-        await q.answer("✅ Голос принят!")
+        await q.answer("✅ Голос принят")
         await staya_add_xp(staya["id"], 5)
         # Проверяем: если все участники проголосовали — завершаем сразу
         members_vote = await staya_get_members(staya["id"])
@@ -42863,7 +42858,7 @@ async def on_callback(update: Update, ctx: ContextTypes.DEFAULT_TYPE):
         members_rec = await staya_get_members(staya["id"])
         my_role_rec = next((m["role"] for m in members_rec if m["user_id"] == uid), "member")
         if my_role_rec not in ("chief", "elder"):
-            await q.answer("Только Вожак и Старейшина могут объявлять набор!", show_alert=True)
+            await q.answer("Только Вожак и Старейшина могут объявлять набор", show_alert=True)
             return
         now_rec = time.time()
         last_rec = staya.get("last_recruit", 0) or 0
@@ -42894,7 +42889,7 @@ async def on_callback(update: Update, ctx: ContextTypes.DEFAULT_TYPE):
         ]])
         try:
             await ctx.bot.send_message(CHAT_ID, default_text, parse_mode=ParseMode.HTML, reply_markup=join_kb)
-            await q.answer("📣 Объявление отправлено в чат!")
+            await q.answer("📣 Объявление отправлено в чат")
         except Exception as _e:
             await q.answer((f"Ошибка: {_e}")[:200], show_alert=True)
             return
@@ -42919,7 +42914,7 @@ async def on_callback(update: Update, ctx: ContextTypes.DEFAULT_TYPE):
         members_mm = await staya_get_members(staya["id"])
         my_role_mm = next((m["role"] for m in members_mm if m["user_id"] == uid), "member")
         if my_role_mm not in ("chief", "elder"):
-            await q.answer("Только Вожак и Старейшина!", show_alert=True); return
+            await q.answer("Только Вожак и Старейшина", show_alert=True); return
         lines_mm = [f"👥 <b>Управление участниками «{he(staya['name'])}»</b>\n"]
         kb_mm = []
         for m in members_mm:
@@ -42971,14 +42966,14 @@ async def on_callback(update: Update, ctx: ContextTypes.DEFAULT_TYPE):
         if not staya: return
         members_pd = await staya_get_members(staya["id"])
         if next((m["role"] for m in members_pd if m["user_id"] == uid), "member") not in ("chief",):
-            await q.answer("Только Вожак может менять звания!", show_alert=True); return
+            await q.answer("Только Вожак может менять звания", show_alert=True); return
         new_role = "elder" if is_promote else "member"
         async with aiosqlite.connect(DB_PATH) as db:
             await db.execute("UPDATE staya_members SET role=? WHERE staya_id=? AND user_id=?",
                              (new_role, staya["id"], target_uid_pd))
             await db.commit()
         tf_pd = await db_get(target_uid_pd)
-        await q.answer(f"✅ {'Повышен до Старейшины' if is_promote else 'Понижен до Жителя'}!")
+        await q.answer(f"✅ {'Повышен до Старейшины' if is_promote else 'Понижен до Жителя'}")
         try:
             await ctx.bot.send_message(target_uid_pd,
                 f"{'🦎 Тебя повысили до Старейшины' if is_promote else '🐟 Тебя понизили до Жителя'} "
@@ -42994,15 +42989,15 @@ async def on_callback(update: Update, ctx: ContextTypes.DEFAULT_TYPE):
         members_k = await staya_get_members(staya["id"])
         my_role_k = next((m["role"] for m in members_k if m["user_id"] == uid), "member")
         if my_role_k not in ("chief", "elder"):
-            await q.answer("Нет прав!", show_alert=True); return
+            await q.answer("Нет прав", show_alert=True); return
         target_role_k = next((m["role"] for m in members_k if m["user_id"] == target_uid_k), "member")
         # Старейшина не может выгнать вожака или другого старейшину
         if my_role_k == "elder" and target_role_k in ("chief", "elder"):
-            await q.answer("Старейшина не может исключить Вожака или другого Старейшину!", show_alert=True)
+            await q.answer("Старейшина не может исключить Вожака или другого Старейшину", show_alert=True)
             return
         # Никто не может выгнать вожака (только сам может покинуть/передать)
         if target_role_k == "chief":
-            await q.answer("Нельзя исключить Вожака! Пусть сам передаст роль или покинет стаю.", show_alert=True)
+            await q.answer("Нельзя исключить Вожака. Пусть сам передаст роль или покинет стаю.", show_alert=True)
             return
         async with aiosqlite.connect(DB_PATH) as db:
             await db.execute("DELETE FROM staya_members WHERE staya_id=? AND user_id=?",
@@ -43016,7 +43011,7 @@ async def on_callback(update: Update, ctx: ContextTypes.DEFAULT_TYPE):
                 await ctx.bot.send_message(target_uid_k,
                     f"😔 Тебя исключили из стаи «{he(staya['name'])}».", parse_mode=ParseMode.HTML)
             except Exception: pass
-        await q.answer(f"🚫 Участник исключён!")
+        await q.answer(f"🚫 Участник исключён")
         return
 
     # ── Переименование стаи ───────────────────────────────────────────────────
@@ -43027,7 +43022,7 @@ async def on_callback(update: Update, ctx: ContextTypes.DEFAULT_TYPE):
         if not staya: return
         members_rr = await staya_get_members(staya["id"])
         if next((m["role"] for m in members_rr if m["user_id"] == uid), "member") != "chief":
-            await q.answer("Только Вожак может менять названия ролей!", show_alert=True); return
+            await q.answer("Только Вожак может менять названия ролей", show_alert=True); return
         chief_name  = staya.get("role_chief")  or "🐸 Вожак"
         elder_name  = staya.get("role_elder")  or "🦎 Старейшина"
         member_name = staya.get("role_member") or "🐟 Житель"
@@ -43057,7 +43052,7 @@ async def on_callback(update: Update, ctx: ContextTypes.DEFAULT_TYPE):
         staya = await staya_of_user(uid)
         if not staya: return
         if next((m["role"] for m in await staya_get_members(staya["id"]) if m["user_id"] == uid), "member") != "chief":
-            await q.answer("Только Вожак!", show_alert=True); return
+            await q.answer("Только Вожак", show_alert=True); return
         ctx.user_data[f"staya_rename_role_{uid}"] = {"staya_id": staya["id"], "role": role_key}
         role_defaults = {"chief": "Вожак", "elder": "Старейшина", "member": "Житель"}
         await q.answer()
@@ -43141,7 +43136,7 @@ async def on_callback(update: Update, ctx: ContextTypes.DEFAULT_TYPE):
                 (staya["id"], uid, vote_key, time.time()),
             )
             await _vdb2.commit()
-        await q.answer("✅ Голос учтён! Вожак увидит результаты.", show_alert=True)
+        await q.answer("✅ Голос учтён. Вожак увидит результаты.", show_alert=True)
         return
 
     if d.startswith("staya_shop_buy_"):
@@ -43153,13 +43148,13 @@ async def on_callback(update: Update, ctx: ContextTypes.DEFAULT_TYPE):
         if not staya: return
         members_buy = await staya_get_members(staya["id"])
         if next((m["role"] for m in members_buy if m["user_id"] == uid), "member") != "chief":
-            await q.answer("Только Вожак может активировать бустеры!", show_alert=True); return
+            await q.answer("Только Вожак может активировать бустеры", show_alert=True); return
         item = STAYA_BOOST_CATALOG[item_idx]
         ok = await staya_boost_activate(
             staya["id"], item["type"], item["mult"], item["hours"], item["cost"], uid
         )
         if not ok:
-            await q.answer((f"❌ Недостаточно монет в котле! Нужно {item['cost']}🪙")[:200], show_alert=True)
+            await q.answer((f"❌ Недостаточно монет в котле. Нужно {item['cost']}🪙")[:200], show_alert=True)
             return
         # Обновляем кэш бустера
         _STAYA_BOOST_CACHE[staya["id"]] = {
@@ -43178,7 +43173,7 @@ async def on_callback(update: Update, ctx: ContextTypes.DEFAULT_TYPE):
                     parse_mode=ParseMode.HTML,
                 )
             except Exception: pass
-        await q.answer(f"✅ Бустер активирован!")
+        await q.answer(f"✅ Бустер активирован")
         return
 
     if d == "staya_rename":
@@ -43187,7 +43182,7 @@ async def on_callback(update: Update, ctx: ContextTypes.DEFAULT_TYPE):
         if not staya: return
         members_ren = await staya_get_members(staya["id"])
         if next((m["role"] for m in members_ren if m["user_id"] == uid), "member") not in ("chief",):
-            await q.answer("Только Вожак может переименовать стаю!", show_alert=True); return
+            await q.answer("Только Вожак может переименовать стаю", show_alert=True); return
         ctx.user_data[f"staya_rename_{uid}"] = staya["id"]
         try:
             await q.message.edit_text(
@@ -43206,7 +43201,7 @@ async def on_callback(update: Update, ctx: ContextTypes.DEFAULT_TYPE):
         if not staya: return
         members_bs = await staya_get_members(staya["id"])
         if next((m["role"] for m in members_bs if m["user_id"] == uid), "member") not in ("chief",):
-            await q.answer("Только Вожак может докупать места!", show_alert=True); return
+            await q.answer("Только Вожак может докупать места", show_alert=True); return
         current_max = staya.get("max_members") or STAYA_MAX_MEMBERS
         SLOT_COST = 800
         kb_bs = [
@@ -43247,7 +43242,7 @@ async def on_callback(update: Update, ctx: ContextTypes.DEFAULT_TYPE):
         if not staya: return
         if use_cauldron:
             if staya["cauldron"] < total_slot_cost:
-                await q.answer((f"В котле нужно {total_slot_cost}🪙! Сейчас: {staya['cauldron']}🪙")[:200], show_alert=True); return
+                await q.answer((f"В котле нужно {total_slot_cost}🪙. Сейчас: {staya['cauldron']}🪙")[:200], show_alert=True); return
             async with aiosqlite.connect(DB_PATH) as db:
                 new_max = (staya.get("max_members") or STAYA_MAX_MEMBERS) + slots_to_buy
                 await db.execute("UPDATE stayas SET max_members=?, cauldron=MAX(0,cauldron-?) WHERE id=?",
@@ -43255,7 +43250,7 @@ async def on_callback(update: Update, ctx: ContextTypes.DEFAULT_TYPE):
                 await db.commit()
         else:
             if f["coins"] < total_slot_cost:
-                await q.answer((f"Нужно {total_slot_cost}🪙!")[:200], show_alert=True); return
+                await q.answer((f"Нужно {total_slot_cost}🪙")[:200], show_alert=True); return
             f["coins"] -= total_slot_cost
             f["coins_spent"] = f.get("coins_spent", 0) + total_slot_cost
             await db_save(f)
@@ -43264,7 +43259,7 @@ async def on_callback(update: Update, ctx: ContextTypes.DEFAULT_TYPE):
                 await db.execute("UPDATE stayas SET max_members=? WHERE id=?", (new_max, staya["id"]))
                 await db.commit()
         source_label = "из котла" if use_cauldron else "из личного баланса"
-        await q.answer((f"✅ Куплено {slots_to_buy} мест ({source_label})! Теперь лимит {new_max}.")[:200], show_alert=True)
+        await q.answer((f"✅ Куплено {slots_to_buy} мест ({source_label}). Теперь лимит {new_max}.")[:200], show_alert=True)
         return
 
     # ── ✏️ Изменить текст приглашения ─────────────────────────────────────────
@@ -43386,7 +43381,7 @@ async def on_callback(update: Update, ctx: ContextTypes.DEFAULT_TYPE):
             await q.answer("Гороскоп на сегодня уже открыт! 🔮", show_alert=True)
             return
         if f["coins"] < HOROSCOPE_COST:
-            await q.answer((f"Нужно {HOROSCOPE_COST}🪙! У тебя {f['coins']}🪙.")[:200], show_alert=True)
+            await q.answer((f"Нужно {HOROSCOPE_COST}🪙. У тебя {f['coins']}🪙.")[:200], show_alert=True)
             return
         f["coins"]         -= HOROSCOPE_COST
         f["coins_spent"]    = f.get("coins_spent", 0) + HOROSCOPE_COST
@@ -43459,7 +43454,7 @@ async def on_callback(update: Update, ctx: ContextTypes.DEFAULT_TYPE):
         except ValueError:
             return
         if not f.get("alive"):
-            await q.answer("Лягушка мертва — нельзя заморозить!", show_alert=True)
+            await q.answer("Лягушка мертва — нельзя заморозить", show_alert=True)
             return
         until = time.time() + days * 86400
         f["hibernation_until"] = until
@@ -43549,7 +43544,7 @@ async def on_callback(update: Update, ctx: ContextTypes.DEFAULT_TYPE):
             return
         await boost_set(hours)
         await db_setting("boost_reminded", "0")
-        await q.answer((f"✨ Золотая лягушка активна на {hours}ч!")[:200], show_alert=True)
+        await q.answer((f"✨ Золотая лягушка активна на {hours}ч")[:200], show_alert=True)
         # Анонс в общий чат
         try:
             await ctx.bot.send_message(
@@ -43692,7 +43687,7 @@ async def on_callback(update: Update, ctx: ContextTypes.DEFAULT_TYPE):
         can_burn = SACRIFICE_MAX_BURN - already_burned
 
         if can_burn <= 0:
-            await q.answer((f"🔒 Ты уже достиг лимита {SACRIFICE_MAX_BURN} эпиков!")[:200], show_alert=True)
+            await q.answer((f"🔒 Ты уже достиг лимита {SACRIFICE_MAX_BURN} эпиков")[:200], show_alert=True)
             return
 
         coll = await db_coll_qty(uid)
@@ -43754,7 +43749,7 @@ async def on_callback(update: Update, ctx: ContextTypes.DEFAULT_TYPE):
         # Проверяем что облик ещё есть
         coll = await db_coll_qty(uid)
         if coll.get(skin_name, 0) <= 0:
-            await q.answer("❌ Этого облика нет в коллекции!", show_alert=True)
+            await q.answer("❌ Этого облика нет в коллекции", show_alert=True)
             return
         skin_data = SKINS.get(skin_name, {})
         skin_emoji = skin_data.get("emoji", "🟣")
@@ -43800,7 +43795,7 @@ async def on_callback(update: Update, ctx: ContextTypes.DEFAULT_TYPE):
             await q.answer("❌ Ивент уже завершён.", show_alert=True)
             return
         if time.time() > ev["end_time"]:
-            await q.answer("⏰ Время ивента истекло!", show_alert=True)
+            await q.answer("⏰ Время ивента истекло", show_alert=True)
             return
 
         async with aiosqlite.connect(DB_PATH) as db:
@@ -43811,15 +43806,15 @@ async def on_callback(update: Update, ctx: ContextTypes.DEFAULT_TYPE):
                 row = await c.fetchone()
         already_burned = row[0] if row else 0
         if already_burned >= SACRIFICE_MAX_BURN:
-            await q.answer((f"🔒 Лимит {SACRIFICE_MAX_BURN} эпиков достигнут!")[:200], show_alert=True)
+            await q.answer((f"🔒 Лимит {SACRIFICE_MAX_BURN} эпиков достигнут")[:200], show_alert=True)
             return
 
         coll = await db_coll_qty(uid)
         if coll.get(skin_name, 0) <= 0:
-            await q.answer("❌ Этого облика уже нет в коллекции!", show_alert=True)
+            await q.answer("❌ Этого облика уже нет в коллекции", show_alert=True)
             return
         if SKINS.get(skin_name, {}).get("rarity") != "epic":
-            await q.answer("❌ Можно сжигать только эпические облики!", show_alert=True)
+            await q.answer("❌ Можно сжигать только эпические облики", show_alert=True)
             return
 
         await db_remove_skin(uid, skin_name)
@@ -43941,7 +43936,7 @@ async def on_callback(update: Update, ctx: ContextTypes.DEFAULT_TYPE):
             await q.answer("❌ Ивент уже завершён.", show_alert=True)
             return
         if time.time() > ev["end_time"]:
-            await q.answer("⏰ Время ивента истекло!", show_alert=True)
+            await q.answer("⏰ Время ивента истекло", show_alert=True)
             return
 
         coll_qty = await db_coll_qty(uid)
@@ -43993,12 +43988,12 @@ async def on_callback(update: Update, ctx: ContextTypes.DEFAULT_TYPE):
             await q.answer("❌ Ивент уже завершён.", show_alert=True)
             return
         if time.time() > ev["end_time"]:
-            await q.answer("⏰ Время ивента истекло!", show_alert=True)
+            await q.answer("⏰ Время ивента истекло", show_alert=True)
             return
 
         coll_qty = await db_coll_qty(uid)
         if coll_qty.get(skin_name, 0) <= 0:
-            await q.answer("❌ Этого облика больше нет в коллекции!", show_alert=True)
+            await q.answer("❌ Этого облика больше нет в коллекции", show_alert=True)
             return
 
         skin_data = SKINS.get(skin_name, {})
@@ -44054,12 +44049,12 @@ async def on_callback(update: Update, ctx: ContextTypes.DEFAULT_TYPE):
             await q.answer("❌ Ивент уже завершён.", show_alert=True)
             return
         if time.time() > ev["end_time"]:
-            await q.answer("⏰ Время ивента истекло!", show_alert=True)
+            await q.answer("⏰ Время ивента истекло", show_alert=True)
             return
 
         coll_qty = await db_coll_qty(uid)
         if coll_qty.get(skin_name, 0) <= 0:
-            await q.answer("❌ Этого облика больше нет в коллекции!", show_alert=True)
+            await q.answer("❌ Этого облика больше нет в коллекции", show_alert=True)
             return
 
         skin_data = SKINS.get(skin_name, {})
@@ -44131,13 +44126,13 @@ async def on_callback(update: Update, ctx: ContextTypes.DEFAULT_TYPE):
             await q.answer("❌ Ивент уже завершён.", show_alert=True)
             return
         if time.time() > ev["end_time"]:
-            await q.answer("⏰ Время ивента истекло!", show_alert=True)
+            await q.answer("⏰ Время ивента истекло", show_alert=True)
             return
 
         coll_qty = await db_coll_qty(uid)
         qty_all = coll_qty.get(skin_name, 0)
         if qty_all <= 0:
-            await q.answer("❌ Этого облика больше нет в коллекции!", show_alert=True)
+            await q.answer("❌ Этого облика больше нет в коллекции", show_alert=True)
             return
 
         skin_data = SKINS.get(skin_name, {})
@@ -44362,7 +44357,7 @@ async def on_callback(update: Update, ctx: ContextTypes.DEFAULT_TYPE):
     if d == "ref_withdraw_request":
         ref_stars_bal = f.get("ref_stars_balance", 0)
         if ref_stars_bal < 50:
-            await q.answer("Нужно минимум 50 ⭐ для вывода!", show_alert=True)
+            await q.answer("Нужно минимум 50 ⭐ для вывода", show_alert=True)
             return
         # Создаём заявку
         async with aiosqlite.connect(DB_PATH) as db:
@@ -44372,7 +44367,7 @@ async def on_callback(update: Update, ctx: ContextTypes.DEFAULT_TYPE):
             ) as c:
                 existing = await c.fetchone()
             if existing:
-                await q.answer("У тебя уже есть ожидающая заявка!", show_alert=True)
+                await q.answer("У тебя уже есть ожидающая заявка", show_alert=True)
                 return
             await db.execute(
                 "INSERT INTO ref_withdraw_requests(user_id, amount, status, created_at) VALUES(?,?,?,?)",
@@ -44393,7 +44388,7 @@ async def on_callback(update: Update, ctx: ContextTypes.DEFAULT_TYPE):
                 )
             except Exception:
                 pass
-        await q.answer("✅ Заявка отправлена! Администратор свяжется с тобой.", show_alert=True)
+        await q.answer("✅ Заявка отправлена. Администратор свяжется с тобой.", show_alert=True)
         return
 
     # ── ДОСТИЖЕНИЯ ─────────────────────────────────
@@ -44669,7 +44664,7 @@ async def on_callback(update: Update, ctx: ContextTypes.DEFAULT_TYPE):
         if d == "forbes_show":
             f["forbes_public"] = 1
             await db_save(f)
-            await q.answer("👁 Ты теперь виден в Forbes!", show_alert=False)
+            await q.answer("👁 Ты теперь виден в Forbes", show_alert=False)
         elif d == "forbes_hide":
             f["forbes_public"] = 0
             await db_save(f)
@@ -44845,18 +44840,18 @@ async def on_callback(update: Update, ctx: ContextTypes.DEFAULT_TYPE):
     if d.startswith("buy_stars_"):
         pkg_idx = int(d[10:])
         if pkg_idx >= len(STAR_PACKAGES):
-            await q.answer("Ошибка!", show_alert=True)
+            await q.answer("Ошибка", show_alert=True)
             return
         pkg = STAR_PACKAGES[pkg_idx]
         # Новичковый пакет — проверяем право
         if pkg.get("newbie") and f.get("stars_spent", 0) > 0:
-            await q.answer("❌ Пакет «Новичок» доступен только при первой покупке!", show_alert=True)
+            await q.answer("❌ Пакет «Новичок» доступен только при первой покупке", show_alert=True)
             return
         # Ежедневное предложение — проверяем лимит
         if pkg.get("daily_deal"):
             today_s = today_str()
             if await db_setting(f"deal_{uid}") == today_s:
-                await q.answer("❌ Ежедневное предложение уже использовано сегодня!", show_alert=True)
+                await q.answer("❌ Ежедневное предложение уже использовано сегодня", show_alert=True)
                 return
         boost_mult = await boost_get_mult()
         stars_mult = boost_mult.get("stars", 1.0) if boost_mult else 1.0
@@ -44943,7 +44938,7 @@ async def on_callback(update: Update, ctx: ContextTypes.DEFAULT_TYPE):
     if d.startswith("buy_ticket_"):
         pkg_idx = int(d[11:])
         if pkg_idx >= len(TICKET_PACKAGES):
-            await q.answer("Ошибка!", show_alert=True)
+            await q.answer("Ошибка", show_alert=True)
             return
         tp = TICKET_PACKAGES[pkg_idx]
         price_stars = tp["stars"]  # всегда обычная цена (без скидки)
@@ -45074,11 +45069,11 @@ async def on_callback(update: Update, ctx: ContextTypes.DEFAULT_TYPE):
             async with db.execute("SELECT * FROM nft_frogs WHERE id=?", (nft_id,)) as c:
                 nft = await c.fetchone()
         if not nft:
-            await q.answer("Заявка не найдена!", show_alert=True)
+            await q.answer("Заявка не найдена", show_alert=True)
             return
         nft = dict(nft)
         if nft["verified"] == 1:
-            await q.answer("Уже подтверждено!", show_alert=True)
+            await q.answer("Уже подтверждено", show_alert=True)
             return
         async with aiosqlite.connect(DB_PATH) as db:
             await db.execute("UPDATE nft_frogs SET verified=1 WHERE id=?", (nft_id,))
@@ -45130,7 +45125,7 @@ async def on_callback(update: Update, ctx: ContextTypes.DEFAULT_TYPE):
                 )
             except Exception as e:
                 print(f"Ошибка отправки приглашения в NFT-клуб: {e}")
-        await q.answer((f"✅ Подтверждено! Выдан: {skin_to_give}")[:200], show_alert=True)
+        await q.answer((f"✅ Подтверждено. Выдан: {skin_to_give}")[:200], show_alert=True)
         try:
             await q.edit_message_reply_markup(reply_markup=None)
         except Exception:
@@ -45155,7 +45150,7 @@ async def on_callback(update: Update, ctx: ContextTypes.DEFAULT_TYPE):
                 )
             except Exception:
                 pass
-        await q.answer("❌ Отклонено!", show_alert=True)
+        await q.answer("❌ Отклонено", show_alert=True)
         try:
             await q.edit_message_reply_markup(reply_markup=None)
         except Exception:
@@ -45419,7 +45414,7 @@ async def on_callback(update: Update, ctx: ContextTypes.DEFAULT_TYPE):
 
         # Проверяем не истёк ли 1-часовой оффер
         if not offer or time.time() > offer.get("ends", 0):
-            await q.answer("⏰ Предложение истекло! Оформи по обычной цене.", show_alert=True)
+            await q.answer("⏰ Предложение истекло. Оформи по обычной цене.", show_alert=True)
             # Показываем обычную кнопку
             try:
                 await q.message.edit_reply_markup(reply_markup=InlineKeyboardMarkup([[
@@ -45524,24 +45519,24 @@ async def on_callback(update: Update, ctx: ContextTypes.DEFAULT_TYPE):
             async with db.execute("SELECT * FROM duels WHERE id=?", (duel_id,)) as c:
                 duel = await c.fetchone()
         if not duel:
-            await q.answer("Дуэль не найдена!", show_alert=True)
+            await q.answer("Дуэль не найдена", show_alert=True)
             return
         duel = dict(duel)
         if duel["status"] != "pending":
-            await q.answer("Дуэль уже завершена!", show_alert=True)
+            await q.answer("Дуэль уже завершена", show_alert=True)
             return
         if uid == duel["challenger_id"]:
-            await q.answer("Нельзя принять свой собственный вызов!", show_alert=True)
+            await q.answer("Нельзя принять свой собственный вызов", show_alert=True)
             return
         if not f or not f.get("alive"):
-            await q.answer("Твоя лягушка мертва или не создана!", show_alert=True)
+            await q.answer("Твоя лягушка мертва или не создана", show_alert=True)
             return
         challenger = await db_get(duel["challenger_id"])
         if not challenger:
-            await q.answer("Вызывающий не найден!", show_alert=True)
+            await q.answer("Вызывающий не найден", show_alert=True)
             return
         if challenger["coins"] < duel["stake"] or f["coins"] < duel["stake"]:
-            await q.answer("Недостаточно КваКоинов!", show_alert=True)
+            await q.answer("Недостаточно КваКоинов", show_alert=True)
             async with aiosqlite.connect(DB_PATH) as db:
                 await db.execute("UPDATE duels SET status='cancelled' WHERE id=?", (duel_id,))
                 await db.commit()
@@ -45554,7 +45549,7 @@ async def on_callback(update: Update, ctx: ContextTypes.DEFAULT_TYPE):
             )
             await db.commit()
             if cur.rowcount == 0:
-                await q.answer("Дуэль уже принята другим игроком!", show_alert=True)
+                await q.answer("Дуэль уже принята другим игроком", show_alert=True)
                 return
         # Делаем вид что это обычный duel_accept — перенаправляем на тот же код
         # через изменение d
@@ -45567,21 +45562,21 @@ async def on_callback(update: Update, ctx: ContextTypes.DEFAULT_TYPE):
             async with db.execute("SELECT * FROM duels WHERE id=?", (duel_id,)) as c:
                 duel = await c.fetchone()
         if not duel:
-            await q.answer("Дуэль не найдена!", show_alert=True)
+            await q.answer("Дуэль не найдена", show_alert=True)
             return
         duel = dict(duel)
         if duel["status"] != "pending":
-            await q.answer("Дуэль уже завершена!", show_alert=True)
+            await q.answer("Дуэль уже завершена", show_alert=True)
             return
         if uid != duel["target_id"]:
-            await q.answer("Это не твоя дуэль!", show_alert=True)
+            await q.answer("Это не твоя дуэль", show_alert=True)
             return
         challenger = await db_get(duel["challenger_id"])
         if not challenger:
-            await q.answer("Вызывающий не найден!", show_alert=True)
+            await q.answer("Вызывающий не найден", show_alert=True)
             return
         if challenger["coins"] < duel["stake"] or f["coins"] < duel["stake"]:
-            await q.answer("Недостаточно КваКоинов!", show_alert=True)
+            await q.answer("Недостаточно КваКоинов", show_alert=True)
             async with aiosqlite.connect(DB_PATH) as db:
                 await db.execute(
                     "UPDATE duels SET status='cancelled' WHERE id=?", (duel_id,)
@@ -45597,7 +45592,7 @@ async def on_callback(update: Update, ctx: ContextTypes.DEFAULT_TYPE):
             )
             await db.commit()
             if cur.rowcount == 0:
-                await q.answer("Дуэль уже принята!", show_alert=True)
+                await q.answer("Дуэль уже принята", show_alert=True)
                 return
 
         # Бонус от редкости облика (мифический +3, легендарный +2, эпический +1, редкий +0)
@@ -45854,25 +45849,25 @@ async def on_callback(update: Update, ctx: ContextTypes.DEFAULT_TYPE):
             ) as c:
                 battle = await c.fetchone()
         if not battle:
-            await q.answer("Бой не найден!", show_alert=True)
+            await q.answer("Бой не найден", show_alert=True)
             return
         battle = dict(battle)
         if battle["status"] != "pending":
-            await q.answer("Бой уже завершён!", show_alert=True)
+            await q.answer("Бой уже завершён", show_alert=True)
             return
         if uid != battle["target_id"]:
-            await q.answer("Это не твой бой!", show_alert=True)
+            await q.answer("Это не твой бой", show_alert=True)
             return
 
         challenger = await db_get(battle["challenger_id"])
         target_f = await db_get(battle["target_id"])
         if not challenger or not target_f:
-            await q.answer("Участник не найден!", show_alert=True)
+            await q.answer("Участник не найден", show_alert=True)
             return
 
         stake = battle["stake"]
         if stake > 0 and (challenger["coins"] < stake or target_f["coins"] < stake):
-            await q.answer("Недостаточно КваКоинов для ставки!", show_alert=True)
+            await q.answer("Недостаточно КваКоинов для ставки", show_alert=True)
             async with aiosqlite.connect(DB_PATH) as db:
                 await db.execute(
                     "UPDATE battles SET status='cancelled' WHERE id=?", (battle_id,)
@@ -45888,7 +45883,7 @@ async def on_callback(update: Update, ctx: ContextTypes.DEFAULT_TYPE):
             )
             await db.commit()
             if cur.rowcount == 0:
-                await q.answer("Бой уже принят!", show_alert=True)
+                await q.answer("Бой уже принят", show_alert=True)
                 return
 
         c_name = challenger.get("frog_name") or f"Лягушка {challenger['first_name']}"
@@ -46221,7 +46216,7 @@ async def on_callback(update: Update, ctx: ContextTypes.DEFAULT_TYPE):
             await q.answer("💀 Используй /revive", show_alert=True)
             return
         if f["coins"] < stake:
-            await q.answer((f"Нужно {stake}{coin_plain()} для участия!")[:200], show_alert=True)
+            await q.answer((f"Нужно {stake}{coin_plain()} для участия")[:200], show_alert=True)
             return
         now = time.time()
         # Создаём турнир в БД
@@ -46268,19 +46263,19 @@ async def on_callback(update: Update, ctx: ContextTypes.DEFAULT_TYPE):
             async with db.execute("SELECT * FROM tournaments WHERE id=?", (tid,)) as c:
                 tourn = await c.fetchone()
         if not tourn:
-            await q.answer("Турнир не найден!", show_alert=True)
+            await q.answer("Турнир не найден", show_alert=True)
             return
         tourn = dict(tourn)
         if tourn["status"] != "waiting":
-            await q.answer("Турнир уже начался или завершён!", show_alert=True)
+            await q.answer("Турнир уже начался или завершён", show_alert=True)
             return
         parts = json.loads(tourn["participants"] or "[]")
         if uid in parts:
-            await q.answer("Ты уже в турнире!", show_alert=True)
+            await q.answer("Ты уже в турнире", show_alert=True)
             return
         stake = tourn["stake"]
         if f["coins"] < stake:
-            await q.answer((f"Нужно {stake}{coin_plain()} для участия!")[:200], show_alert=True)
+            await q.answer((f"Нужно {stake}{coin_plain()} для участия")[:200], show_alert=True)
             return
         # Списываем ставку СРАЗУ при вступлении, иначе игрок может потратить монеты до старта
         f["coins"] -= stake
@@ -46322,7 +46317,7 @@ async def on_callback(update: Update, ctx: ContextTypes.DEFAULT_TYPE):
             )
         except (BadRequest, Forbidden):
             pass
-        await q.answer(f"✅ {q.from_user.first_name} вступил в турнир!")
+        await q.answer(f"✅ {q.from_user.first_name} вступил в турнир")
         return
 
     if d.startswith("tournament_start_"):
@@ -46332,14 +46327,14 @@ async def on_callback(update: Update, ctx: ContextTypes.DEFAULT_TYPE):
             async with db.execute("SELECT * FROM tournaments WHERE id=?", (tid,)) as c:
                 tourn = await c.fetchone()
         if not tourn:
-            await q.answer("Турнир не найден!", show_alert=True)
+            await q.answer("Турнир не найден", show_alert=True)
             return
         tourn = dict(tourn)
         if tourn["creator_id"] != uid:
-            await q.answer("Только создатель может начать!", show_alert=True)
+            await q.answer("Только создатель может начать", show_alert=True)
             return
         if tourn["status"] != "waiting":
-            await q.answer("Турнир уже начался!", show_alert=True)
+            await q.answer("Турнир уже начался", show_alert=True)
             return
         parts = json.loads(tourn["participants"] or "[]")
         if len(parts) < 3:
@@ -46351,7 +46346,7 @@ async def on_callback(update: Update, ctx: ContextTypes.DEFAULT_TYPE):
         stake = tourn["stake"]
         valid_parts = list(parts)  # все вступившие уже заплатили
         if len(valid_parts) < 2:
-            await q.answer("Недостаточно участников!", show_alert=True)
+            await q.answer("Недостаточно участников", show_alert=True)
             return
         # Турнир — каждый бросает кубик, побеждает с наибольшим числом
         async with aiosqlite.connect(DB_PATH) as db:
@@ -46433,7 +46428,7 @@ async def on_callback(update: Update, ctx: ContextTypes.DEFAULT_TYPE):
             tie_kb = InlineKeyboardMarkup([
                 [
                     InlineKeyboardButton("🤝 Разделить приз", callback_data=f"tournament_tie_split_{tid}"),
-                    InlineKeyboardButton("🎲 Переброс!", callback_data=f"tournament_tie_reroll_{tid}"),
+                    InlineKeyboardButton("🎲 Переброс", callback_data=f"tournament_tie_reroll_{tid}"),
                 ]
             ])
             try:
@@ -46503,7 +46498,7 @@ async def on_callback(update: Update, ctx: ContextTypes.DEFAULT_TYPE):
         tid = int(d[21:])
         tie_data = ctx.bot_data.get(f"tie_{tid}")
         if not tie_data:
-            await q.answer("Данные ничьей не найдены!", show_alert=True)
+            await q.answer("Данные ничьей не найдены", show_alert=True)
             return
         tied_uids = tie_data["tied_uids"]
         prize = tie_data["prize"]
@@ -46545,7 +46540,7 @@ async def on_callback(update: Update, ctx: ContextTypes.DEFAULT_TYPE):
         tid = int(d[22:])
         tie_data = ctx.bot_data.get(f"tie_{tid}")
         if not tie_data:
-            await q.answer("Данные ничьей не найдены!", show_alert=True)
+            await q.answer("Данные ничьей не найдены", show_alert=True)
             return
         tied_uids = tie_data["tied_uids"]
         prize = tie_data["prize"]
@@ -46608,7 +46603,7 @@ async def on_callback(update: Update, ctx: ContextTypes.DEFAULT_TYPE):
         rows = await db_top(20)
         alive_others = [r for r in rows if r["user_id"] != uid and r["alive"]][:10]
         if not alive_others:
-            await q.answer("Нет других игроков!", show_alert=True)
+            await q.answer("Нет других игроков", show_alert=True)
             return
         kb_rows = []
         for r in alive_others:
@@ -46639,10 +46634,10 @@ async def on_callback(update: Update, ctx: ContextTypes.DEFAULT_TYPE):
         target_uid_d = int(d[14:])
         target_d = await db_get(target_uid_d)
         if not target_d:
-            await q.answer("Игрок не найден!", show_alert=True)
+            await q.answer("Игрок не найден", show_alert=True)
             return
         if not target_d["alive"]:
-            await q.answer("Лягушка соперника мертва!", show_alert=True)
+            await q.answer("Лягушка соперника мертва", show_alert=True)
             return
         s_t = SKINS.get(target_d["skin"], SKINS["Brownie"])
         stakes = [10, 25, 50, 100, 250, 500]
@@ -46667,7 +46662,7 @@ async def on_callback(update: Update, ctx: ContextTypes.DEFAULT_TYPE):
                 f"⚔️ <b>Дуэль vs {he(t_name)}</b>\n"
                 f"Облик: {R_ICON[s_t['rarity']]} {he(target_d['skin'])}\n\n"
                 f"У тебя: {f['coins']}{coin_emoji()}\n"
-                f"Выбери ставку:",
+                f"",
                 parse_mode=ParseMode.HTML,
                 reply_markup=InlineKeyboardMarkup(kb_rows),
             )
@@ -46685,7 +46680,7 @@ async def on_callback(update: Update, ctx: ContextTypes.DEFAULT_TYPE):
         except (ValueError, IndexError):
             stake_d = 50
         if target_uid_d == uid:
-            await q.answer("Нельзя вызвать себя!", show_alert=True)
+            await q.answer("Нельзя вызвать себя", show_alert=True)
             return
         if not f["alive"] and not f.get("trial_active", 0):
             await q.answer("💀 Используй /revive", show_alert=True)
@@ -46697,10 +46692,10 @@ async def on_callback(update: Update, ctx: ContextTypes.DEFAULT_TYPE):
             return
         target_d = await db_get(target_uid_d)
         if not target_d:
-            await q.answer("Игрок не найден!", show_alert=True)
+            await q.answer("Игрок не найден", show_alert=True)
             return
         if not target_d["alive"]:
-            await q.answer("Лягушка соперника мертва!", show_alert=True)
+            await q.answer("Лягушка соперника мертва", show_alert=True)
             return
         now_d = time.time()
         async with aiosqlite.connect(DB_PATH) as db:
@@ -46767,14 +46762,14 @@ async def on_callback(update: Update, ctx: ContextTypes.DEFAULT_TYPE):
         if now - f.get("last_battle", 0) < cd:
             left = int(cd - (now - f.get("last_battle", 0)))
             await q.answer(
-                f"⏳ Подожди ещё {left} сек перед следующим батлом!",
+                f"⏳ Подожди ещё {left} сек перед следующим батлом",
                 show_alert=True,
             )
             return
         rows = await db_top(20)
         alive_others = [r for r in rows if r["user_id"] != uid and r["alive"]][:10]
         if not alive_others:
-            await q.answer("Нет других игроков!", show_alert=True)
+            await q.answer("Нет других игроков", show_alert=True)
             return
         my_power_s = round(f.get("power") or 0, 1)
         kb_rows = []
@@ -46815,23 +46810,23 @@ async def on_callback(update: Update, ctx: ContextTypes.DEFAULT_TYPE):
         target_uid = int(parts_d[3])
         stake = int(parts_d[4]) if len(parts_d) > 4 else 0
         if target_uid == uid:
-            await q.answer("Нельзя вызвать себя!", show_alert=True)
+            await q.answer("Нельзя вызвать себя", show_alert=True)
             return
         if stake > 0 and f["coins"] < stake:
-            await q.answer((f"Нужно {stake}{coin_plain()}!")[:200], show_alert=True)
+            await q.answer((f"Нужно {stake}{coin_plain()}")[:200], show_alert=True)
             return
         target = await db_get(target_uid)
         if not target:
-            await q.answer("Игрок не найден!", show_alert=True)
+            await q.answer("Игрок не найден", show_alert=True)
             return
         if not target["alive"]:
-            await q.answer("Лягушка соперника мертва!", show_alert=True)
+            await q.answer("Лягушка соперника мертва", show_alert=True)
             return
         now = time.time()
         cd = 5  # КД батла: 5 секунд
         if now - f.get("last_battle", 0) < cd:
             left = int(cd - (now - f.get("last_battle", 0)))
-            await q.answer((f"⏳ Подожди ещё {left} сек!")[:200], show_alert=True)
+            await q.answer((f"⏳ Подожди ещё {left} сек")[:200], show_alert=True)
             return
         async with aiosqlite.connect(DB_PATH) as db:
             await db.execute(
@@ -46919,7 +46914,7 @@ async def on_callback(update: Update, ctx: ContextTypes.DEFAULT_TYPE):
         rows = await db_top(20)
         alive_others = [r for r in rows if r["user_id"] != uid and r["alive"]][:10]
         if not alive_others:
-            await q.answer("Нет других игроков!", show_alert=True)
+            await q.answer("Нет других игроков", show_alert=True)
             return
 
         kb_rows = []
@@ -46955,25 +46950,25 @@ async def on_callback(update: Update, ctx: ContextTypes.DEFAULT_TYPE):
         target_uid_b = int(parts_b[3])
         stake_b = int(parts_b[4]) if len(parts_b) > 4 else 0
         if target_uid_b == uid:
-            await q.answer("Нельзя вызвать себя!", show_alert=True)
+            await q.answer("Нельзя вызвать себя", show_alert=True)
             return
         if stake_b > 0 and f["coins"] < stake_b:
-            await q.answer((f"Нужно {stake_b}{coin_plain()}!")[:200], show_alert=True)
+            await q.answer((f"Нужно {stake_b}{coin_plain()}")[:200], show_alert=True)
             return
 
         now = time.time()
         cd = 5  # КД батла: 5 секунд
         if now - f.get("last_battle", 0) < cd:
             left = int(cd - (now - f.get("last_battle", 0)))
-            await q.answer((f"⏳ Подожди {left} сек!")[:200], show_alert=True)
+            await q.answer((f"⏳ Подожди {left} сек")[:200], show_alert=True)
             return
 
         target_b = await db_get(target_uid_b)
         if not target_b:
-            await q.answer("Игрок не найден!", show_alert=True)
+            await q.answer("Игрок не найден", show_alert=True)
             return
         if not target_b["alive"]:
-            await q.answer("Лягушка соперника мертва!", show_alert=True)
+            await q.answer("Лягушка соперника мертва", show_alert=True)
             return
 
         c_power_b = round(f.get("power") or 0, 1)
@@ -47026,7 +47021,7 @@ async def on_callback(update: Update, ctx: ContextTypes.DEFAULT_TYPE):
         try:
             await ctx.bot.send_message(
                 target_uid_b,
-                challenge_text + "\n\n<i>Прими вызов в чате или нажми кнопку:</i>",
+                challenge_text + "",
                 parse_mode=ParseMode.HTML,
                 reply_markup=kb_b,
             )
@@ -47119,12 +47114,12 @@ async def on_callback(update: Update, ctx: ContextTypes.DEFAULT_TYPE):
                 nft = await c.fetchone()
 
         if not nft:
-            await q.answer("Заявка не найдена!", show_alert=True)
+            await q.answer("Заявка не найдена", show_alert=True)
             return
 
         nft = dict(nft)
         if nft["verified"] == 1:
-            await q.answer("Уже подтверждено!", show_alert=True)
+            await q.answer("Уже подтверждено", show_alert=True)
             await show_nft_list(q, ctx, page, edit=True)
             return
 
@@ -47184,7 +47179,7 @@ async def on_callback(update: Update, ctx: ContextTypes.DEFAULT_TYPE):
             except Exception as e:
                 print(f"Ошибка отправки приглашения в NFT-клуб: {e}")
 
-        await q.answer("✅ Заявка подтверждена!", show_alert=True)
+        await q.answer("✅ Заявка подтверждена", show_alert=True)
         # Обновляем список
         await show_nft_list(q, ctx, page, edit=True)
         return
@@ -47200,7 +47195,7 @@ async def on_callback(update: Update, ctx: ContextTypes.DEFAULT_TYPE):
             await db.execute("UPDATE nft_frogs SET verified=-1 WHERE id=?", (nft_id,))
             await db.commit()
 
-        await q.answer("❌ Заявка отклонена!", show_alert=True)
+        await q.answer("❌ Заявка отклонена", show_alert=True)
         # Обновляем список
         await show_nft_list(q, ctx, page, edit=True)
         return
@@ -47425,7 +47420,7 @@ async def on_callback(update: Update, ctx: ContextTypes.DEFAULT_TYPE):
         if not targets_br:
             await q.answer("Список получателей пуст или устарел. Запусти /broadcast_return снова.", show_alert=True)
             return
-        await q.answer("🚀 Рассылка запущена!")
+        await q.answer("🚀 Рассылка запущена")
         try:
             await q.message.edit_reply_markup(reply_markup=None)
         except Exception:
@@ -47716,7 +47711,7 @@ async def on_callback(update: Update, ctx: ContextTypes.DEFAULT_TYPE):
             back_page_pc = parts_pc[1] if len(parts_pc) > 1 else "0"
             back_cb_pc = f"admin_players_{back_page_pc}"
         except (ValueError, IndexError):
-            await q.answer("Ошибка!", show_alert=True)
+            await q.answer("Ошибка", show_alert=True)
             return
         await show_player_card(q.message, target_uid_pc, edit=True, back_cb=back_cb_pc)
         await q.answer()
@@ -47737,7 +47732,7 @@ async def on_callback(update: Update, ctx: ContextTypes.DEFAULT_TYPE):
             await db.commit()
         action_txt = "разбанен" if is_unban else "забанен"
         await admin_log(uid, "unban" if is_unban else "ban", target_uid_ban)
-        await q.answer((f"✅ Игрок {action_txt}!")[:200], show_alert=True)
+        await q.answer((f"✅ Игрок {action_txt}")[:200], show_alert=True)
         # Обновить карточку
         await show_player_card(q.message, target_uid_ban, edit=True)
         return
@@ -47758,7 +47753,7 @@ async def on_callback(update: Update, ctx: ContextTypes.DEFAULT_TYPE):
         _user_cache.invalidate(target_uid_bot)
         action_txt = "снята метка бота" if is_unmark else "помечен как бот (скрыт из топов)"
         await admin_log(uid, "unmarkbot" if is_unmark else "markbot", target_uid_bot)
-        await q.answer((f"✅ Игрок {action_txt}!")[:200], show_alert=True)
+        await q.answer((f"✅ Игрок {action_txt}")[:200], show_alert=True)
         await show_player_card(q.message, target_uid_bot, edit=True)
         return
 
@@ -47922,7 +47917,7 @@ async def on_callback(update: Update, ctx: ContextTypes.DEFAULT_TYPE):
                 )
             except Exception:
                 pass
-        await q.answer("💚 Воскрешено!", show_alert=True)
+        await q.answer("💚 Воскрешено", show_alert=True)
         await show_player_card(q.message, target_uid_rev, edit=True)
         return
 
@@ -47949,7 +47944,7 @@ async def on_callback(update: Update, ctx: ContextTypes.DEFAULT_TYPE):
                 )
             except Exception:
                 pass
-        await q.answer("💀 Убито!", show_alert=True)
+        await q.answer("💀 Убито", show_alert=True)
         await show_player_card(q.message, target_uid_kill, edit=True)
         return
 
@@ -48029,7 +48024,7 @@ async def on_callback(update: Update, ctx: ContextTypes.DEFAULT_TYPE):
                 keys_to_del = [k for k in _GIFT_FROZEN if k[0] == sender_uid]
                 for k in keys_to_del:
                     _GIFT_FROZEN.pop(k, None)
-            await q.answer("✅ Заморозка снята!", show_alert=True)
+            await q.answer("✅ Заморозка снята", show_alert=True)
             try:
                 await q.message.edit_text(
                     q.message.text + "\n\n✅ <b>Разморожено администратором.</b>",
@@ -48078,7 +48073,7 @@ async def on_callback(update: Update, ctx: ContextTypes.DEFAULT_TYPE):
                 p_cd[cd_key] = 0
             await db_save(p_cd)
             await admin_log(uid, "reset_cd", target_uid_cd)
-        await q.answer("✅ Кулдауны сброшены!", show_alert=True)
+        await q.answer("✅ Кулдауны сброшены", show_alert=True)
         await show_player_card(q.message, target_uid_cd, edit=True)
         return
 
@@ -48095,7 +48090,7 @@ async def on_callback(update: Update, ctx: ContextTypes.DEFAULT_TYPE):
             await db_save(p_as)
             await admin_log(uid, "give_advslot", target_uid_as)
             slots = p_as["adventure_extra_slots_bought"]
-            await q.answer((f"✅ Выдан доп. слот похода! Всего куплено: {slots}")[:200], show_alert=True)
+            await q.answer((f"✅ Выдан доп. слот похода. Всего куплено: {slots}")[:200], show_alert=True)
         else:
             await q.answer("❌ Игрок не найден", show_alert=True)
         await show_player_card(q.message, target_uid_as, edit=True)
@@ -48115,7 +48110,7 @@ async def on_callback(update: Update, ctx: ContextTypes.DEFAULT_TYPE):
             p_ra["adventure_extra_slots_bought"] = 0
             await db_save(p_ra)
             await admin_log(uid, "reset_advcd", target_uid_ra)
-            await q.answer("✅ КД похода и экспедиции сброшены! Лимит часов обнулён.", show_alert=True)
+            await q.answer("✅ КД похода и экспедиции сброшены. Лимит часов обнулён.", show_alert=True)
         else:
             await q.answer("❌ Игрок не найден", show_alert=True)
         await show_player_card(q.message, target_uid_ra, edit=True)
@@ -48136,7 +48131,7 @@ async def on_callback(update: Update, ctx: ContextTypes.DEFAULT_TYPE):
             amount_coin = int(amt_str)
             target_uid_coin = int(tuid_str)
         except ValueError:
-            await q.answer("Ошибка!", show_alert=True)
+            await q.answer("Ошибка", show_alert=True)
             return
         if op == "m":
             amount_coin = -amount_coin
@@ -48167,7 +48162,7 @@ async def on_callback(update: Update, ctx: ContextTypes.DEFAULT_TYPE):
             amount_xp = int(amt_xp_str)
             target_uid_xp = int(tuid_xp_str)
         except ValueError:
-            await q.answer("Ошибка!", show_alert=True)
+            await q.answer("Ошибка", show_alert=True)
             return
         if op_xp == "m":
             amount_xp = -amount_xp
@@ -48199,7 +48194,7 @@ async def on_callback(update: Update, ctx: ContextTypes.DEFAULT_TYPE):
         try:
             target_uid_sc = int(d[len("admin_setcoins_menu_"):])
         except ValueError:
-            await q.answer("Ошибка!", show_alert=True)
+            await q.answer("Ошибка", show_alert=True)
             return
         p_sc = await db_get(target_uid_sc)
         current_coins = p_sc["coins"] if p_sc else 0
@@ -48236,12 +48231,12 @@ async def on_callback(update: Update, ctx: ContextTypes.DEFAULT_TYPE):
         try:
             target_uid_ts = int(d[len("admin_takeskin_menu_"):])
         except ValueError:
-            await q.answer("Ошибка!", show_alert=True)
+            await q.answer("Ошибка", show_alert=True)
             return
         # Получаем коллекцию игрока
         coll_ts = await db_coll(target_uid_ts)
         if not coll_ts:
-            await q.answer("У игрока нет обликов!", show_alert=True)
+            await q.answer("У игрока нет обликов", show_alert=True)
             await show_player_card(q.message, target_uid_ts, edit=True)
             return
         skin_rows_ts = []
@@ -48277,7 +48272,7 @@ async def on_callback(update: Update, ctx: ContextTypes.DEFAULT_TYPE):
             target_uid_tsd = int(parts_ts[0])
             skin_name_ts = parts_ts[1] if len(parts_ts) > 1 else ""
         except (ValueError, IndexError):
-            await q.answer("Ошибка!", show_alert=True)
+            await q.answer("Ошибка", show_alert=True)
             return
         full_skin_ts = next((s for s in SKINS if s.startswith(skin_name_ts) or s == skin_name_ts), None)
         if not full_skin_ts:
@@ -48304,7 +48299,7 @@ async def on_callback(update: Update, ctx: ContextTypes.DEFAULT_TYPE):
             )
         except Exception:
             pass
-        await q.answer((f"✅ Облик {full_skin_ts} изъят!")[:200], show_alert=True)
+        await q.answer((f"✅ Облик {full_skin_ts} изъят")[:200], show_alert=True)
         await show_player_card(q.message, target_uid_tsd, edit=True)
         return
 
@@ -48337,7 +48332,7 @@ async def on_callback(update: Update, ctx: ContextTypes.DEFAULT_TYPE):
             nft_id_rcv = int(parts_rcv[0])
             target_uid_rcv = int(parts_rcv[1])
         except (ValueError, IndexError):
-            await q.answer("Ошибка!", show_alert=True); return
+            await q.answer("Ошибка", show_alert=True); return
         # Узнаём model_name у этого нфт
         async with aiosqlite.connect(DB_PATH) as db:
             db.row_factory = aiosqlite.Row
@@ -48391,7 +48386,7 @@ async def on_callback(update: Update, ctx: ContextTypes.DEFAULT_TYPE):
         try:
             target_uid_gi = int(d[len("admin_giveitem_menu_"):])
         except ValueError:
-            await q.answer("Ошибка!", show_alert=True)
+            await q.answer("Ошибка", show_alert=True)
             return
         # Показываем меню выбора предмета
         item_rows = []
@@ -48428,7 +48423,7 @@ async def on_callback(update: Update, ctx: ContextTypes.DEFAULT_TYPE):
             qty_gi = int(parts_gi[-1])
             item_id_gi = "_".join(parts_gi[1:-1])
         except (ValueError, IndexError):
-            await q.answer("Ошибка!", show_alert=True)
+            await q.answer("Ошибка", show_alert=True)
             return
         await inv_add(target_uid_gid, item_id_gi, qty_gi)
         await admin_log(uid, f"give_item_{item_id_gi}", target_uid_gid, f"qty={qty_gi}")
@@ -48444,7 +48439,7 @@ async def on_callback(update: Update, ctx: ContextTypes.DEFAULT_TYPE):
         try:
             target_uid_gs = int(d[len("admin_giveskin_menu_"):])
         except ValueError:
-            await q.answer("Ошибка!", show_alert=True)
+            await q.answer("Ошибка", show_alert=True)
             return
         # Пагинация скинов: показываем по 8 штук
         offset_gs = 0
@@ -48480,7 +48475,7 @@ async def on_callback(update: Update, ctx: ContextTypes.DEFAULT_TYPE):
             target_uid_gsd = int(parts_gs[0])
             skin_name_gs = parts_gs[1] if len(parts_gs) > 1 else ""
         except (ValueError, IndexError):
-            await q.answer("Ошибка!", show_alert=True)
+            await q.answer("Ошибка", show_alert=True)
             return
         # Найти полное имя скина (может быть обрезано до 30 символов)
         full_skin_name = next((s for s in SKINS if s.startswith(skin_name_gs) or s == skin_name_gs), None)
@@ -48489,7 +48484,7 @@ async def on_callback(update: Update, ctx: ContextTypes.DEFAULT_TYPE):
             return
         await db_add_skin(target_uid_gsd, full_skin_name)
         await admin_log(uid, f"give_skin_{full_skin_name}", target_uid_gsd, "")
-        await q.answer((f"✅ Облик {full_skin_name} выдан!")[:200], show_alert=True)
+        await q.answer((f"✅ Облик {full_skin_name} выдан")[:200], show_alert=True)
         # Уведомить игрока
         try:
             await ctx.bot.send_message(
@@ -48526,11 +48521,11 @@ async def on_callback(update: Update, ctx: ContextTypes.DEFAULT_TYPE):
             ) as c:
                 row = await c.fetchone()
         if not row:
-            await q.answer("❌ Розыгрыш не найден или уже завершён!", show_alert=True)
+            await q.answer("❌ Розыгрыш не найден или уже завершён", show_alert=True)
             return
         participants = json.loads(row["participants"] or "[]")
         if uid in participants:
-            await q.answer("✅ Ты уже участвуешь в этом розыгрыше!", show_alert=True)
+            await q.answer("✅ Ты уже участвуешь в этом розыгрыше", show_alert=True)
             return
         # Проверка kva_only — участвуют только те кто квакал в этом чате
         if row["kva_only"]:
@@ -48552,7 +48547,7 @@ async def on_callback(update: Update, ctx: ContextTypes.DEFAULT_TYPE):
                 (json.dumps(participants), gid),
             )
             await db.commit()
-        await q.answer("✅ Ты участвуешь в розыгрыше! Удачи! 🎁", show_alert=True)
+        await q.answer("✅ Ты участвуешь в розыгрыше. Удачи! 🎁", show_alert=True)
         await update_giveaway_message(gid, ctx)
         return
 
@@ -48570,11 +48565,11 @@ async def on_callback(update: Update, ctx: ContextTypes.DEFAULT_TYPE):
             ) as c:
                 row = await c.fetchone()
         if not row:
-            await q.answer("❌ Розыгрыш не найден или уже завершён!", show_alert=True)
+            await q.answer("❌ Розыгрыш не найден или уже завершён", show_alert=True)
             return
         # Только организатор и администраторы могут принудительно завершить
         if uid != row["creator_id"] and uid not in ADMIN_IDS:
-            await q.answer("❌ Только организатор может завершить розыгрыш досрочно!", show_alert=True)
+            await q.answer("❌ Только организатор может завершить розыгрыш досрочно", show_alert=True)
             return
         await q.answer("⏩ Завершаю розыгрыш...", show_alert=False)
         # Отменяем запланированный job чтобы не было двойного завершения
@@ -49505,7 +49500,7 @@ async def on_callback(update: Update, ctx: ContextTypes.DEFAULT_TYPE):
             return
         asyncio.create_task(job_mosquito(ctx))
         await admin_log(uid, "launch_mosquito")
-        await q.answer("🦟 Комар запущен!", show_alert=True)
+        await q.answer("🦟 Комар запущен", show_alert=True)
         return
 
     if d == "admin_launch_iev":
@@ -49518,7 +49513,7 @@ async def on_callback(update: Update, ctx: ContextTypes.DEFAULT_TYPE):
             await db.commit()
         asyncio.create_task(job_events(ctx))
         await admin_log(uid, "launch_iev")
-        await q.answer("🎲 Интерактивные события разосланы!", show_alert=True)
+        await q.answer("🎲 Интерактивные события разосланы", show_alert=True)
         return
 
     if d == "admin_legend_start":
@@ -49527,7 +49522,7 @@ async def on_callback(update: Update, ctx: ContextTypes.DEFAULT_TYPE):
             return
         await _legend_start(ctx.bot)
         await admin_log(uid, "legend_start")
-        await q.answer("📜 Легенда запущена!", show_alert=True)
+        await q.answer("📜 Легенда запущена", show_alert=True)
         # Обновляем панель
         try:
             await q.message.edit_reply_markup(reply_markup=None)
@@ -49546,7 +49541,7 @@ async def on_callback(update: Update, ctx: ContextTypes.DEFAULT_TYPE):
         if leg:
             await _legend_announce(ctx.bot, leg)
             await admin_log(uid, "legend_update")
-            await q.answer("🔄 Прогресс обновлён в чате!", show_alert=True)
+            await q.answer("🔄 Прогресс обновлён в чате", show_alert=True)
         else:
             await q.answer("Нет активной легенды.", show_alert=True)
         return
@@ -49559,7 +49554,7 @@ async def on_callback(update: Update, ctx: ContextTypes.DEFAULT_TYPE):
         if leg:
             await _legend_finish(ctx.bot, leg)
             await admin_log(uid, "legend_finish")
-            await q.answer("🏁 Легенда завершена!", show_alert=True)
+            await q.answer("🏁 Легенда завершена", show_alert=True)
         else:
             await q.answer("Нет активной легенды.", show_alert=True)
         return
@@ -49660,7 +49655,7 @@ async def on_callback(update: Update, ctx: ContextTypes.DEFAULT_TYPE):
         if uid not in ADMIN_IDS:
             await q.answer("⛔", show_alert=True)
             return
-        await q.answer("✅ Топ недели сброшен!", show_alert=True)
+        await q.answer("✅ Топ недели сброшен", show_alert=True)
         # Выдаём достижение top_weekly топ-3 ПЕРЕД сбросом
         try:
             top3w = await db_top_weekly(3)
@@ -49942,7 +49937,7 @@ async def on_callback(update: Update, ctx: ContextTypes.DEFAULT_TYPE):
                     f"✅ Куплено {bought} из {count} билетов (не хватило монет на остальные)"
                 )
             else:
-                await q.answer(f"✅ Куплено {bought} билет(ов)!")
+                await q.answer(f"✅ Куплено {bought} билет(ов)")
         else:
             await q.answer()
 
@@ -50041,7 +50036,7 @@ async def on_callback(update: Update, ctx: ContextTypes.DEFAULT_TYPE):
                     event = await c.fetchone()
 
             if not event:
-                await q.answer("🦟 Комар уже улетел!", show_alert=True)
+                await q.answer("🦟 Комар уже улетел", show_alert=True)
                 return
             event = dict(event)
             catchers = json.loads(event.get("catchers") or "[]")
@@ -50067,9 +50062,9 @@ async def on_callback(update: Update, ctx: ContextTypes.DEFAULT_TYPE):
                     ctx.bot_data[consolation_key] = True
                     f["coins"] += 10
                     await db_save(f)
-                    await q.answer("🦟 Все места заняты, но ты получаешь утешительный приз +10 🪙!", show_alert=True)
+                    await q.answer("🦟 Все места заняты, но ты получаешь утешительный приз +10 🪙", show_alert=True)
                 else:
-                    await q.answer("🦟 Все места уже заняты!", show_alert=True)
+                    await q.answer("🦟 Все места уже заняты", show_alert=True)
                 return
             if any(c["uid"] == uid for c in catchers):
                 await q.answer("Ты уже поймал этого комара! 😄", show_alert=True)
@@ -50119,7 +50114,7 @@ async def on_callback(update: Update, ctx: ContextTypes.DEFAULT_TYPE):
                     )
                 if cur.rowcount == 0:
                     await db.rollback()
-                    await q.answer("⚡ Место только что занял кто-то другой! Попробуй успеть!", show_alert=True)
+                    await q.answer("⚡ Место только что занял кто-то другой. Попробуй успеть", show_alert=True)
                     return
                 await db.commit()
 
@@ -50294,10 +50289,10 @@ async def on_callback(update: Update, ctx: ContextTypes.DEFAULT_TYPE):
             await q.answer("🌿 Ты уже воскрешал лягушку в этой церемонии.", show_alert=True)
             return
         if not f:
-            await q.answer("Сначала /start!", show_alert=True)
+            await q.answer("Сначала /start", show_alert=True)
             return
         if f["alive"]:
-            await q.answer("🐸 Твоя лягушка и так жива!", show_alert=True)
+            await q.answer("🐸 Твоя лягушка и так жива", show_alert=True)
             return
         if f.get("trial_active", 0):
             # Завершаем испытание вместе с воскрешением
@@ -50318,7 +50313,7 @@ async def on_callback(update: Update, ctx: ContextTypes.DEFAULT_TYPE):
         revived_list.append(uid)
         user_name = he(q.from_user.first_name)
         frog_name = fname(f)
-        await q.answer((f"🌿 Лягушка {f.get('frog_name') or 'воскрешена'}! Полные показатели восстановлены.")[:200], show_alert=True)
+        await q.answer((f"🌿 Лягушка {f.get('frog_name') or 'воскрешена'}. Полные показатели восстановлены.")[:200], show_alert=True)
         try:
             await ctx.bot.send_message(
                 fw["chat_id"],
@@ -50413,7 +50408,7 @@ async def on_callback(update: Update, ctx: ContextTypes.DEFAULT_TYPE):
             return
         f_fresh = await db_get(uid)
         if not f_fresh:
-            await q.answer("Сначала /start!", show_alert=True)
+            await q.answer("Сначала /start", show_alert=True)
             return
         await _place_bid(q, uid, f_fresh, bid_amount, ctx.bot)
         return
@@ -51179,7 +51174,7 @@ async def on_message(update: Update, ctx: ContextTypes.DEFAULT_TYPE):
                 elif result == "closed":
                     await update.message.reply_text("⏰ Ставки уже закрыты!")
                 else:
-                    await update.message.reply_text("Ты уже поставил на этот бой!")
+                    await update.message.reply_text("Ты уже поставил на этот бой")
                 return
             elif text and not text.isdigit():
                 await update.message.reply_text("Введи число — сумму ставки в монетах 🪙")
@@ -51606,7 +51601,7 @@ async def on_message(update: Update, ctx: ContextTypes.DEFAULT_TYPE):
                 "🔓 <b>Админ-магазин подарков</b>\n\n"
                 "Выдача <b>удалённых подарков Telegram</b> без оплаты.\n\n"
                 f"{lines}\n\n"
-                "👇 <i>Выбери подарок для отправки себе:</i>",
+                "",
                 parse_mode=ParseMode.HTML,
                 reply_markup=_secretgift_keyboard(admin_free=True),
             )
@@ -51698,7 +51693,7 @@ async def on_message(update: Update, ctx: ContextTypes.DEFAULT_TYPE):
             kb_skins = InlineKeyboardMarkup(skin_rows)
             await update.message.reply_text(
                 f"✨ Отлично! Твою лягушку зовут <b>{he(text)}</b>!\n\n"
-                f"🎨 <b>Выбери стартовый облик:</b>",
+                f"🎨 <b>Стартовый облик</b>",
                 parse_mode=ParseMode.HTML,
                 reply_markup=kb_skins,
             )
@@ -51740,7 +51735,7 @@ async def on_message(update: Update, ctx: ContextTypes.DEFAULT_TYPE):
             return
         members_app = await staya_get_members(staya_id_app)
         if any(m["user_id"] == user.id for m in members_app):
-            await update.message.reply_text("Ты уже в этой стае!")
+            await update.message.reply_text("Ты уже в этой стае")
             return
         async with aiosqlite.connect(DB_PATH) as db:
             await db.execute(
@@ -52117,7 +52112,7 @@ async def on_message(update: Update, ctx: ContextTypes.DEFAULT_TYPE):
             await update.message.reply_text(f"Недостаточно монет. Нужно {STAYA_CREATE_COST}🪙.")
             return
         if f_s.get("staya_id"):
-            await update.message.reply_text("Ты уже в стае!")
+            await update.message.reply_text("Ты уже в стае")
             return
         # Создаём стаю
         now_s = time.time()
@@ -52689,7 +52684,7 @@ async def on_message(update: Update, ctx: ContextTypes.DEFAULT_TYPE):
     if _is_friz_text and not f and await _fz_active():
         try:
             await update.message.reply_text(
-                "🧊 Чтобы участвовать в Фриз-ивенте — сначала заведи лягушку! Напиши /start",
+                "🧊 Чтобы участвовать в Фриз-ивенте — сначала заведи лягушку. Напиши /start",
                 parse_mode=ParseMode.HTML,
             )
         except Exception:
@@ -52780,7 +52775,7 @@ async def on_message(update: Update, ctx: ContextTypes.DEFAULT_TYPE):
         if not f:
             try:
                 await update.message.reply_text(
-                    "🐸 Чтобы квакать — сначала заведи лягушку! Напиши /start",
+                    "🐸 Чтобы квакать — сначала заведи лягушку. Напиши /start",
                     parse_mode=ParseMode.HTML,
                 )
             except Exception:
@@ -56649,7 +56644,7 @@ async def cmd_ttt_group(update: Update, ctx: ContextTypes.DEFAULT_TYPE):
         f"❌ <b>{he(user.first_name)}</b> вызывает на крестики-нолики!\n"
         f"Ставка: <b>{stake}{coin_emoji()}</b> с каждого\n"
         f"Победитель заберёт <b>{stake*2}{coin_emoji()}</b>!\n\n"
-        f"<i>Нажми кнопку чтобы принять вызов.</i>",
+        f"",
         parse_mode=ParseMode.HTML,
         reply_markup=pub_kb,
     )
@@ -56717,7 +56712,7 @@ async def cmd_ttt5_group(update: Update, ctx: ContextTypes.DEFAULT_TYPE):
         f"Ставка: <b>{stake}{coin_emoji()}</b> с каждого\n"
         f"Победитель заберёт <b>{stake*2}{coin_emoji()}</b>!\n"
         f"<i>🏆 Нужно выстроить 4 в ряд!</i>\n\n"
-        f"<i>Нажми кнопку чтобы принять вызов.</i>",
+        f"",
         parse_mode=ParseMode.HTML,
         reply_markup=pub_kb,
     )
@@ -56856,7 +56851,7 @@ async def cmd_hangman_group(update: Update, ctx: ContextTypes.DEFAULT_TYPE):
         if creator_f2:
             creator_f2["coins"] += stake
             await db_save(creator_f2)
-        await update.message.reply_text("❌ Сначала напиши боту в личку — нажми /start там!")
+        await update.message.reply_text("❌ Сначала напиши боту в личку — нажми /start там")
 
 
 
@@ -57132,7 +57127,7 @@ async def cmd_sacrifice_start(update: Update, ctx: ContextTypes.DEFAULT_TYPE):
         await db.commit()
 
     kb = InlineKeyboardMarkup([
-        [btn("🔥 Участвовать!", callback_data=f"sacrifice_join_{event_id}", style="success")],
+        [btn("🔥 Участвовать", callback_data=f"sacrifice_join_{event_id}", style="success")],
     ])
 
     msg = await update.message.reply_text(
@@ -57982,7 +57977,7 @@ async def cmd_m(update: Update, ctx: ContextTypes.DEFAULT_TYPE):
     if not mutual or mutual.get("pending"):
         await update.message.reply_text(
             f"✉️ Личные сообщения доступны только взаимным соседям.\n"
-            f"Добавь {he(tname or tfirst or uname)} в соседи сначала!",
+            f"Добавь {he(tname or tfirst or uname)} в соседи сначала",
             parse_mode=ParseMode.HTML,
         )
         return
@@ -58116,7 +58111,7 @@ async def on_inline_query(update: Update, ctx: ContextTypes.DEFAULT_TYPE):
             parse_mode=ParseMode.HTML,
         ),
         reply_markup=InlineKeyboardMarkup([[
-            InlineKeyboardButton("🐸 Начать играть!", url=ref_url),
+            InlineKeyboardButton("🐸 Начать играть", url=ref_url),
         ]]),
     )
 
@@ -58130,7 +58125,7 @@ async def on_inline_query(update: Update, ctx: ContextTypes.DEFAULT_TYPE):
             parse_mode=ParseMode.HTML,
         ),
         reply_markup=InlineKeyboardMarkup([[
-            InlineKeyboardButton("✅ Принять в соседи!", url=neighbor_url),
+            InlineKeyboardButton("✅ Принять в соседи", url=neighbor_url),
         ]]),
     )
 
@@ -58548,7 +58543,7 @@ async def cmd_fix_adventures_all(update: Update, ctx: ContextTypes.DEFAULT_TYPE)
         to_fix_ids.add(u2)
 
     if not to_fix_ids:
-        await status_msg.edit_text("✅ Зависших походов не найдено. Все чисто!")
+        await status_msg.edit_text("✅ Зависших походов не найдено. Все чисто")
         return
 
     async with aiosqlite.connect(DB_PATH) as db:
@@ -59006,7 +59001,7 @@ async def cmd_add_soseda(update: Update, ctx: ContextTypes.DEFAULT_TYPE):
         return
     existing = await friend_get(user.id, target_id)
     if existing:
-        await update.message.reply_text("Уже в списке соседей!")
+        await update.message.reply_text("Уже в списке соседей")
         return
     now = time.time()
     async with aiosqlite.connect(DB_PATH) as db:
@@ -59072,7 +59067,7 @@ async def cmd_gift_friend(update: Update, ctx: ContextTypes.DEFAULT_TYPE):
     target_id, tname, tfirst = row
     fr = await friend_get(user.id, target_id)
     if not fr or fr.get("pending"):
-        await update.message.reply_text("Можно дарить только соседям! Сначала подружитесь.")
+        await update.message.reply_text("Можно дарить только соседям. Сначала подружитесь.")
         return
 
     # Кулдаун 24 часа на одного получателя
@@ -59228,7 +59223,7 @@ async def cmd_fish(update: Update, ctx: ContextTypes.DEFAULT_TYPE):
     tname_disp = tname or tfirst or uname
     try:
         kb = InlineKeyboardMarkup([[
-            InlineKeyboardButton("🎣 Принять рыбалку!", callback_data=f"fish_accept_{user.id}_{FISH_COST}"),
+            InlineKeyboardButton("🎣 Принять рыбалку", callback_data=f"fish_accept_{user.id}_{FISH_COST}"),
             InlineKeyboardButton("❌ Отказать", callback_data=f"fish_decline_{user.id}"),
         ]])
         await ctx.bot.send_message(
@@ -59322,7 +59317,7 @@ async def _show_frog_profile(bot, requester_uid: int, target_uid: int, send_fn):
             InlineKeyboardButton("💤 Убаюкать",  callback_data=f"social_lullaby_{target_uid}"),
         ]
         buttons += [soc_row1, soc_row2, soc_row3]
-        buttons.append([InlineKeyboardButton("⚔️ Поход вместе!", callback_data=f"adv_invite_{target_uid}")])
+        buttons.append([InlineKeyboardButton("⚔️ Поход вместе", callback_data=f"adv_invite_{target_uid}")])
     buttons.append([InlineKeyboardButton("🍎 Покормить", callback_data=f"feed_other_{target_uid}")])
     await send_fn(text, parse_mode=ParseMode.HTML, reply_markup=InlineKeyboardMarkup(buttons))
 
@@ -59354,7 +59349,7 @@ async def cmd_pohod(update: Update, ctx: ContextTypes.DEFAULT_TYPE):
         return
     if f.get("adventure_locked_until", 0) > time.time():
         left = int((f["adventure_locked_until"] - time.time()) / 60)
-        await update.message.reply_text(f"⚔️ Лягушка уже в походе! До конца: {left} мин.")
+        await update.message.reply_text(f"⚔️ Лягушка уже в походе. До конца: {left} мин.")
         return
     args = ctx.args
     if not args:
@@ -59373,13 +59368,13 @@ async def cmd_pohod(update: Update, ctx: ContextTypes.DEFAULT_TYPE):
         return
     fr = await friend_get(user.id, target_id)
     if not fr or fr.get("pending") or fr.get("level", 0) < 1:
-        await update.message.reply_text("В поход можно ходить только с приятелями и выше!\nСначала подружитесь 🌱")
+        await update.message.reply_text("В поход можно ходить только с приятелями и выше\nСначала подружитесь 🌱")
         return
     # Проверяем, нет ли у отправителя уже активного pending-приглашения
     existing_invite = ctx.bot_data.get(f"adv_invite_{user.id}")
     if existing_invite and time.time() - existing_invite.get("created", 0) < 120:
         await update.message.reply_text(
-            "⏳ Уже есть активное приглашение в поход!\nПодожди ответа или отмены (2 мин)."
+            "⏳ Уже есть активное приглашение в поход\nПодожди ответа или отмены (2 мин)."
         )
         return
     # Проверяем adventure_locked_until у target прямо из БД
@@ -59478,7 +59473,7 @@ async def cmd_bond(update: Update, ctx: ContextTypes.DEFAULT_TYPE):
     # Проверяем, что отправитель не в другой активной связи
     if f.get("bond_with") and f.get("bond_with") != target_id:
         await update.message.reply_text(
-            "💔 У тебя уже есть активная Болотная Связь!\n"
+            "💔 У тебя уже есть активная Болотная Связь\n"
             "Сначала разорви её через меню /plaza → Связь → 💔 Разорвать."
         )
         return
@@ -60154,7 +60149,7 @@ async def cmd_checkers(update: Update, ctx: ContextTypes.DEFAULT_TYPE):
              btn(t("chk_play_white", f), callback_data="ck_side|white", style="primary")],
         ])
         msg = await update.message.reply_text(
-            "♟️ <b>Шашки vs Бот</b>\n\nВыбери свою сторону:",
+            "♟️ <b>Шашки vs Бот</b>",
             parse_mode=ParseMode.HTML, reply_markup=kb,
         )
         ctx.bot_data.setdefault("msg_owner", {})[f"{update.effective_chat.id}_{msg.message_id}"] = user.id
@@ -60171,7 +60166,7 @@ async def cmd_checkers(update: Update, ctx: ContextTypes.DEFAULT_TYPE):
          btn(t("btn_chk_pvp", f), callback_data="ck_mode|pvp", style="success")],
     ])
     msg = await update.message.reply_text(
-        "♟️ <b>Шашки</b>\n\nВыбери режим игры:",
+        "♟️ <b>Шашки</b>",
         parse_mode=ParseMode.HTML, reply_markup=kb,
     )
     ctx.bot_data.setdefault("msg_owner", {})[f"{update.effective_chat.id}_{msg.message_id}"] = user.id
@@ -60276,7 +60271,7 @@ async def handle_checkers_callback(q, d, uid, ctx):
             ])
             try:
                 await q.message.edit_text(
-                    "♟️ <b>Шашки vs Бот</b>\n\nВыбери свою сторону:",
+                    "♟️ <b>Шашки vs Бот</b>",
                     parse_mode=ParseMode.HTML, reply_markup=kb,
                 )
             except Exception: pass
@@ -60301,7 +60296,7 @@ async def handle_checkers_callback(q, d, uid, ctx):
             ])
             try:
                 await q.message.edit_text(
-                    "♟️ <b>Шашки</b>\n\nВыбери режим игры:",
+                    "♟️ <b>Шашки</b>",
                     parse_mode=ParseMode.HTML, reply_markup=kb,
                 )
             except Exception: pass
@@ -60314,14 +60309,14 @@ async def handle_checkers_callback(q, d, uid, ctx):
         f = await db_get(uid)
         if not f: await q.answer("Сначала /start 🐸", show_alert=True); return
         if f["coins"] < stake:
-            await q.answer((f"Нужно {stake}🪙, у тебя {f['coins']}🪙!")[:200], show_alert=True); return
+            await q.answer((f"Нужно {stake}🪙, у тебя {f['coins']}🪙")[:200], show_alert=True); return
         f["coins"] -= stake
         f["coins_spent"] = f.get("coins_spent", 0) + stake
         await db_save(f)
         gid = _new_gid(uid)
         gd = _chk_new_game(gid, user, "pvp", stake=stake, chat_id=q.message.chat.id)
         ctx.bot_data[f"chk|{gid}"] = gd
-        await q.answer(f"✅ Ставка {stake}🪙 внесена!")
+        await q.answer(f"✅ Ставка {stake}🪙 внесена")
         kb = InlineKeyboardMarkup([
             [btn(f"♟️ Принять вызов ({stake}🪙)", callback_data=f"ckj|{gid}", style="success")],
             [btn("🚫 Отменить вызов", callback_data=f"ckg|{gid}", style="danger")],
@@ -60360,7 +60355,7 @@ async def handle_checkers_callback(q, d, uid, ctx):
         ctx.bot_data[f"chk|{gid}"] = gd
         gd["phase"] = "select"
         kb = _chk_board_kb(gid, gd["board"], gd["turn"], "select")
-        await q.answer("✅ Игра начата!")
+        await q.answer("✅ Игра начата")
         try:
             await q.message.edit_text(
                 _chk_header(gd),
@@ -60373,16 +60368,16 @@ async def handle_checkers_callback(q, d, uid, ctx):
     if action == "ckj":
         gid = parts[1]
         gd = ctx.bot_data.get(f"chk|{gid}")
-        if not gd: await q.answer("Игра не найдена!", show_alert=True); return
+        if not gd: await q.answer("Игра не найдена", show_alert=True); return
         if gd["phase"] != "join" or gd.get("p2") is not None:
-            await q.answer("Игра уже началась!", show_alert=True); return
-        if uid == gd["p1"]: await q.answer("Нельзя играть с собой!", show_alert=True); return
+            await q.answer("Игра уже началась", show_alert=True); return
+        if uid == gd["p1"]: await q.answer("Нельзя играть с собой", show_alert=True); return
         f2 = await db_get(uid)
         if not f2: await q.answer("Сначала /start 🐸", show_alert=True); return
         if not f2.get("alive", 1): await q.answer("💀 Лягушка мертва! /revive", show_alert=True); return
         stake = gd["stake"]
         if f2["coins"] < stake:
-            await q.answer((f"Нужно {stake}🪙 для принятия вызова!")[:200], show_alert=True); return
+            await q.answer((f"Нужно {stake}🪙 для принятия вызова")[:200], show_alert=True); return
         f2["coins"] -= stake
         f2["coins_spent"] = f2.get("coins_spent", 0) + stake
         await db_save(f2)
@@ -60391,7 +60386,7 @@ async def handle_checkers_callback(q, d, uid, ctx):
         gd["phase"] = "select"
         # Белые (p2) ходят первыми по правилам русских шашек (turn: 1=чёрные/p1, 2=белые/p2)
         gd["turn"] = 2
-        await q.answer(f"✅ Принято! Ставка {stake}🪙 внесена.")
+        await q.answer(f"✅ Принято. Ставка {stake}🪙 внесена.")
         kb = _chk_board_kb(gid, gd["board"], gd["turn"], "select")
         try:
             await q.message.edit_text(
@@ -60405,7 +60400,7 @@ async def handle_checkers_callback(q, d, uid, ctx):
     if action == "cks":
         gid, fr, fc = parts[1], int(parts[2]), int(parts[3])
         gd = ctx.bot_data.get(f"chk|{gid}")
-        if not gd: await q.answer("Игра не найдена!", show_alert=True); return
+        if not gd: await q.answer("Игра не найдена", show_alert=True); return
         # Проверка прав
         if gd["mode"] == "pvp":
             cur_p = gd["p1"] if gd["turn"] == 1 else gd["p2"]
@@ -60413,10 +60408,10 @@ async def handle_checkers_callback(q, d, uid, ctx):
         else:
             if uid != gd["p1"]: await q.answer("Это не твоя игра!", show_alert=True); return
             if gd["turn"] != gd.get("human_player", 1):
-                await q.answer("Сейчас ходит бот!", show_alert=True); return
+                await q.answer("Сейчас ходит бот", show_alert=True); return
         moves = _chk_moves(gd["board"], gd["turn"])
         my_moves = [m for m in moves if m[0] == fr and m[1] == fc]
-        if not my_moves: await q.answer("Эта шашка не может ходить!", show_alert=True); return
+        if not my_moves: await q.answer("Эта шашка не может ходить", show_alert=True); return
         gd["phase"] = "move"
         gd["sel"] = (fr, fc)
         kb = _chk_board_kb(gid, gd["board"], gd["turn"], "move", sel=(fr, fc))
@@ -60433,7 +60428,7 @@ async def handle_checkers_callback(q, d, uid, ctx):
     if action == "ckc":
         gid = parts[1]
         gd = ctx.bot_data.get(f"chk|{gid}")
-        if not gd: await q.answer("Игра не найдена!", show_alert=True); return
+        if not gd: await q.answer("Игра не найдена", show_alert=True); return
         if gd["mode"] == "pvp":
             cur_p = gd["p1"] if gd["turn"] == 1 else gd["p2"]
             if uid != cur_p: await q.answer("Не твой ход!", show_alert=True); return
@@ -60455,21 +60450,21 @@ async def handle_checkers_callback(q, d, uid, ctx):
     if action == "ckm":
         gid, tr, tc = parts[1], int(parts[2]), int(parts[3])
         gd = ctx.bot_data.get(f"chk|{gid}")
-        if not gd: await q.answer("Игра не найдена!", show_alert=True); return
+        if not gd: await q.answer("Игра не найдена", show_alert=True); return
         if gd["mode"] == "pvp":
             cur_p = gd["p1"] if gd["turn"] == 1 else gd["p2"]
             if uid != cur_p: await q.answer("Не твой ход!", show_alert=True); return
         else:
             if uid != gd["p1"]: await q.answer("Это не твоя игра!", show_alert=True); return
             if gd["turn"] != gd.get("human_player", 1):
-                await q.answer("Сейчас ходит бот!", show_alert=True); return
+                await q.answer("Сейчас ходит бот", show_alert=True); return
         fr, fc = gd["sel"] if gd.get("sel") else (None, None)
         if fr is None:
-            await q.answer("Сначала выбери шашку!", show_alert=True)
+            await q.answer("Сначала выбери шашку", show_alert=True)
             return
         moves = _chk_moves(gd["board"], gd["turn"])
         matched = [m for m in moves if m[0] == fr and m[1] == fc and m[2] == tr and m[3] == tc]
-        if not matched: await q.answer("Недопустимый ход!", show_alert=True); return
+        if not matched: await q.answer("Недопустимый ход", show_alert=True); return
         m = matched[0]
         gd["board"] = _chk_apply(gd["board"], *m)
 
@@ -60492,7 +60487,7 @@ async def handle_checkers_callback(q, d, uid, ctx):
         next_m = _chk_moves(gd["board"], gd["turn"])
         finished = not next_m or p1 == 0 or p2 == 0
 
-        await q.answer("💥 Бьёт!" if chain_mode else "✅")
+        await q.answer("💥 Бьёт" if chain_mode else "✅")
 
         if finished:
             # Определяем победителя
@@ -60575,9 +60570,9 @@ async def handle_checkers_callback(q, d, uid, ctx):
     if action == "ckd":
         gid = parts[1]
         gd = ctx.bot_data.get(f"chk|{gid}")
-        if not gd: await q.answer("Игра не найдена!", show_alert=True); return
+        if not gd: await q.answer("Игра не найдена", show_alert=True); return
         if uid != gd["p1"] and uid != gd.get("p2"):
-            await q.answer("Ты не участвуешь в этой игре!", show_alert=True); return
+            await q.answer("Ты не участвуешь в этой игре", show_alert=True); return
         mode = gd.get("mode", "pvp")
         if mode == "bot":
             # Бот принимает ничью если у него плохая позиция (меньше шашек)
@@ -60603,11 +60598,11 @@ async def handle_checkers_callback(q, d, uid, ctx):
                     )
                 except Exception: pass
             else:
-                await q.answer("🤖 Бот отказывает в ничьей — он в лучшей позиции!", show_alert=True)
+                await q.answer("🤖 Бот отказывает в ничьей — он в лучшей позиции", show_alert=True)
             return
         existing = gd.get("draw_offer")
         if existing == uid:
-            await q.answer("Ты уже предложил ничью!", show_alert=True); return
+            await q.answer("Ты уже предложил ничью", show_alert=True); return
         if existing is not None and existing != uid:
             # Соперник уже предложил — принимаем ничью
             stake = gd.get("stake", 0)
@@ -60616,7 +60611,7 @@ async def handle_checkers_callback(q, d, uid, ctx):
             if p1f: p1f["coins"] += stake; await db_save(p1f)
             if p2f: p2f["coins"] += stake; await db_save(p2f)
             ctx.bot_data.pop(f"chk|{gid}", None)
-            await q.answer("🤝 Ничья принята!")
+            await q.answer("🤝 Ничья принята")
             try:
                 await q.message.edit_text(
                     f"<b>Шашки</b>\n\n"
@@ -60628,7 +60623,7 @@ async def handle_checkers_callback(q, d, uid, ctx):
             return
         gd["draw_offer"] = uid
         offerer_name = gd["p1n"] if uid == gd["p1"] else gd["p2n"]
-        await q.answer("🤝 Предложение отправлено!")
+        await q.answer("🤝 Предложение отправлено")
         try:
             await q.message.edit_text(
                 _chk_header(gd) + f"\n\n🤝 <b>{_html.escape(offerer_name)}</b> предлагает ничью",
@@ -60642,9 +60637,9 @@ async def handle_checkers_callback(q, d, uid, ctx):
     if action == "ckg":
         gid = parts[1]
         gd = ctx.bot_data.get(f"chk|{gid}")
-        if not gd: await q.answer("Игра не найдена!", show_alert=True); return
+        if not gd: await q.answer("Игра не найдена", show_alert=True); return
         if uid != gd["p1"] and uid != gd.get("p2"):
-            await q.answer("Ты не участвуешь в этой игре!", show_alert=True); return
+            await q.answer("Ты не участвуешь в этой игре", show_alert=True); return
 
         mode = gd.get("mode", "pvp")
         stake = gd.get("stake", 0)
@@ -60809,7 +60804,7 @@ def _bs_place_kb(gid: str, placed: set, size: int, max_ships: int) -> InlineKeyb
         rows.append(row)
     count = len(placed)
     if count == max_ships:
-        rows.append([btn("✅ Готово!", callback_data=f"bsc|{gid}", style="success")])
+        rows.append([btn("✅ Готово", callback_data=f"bsc|{gid}", style="success")])
     else:
         rows.append([InlineKeyboardButton(f"🟩 Выбрано {count}/{max_ships} — тапни клетки", callback_data="noop")])
     rows.append([btn("🚫 Отменить вызов", callback_data=f"bsq|{gid}", style="danger")])
@@ -60986,20 +60981,20 @@ async def handle_battleship_callback(q, d, uid, ctx):
     if action == "bsj":
         gid = parts[1]
         gd = ctx.bot_data.get(f"bs2|{gid}")
-        if not gd: await q.answer("Игра не найдена!", show_alert=True); return
+        if not gd: await q.answer("Игра не найдена", show_alert=True); return
         if gd["phase"] != "join": await q.answer("Игра уже началась!", show_alert=True); return
-        if uid == gd["p1"]: await q.answer("Нельзя играть с собой!", show_alert=True); return
+        if uid == gd["p1"]: await q.answer("Нельзя играть с собой", show_alert=True); return
         f2 = await db_get(uid)
         if not f2: await q.answer("Сначала /start 🐸", show_alert=True); return
         if not f2.get("alive", 1): await q.answer("💀 Лягушка мертва! /revive", show_alert=True); return
         stake = gd["stake"]
         if f2["coins"] < stake:
-            await q.answer((f"Нужно {stake}🪙 для принятия вызова!")[:200], show_alert=True); return
+            await q.answer((f"Нужно {stake}🪙 для принятия вызова")[:200], show_alert=True); return
         f2["coins"] -= stake
         f2["coins_spent"] = f2.get("coins_spent", 0) + stake
         await db_save(f2)
         gd["p2"] = uid; gd["p2n"] = f2.get("first_name", "?")
-        await q.answer(f"✅ Принято! Ставка {stake}🪙 внесена.")
+        await q.answer(f"✅ Принято. Ставка {stake}🪙 внесена.")
         await _bs_start_game(gid, gd, q.message, ctx.bot)
         return
 
@@ -61007,7 +61002,7 @@ async def handle_battleship_callback(q, d, uid, ctx):
     if action == "bsp":
         gid, r, c = parts[1], int(parts[2]), int(parts[3])
         gd = ctx.bot_data.get(f"bs2|{gid}")
-        if not gd: await q.answer("Игра не найдена!", show_alert=True); return
+        if not gd: await q.answer("Игра не найдена", show_alert=True); return
         if gd["phase"] == "place1":
             if uid != gd["p1"]: await q.answer((f"Сейчас расставляет {gd['p1n']}!")[:200], show_alert=True); return
             placed = gd["place1"]; player = 1
@@ -61015,7 +61010,7 @@ async def handle_battleship_callback(q, d, uid, ctx):
             if uid != gd["p2"]: await q.answer((f"Сейчас расставляет {gd['p2n']}!")[:200], show_alert=True); return
             placed = gd["place2"]; player = 2
         else:
-            await q.answer("Расстановка уже закончена!", show_alert=True); return
+            await q.answer("Расстановка уже закончена", show_alert=True); return
         cell = (r, c)
         if cell in placed:
             placed.discard(cell)
@@ -61023,7 +61018,7 @@ async def handle_battleship_callback(q, d, uid, ctx):
             if len(placed) < gd["max_ships"]:
                 placed.add(cell)
             else:
-                await q.answer((f"Уже {gd['max_ships']} клеток! Сними лишнюю или нажми Готово.")[:200], show_alert=True); return
+                await q.answer((f"Уже {gd['max_ships']} клеток. Сними лишнюю или нажми Готово.")[:200], show_alert=True); return
         size, ms = gd["size"], gd["max_ships"]
         stake = gd["stake"]
         p_name = gd[f"p{player}n"]
@@ -61045,7 +61040,7 @@ async def handle_battleship_callback(q, d, uid, ctx):
     if action == "bsc":
         gid = parts[1]
         gd = ctx.bot_data.get(f"bs2|{gid}")
-        if not gd: await q.answer("Игра не найдена!", show_alert=True); return
+        if not gd: await q.answer("Игра не найдена", show_alert=True); return
         size, ms = gd["size"], gd["max_ships"]
         chat_id = gd["chat_id"]
         stake = gd["stake"]
@@ -61057,7 +61052,7 @@ async def handle_battleship_callback(q, d, uid, ctx):
             # ── Режим против бота: сразу начинаем бой ──────────────────────
             if gd.get("bot_game"):
                 gd["phase"] = "battle"; gd["turn"] = 1
-                await q.answer("✅ Флот расставлен! Бой начинается!")
+                await q.answer("✅ Флот расставлен. Бой начинается")
                 ships_opp = gd["ships2"]
                 shots_cur = gd["shots1"]
                 kb = _bs_fire_kb(gid, ships_opp, shots_cur, size)
@@ -61071,7 +61066,7 @@ async def handle_battleship_callback(q, d, uid, ctx):
                 return
 
             gd["phase"] = "place2"
-            await q.answer("✅ Флот расставлен!")
+            await q.answer("✅ Флот расставлен")
             try:
                 await q.message.edit_text(
                     f"✅ Флот расставлен! Ждём пока <b>{_html.escape(gd['p2n'])}</b> расставит свои корабли…",
@@ -61113,7 +61108,7 @@ async def handle_battleship_callback(q, d, uid, ctx):
             if len(gd["place2"]) != ms: await q.answer((f"Нужно ровно {ms} клеток!")[:200], show_alert=True); return
             gd["ships2"] = _bs_groups(gd["place2"])
             gd["phase"] = "battle"; gd["turn"] = 1
-            await q.answer("✅ Флот расставлен! Бой начинается!")
+            await q.answer("✅ Флот расставлен. Бой начинается")
             try:
                 await q.message.edit_text(
                     "✅ Флот расставлен! Следи за сообщением в чате.",
@@ -61141,14 +61136,14 @@ async def handle_battleship_callback(q, d, uid, ctx):
     if action == "bsf":
         gid, r, c = parts[1], int(parts[2]), int(parts[3])
         gd = ctx.bot_data.get(f"bs2|{gid}")
-        if not gd: await q.answer("Игра не найдена!", show_alert=True); return
+        if not gd: await q.answer("Игра не найдена", show_alert=True); return
         if gd["phase"] != "battle": await q.answer("Игра ещё не началась!", show_alert=True); return
         cur_p = gd["p1"] if gd["turn"] == 1 else gd["p2"]
         if uid != cur_p: await q.answer("Сейчас не твой ход!", show_alert=True); return
         shots = gd["shots1"] if gd["turn"] == 1 else gd["shots2"]
         ships_opp = gd["ships2"] if gd["turn"] == 1 else gd["ships1"]
         cell = (r, c)
-        if cell in shots: await q.answer("Сюда уже стреляли!", show_alert=True); return
+        if cell in shots: await q.answer("Сюда уже стреляли", show_alert=True); return
         hit = cell in ships_opp
         shots[cell] = "hit" if hit else "miss"
         size = gd["size"]
@@ -61171,7 +61166,7 @@ async def handle_battleship_callback(q, d, uid, ctx):
                 if w_f: w_f["coins"] += prize; await db_save(w_f)
                 await log_chat_activity(_bs_chat_id, w_id, cur_name, "морской бой победа", prize)
             ctx.bot_data.pop(f"bs2|{gid}", None)
-            await q.answer(f"🏆 {cur_name} потопил весь флот!")
+            await q.answer(f"🏆 {cur_name} потопил весь флот")
             board_txt = _bs_render_fire(ships_opp, shots, size)
             if is_bot_game:
                 try:
@@ -61195,10 +61190,10 @@ async def handle_battleship_callback(q, d, uid, ctx):
 
         if state == "sunk":
             result_txt = "🟥 <b>Потопил корабль!</b> Стреляй ещё."
-            await q.answer("🟥 Потопил!")
+            await q.answer("🟥 Потопил")
         elif state == "hit":
             result_txt = "🟨 <b>Попал!</b> Стреляй ещё."
-            await q.answer("🟨 Попал!")
+            await q.answer("🟨 Попал")
         else:
             result_txt = f"🟦 <b>Промах.</b> Ход → <b>{_html.escape(opp_name)}</b>"
             await q.answer("🟦 Промах")
@@ -61286,7 +61281,7 @@ async def handle_battleship_callback(q, d, uid, ctx):
     if action == "bsq":
         gid = parts[1]
         gd = ctx.bot_data.pop(f"bs2|{gid}", None)
-        if not gd: await q.answer("Игра не найдена!", show_alert=True); return
+        if not gd: await q.answer("Игра не найдена", show_alert=True); return
         stake = gd["stake"]
         if gd["p2"] is None:
             # Отмена до принятия — только создатель
@@ -64779,7 +64774,7 @@ async def _exp_riddle_timeout(bot, exp: dict, ev: dict, ev_data: dict, members: 
     # Штраф за таймаут
     hp_delta = ev_data.get("timeout_hp", -20)
     dur_add = ev_data.get("timeout_duration", 0)
-    result_parts = [f"⏰ <b>Время вышло!</b>\n{ev_data['flavor_timeout']}"]
+    result_parts = [f"⏰ <b>Время вышло</b>\n{ev_data['flavor_timeout']}"]
     if hp_delta < 0:
         result_parts.append(f"💔 <b>{hp_delta} HP</b> каждому")
     if dur_add:
@@ -66363,7 +66358,7 @@ async def cmd_expedition(update: Update, ctx: ContextTypes.DEFAULT_TYPE):
         return
     if not f.get("alive"):
         await update.message.reply_text(
-            "💀 Мёртвая лягушка не может идти в экспедицию. Сначала воскресни!",
+            "💀 Мёртвая лягушка не может идти в экспедицию. Сначала воскресни",
             parse_mode=ParseMode.HTML,
         )
         return
@@ -66388,7 +66383,7 @@ async def cmd_expedition(update: Update, ctx: ContextTypes.DEFAULT_TYPE):
         left_h = int((next_reset - time.time()) / 3600)
         left_m = int(((next_reset - time.time()) % 3600) / 60)
         await update.message.reply_text(
-            f"⏳ <b>Экспедиция уже была сегодня!</b>\n\n"
+            f"⏳ <b>Экспедиция уже была сегодня</b>\n\n"
             f"Следующая откроется через <b>{left_h}ч {left_m}м</b>.\n\n"
             f"⭐ <b>Хочешь ещё одну прямо сейчас?</b>\n"
             f"За 10 Stars можно открыть вторую экспедицию на сегодня.",
@@ -66596,7 +66591,7 @@ async def exp_handle_callback(q, uid: int, d: str,
     f = await db_get(uid)
     if not f:
         logger.warning("exp_handle_callback: no frog for uid=%s", uid)
-        await q.answer("Сначала заведи лягушку!", show_alert=True)
+        await q.answer("Сначала заведи лягушку", show_alert=True)
         return True
 
     logger.info("exp_handle_callback: frog alive=%s level=%s last_exp=%s",
@@ -66629,23 +66624,23 @@ async def exp_handle_callback(q, uid: int, d: str,
         bc = EXP_BIOMES[biome_key]
         if f.get("level", 1) < bc["min_level"]:
             logger.debug("[exp] exp_create_: level too low %s < %s", f.get("level"), bc["min_level"])
-            await q.answer((f"Нужен уровень {bc['min_level']}!")[:200], show_alert=True)
+            await q.answer((f"Нужен уровень {bc['min_level']}")[:200], show_alert=True)
             return True
         if not f.get("alive"):
             logger.debug("[exp] exp_create_: frog dead")
-            await q.answer("Мёртвая лягушка не может идти в экспедицию!", show_alert=True)
+            await q.answer("Мёртвая лягушка не может идти в экспедицию", show_alert=True)
             return True
         active = await _exp_get_user_active(uid)
         logger.debug("[exp] exp_create_: active_expedition=%s", active)
         if active:
-            await q.answer("Ты уже в экспедиции!", show_alert=True)
+            await q.answer("Ты уже в экспедиции", show_alert=True)
             return True
         today_start = time.time() - (time.time() % 86400)
         logger.debug("[exp] exp_create_: last_exp=%s today_start=%s cooldown=%s",
                      f.get("last_expedition", 0), today_start,
                      f.get("last_expedition", 0) >= today_start)
         if f.get("last_expedition", 0) >= today_start:
-            await q.answer("Экспедиция уже была сегодня!", show_alert=True)
+            await q.answer("Экспедиция уже была сегодня", show_alert=True)
             return True
         logger.debug("[exp] exp_create_: все проверки пройдены, показываем экран кол-ва игроков")
 
@@ -66746,14 +66741,14 @@ async def exp_handle_callback(q, uid: int, d: str,
             already_taking = gear.get(stype, 0)
             in_inv = inv.get(stype, 0)
             if already_taking >= in_inv:
-                await q.answer((f"В инвентаре только {in_inv} шт.!")[:200], show_alert=True)
+                await q.answer((f"В инвентаре только {in_inv} шт.")[:200], show_alert=True)
                 return True
 
         gear[stype] = max(0, gear.get(stype, 0) + delta)
         total_sup = sum(gear.values())
         if total_sup > EXP_MAX_SUPPLY_TOTAL:
             gear[stype] -= delta
-            await q.answer(f"Максимум {EXP_MAX_SUPPLY_TOTAL} припасов!", show_alert=False)
+            await q.answer(f"Максимум {EXP_MAX_SUPPLY_TOTAL} припасов", show_alert=False)
             return True
         ctx.user_data[_gear_key] = gear
 
@@ -66795,7 +66790,7 @@ async def exp_handle_callback(q, uid: int, d: str,
             f"🎒 <b>Снаряжение</b>\n"
             f"{bc['emoji']} {bc['name']}\n"
             "\n"
-            f"<i>Выбери что взять с собой. Максимум {EXP_MAX_SUPPLY_TOTAL} припасов.</i>\n"
+            f"<i>Максимум {EXP_MAX_SUPPLY_TOTAL} припасов.</i>\n"
         ]
         for k, info in SUPPLY_TYPES.items():
             if "emoji" not in info:
@@ -66866,14 +66861,14 @@ async def exp_handle_callback(q, uid: int, d: str,
         # Ещё раз проверяем КД и не-в-экспедиции
         today_start = time.time() - (time.time() % 86400)
         if f.get("last_expedition", 0) >= today_start:
-            await q.answer("Экспедиция уже была сегодня!", show_alert=True)
+            await q.answer("Экспедиция уже была сегодня", show_alert=True)
             return True
         if not f.get("alive"):
-            await q.answer("Лягушка мертва!", show_alert=True)
+            await q.answer("Лягушка мертва", show_alert=True)
             return True
         active = await _exp_get_user_active(uid)
         if active:
-            await q.answer("Уже в экспедиции!", show_alert=True)
+            await q.answer("Уже в экспедиции", show_alert=True)
             return True
 
         gear = ctx.user_data.get("exp_gear", {"food": 0, "potion": 0, "torch": 0, "amulet": 0})
@@ -66952,7 +66947,7 @@ async def exp_handle_callback(q, uid: int, d: str,
             pass
 
         await q.edit_message_text(lobby_text, parse_mode=ParseMode.HTML, reply_markup=lobby_kb)
-        await q.answer("✅ Экспедиция создана!")
+        await q.answer("✅ Экспедиция создана")
         ctx.user_data.pop("exp_gear", None)
         ctx.user_data.pop("exp_coins", None)
         logger.info("expedition created id=%s biome=%s creator=%s", exp_id, biome_key, uid)
@@ -66970,32 +66965,32 @@ async def exp_handle_callback(q, uid: int, d: str,
             await q.answer("Это лобби уже закрыто.", show_alert=True)
             return True
         if time.time() > exp["gather_until"]:
-            await q.answer("Время сбора истекло!", show_alert=True)
+            await q.answer("Время сбора истекло", show_alert=True)
             return True
 
         members = await _exp_get_members(exp_id)
         if len(members) >= exp["max_players"]:
-            await q.answer("Комната уже заполнена!", show_alert=True)
+            await q.answer("Комната уже заполнена", show_alert=True)
             return True
         if any(m["user_id"] == uid for m in members):
-            await q.answer("Ты уже в этой комнате!", show_alert=True)
+            await q.answer("Ты уже в этой комнате", show_alert=True)
             return True
 
         # Проверки
         if not f.get("alive"):
-            await q.answer("Мёртвая лягушка не может идти в экспедицию!", show_alert=True)
+            await q.answer("Мёртвая лягушка не может идти в экспедицию", show_alert=True)
             return True
         active = await _exp_get_user_active(uid)
         if active:
-            await q.answer("Ты уже в другой экспедиции!", show_alert=True)
+            await q.answer("Ты уже в другой экспедиции", show_alert=True)
             return True
         today_start = time.time() - (time.time() % 86400)
         if f.get("last_expedition", 0) >= today_start:
-            await q.answer("Экспедиция уже была сегодня!", show_alert=True)
+            await q.answer("Экспедиция уже была сегодня", show_alert=True)
             return True
         bc = EXP_BIOMES[exp["biome"]]
         if f.get("level", 1) < bc["min_level"]:
-            await q.answer((f"Нужен уровень {bc['min_level']}!")[:200], show_alert=True)
+            await q.answer((f"Нужен уровень {bc['min_level']}")[:200], show_alert=True)
             return True
 
         # Показать снаряжение для вступления
@@ -67023,15 +67018,15 @@ async def exp_handle_callback(q, uid: int, d: str,
         # Блокируем двойное участие в экспедициях
         already_active = await _exp_get_user_active(uid)
         if already_active:
-            await q.answer("❌ Ты уже участвуешь в другой экспедиции!", show_alert=True)
+            await q.answer("❌ Ты уже участвуешь в другой экспедиции", show_alert=True)
             return True
 
         members = await _exp_get_members(exp_id)
         if len(members) >= exp["max_players"]:
-            await q.answer("Комната заполнена!", show_alert=True)
+            await q.answer("Комната заполнена", show_alert=True)
             return True
         if any(m["user_id"] == uid for m in members):
-            await q.answer("Уже в комнате!", show_alert=True)
+            await q.answer("Уже в комнате", show_alert=True)
             return True
 
         gear = ctx.user_data.get("exp_gear_join", ctx.user_data.get("exp_gear", {"food": 0, "potion": 0, "torch": 0, "amulet": 0}))
@@ -67076,7 +67071,7 @@ async def exp_handle_callback(q, uid: int, d: str,
         lobby_text = await _exp_lobby_text(exp, members, ctx.bot)
         lobby_kb = _exp_lobby_kb(exp, members, uid)
         await q.edit_message_text(lobby_text, parse_mode=ParseMode.HTML, reply_markup=lobby_kb)
-        await q.answer("✅ Ты в экспедиции!")
+        await q.answer("✅ Ты в экспедиции")
 
         # Уведомить остальных участников
         await _exp_broadcast(
@@ -67134,7 +67129,7 @@ async def exp_handle_callback(q, uid: int, d: str,
         try:
             await ctx.bot.send_message(CHAT_ID, pub_text,
                 parse_mode=ParseMode.HTML, reply_markup=pub_kb)
-            await q.answer("✅ Анонс отправлен в чат!")
+            await q.answer("✅ Анонс отправлен в чат")
         except Exception:
             await q.answer("❌ Не удалось отправить анонс.", show_alert=True)
         return True
@@ -67315,7 +67310,7 @@ async def exp_handle_callback(q, uid: int, d: str,
             await q.edit_message_text(lobby_text, parse_mode=ParseMode.HTML, reply_markup=lobby_kb)
         except Exception:
             pass
-        await q.answer("Обновлено!")
+        await q.answer("Обновлено")
         return True
 
     # ── Голосование: выбор жертвы (sacrifice pick) ───────────────
@@ -67339,7 +67334,7 @@ async def exp_handle_callback(q, uid: int, d: str,
         pers = _personal(m)
         sac_key = f"sacrifice_{ev_idx}"
         if sac_key in pers:
-            await q.answer("Ты уже проголосовал!", show_alert=True); return True
+            await q.answer("Ты уже проголосовал", show_alert=True); return True
         pers[sac_key] = victim_uid
         m["personal_json"] = json.dumps(pers)
         await _expm_save(m)
@@ -67400,7 +67395,7 @@ async def exp_handle_callback(q, uid: int, d: str,
 
         votes = _votes(m)
         if str(ev_idx) in votes:
-            await q.answer("Ты уже проголосовал!", show_alert=True)
+            await q.answer("Ты уже проголосовал", show_alert=True)
             return True
 
         votes[str(ev_idx)] = choice_key
@@ -67433,7 +67428,7 @@ async def exp_handle_callback(q, uid: int, d: str,
             ev["resolved"] = True
             exp["event_json"] = json.dumps(schedule, ensure_ascii=False)
             await _exp_save(exp)
-            await q.answer("✅ Все проголосовали! Итог подведён.")
+            await q.answer("✅ Все проголосовали. Итог подведён.")
         else:
             await q.answer(f"Ты выбрал: {label} ({voted}/{total} голосов)")
         return True
@@ -67458,7 +67453,7 @@ async def exp_handle_callback(q, uid: int, d: str,
 
         votes = _votes(m)
         if str(ev_idx) in votes:
-            await q.answer("Ты уже проголосовал!", show_alert=True)
+            await q.answer("Ты уже проголосовал", show_alert=True)
             return True
 
         # Запоминаем голос (значение = uid разведчика)
@@ -67548,7 +67543,7 @@ async def exp_handle_callback(q, uid: int, d: str,
 
         pers = _personal(m)
         if str(ev_idx) in pers:
-            await q.answer("Уже выбрал!", show_alert=True)
+            await q.answer("Уже выбрал", show_alert=True)
             return True
 
         pers[str(ev_idx)] = choice_key
@@ -67667,7 +67662,7 @@ async def exp_handle_callback(q, uid: int, d: str,
             f"🤫 <b>Твой выбор сделан</b>\n\n{he(result_text)}{coins_line}",
             parse_mode=ParseMode.HTML,
         )
-        await q.answer("Выбор сохранён!")
+        await q.answer("Выбор сохранён")
         return True
 
     # ── Просмотр снаряжения активной экспедиции ──────────────────
@@ -67771,7 +67766,7 @@ async def exp_handle_callback(q, uid: int, d: str,
         members = await _exp_get_members(exp_id)
         active_cnt = sum(1 for mm in members if mm["status"] == "active")
         if active_cnt >= exp["max_players"]:
-            await q.answer("Команда уже заполнена!", show_alert=True); return True
+            await q.answer("Команда уже заполнена", show_alert=True); return True
         try:
             _bot_me_mi = await ctx.bot.get_me()
             _bot_uname_mi = _bot_me_mi.username or ""
@@ -67796,7 +67791,7 @@ async def exp_handle_callback(q, uid: int, d: str,
             ]])
             try:
                 await ctx.bot.send_message(CHAT_ID, mid_text, parse_mode=ParseMode.HTML, reply_markup=mid_kb)
-                await q.answer("✅ Объявление отправлено в чат!")
+                await q.answer("✅ Объявление отправлено в чат")
             except Exception:
                 await q.answer("❌ Не удалось отправить объявление.", show_alert=True)
         else:
@@ -67875,7 +67870,7 @@ async def exp_handle_callback(q, uid: int, d: str,
                 )
             except Exception:
                 pass
-            await q.answer((f"✅ {target_name} исключён из экспедиции!")[:200], show_alert=True)
+            await q.answer((f"✅ {target_name} исключён из экспедиции")[:200], show_alert=True)
         else:
             await q.answer(f"🗳️ Твой голос учтён! {n_votes}/{needed} нужно для кика.", show_alert=False)
         return True
@@ -67891,16 +67886,16 @@ async def exp_handle_callback(q, uid: int, d: str,
             await q.answer("Экспедиция уже завершена или недоступна.", show_alert=True); return True
         already_active = await _exp_get_user_active(uid)
         if already_active:
-            await q.answer("❌ Ты уже участвуешь в другой экспедиции!", show_alert=True); return True
+            await q.answer("❌ Ты уже участвуешь в другой экспедиции", show_alert=True); return True
         members = await _exp_get_members(exp_id)
         active_cnt = sum(1 for mm in members if mm["status"] == "active")
         if active_cnt >= exp["max_players"]:
-            await q.answer("Команда уже заполнена!", show_alert=True); return True
+            await q.answer("Команда уже заполнена", show_alert=True); return True
         if any(mm["user_id"] == uid for mm in members):
-            await q.answer("Ты уже в этой экспедиции!", show_alert=True); return True
+            await q.answer("Ты уже в этой экспедиции", show_alert=True); return True
         bc = EXP_BIOMES[exp["biome"]]
         if f.get("level", 1) < bc["min_level"]:
-            await q.answer((f"Нужен уровень {bc['min_level']}!")[:200], show_alert=True); return True
+            await q.answer((f"Нужен уровень {bc['min_level']}")[:200], show_alert=True); return True
 
         gear = ctx.user_data.get("exp_gear_join", {"food": 0, "potion": 0, "torch": 0, "amulet": 0})
         coins = ctx.user_data.get("exp_coins_join", 0)
@@ -67950,7 +67945,7 @@ async def exp_handle_callback(q, uid: int, d: str,
                 btn("📊 Мой статус", callback_data=f"exp_status_{exp_id}")
             ]]),
         )
-        await q.answer("🐸 Добро пожаловать в команду!")
+        await q.answer("🐸 Добро пожаловать в команду")
 
         await _exp_broadcast(
             ctx.bot, exp_id,
@@ -67983,14 +67978,14 @@ async def exp_handle_callback(q, uid: int, d: str,
             return True
         info = EXP_SHOP_PRICES[item_key]
         if f.get("coins", 0) < info["price"]:
-            await q.answer((f"Недостаточно монет! Нужно {info['price']}🪙")[:200], show_alert=True)
+            await q.answer((f"Недостаточно монет. Нужно {info['price']}🪙")[:200], show_alert=True)
             return True
         f["coins"] = f.get("coins", 0) - info["price"]
         inv = (json.loads(f["inventory"]) if isinstance(f.get("inventory"), str) else f.get("inventory")) or {}
         inv[item_key] = inv.get(item_key, 0) + 1
         f["inventory"] = json.dumps(inv)
         await db_save(f)
-        await q.answer(f"✅ Куплено: {info['emoji']} {info['name']}!", show_alert=False)
+        await q.answer(f"✅ Куплено: {info['emoji']} {info['name']}", show_alert=False)
         lines = ["🏪 <b>Магазин экспедиций</b>\n"]
         for k, si in EXP_SHOP_PRICES.items():
             lines.append(f"{si['emoji']} <b>{si['name']}</b> — {si['price']}🪙 (у тебя: {inv.get(k, 0)})")
@@ -68017,7 +68012,7 @@ async def exp_handle_callback(q, uid: int, d: str,
                 history = await c.fetchall()
 
         if not history:
-            await q.answer("Ещё не было ни одной экспедиции!", show_alert=True)
+            await q.answer("Ещё не было ни одной экспедиции", show_alert=True)
             return True
 
         lines = ["📊 <b>История экспедиций</b>\n"]
@@ -68121,7 +68116,7 @@ async def _show_gear_setup(q, f: dict, biome_key: str, max_players: int,
         f"🎒 <b>Снаряжение для экспедиции</b>\n"
         f"{bc['emoji']} {bc['name']}\n"
         "\n"
-        f"<i>Выбери что взять с собой. Максимум {EXP_MAX_SUPPLY_TOTAL} припасов.</i>\n"
+        f"<i>Максимум {EXP_MAX_SUPPLY_TOTAL} припасов.</i>\n"
     ]
 
     for k, info in SUPPLY_TYPES.items():
@@ -68197,7 +68192,7 @@ async def _show_gear_setup_join(q, f: dict, exp: dict, gear: dict = None):
         f"🎒 <b>Снаряжение</b>\n"
         f"{bc['emoji']} {bc['name']}\n"
         "\n"
-        f"<i>Выбери что взять с собой. Максимум {EXP_MAX_SUPPLY_TOTAL} припасов.</i>\n"
+        f"<i>Максимум {EXP_MAX_SUPPLY_TOTAL} припасов.</i>\n"
     ]
     for k, info in SUPPLY_TYPES.items():
         if "emoji" not in info:
@@ -68273,7 +68268,7 @@ async def _war_callbacks_v2(q, d: str, uid: int, f: dict, ctx) -> bool:
     # ════════════════════════════════
     if d == "war_menu":
         if not staya:
-            await q.answer("❌ Ты не в стае!", show_alert=True)
+            await q.answer("❌ Ты не в стае", show_alert=True)
             return True
         await q.answer()
         lvl = staya.get("level", 1)
@@ -68391,10 +68386,10 @@ async def _war_callbacks_v2(q, d: str, uid: int, f: dict, ctx) -> bool:
 
     if d == "raid_start":
         if not staya or staya.get("level", 1) < 5:
-            await q.answer("Нужен ур.5 болота!", show_alert=True)
+            await q.answer("Нужен ур.5 болота", show_alert=True)
             return True
         if not f.get("alive"):
-            await q.answer("Мёртвая лягушка не может нападать!", show_alert=True)
+            await q.answer("Мёртвая лягушка не может нападать", show_alert=True)
             return True
 
         cd, reason = await raid_cooldown_left(uid, 0, staya["id"])
@@ -68429,7 +68424,7 @@ async def _war_callbacks_v2(q, d: str, uid: int, f: dict, ctx) -> bool:
 
         try:
             await q.message.edit_text(
-                f"🏹 <b>Выбери цель для набега</b>\n"
+                f"🏹 <b>Набег</b> · выбор цели\n"
                 f"Взнос: <b>{RAID_ENTRY_PERSONAL}{_E_COIN}</b> личных + <b>{RAID_ENTRY_CAULDRON}{_E_COIN}</b> из котла\n"
                 f"<i>Все члены стаи смогут проголосовать за выбор котла!</i>",
                 parse_mode=ParseMode.HTML,
@@ -68439,7 +68434,7 @@ async def _war_callbacks_v2(q, d: str, uid: int, f: dict, ctx) -> bool:
             logger.warning("raid_start edit_text BadRequest: %s", _e)
             try:
                 await q.message.reply_text(
-                    f"🏹 <b>Выбери цель для набега</b>\n"
+                    f"🏹 <b>Набег</b> · выбор цели\n"
                     f"Взнос: <b>{RAID_ENTRY_PERSONAL}{_E_COIN}</b> личных + <b>{RAID_ENTRY_CAULDRON}{_E_COIN}</b> из котла\n"
                     f"<i>Все члены стаи смогут проголосовать за выбор котла!</i>",
                     parse_mode=ParseMode.HTML,
@@ -68470,10 +68465,10 @@ async def _war_callbacks_v2(q, d: str, uid: int, f: dict, ctx) -> bool:
             return True
 
         if f.get("coins", 0) < RAID_ENTRY_PERSONAL:
-            await q.answer((f"Нужно {RAID_ENTRY_PERSONAL}🪙 личных!")[:200], show_alert=True)
+            await q.answer((f"Нужно {RAID_ENTRY_PERSONAL}🪙 личных")[:200], show_alert=True)
             return True
         if staya.get("cauldron", 0) < RAID_ENTRY_CAULDRON:
-            await q.answer((f"В котле нужно {RAID_ENTRY_CAULDRON}🪙!")[:200], show_alert=True)
+            await q.answer((f"В котле нужно {RAID_ENTRY_CAULDRON}🪙")[:200], show_alert=True)
             return True
 
         has_citadel     = target.get("level", 1) >= 13
@@ -68492,7 +68487,7 @@ async def _war_callbacks_v2(q, d: str, uid: int, f: dict, ctx) -> bool:
             f"после объявления вся стая голосует за котёл"
         )
         _pick_kb = InlineKeyboardMarkup([
-            [btn("🏹 НАПАСТЬ!", callback_data=f"raid_go_{target_id}", style="danger")],
+            [btn("🏹 НАПАСТЬ", callback_data=f"raid_go_{target_id}", style="danger")],
             [btn("◀️ Назад", callback_data="raid_start")],
         ])
         try:
@@ -68522,10 +68517,10 @@ async def _war_callbacks_v2(q, d: str, uid: int, f: dict, ctx) -> bool:
 
         # Финальные проверки
         if f.get("coins", 0) < RAID_ENTRY_PERSONAL:
-            await q.answer("Недостаточно монет!", show_alert=True)
+            await q.answer("Недостаточно монет", show_alert=True)
             return True
         if staya.get("cauldron", 0) < RAID_ENTRY_CAULDRON:
-            await q.answer("Котёл пуст!", show_alert=True)
+            await q.answer("Котёл пуст", show_alert=True)
             return True
         await q.answer()
 
@@ -68594,7 +68589,7 @@ async def _war_callbacks_v2(q, d: str, uid: int, f: dict, ctx) -> bool:
             await q.answer("Набег уже завершён.", show_alert=True)
             return True
         if raid.get("guard_reacted"):
-            await q.answer("Ты уже на посту!", show_alert=True)
+            await q.answer("Ты уже на посту", show_alert=True)
             return True
 
         async with aiosqlite.connect(DB_PATH) as db:
@@ -68603,7 +68598,7 @@ async def _war_callbacks_v2(q, d: str, uid: int, f: dict, ctx) -> bool:
             )
             await db.commit()
 
-        await q.answer("🛡️ Ты встал на защиту! Добыча врага упадёт вдвое.", show_alert=True)
+        await q.answer("🛡️ Ты встал на защиту. Добыча врага упадёт вдвое.", show_alert=True)
         try:
             await q.message.edit_reply_markup(reply_markup=None)
         except Exception:
@@ -68615,7 +68610,7 @@ async def _war_callbacks_v2(q, d: str, uid: int, f: dict, ctx) -> bool:
 
     # Голосование в набеге
     if d == "raid_voted_already":
-        await q.answer("Ты уже проголосовал!", show_alert=True)
+        await q.answer("Ты уже проголосовал", show_alert=True)
         return True
 
     if d.startswith("raid_vote_"):
@@ -68657,9 +68652,9 @@ async def _war_callbacks_v2(q, d: str, uid: int, f: dict, ctx) -> bool:
 
         pot_name = ["Котёл 1", "Котёл 2", "Котёл 3"][pot_idx]
         if not already_voted:
-            await q.answer(f"✅ Ты выбрал {pot_name}!")
+            await q.answer(f"✅ Ты выбрал {pot_name}")
         else:
-            await q.answer("Ты уже проголосовал!", show_alert=True)
+            await q.answer("Ты уже проголосовал", show_alert=True)
 
         # Обновляем клавиатуры у всех участников в реальном времени
         for p_uid in participants:
@@ -68696,15 +68691,15 @@ async def _war_callbacks_v2(q, d: str, uid: int, f: dict, ctx) -> bool:
 
     if d == "skirmish_start":
         if not staya or staya.get("level", 1) < 7:
-            await q.answer("Нужен Речной Форпост (ур.7)!", show_alert=True)
+            await q.answer("Нужен Речной Форпост (ур.7)", show_alert=True)
             return True
         members = await staya_get_members(staya["id"])
         my_role = next((m["role"] for m in members if m["user_id"] == uid), "member")
         if my_role not in ("chief", "elder"):
-            await q.answer("Только Вожак или Старейшина!", show_alert=True)
+            await q.answer("Только Вожак или Старейшина", show_alert=True)
             return True
         if staya.get("cauldron", 0) < SKIRMISH_ENTRY_COINS:
-            await q.answer((f"Нужно {SKIRMISH_ENTRY_COINS}🪙 в котле!")[:200], show_alert=True)
+            await q.answer((f"Нужно {SKIRMISH_ENTRY_COINS}🪙 в котле")[:200], show_alert=True)
             return True
 
         # КД
@@ -68745,7 +68740,7 @@ async def _war_callbacks_v2(q, d: str, uid: int, f: dict, ctx) -> bool:
         await q.answer()
         try:
             await q.message.edit_text(
-                f"⚔️ <b>СТЫЧКА — выбери цель</b>\n"
+                f"⚔️ <b>Стычка</b> · выбор цели\n"
                 f"Взнос: <b>{SKIRMISH_ENTRY_COINS}{_E_COIN}</b> из котла\n"
                 f"Приз: <b>{int(SKIRMISH_WIN_PCT*100)}%</b> котла проигравшей стаи (макс. {SKIRMISH_WIN_MAX}{_E_COIN})\n"
                 f"Режим определяется случайно при старте.\n"
@@ -68757,7 +68752,7 @@ async def _war_callbacks_v2(q, d: str, uid: int, f: dict, ctx) -> bool:
             logger.warning("skirmish_start edit_text BadRequest: %s", _e)
             try:
                 await q.message.reply_text(
-                    f"⚔️ <b>СТЫЧКА — выбери цель</b>\n"
+                    f"⚔️ <b>Стычка</b> · выбор цели\n"
                     f"Взнос: <b>{SKIRMISH_ENTRY_COINS}{_E_COIN}</b> из котла\n"
                     f"Приз: <b>{int(SKIRMISH_WIN_PCT*100)}%</b> котла проигравшей стаи (макс. {SKIRMISH_WIN_MAX}{_E_COIN})\n"
                     f"Режим определяется случайно при старте.\n"
@@ -68790,7 +68785,6 @@ async def _war_callbacks_v2(q, d: str, uid: int, f: dict, ctx) -> bool:
 
         _sk_pick_text = (
             f"⚔️ <b>Стычка против «{he(target['name'])}»</b>\n"
-            f"Выбери размер отряда:"
         )
         _sk_pick_kb = InlineKeyboardMarkup([
             [btn("⚔️ 3 vs 3", callback_data=f"sk_confirm_{target_id}_3"),
@@ -68830,7 +68824,7 @@ async def _war_callbacks_v2(q, d: str, uid: int, f: dict, ctx) -> bool:
             )
             await db.commit()
         if result.rowcount == 0:
-            await q.answer("В котле недостаточно монет!", show_alert=True)
+            await q.answer("В котле недостаточно монет", show_alert=True)
             return True
 
         now = time.time()
@@ -68865,7 +68859,7 @@ async def _war_callbacks_v2(q, d: str, uid: int, f: dict, ctx) -> bool:
             f"<i>Твоя сторона определяется автоматически по стае.</i>"
         )
         join_kb = InlineKeyboardMarkup([[
-            btn("⚔️ Вступить в стычку!", callback_data=f"sk_join_{sk_id}", style="primary"),
+            btn("⚔️ Вступить в стычку", callback_data=f"sk_join_{sk_id}", style="primary"),
         ]])
 
         # Рассылаем обеим стаям и сохраняем message_id для последующего обновления счётчика
@@ -68886,7 +68880,7 @@ async def _war_callbacks_v2(q, d: str, uid: int, f: dict, ctx) -> bool:
             except Exception:
                 pass
 
-        await q.answer("Стычка объявлена!")
+        await q.answer("Стычка объявлена")
         try:
             _init_msg = await q.message.edit_text(gather_text, parse_mode=ParseMode.HTML, reply_markup=join_kb)
             if _init_msg:
@@ -68922,18 +68916,18 @@ async def _war_callbacks_v2(q, d: str, uid: int, f: dict, ctx) -> bool:
 
         sk = await sk_get(sk_id)
         if not sk or sk["status"] != "gathering":
-            await q.answer("Сбор уже завершён!", show_alert=True)
+            await q.answer("Сбор уже завершён", show_alert=True)
             return True
 
         members_sk = await sk_get_members(sk_id)
         if any(m["user_id"] == uid for m in members_sk):
-            await q.answer("Ты уже записан!", show_alert=True)
+            await q.answer("Ты уже записан", show_alert=True)
             return True
 
         # Сторона определяется стаей игрока — не выбором
         player_staya = await staya_of_user(uid)
         if not player_staya:
-            await q.answer("Ты не в стае!", show_alert=True)
+            await q.answer("Ты не в стае", show_alert=True)
             return True
 
         if player_staya["id"] == sk["attacker_staya"]:
@@ -68941,7 +68935,7 @@ async def _war_callbacks_v2(q, d: str, uid: int, f: dict, ctx) -> bool:
         elif player_staya["id"] == sk["defender_staya"]:
             side = "defender"
         else:
-            await q.answer("Твоя стая не участвует в этой стычке!", show_alert=True)
+            await q.answer("Твоя стая не участвует в этой стычке", show_alert=True)
             return True
 
         size = sk["size"]
@@ -68964,7 +68958,7 @@ async def _war_callbacks_v2(q, d: str, uid: int, f: dict, ctx) -> bool:
         if is_spectator:
             await q.answer(f"Отряд {side_ru} заполнен — ты болеешь за свою стаю! 📣", show_alert=True)
         else:
-            await q.answer(f"✅ Ты в отряде {side_ru}!", show_alert=False)
+            await q.answer(f"✅ Ты в отряде {side_ru}", show_alert=False)
 
         both_full = att_fighters >= size and def_fighters >= size
 
@@ -69053,10 +69047,10 @@ async def _war_callbacks_v2(q, d: str, uid: int, f: dict, ctx) -> bool:
             await q.answer("Ты не участник этой стычки.", show_alert=True)
             return True
         if row[0] >= 1:
-            await q.answer("Ты уже поддержал в этом бою!", show_alert=True)
+            await q.answer("Ты уже поддержал в этом бою", show_alert=True)
             return True
         if row[1] != side:
-            await q.answer("Нельзя поддержать врага!", show_alert=True)
+            await q.answer("Нельзя поддержать врага", show_alert=True)
             return True
 
         # Ставим supported=1 (заявка) — применится в начале следующего раунда как +1HP
@@ -69067,7 +69061,7 @@ async def _war_callbacks_v2(q, d: str, uid: int, f: dict, ctx) -> bool:
             )
             await db.commit()
 
-        await q.answer("💪 Поддержка отправлена! Боец получит +1 HP в следующем раунде.", show_alert=True)
+        await q.answer("💪 Поддержка отправлена. Боец получит +1 HP в следующем раунде.", show_alert=True)
         try:
             await q.message.edit_reply_markup(reply_markup=None)
         except Exception:
@@ -69094,16 +69088,16 @@ async def _war_callbacks_v2(q, d: str, uid: int, f: dict, ctx) -> bool:
             return True
         duel = dict(duel)
         if duel["status"] != "waiting":
-            await q.answer("Дуэль уже завершена!", show_alert=True)
+            await q.answer("Дуэль уже завершена", show_alert=True)
             return True
 
         col = "att_choice" if role == "att" else "def_choice"
         exp_uid = duel["att_uid"] if role == "att" else duel["def_uid"]
         if uid != exp_uid:
-            await q.answer("Это не твоя дуэль!", show_alert=True)
+            await q.answer("Это не твоя дуэль", show_alert=True)
             return True
         if duel[col]:
-            await q.answer("Ты уже сделал выбор!", show_alert=True)
+            await q.answer("Ты уже сделал выбор", show_alert=True)
             return True
         if choice not in _RPS_BEATS:
             await q.answer(); return True
@@ -69149,11 +69143,11 @@ async def _war_callbacks_v2(q, d: str, uid: int, f: dict, ctx) -> bool:
         col = "att_choice" if role == "att" else "def_choice"
         exp_uid = duel["att_uid"] if role == "att" else duel["def_uid"]
         if uid != exp_uid:
-            await q.answer("Это не твоя дуэль!", show_alert=True)
+            await q.answer("Это не твоя дуэль", show_alert=True)
             return True
         # Если уже выбрал — ждём ставку на чётность
         if duel[col] and ":" in duel[col]:
-            await q.answer("Ты уже выбрал число — теперь сделай ставку!", show_alert=True)
+            await q.answer("Ты уже выбрал число — теперь сделай ставку", show_alert=True)
             return True
 
         # Сохраняем число (без ставки) как "NUM:?"
@@ -69163,7 +69157,7 @@ async def _war_callbacks_v2(q, d: str, uid: int, f: dict, ctx) -> bool:
             )
             await db.commit()
 
-        await q.answer(f"Загадал: {num} 🤫 Теперь поставь на чётность!")
+        await q.answer(f"Загадал: {num} 🤫 Теперь поставь на чётность")
         try:
             await q.message.edit_reply_markup(
                 reply_markup=_sk_eo_keyboard_with_num(duel_id, role, num)
@@ -69191,21 +69185,21 @@ async def _war_callbacks_v2(q, d: str, uid: int, f: dict, ctx) -> bool:
         col = "att_choice" if role == "att" else "def_choice"
         exp_uid = duel["att_uid"] if role == "att" else duel["def_uid"]
         if uid != exp_uid:
-            await q.answer("Это не твоя дуэль!", show_alert=True)
+            await q.answer("Это не твоя дуэль", show_alert=True)
             return True
 
         current = duel.get(col) or ""
         if not current or ":" not in current or current.endswith("?") is False:
             # Число ещё не выбрано
             if not current or ":" not in current:
-                await q.answer("Сначала выбери число!", show_alert=True)
+                await q.answer("Сначала выбери число", show_alert=True)
                 return True
         # Извлекаем число
         try:
             num_part = current.split(":")[0]
             num = int(num_part)
         except (ValueError, IndexError):
-            await q.answer("Сначала выбери число!", show_alert=True)
+            await q.answer("Сначала выбери число", show_alert=True)
             return True
 
         full_choice = f"{num}:{parity}"
@@ -69249,7 +69243,7 @@ async def _war_callbacks_v2(q, d: str, uid: int, f: dict, ctx) -> bool:
 
         fled_uid = duel["att_uid"] if role == "att" else duel["def_uid"]
         if uid != fled_uid:
-            await q.answer("Это не твоя дуэль!", show_alert=True)
+            await q.answer("Это не твоя дуэль", show_alert=True)
             return True
 
         winner_role = "defender" if role == "att" else "attacker"
@@ -69266,7 +69260,7 @@ async def _war_callbacks_v2(q, d: str, uid: int, f: dict, ctx) -> bool:
             )
             await db.commit()
 
-        await q.answer("🏃 Ты сдался! Поражение засчитано.", show_alert=True)
+        await q.answer("🏃 Ты сдался. Поражение засчитано.", show_alert=True)
         try:
             await q.message.edit_reply_markup(reply_markup=None)
         except Exception:
@@ -69299,7 +69293,7 @@ async def _war_callbacks_v2(q, d: str, uid: int, f: dict, ctx) -> bool:
         exp_uid_g = duel_g["att_uid"] if role_g == "att" else duel_g["def_uid"]
         if uid != exp_uid_g: await q.answer("Не твой бой!", show_alert=True); return True
         col_g = "att_choice" if role_g == "att" else "def_choice"
-        if duel_g.get(col_g): await q.answer("Ты уже выбрал!", show_alert=True); return True
+        if duel_g.get(col_g): await q.answer("Ты уже выбрал", show_alert=True); return True
         async with aiosqlite.connect(DB_PATH) as db:
             await db.execute(f"UPDATE skirmish_duels SET {col_g}=? WHERE id=?", (str(num_g), duel_id_g))
             await db.commit()
@@ -69324,14 +69318,14 @@ async def _war_callbacks_v2(q, d: str, uid: int, f: dict, ctx) -> bool:
         duel_r = await sk_get_duel(duel_id_r)
         if not duel_r or duel_r["status"] != "waiting": await q.answer("Поздно!", show_alert=True); return True
         gs_r = json.loads(duel_r.get("game_state") or "{}")
-        if gs_r.get("first_uid"): await q.answer("Уже нажали!", show_alert=True); return True
-        if uid not in (duel_r["att_uid"], duel_r["def_uid"]): await q.answer("Не твой бой!", show_alert=True); return True
+        if gs_r.get("first_uid"): await q.answer("Уже нажали", show_alert=True); return True
+        if uid not in (duel_r["att_uid"], duel_r["def_uid"]): await q.answer("Не твой бой", show_alert=True); return True
         gs_r["first_uid"] = uid
         gs_r["first_ts"]  = time.time()
         async with aiosqlite.connect(DB_PATH) as db:
             await db.execute("UPDATE skirmish_duels SET game_state=? WHERE id=?", (json.dumps(gs_r), duel_id_r))
             await db.commit()
-        await q.answer("💥 Нажал!")
+        await q.answer("💥 Нажал")
         try: await q.message.edit_reply_markup(reply_markup=None)
         except Exception: pass
         return True
@@ -69347,11 +69341,11 @@ async def _war_callbacks_v2(q, d: str, uid: int, f: dict, ctx) -> bool:
         exp_uid_l = duel_l["att_uid"] if role_l == "att" else duel_l["def_uid"]
         if uid != exp_uid_l: await q.answer("Не твой бой!", show_alert=True); return True
         col_l = "att_choice" if role_l == "att" else "def_choice"
-        if duel_l.get(col_l): await q.answer("Ты уже выбрал карту!", show_alert=True); return True
+        if duel_l.get(col_l): await q.answer("Ты уже выбрал карту", show_alert=True); return True
         async with aiosqlite.connect(DB_PATH) as db:
             await db.execute(f"UPDATE skirmish_duels SET {col_l}=? WHERE id=?", (str(card_l), duel_id_l))
             await db.commit()
-        await q.answer("🃏 Карта выбрана! Ждём соперника...")
+        await q.answer("🃏 Карта выбрана. Ждём соперника...")
         try: await q.message.edit_reply_markup(reply_markup=lottery_keyboard(duel_id_l, role_l, [card_l]))
         except Exception: pass
         fresh_l = await sk_get_duel(duel_id_l)
@@ -69364,7 +69358,7 @@ async def _war_callbacks_v2(q, d: str, uid: int, f: dict, ctx) -> bool:
         return True
 
     if d == "lottery_done":
-        await q.answer("Ты уже выбрал карту!")
+        await q.answer("Ты уже выбрал карту")
         return True
 
     # 7. Блеф — объявление
@@ -69379,7 +69373,7 @@ async def _war_callbacks_v2(q, d: str, uid: int, f: dict, ctx) -> bool:
         if uid != exp_uid_b2: await q.answer("Не твой бой!", show_alert=True); return True
         gs_b2 = json.loads(duel_b2.get("game_state") or "{}")
         key_decl = "att_decl" if role_b2 == "att" else "def_decl"
-        if gs_b2.get(key_decl): await q.answer("Уже заявил!", show_alert=True); return True
+        if gs_b2.get(key_decl): await q.answer("Уже заявил", show_alert=True); return True
         gs_b2[key_decl] = decl_b2
         async with aiosqlite.connect(DB_PATH) as db:
             await db.execute("UPDATE skirmish_duels SET game_state=? WHERE id=?", (json.dumps(gs_b2), duel_id_b2))
@@ -69420,7 +69414,7 @@ async def _war_callbacks_v2(q, d: str, uid: int, f: dict, ctx) -> bool:
         if uid != exp_uid_br: await q.answer("Не твой бой!", show_alert=True); return True
         gs_br = json.loads(duel_br.get("game_state") or "{}")
         key_resp = "att_resp" if role_br == "att" else "def_resp"
-        if gs_br.get(key_resp): await q.answer("Уже ответил!", show_alert=True); return True
+        if gs_br.get(key_resp): await q.answer("Уже ответил", show_alert=True); return True
         gs_br[key_resp] = resp_br
         async with aiosqlite.connect(DB_PATH) as db:
             await db.execute("UPDATE skirmish_duels SET game_state=? WHERE id=?", (json.dumps(gs_br), duel_id_br))
@@ -69470,7 +69464,7 @@ async def _war_callbacks_v2(q, d: str, uid: int, f: dict, ctx) -> bool:
         exp_uid_p = duel_p["att_uid"] if role_p == "att" else duel_p["def_uid"]
         if uid != exp_uid_p: await q.answer("Не твой бой!", show_alert=True); return True
         col_p = "att_choice" if role_p == "att" else "def_choice"
-        if duel_p.get(col_p): await q.answer("Уже ответил!", show_alert=True); return True
+        if duel_p.get(col_p): await q.answer("Уже ответил", show_alert=True); return True
         gs_p = json.loads(duel_p.get("game_state") or "{}")
         ts_key = "att_ts" if role_p == "att" else "def_ts"
         gs_p[ts_key] = time.time()
@@ -69495,7 +69489,7 @@ async def _war_callbacks_v2(q, d: str, uid: int, f: dict, ctx) -> bool:
     # ── СТАВКИ НА ДУЭЛЬ ─────────────────────────────────────────────────────
 
     if d == "bet_already":
-        await q.answer("Ты уже поставил!", show_alert=True)
+        await q.answer("Ты уже поставил", show_alert=True)
         return True
 
     # Шаг 1: выбор стороны
@@ -69527,12 +69521,12 @@ async def _war_callbacks_v2(q, d: str, uid: int, f: dict, ctx) -> bool:
             ) as c:
                 row = await c.fetchone()
         if not row or row[0] != "betting":
-            await q.answer("Ставки уже закрыты!", show_alert=True)
+            await q.answer("Ставки уже закрыты", show_alert=True)
             return True
 
         my_bet = await _bet_get_my(duel_id_s, uid)
         if my_bet:
-            await q.answer("Ты уже поставил!", show_alert=True)
+            await q.answer("Ты уже поставил", show_alert=True)
             return True
 
         f_bal = await db_get(uid)
@@ -69583,7 +69577,7 @@ async def _war_callbacks_v2(q, d: str, uid: int, f: dict, ctx) -> bool:
             f_bal   = await db_get(uid)
             bal     = f_bal.get("coins", 0) if f_bal else 0
             side_ru = "⚔️ нападение" if side_b == "attacker" else "🛡️ защиту"
-            await q.answer(f"✅ Ставка {amount_b}🪙 на {side_ru}!", show_alert=False)
+            await q.answer(f"✅ Ставка {amount_b}🪙 на {side_ru}", show_alert=False)
             try:
                 await q.message.edit_reply_markup(
                     reply_markup=InlineKeyboardMarkup([[
@@ -69596,13 +69590,13 @@ async def _war_callbacks_v2(q, d: str, uid: int, f: dict, ctx) -> bool:
             except Exception:
                 pass
         elif result == "already":
-            await q.answer("Ты уже поставил!", show_alert=True)
+            await q.answer("Ты уже поставил", show_alert=True)
         elif result == "no_coins":
             f_bal = await db_get(uid)
             bal   = f_bal.get("coins", 0) if f_bal else 0
-            await q.answer(f"Недостаточно монет! У тебя {bal}🪙", show_alert=True)
+            await q.answer(f"Недостаточно монет. У тебя {bal}🪙", show_alert=True)
         else:
-            await q.answer("Ставки уже закрыты!", show_alert=True)
+            await q.answer("Ставки уже закрыты", show_alert=True)
         return True
 
     # Шаг 2 (альт): своя сумма — просим написать в ЛС
@@ -69622,7 +69616,7 @@ async def _war_callbacks_v2(q, d: str, uid: int, f: dict, ctx) -> bool:
         ctx.bot_data.setdefault("bet_pending", {})[uid] = {
             "duel_id": duel_id_c, "side": side_c, "ts": time.time()
         }
-        await q.answer("Напиши сумму ставки в ответном сообщении!", show_alert=True)
+        await q.answer("Напиши сумму ставки в ответном сообщении", show_alert=True)
         try:
             side_ru = "⚔️ нападение" if side_c == "attacker" else "🛡️ защиту"
             await q.message.edit_text(
@@ -69663,7 +69657,7 @@ async def _war_callbacks(q, d, uid, f, ctx):
     if d == "canteen_menu":
         await q.answer()
         if not staya or staya.get("level", 1) < 6:
-            await q.answer("Нужен Большой Лагерь (ур. болота 6)!", show_alert=True)
+            await q.answer("Нужен Большой Лагерь (ур. болота 6)", show_alert=True)
             return True
         data = await canteen_get(staya["id"])
         food = json.loads(data.get("food_json") or "{}")
@@ -69726,7 +69720,7 @@ async def _war_callbacks(q, d, uid, f, ctx):
         members = await staya_get_members(staya["id"])
         my_role = next((m["role"] for m in members if m["user_id"] == uid), "member")
         if my_role not in ("chief", "elder"):
-            await q.answer("Только Вожак и Старейшина!", show_alert=True)
+            await q.answer("Только Вожак и Старейшина", show_alert=True)
             return True
         data = await canteen_get(staya["id"])
         data["auto_feed"] = 0 if data.get("auto_feed", 1) else 1
@@ -69745,7 +69739,7 @@ async def _war_callbacks(q, d, uid, f, ctx):
         data["guard_uid"] = uid
         data["guard_since"] = time.time()
         await canteen_save(data)
-        await q.answer("🛡️ Ты встал на охрану! Котёл под защитой.", show_alert=True)
+        await q.answer("🛡️ Ты встал на охрану. Котёл под защитой.", show_alert=True)
         return True
 
     if d == "canteen_deposit":
@@ -69803,7 +69797,7 @@ async def _war_callbacks(q, d, uid, f, ctx):
             await q.answer(); return True
         ok = await canteen_deposit(st_id, uid, item, qty)
         if ok:
-            await q.answer((f"✅ {item} × {qty} — положено в котёл!")[:200], show_alert=True)
+            await q.answer((f"✅ {item} × {qty} — положено в котёл")[:200], show_alert=True)
             # обновить f из БД после депозита
             f2 = await db_get(uid)
             if f2:
@@ -69872,7 +69866,7 @@ async def _war_callbacks(q, d, uid, f, ctx):
         members = await staya_get_members(staya["id"])
         my_role = next((m["role"] for m in members if m["user_id"] == uid), "member")
         if my_role not in ("chief", "elder"):
-            await q.answer("Только Вожак и Старейшина могут забирать из котла!", show_alert=True)
+            await q.answer("Только Вожак и Старейшина могут забирать из котла", show_alert=True)
             return True
         data = await canteen_get(staya["id"])
         food = json.loads(data.get("food_json") or "{}")
@@ -69936,7 +69930,7 @@ async def _war_callbacks(q, d, uid, f, ctx):
     if d == "war_menu":
         await q.answer()
         if not staya:
-            await q.answer("❌ Ты не в стае!", show_alert=True); return True
+            await q.answer("❌ Ты не в стае", show_alert=True); return True
         lvl = staya.get("level", 1)
 
         # Охранник
@@ -69985,10 +69979,10 @@ async def _war_callbacks(q, d, uid, f, ctx):
     if d == "raid_start":
         await q.answer()
         if not staya or staya.get("level", 1) < 5:
-            await q.answer("Нужен ур.5 болота!", show_alert=True)
+            await q.answer("Нужен ур.5 болота", show_alert=True)
             return True
         if not f.get("alive"):
-            await q.answer("Мёртвая лягушка не может нападать!", show_alert=True)
+            await q.answer("Мёртвая лягушка не может нападать", show_alert=True)
             return True
         # Показываем список стай для набега
         async with aiosqlite.connect(DB_PATH) as db:
@@ -70016,7 +70010,7 @@ async def _war_callbacks(q, d, uid, f, ctx):
             _staya_last = (_r[0] or 0.0) if _r else 0.0
             _staya_cd = max(0.0, RAID_COOLDOWN_STAYA - (now - _staya_last))
             if _staya_cd > 0:
-                await q.answer((f"⏳ Стая уже совершила набег сегодня! Следующий через {h}ч {m_}м")[:200], show_alert=True)
+                await q.answer((f"⏳ Стая уже совершила набег сегодня. Следующий через {h}ч {m_}м")[:200], show_alert=True)
             else:
                 await q.answer((f"КД набега: ещё {h}ч {m_}м")[:200], show_alert=True)
             return True
@@ -70036,7 +70030,7 @@ async def _war_callbacks(q, d, uid, f, ctx):
         scout_note = "" if not has_scout else "\n<i>🏹 Разведка активна — виден котёл цели</i>"
         try:
             await q.message.edit_text(
-                f"🏹 <b>Выбери цель для набега</b>{scout_note}\n"
+                f"🏹 <b>Набег</b> · выбор цели{scout_note}\n"
                 f"Стоимость: <b>{RAID_ENTRY_PERSONAL}{_E_COIN}</b> личных + <b>{RAID_ENTRY_CAULDRON}{_E_COIN}</b> из котла",
                 parse_mode=ParseMode.HTML,
                 reply_markup=InlineKeyboardMarkup(kb_t),
@@ -70072,10 +70066,10 @@ async def _war_callbacks(q, d, uid, f, ctx):
         _entry_cauldron = int(RAID_ENTRY_CAULDRON * (0.75 if _night_disc else 1.0))
         total_cost = RAID_ENTRY_PERSONAL + _entry_cauldron
         if f.get("coins", 0) < RAID_ENTRY_PERSONAL:
-            await q.answer((f"Нужно {RAID_ENTRY_PERSONAL}🪙 личных монет!")[:200], show_alert=True)
+            await q.answer((f"Нужно {RAID_ENTRY_PERSONAL}🪙 личных монет")[:200], show_alert=True)
             return True
         if staya.get("cauldron", 0) < _entry_cauldron:
-            await q.answer((f"В котле недостаточно монет (нужно {_entry_cauldron}🪙)!")[:200], show_alert=True)
+            await q.answer((f"В котле недостаточно монет (нужно {_entry_cauldron}🪙)")[:200], show_alert=True)
             return True
 
         has_ancient_bor = target.get("level", 1) >= 8
@@ -70102,7 +70096,7 @@ async def _war_callbacks(q, d, uid, f, ctx):
             f"⚠️ Если не угадаешь — стая-жертва получит <b>{RAID_PENALTY_ON_FAIL}🪙</b> штрафа от тебя."
         )
         kb_pick = InlineKeyboardMarkup([
-            [btn("🏺 Начать набег!", callback_data=f"raid_go_{target_id}", style="danger")],
+            [btn("🏺 Начать набег", callback_data=f"raid_go_{target_id}", style="danger")],
             [btn("◀️ Назад", callback_data="raid_start")],
         ])
         try:
@@ -70137,10 +70131,10 @@ async def _war_callbacks(q, d, uid, f, ctx):
         _entry_cauldron = int(RAID_ENTRY_CAULDRON * (0.75 if _night_disc_go else 1.0))
         # Финальные проверки
         if f.get("coins", 0) < RAID_ENTRY_PERSONAL:
-            await q.answer("Недостаточно монет!", show_alert=True)
+            await q.answer("Недостаточно монет", show_alert=True)
             return True
         if staya.get("cauldron", 0) < RAID_ENTRY_CAULDRON:
-            await q.answer("Котёл пуст!", show_alert=True)
+            await q.answer("Котёл пуст", show_alert=True)
             return True
 
         # Списываем ставку (с учётом ночной скидки)
@@ -70179,7 +70173,7 @@ async def _war_callbacks(q, d, uid, f, ctx):
                     f"Нажми кнопку в течение 5 минут чтобы перехватить нападающего — добыча упадёт в 2×!",
                     parse_mode=ParseMode.HTML,
                     reply_markup=InlineKeyboardMarkup([[
-                        btn("🛡️ ПЕРЕХВАТИТЬ!", callback_data=f"raid_intercept_{raid_id}", style="success")
+                        btn("🛡️ ПЕРЕХВАТИТЬ", callback_data=f"raid_intercept_{raid_id}", style="success")
                     ]]),
                 )
             except Exception:
@@ -70218,7 +70212,7 @@ async def _war_callbacks(q, d, uid, f, ctx):
             async with db.execute("SELECT * FROM staya_raids WHERE id=?", (raid_id,)) as c:
                 row = await c.fetchone()
         if not row or dict(row)["status"] != "pending":
-            await q.answer("Уже поздно!", show_alert=True)
+            await q.answer("Уже поздно", show_alert=True)
             return True
         async with aiosqlite.connect(DB_PATH) as db:
             await db.execute(
@@ -70226,7 +70220,7 @@ async def _war_callbacks(q, d, uid, f, ctx):
                 (uid, raid_id),
             )
             await db.commit()
-        await q.answer("🛡️ Перехват активирован! Добыча нападающего упадёт в 2×.", show_alert=True)
+        await q.answer("🛡️ Перехват активирован. Добыча нападающего упадёт в 2×.", show_alert=True)
         try:
             await q.message.edit_reply_markup(reply_markup=None)
         except Exception:
@@ -70371,15 +70365,15 @@ async def _war_callbacks(q, d, uid, f, ctx):
     if d == "skirmish_start":
         await q.answer()
         if not staya or staya.get("level", 1) < 7:
-            await q.answer("Нужен Речной Форпост (ур.7)!", show_alert=True)
+            await q.answer("Нужен Речной Форпост (ур.7)", show_alert=True)
             return True
         members = await staya_get_members(staya["id"])
         my_role = next((m["role"] for m in members if m["user_id"] == uid), "member")
         if my_role not in ("chief", "elder"):
-            await q.answer("Только Вожак или Старейшина могут объявлять стычку!", show_alert=True)
+            await q.answer("Только Вожак или Старейшина могут объявлять стычку", show_alert=True)
             return True
         if staya.get("cauldron", 0) < SKIRMISH_ENTRY_COINS:
-            await q.answer((f"Нужно {SKIRMISH_ENTRY_COINS}🪙 в котле!")[:200], show_alert=True)
+            await q.answer((f"Нужно {SKIRMISH_ENTRY_COINS}🪙 в котле")[:200], show_alert=True)
             return True
         # Проверяем КД стычки (пропускаем для админа)
         if uid not in ADMIN_IDS:
@@ -70422,7 +70416,7 @@ async def _war_callbacks(q, d, uid, f, ctx):
         kb_sk.append([btn("◀️ Назад", callback_data="war_menu")])
         try:
             await q.message.edit_text(
-                f"⚔️ <b>СТЫЧКА — выбери цель</b>\n"
+                f"⚔️ <b>Стычка</b> · выбор цели\n"
                 f"Стоимость объявления: <b>{SKIRMISH_ENTRY_COINS}{_E_COIN}</b> из котла\n"
                 f"Приз: <b>{int(SKIRMISH_WIN_PCT * 100)}%</b> котла проигравшей стаи (макс. {SKIRMISH_WIN_MAX}{_E_COIN})\n"
                 f"<i>Стычки доступны с близкими по уровню стаями (±2)</i>",
@@ -70451,7 +70445,7 @@ async def _war_callbacks(q, d, uid, f, ctx):
         try:
             await q.message.edit_text(
                 f"⚔️ <b>Стычка против «{he(target['name'])}»</b>\n"
-                f"Выбери размер отряда:",
+                f"",
                 parse_mode=ParseMode.HTML,
                 reply_markup=InlineKeyboardMarkup([
                     [btn("3 vs 3", callback_data=f"skirmish_confirm_{target_id}_3"),
@@ -70513,7 +70507,7 @@ async def _war_callbacks(q, d, uid, f, ctx):
                         )
                     except Exception:
                         pass
-            await q.answer("🐉 Дракон атаковал! Авто-победа.", show_alert=True)
+            await q.answer("🐉 Дракон атаковал. Авто-победа.", show_alert=True)
             try:
                 await q.message.edit_text(
                     f"🐉 <b>Дракон стаи атаковал «{he(target['name'])}»!</b>\n\n"
@@ -70571,7 +70565,7 @@ async def _war_callbacks(q, d, uid, f, ctx):
                 pass
         await asyncio.gather(*[_notify_skirmish(m) for m in all_members])
 
-        await q.answer("Стычка объявлена!")
+        await q.answer("Стычка объявлена")
         try:
             await q.message.edit_text(
                 f"Стычка объявлена! Обе стаи получили приглашение.\n"
@@ -70595,15 +70589,15 @@ async def _war_callbacks(q, d, uid, f, ctx):
             await q.answer(); return True
         sk = await skirmish_get(sk_id)
         if not sk or sk["status"] != "gathering":
-            await q.answer("Сбор уже завершён!", show_alert=True)
+            await q.answer("Сбор уже завершён", show_alert=True)
             return True
         members_sk = await skirmish_get_members(sk_id)
         side_count = sum(1 for m in members_sk if m["side"] == side)
         if side_count >= sk["size"]:
-            await q.answer("Отряд уже заполнен!", show_alert=True)
+            await q.answer("Отряд уже заполнен", show_alert=True)
             return True
         if any(m["user_id"] == uid for m in members_sk):
-            await q.answer("Ты уже записан!", show_alert=True)
+            await q.answer("Ты уже записан", show_alert=True)
             return True
         async with aiosqlite.connect(DB_PATH) as db:
             await db.execute(
@@ -70618,7 +70612,7 @@ async def _war_callbacks(q, d, uid, f, ctx):
         def_cnt = sum(1 for m in members_sk if m["side"] == "defender")
         size = sk["size"]
         side_ru = "атаки" if side == "attacker" else "защиты"
-        await q.answer(f"Ты в отряде {side_ru}!", show_alert=False)
+        await q.answer(f"Ты в отряде {side_ru}", show_alert=False)
 
         # Обновляем приглашение — показываем счётчик
         # Сохраняем кнопки пока не заполнено, убираем только когда старт
@@ -70668,15 +70662,15 @@ async def _war_callbacks(q, d, uid, f, ctx):
             return True
         duel = dict(duel)
         if duel["status"] != "waiting":
-            await q.answer("Дуэль уже завершена!", show_alert=True)
+            await q.answer("Дуэль уже завершена", show_alert=True)
             return True
         col = "att_choice" if role == "att" else "def_choice"
         exp_uid = duel["att_uid"] if role == "att" else duel["def_uid"]
         if uid != exp_uid:
-            await q.answer("Это не твоя дуэль!", show_alert=True)
+            await q.answer("Это не твоя дуэль", show_alert=True)
             return True
         if duel[col]:
-            await q.answer("Ты уже выбрал!", show_alert=True)
+            await q.answer("Ты уже выбрал", show_alert=True)
             return True
         async with aiosqlite.connect(DB_PATH) as db:
             await db.execute(f"UPDATE skirmish_duels SET {col}=? WHERE id=?", (choice, duel_id))
@@ -70714,13 +70708,13 @@ async def _war_callbacks(q, d, uid, f, ctx):
             await q.answer("Дуэль не найдена.", show_alert=True); return True
         duel = dict(duel)
         if duel["status"] != "waiting":
-            await q.answer("Дуэль уже завершена!", show_alert=True); return True
+            await q.answer("Дуэль уже завершена", show_alert=True); return True
         exp_uid = duel["att_uid"] if role == "att" else duel["def_uid"]
         if uid != exp_uid:
-            await q.answer("Это не твоя дуэль!", show_alert=True); return True
+            await q.answer("Это не твоя дуэль", show_alert=True); return True
         num_col = "att_number" if role == "att" else "def_number"
         if duel.get(num_col, 0) != 0:
-            await q.answer("Ты уже загадал число!", show_alert=True); return True
+            await q.answer("Ты уже загадал число", show_alert=True); return True
         async with aiosqlite.connect(DB_PATH) as db:
             await db.execute(f"UPDATE skirmish_duels SET {num_col}=? WHERE id=?", (number, duel_id))
             await db.commit()
@@ -70761,21 +70755,21 @@ async def _war_callbacks(q, d, uid, f, ctx):
             await q.answer("Дуэль не найдена.", show_alert=True); return True
         duel = dict(duel)
         if duel["status"] != "waiting":
-            await q.answer("Дуэль уже завершена!", show_alert=True); return True
+            await q.answer("Дуэль уже завершена", show_alert=True); return True
         exp_uid = duel["att_uid"] if role == "att" else duel["def_uid"]
         if uid != exp_uid:
-            await q.answer("Это не твоя дуэль!", show_alert=True); return True
+            await q.answer("Это не твоя дуэль", show_alert=True); return True
         col = "att_choice" if role == "att" else "def_choice"
         num_col = "att_number" if role == "att" else "def_number"
         if duel.get(num_col, 0) == 0:
-            await q.answer("Сначала загадай число!", show_alert=True); return True
+            await q.answer("Сначала загадай число", show_alert=True); return True
         if duel[col]:
-            await q.answer("Ты уже сделал ставку!", show_alert=True); return True
+            await q.answer("Ты уже сделал ставку", show_alert=True); return True
         async with aiosqlite.connect(DB_PATH) as db:
             await db.execute(f"UPDATE skirmish_duels SET {col}=? WHERE id=?", (side, duel_id))
             await db.commit()
         side_ru = "Чёт" if side == "even" else "Нечет"
-        await q.answer(f"Ставка сделана: {side_ru}!")
+        await q.answer(f"Ставка сделана: {side_ru}")
         try:
             await q.message.edit_reply_markup(reply_markup=None)
         except Exception:
@@ -70813,7 +70807,7 @@ async def _war_callbacks(q, d, uid, f, ctx):
         duel = dict(duel)
         fled_uid = duel["att_uid"] if role == "att" else duel["def_uid"]
         if uid != fled_uid:
-            await q.answer("Это не твоя дуэль!", show_alert=True)
+            await q.answer("Это не твоя дуэль", show_alert=True)
             return True
         # Помечаем как сбежавший
         async with aiosqlite.connect(DB_PATH) as db:
@@ -70827,7 +70821,7 @@ async def _war_callbacks(q, d, uid, f, ctx):
             await db.execute(f"UPDATE staya_skirmishes SET {col_inc}={col_inc}+1 WHERE id=?",
                              (duel["skirmish_id"],))
             await db.commit()
-        await q.answer("🏃 Ты сбежал! Поражение засчитано.", show_alert=True)
+        await q.answer("🏃 Ты сбежал. Поражение засчитано.", show_alert=True)
         try:
             await q.message.edit_reply_markup(reply_markup=None)
         except Exception:
@@ -71072,7 +71066,7 @@ async def cmd_m_new(update: Update, ctx: ContextTypes.DEFAULT_TYPE):
     if not mutual or mutual.get("pending"):
         await update.message.reply_text(
             f"✉️ Личные сообщения доступны только взаимным соседям.\n"
-            f"Сначала подружись с {he(tname or tfirst or uname)}!",
+            f"Сначала подружись с {he(tname or tfirst or uname)}",
             parse_mode=ParseMode.HTML,
         )
         return
@@ -71578,7 +71572,7 @@ async def _place_bid(msg_or_q, uid: int, f: dict, amount: int, bot) -> None:
     )
 
     if hasattr(msg_or_q, "answer"):
-        await msg_or_q.answer(f"✅ Ставка {amount:,}🪙 принята!", show_alert=False)
+        await msg_or_q.answer(f"✅ Ставка {amount:,}🪙 принята", show_alert=False)
         await _show_auction(msg_or_q, uid, edit=True)
     else:
         await msg_or_q.reply_text(result_text, parse_mode=ParseMode.HTML)
