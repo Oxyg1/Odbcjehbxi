@@ -1428,8 +1428,8 @@ async def _fz_announce_confirm(bot, text: str, **kwargs) -> None:
         f"<i>Опубликовать в общий чат?</i>"
     )
     markup = InlineKeyboardMarkup([
-        [InlineKeyboardButton("✅ Опубликовать", callback_data=f"fz_pub_ok_{token}"),
-         InlineKeyboardButton("❌ Отменить",     callback_data=f"fz_pub_no_{token}")],
+        [btn("✅ Опубликовать", callback_data=f"fz_pub_ok_{token}"),
+         btn("❌ Отменить",     callback_data=f"fz_pub_no_{token}")],
     ])
 
     for admin_id in ADMIN_IDS:
@@ -3376,6 +3376,92 @@ class _StyledButton(InlineKeyboardButton):
         return d
 
 
+# ── Премиум-иконки кнопок ─────────────────────────────────────────────────────
+# Bot API 9.4 отдаёт иконку кнопки отдельным полем icon_custom_emoji_id, поэтому
+# эмодзи в подписи не нужна: она уедет в иконку сама (см. btn ниже).
+#
+# Ключ — обычный эмодзи, которым подпись начинается сейчас. Чтобы иконка
+# появилась на всех кнопках сразу, достаточно вписать сюда её document_id —
+# трогать сами вызовы не надо.
+#
+# Пустая строка = премиум-версии пока нет, эмодзи остаётся в тексте как был.
+BUTTON_ICONS: dict[str, str] = {
+    # Уже есть
+    "✅": "5774022692642492953",
+    "🎮": "5938413566624272793",
+    "🎲": "5938413566624272793",
+    "🎰": "5960608239623082921",
+    "🛒": "5983399041197675256",
+    "🏪": "5983399041197675256",
+    "⚙️": "5850309953293653168",
+    "🌿": "6032594876506312598",
+    "⭐": "6028338546736107668",
+    "🪙": "5341524176039615767",
+    "🔥": "5341735149128159966",
+    "🐸": "5341367834935075028",
+    "💀": "5341573078537248907",
+    "🎟": "5341688243790323773",
+    "🎫": "5341677472012342805",
+    "❤️": "5341676144867449701",
+    "⚡": "5343666557266467138",
+    "🧼": "5341814971095360388",
+    "🍖": "5341326049198251117",
+
+    # Ждут id — список в порядке ценности (сколько кнопок затронет)
+    "◀️": "",   # 304 — «Назад», самая частая кнопка бота
+    "❌": "",   # 67  — отмена, закрыть
+    "🔄": "",   # 32  — обновить
+    "⚔️": "",   # 29  — бой, дуэль, набег
+    "💰": "",   # 29  — ставка, сумма
+    "📊": "",   # 21  — статистика
+    "▶️": "",   # 17  — запустить, дальше
+    "🔨": "",   # 15  — крафт
+    "🚫": "",   # 14  — запрет, блокировка
+    "🚪": "",   # 12  — вступить, покинуть
+    "🎁": "",   # 11  — подарок
+    "✏️": "",   # 10  — ввод своего значения
+    "👥": "",   # 10  — игроки, участники
+    "🏃": "",   # 9   — сдаться, сбежать
+    "🏆": "",   # 8   — топ, победа
+    "🔍": "",   # 8   — поиск
+    "🤖": "",   # 8   — бот
+    "📬": "",   # 8   — заявки
+    "➕": "",   # 8   — добавить
+    "🛡️": "",   # 7   — защита
+    "🗑": "",   # 7   — удалить
+    "🧊": "",   # 6   — фриз-ивент
+    "📋": "",   # 6   — список, логи
+    "🎭": "",   # 6   — облик, стикеры
+}
+
+# Ведущая эмодзи подписи: сам символ плюс возможные модификаторы и ZWJ-склейки
+_BTN_LEAD_EMOJI = re.compile(
+    "^([\U0001F000-\U0001FAFF←-⯿☀-➿]"
+    "[︀-️‍\U0001F000-\U0001FAFF]*)\\s*"
+)
+
+
+def _split_button_icon(text: str, icon_id: str | None) -> tuple[str, str | None]:
+    """
+    Выносит ведущую эмодзи подписи в иконку кнопки, если для неё есть премиум-id.
+
+    Подпись при этом становится короче примерно на 1.3W — заметно для кнопок
+    в ряду из двух, где бюджет всего 9.5W.
+    """
+    if icon_id or not text:
+        return text, icon_id
+    m = _BTN_LEAD_EMOJI.match(text)
+    if not m:
+        return text, icon_id
+    premium = BUTTON_ICONS.get(m.group(1))
+    if not premium:
+        return text, icon_id
+    rest = text[m.end():]
+    if not rest:                      # подпись состояла из одной эмодзи
+        return text, icon_id
+    return rest, premium
+
+
 def btn(
     text: str,
     callback_data: str = None,
@@ -3389,9 +3475,13 @@ def btn(
       style   — "primary" | "success" | "danger"
       icon_id — document_id кастомного эмодзи на кнопке
 
+    Если icon_id не задан, а подпись начинается с эмодзи из BUTTON_ICONS —
+    эмодзи автоматически переезжает в иконку.
+
     Если style и icon_id не заданы — возвращает обычный InlineKeyboardButton
     (нет оверхеда от подкласса).
     """
+    text, icon_id = _split_button_icon(text, icon_id)
     if style or icon_id:
         return _StyledButton(
             text,
@@ -3401,6 +3491,7 @@ def btn(
             _icon_id=icon_id,
             **kwargs,
         )
+    # Именно InlineKeyboardButton, а не btn() — иначе бесконечная рекурсия.
     return InlineKeyboardButton(text, callback_data=callback_data, url=url, **kwargs)
 
 
@@ -7464,7 +7555,7 @@ def build_interactive_event_message(frog: dict, event: dict) -> tuple[str, Inlin
     text = f"🎲 <b>Случайное событие!</b>\n\n{event['text'].format(name=name)}"
     uid  = frog["user_id"]
     buttons = [
-        [InlineKeyboardButton(c["label"], callback_data=f"iev|{event['id']}|{c['key']}|{uid}")]
+        [btn(c["label"], callback_data=f"iev|{event['id']}|{c['key']}|{uid}")]
         for c in event["choices"]
     ]
     return text, InlineKeyboardMarkup(buttons)
@@ -8483,14 +8574,14 @@ def _raid_vote_keyboard(raid_id: int, voted: bool,
             cnt = tally.get(i, 0)
             pct = int(cnt / total * 100) if total else 0
             bar = "█" * (pct // 10) + "░" * (10 - pct // 10)
-            rows.append([InlineKeyboardButton(
+            rows.append([btn(
                 f"🏺 {pot_names[i]}: {cnt} гол. ({pct}%) {bar}",
                 callback_data="raid_voted_already",
             )])
         return InlineKeyboardMarkup(rows)
     elif voted:
         return InlineKeyboardMarkup([[
-            InlineKeyboardButton("✅ Ты проголосовал", callback_data="raid_voted_already"),
+            btn("✅ Ты проголосовал", callback_data="raid_voted_already"),
         ]])
     # Не голосовал — обычные кнопки
     tally = tally or {}
@@ -8500,7 +8591,7 @@ def _raid_vote_keyboard(raid_id: int, voted: bool,
         cnt = tally.get(i, 0)
         pct = int(cnt / total * 100) if total > 0 else 0
         count_str = f" · {cnt} ({pct}%)" if total > 0 else ""
-        rows.append([InlineKeyboardButton(
+        rows.append([btn(
             f"🏺 {pot_names[i]}{count_str}",
             callback_data=f"raid_vote_{raid_id}_{i}",
         )])
@@ -8807,38 +8898,38 @@ def _hp_bar(hp: int, max_hp: int = 10) -> str:
 
 def _sk_rps_keyboard(duel_id: int, role: str) -> InlineKeyboardMarkup:
     return InlineKeyboardMarkup([[
-        InlineKeyboardButton("🪨", callback_data=f"skd_{duel_id}_{role}_rock"),
-        InlineKeyboardButton("✂️", callback_data=f"skd_{duel_id}_{role}_scissors"),
-        InlineKeyboardButton("📄", callback_data=f"skd_{duel_id}_{role}_paper"),
+        btn("🪨", callback_data=f"skd_{duel_id}_{role}_rock"),
+        btn("✂️", callback_data=f"skd_{duel_id}_{role}_scissors"),
+        btn("📄", callback_data=f"skd_{duel_id}_{role}_paper"),
     ], [
-        InlineKeyboardButton("🏃 Сдаться", callback_data=f"skd_flee_{duel_id}_{role}"),
+        btn("🏃 Сдаться", callback_data=f"skd_flee_{duel_id}_{role}"),
     ]])
 
 
 def _sk_eo_keyboard(duel_id: int, role: str) -> InlineKeyboardMarkup:
     return InlineKeyboardMarkup([
-        [InlineKeyboardButton(str(n), callback_data=f"skd_eo_{duel_id}_{role}_{n}:?") for n in range(1, 6)],
-        [InlineKeyboardButton(str(n), callback_data=f"skd_eo_{duel_id}_{role}_{n}:?") for n in range(6, 11)],
+        [btn(str(n), callback_data=f"skd_eo_{duel_id}_{role}_{n}:?") for n in range(1, 6)],
+        [btn(str(n), callback_data=f"skd_eo_{duel_id}_{role}_{n}:?") for n in range(6, 11)],
         [
-            InlineKeyboardButton("→ Чёт",   callback_data=f"skd_eop_{duel_id}_{role}_even"),
-            InlineKeyboardButton("→ Нечет", callback_data=f"skd_eop_{duel_id}_{role}_odd"),
+            btn("→ Чёт",   callback_data=f"skd_eop_{duel_id}_{role}_even"),
+            btn("→ Нечет", callback_data=f"skd_eop_{duel_id}_{role}_odd"),
         ],
-        [InlineKeyboardButton("🏃 Сдаться", callback_data=f"skd_flee_{duel_id}_{role}")],
+        [btn("🏃 Сдаться", callback_data=f"skd_flee_{duel_id}_{role}")],
     ])
 
 
 def _sk_eo_keyboard_with_num(duel_id: int, role: str, num: int) -> InlineKeyboardMarkup:
     return InlineKeyboardMarkup([[
-        InlineKeyboardButton(f"Чёт (загадал {num})",  callback_data=f"skd_eop_{duel_id}_{role}_even"),
-        InlineKeyboardButton(f"Нечет (загадал {num})", callback_data=f"skd_eop_{duel_id}_{role}_odd"),
+        btn(f"Чёт (загадал {num})",  callback_data=f"skd_eop_{duel_id}_{role}_even"),
+        btn(f"Нечет (загадал {num})", callback_data=f"skd_eop_{duel_id}_{role}_odd"),
     ], [
-        InlineKeyboardButton("🏃 Сдаться", callback_data=f"skd_flee_{duel_id}_{role}"),
+        btn("🏃 Сдаться", callback_data=f"skd_flee_{duel_id}_{role}"),
     ]])
 
 
 def _sk_support_keyboard(sk_id: int, side: str) -> InlineKeyboardMarkup:
     return InlineKeyboardMarkup([[
-        InlineKeyboardButton(
+        btn(
             "💪 Поддержать своего бойца (+1 HP)",
             callback_data=f"skd_support_{sk_id}_{side}",
         )
@@ -9006,10 +9097,10 @@ def guess_keyboard(duel_id: int, role: str) -> InlineKeyboardMarkup:
     rows = []
     for start in range(1, 21, 5):
         rows.append([
-            InlineKeyboardButton(str(n), callback_data=f"guess_{duel_id}_{role}_{n}")
+            btn(str(n), callback_data=f"guess_{duel_id}_{role}_{n}")
             for n in range(start, start + 5)
         ])
-    rows.append([InlineKeyboardButton("🏃 Сдаться", callback_data=f"skd_flee_{duel_id}_{role}")])
+    rows.append([btn("🏃 Сдаться", callback_data=f"skd_flee_{duel_id}_{role}")])
     return InlineKeyboardMarkup(rows)
 
 
@@ -9084,7 +9175,7 @@ def reaction_wait_text(att_name: str, def_name: str, duel: dict, round_num: int)
 
 def reaction_fire_keyboard(duel_id: int) -> InlineKeyboardMarkup:
     return InlineKeyboardMarkup([[
-        InlineKeyboardButton("💥 ОГОНЬ", callback_data=f"react_{duel_id}_fire"),
+        btn("💥 ОГОНЬ", callback_data=f"react_{duel_id}_fire"),
     ]])
 
 
@@ -9190,13 +9281,13 @@ def lottery_keyboard(duel_id: int, role: str, flipped: list[int]) -> InlineKeybo
         for i in range(row_start, row_start + 5):
             if i in flipped:
                 # Уже выбрана этим игроком — показываем что выбрал (будет раскрыто вместе)
-                row.append(InlineKeyboardButton("✅", callback_data="lottery_done"))
+                row.append(btn("✅", callback_data="lottery_done"))
             else:
-                row.append(InlineKeyboardButton(
+                row.append(btn(
                     f"🃏", callback_data=f"lottery_{duel_id}_{role}_{i}"
                 ))
         rows.append(row)
-    rows.append([InlineKeyboardButton("🏃 Сдаться", callback_data=f"skd_flee_{duel_id}_{role}")])
+    rows.append([btn("🏃 Сдаться", callback_data=f"skd_flee_{duel_id}_{role}")])
     return InlineKeyboardMarkup(rows)
 
 
@@ -9269,17 +9360,17 @@ async def lottery_resolve(bot, sk_id: int, duel: dict,
 
 def bluff_declare_keyboard(duel_id: int, role: str) -> InlineKeyboardMarkup:
     return InlineKeyboardMarkup([[
-        InlineKeyboardButton("✅ Правда", callback_data=f"bluff_{duel_id}_{role}_truth"),
-        InlineKeyboardButton("🤥 Блеф",   callback_data=f"bluff_{duel_id}_{role}_bluff"),
+        btn("✅ Правда", callback_data=f"bluff_{duel_id}_{role}_truth"),
+        btn("🤥 Блеф",   callback_data=f"bluff_{duel_id}_{role}_bluff"),
     ], [
-        InlineKeyboardButton("🏃 Сдаться", callback_data=f"skd_flee_{duel_id}_{role}"),
+        btn("🏃 Сдаться", callback_data=f"skd_flee_{duel_id}_{role}"),
     ]])
 
 
 def bluff_believe_keyboard(duel_id: int, role: str) -> InlineKeyboardMarkup:
     return InlineKeyboardMarkup([[
-        InlineKeyboardButton("👍 Верю",    callback_data=f"bluffr_{duel_id}_{role}_believe"),
-        InlineKeyboardButton("👎 Не верю", callback_data=f"bluffr_{duel_id}_{role}_doubt"),
+        btn("👍 Верю",    callback_data=f"bluffr_{duel_id}_{role}_believe"),
+        btn("👎 Не верю", callback_data=f"bluffr_{duel_id}_{role}_doubt"),
     ]])
 
 
@@ -9371,15 +9462,15 @@ def roulette_init() -> dict:
 
 def roulette_keyboard(duel_id: int, role: str) -> InlineKeyboardMarkup:
     return InlineKeyboardMarkup([[
-        InlineKeyboardButton("🔫 Выстрел", callback_data=f"roulette_{duel_id}_{role}_shoot"),
+        btn("🔫 Выстрел", callback_data=f"roulette_{duel_id}_{role}_shoot"),
     ], [
-        InlineKeyboardButton("🏃 Сдаться", callback_data=f"skd_flee_{duel_id}_{role}"),
+        btn("🏃 Сдаться", callback_data=f"skd_flee_{duel_id}_{role}"),
     ]])
 
 
 def roulette_wait_keyboard() -> InlineKeyboardMarkup:
     return InlineKeyboardMarkup([[
-        InlineKeyboardButton("⏳ Ждём соперника...", callback_data="noop"),
+        btn("⏳ Ждём соперника...", callback_data="noop"),
     ]])
 
 
@@ -9512,10 +9603,10 @@ def pattern_keyboard(duel_id: int, role: str, p: dict) -> InlineKeyboardMarkup:
     options = [p["answer"]] + p["wrong"][:3]
     random.shuffle(options)
     return InlineKeyboardMarkup([[
-        InlineKeyboardButton(o, callback_data=f"pattern_{duel_id}_{role}_{o}")
+        btn(o, callback_data=f"pattern_{duel_id}_{role}_{o}")
         for o in options
     ], [
-        InlineKeyboardButton("🏃 Сдаться", callback_data=f"skd_flee_{duel_id}_{role}"),
+        btn("🏃 Сдаться", callback_data=f"skd_flee_{duel_id}_{role}"),
     ]])
 
 
@@ -9835,42 +9926,42 @@ def _bet_text(duel_id: int, att_name: str, def_name: str,
 def _bet_keyboard(duel_id: int, side: str, has_bet: bool) -> InlineKeyboardMarkup:
     if has_bet:
         return InlineKeyboardMarkup([[
-            InlineKeyboardButton("✅ Ставка принята", callback_data="bet_already"),
+            btn("✅ Ставка принята", callback_data="bet_already"),
         ]])
     quick = [
-        InlineKeyboardButton(f"{a}🪙", callback_data=f"bet_{duel_id}_{side}_{a}")
+        btn(f"{a}🪙", callback_data=f"bet_{duel_id}_{side}_{a}")
         for a in BET_QUICK_OPTIONS
     ]
     return InlineKeyboardMarkup([
-        [InlineKeyboardButton(
+        [btn(
             f"⚔️ На нападение", callback_data=f"bet_side_{duel_id}_attacker",
-        ), InlineKeyboardButton(
+        ), btn(
             f"🛡️ На защиту",   callback_data=f"bet_side_{duel_id}_defender",
         )],
         quick[:2],
         quick[2:],
-        [InlineKeyboardButton("✏️ Своя сумма", callback_data=f"bet_custom_{duel_id}_{side}")],
+        [btn("✏️ Своя сумма", callback_data=f"bet_custom_{duel_id}_{side}")],
     ])
 
 
 def _bet_side_keyboard(duel_id: int) -> InlineKeyboardMarkup:
     """Первый шаг — выбор стороны."""
     return InlineKeyboardMarkup([[
-        InlineKeyboardButton("⚔️ На нападение", callback_data=f"bet_side_{duel_id}_attacker"),
-        InlineKeyboardButton("🛡️ На защиту",   callback_data=f"bet_side_{duel_id}_defender"),
+        btn("⚔️ На нападение", callback_data=f"bet_side_{duel_id}_attacker"),
+        btn("🛡️ На защиту",   callback_data=f"bet_side_{duel_id}_defender"),
     ]])
 
 
 def _bet_amount_keyboard(duel_id: int, side: str) -> InlineKeyboardMarkup:
     quick = [
-        InlineKeyboardButton(f"{a}🪙", callback_data=f"bet_{duel_id}_{side}_{a}")
+        btn(f"{a}🪙", callback_data=f"bet_{duel_id}_{side}_{a}")
         for a in BET_QUICK_OPTIONS
     ]
     return InlineKeyboardMarkup([
         quick[:2],
         quick[2:],
-        [InlineKeyboardButton("✏️ Своя сумма", callback_data=f"bet_custom_{duel_id}_{side}")],
-        [InlineKeyboardButton("◀️ Назад",       callback_data=f"bet_side_{duel_id}_back")],
+        [btn("✏️ Своя сумма", callback_data=f"bet_custom_{duel_id}_{side}")],
+        [btn("◀️ Назад",       callback_data=f"bet_side_{duel_id}_back")],
     ])
 
 
@@ -10893,7 +10984,7 @@ def hs_hide_keyboard(event_id: int, grid_size: int,
         row_btns = []
         for col in range(grid_size):
             cell = row * grid_size + col
-            row_btns.append(InlineKeyboardButton(
+            row_btns.append(btn(
                 f"{cell + 1:02d}",
                 callback_data=f"hs_hide_{event_id}_{cell}",
             ))
@@ -10916,13 +11007,13 @@ def hs_reveal_keyboard(event_id: int, grid_size: int,
         for col in range(grid_size):
             cell = row * grid_size + col
             if cell in revealed_caught:
-                row_btns.append(InlineKeyboardButton("💥", callback_data="hs_noop"))
+                row_btns.append(btn("💥", callback_data="hs_noop"))
             elif cell in escape_pending_cells:
-                row_btns.append(InlineKeyboardButton("⏳", callback_data="hs_noop"))
+                row_btns.append(btn("⏳", callback_data="hs_noop"))
             elif cell in revealed_empty:
-                row_btns.append(InlineKeyboardButton("⬜", callback_data="hs_noop"))
+                row_btns.append(btn("⬜", callback_data="hs_noop"))
             else:
-                row_btns.append(InlineKeyboardButton(
+                row_btns.append(btn(
                     f"{cell + 1:02d}",
                     callback_data=f"hs_reveal_{event_id}_{cell}",
                 ))
@@ -12795,7 +12886,7 @@ async def _hs_build_relocate_kb(event_id: int, event: dict,
     rows = []
     for i in range(0, len(sorted_free), 6):
         row = [
-            InlineKeyboardButton(
+            btn(
                 f"{c + 1:02d}",
                 callback_data=f"{prefix}_{event_id}_{c}",
             )
@@ -17642,11 +17733,12 @@ def coin_btn_kwargs() -> dict:
 
 
 def coin_btn(text: str, callback_data: str, **extra) -> InlineKeyboardButton:
-    """Обёртка для InlineKeyboardButton — всегда возвращает обычную кнопку с plain 🪙.
-    Премиум-эмодзи в тексте кнопок убраны: Telegram не рендерит их корректно
-    во всех клиентах, и они вызывают путаницу при Golden Frog.
     """
-    return InlineKeyboardButton(text, callback_data=callback_data, **extra)
+    Кнопка с монетой. Иконку ставит btn(): ведущий 🪙 переезжает в поле
+    icon_custom_emoji_id (Bot API 9.4). В самой подписи HTML не разбирается,
+    поэтому <tg-emoji> туда вставлять по-прежнему нельзя.
+    """
+    return btn(text, callback_data=callback_data, **extra)
 
 
 def skin_btn(label: str, skin: str, callback_data: str) -> InlineKeyboardButton:
@@ -17660,7 +17752,7 @@ def skin_btn(label: str, skin: str, callback_data: str) -> InlineKeyboardButton:
     premium_id = SKIN_PREMIUM_EMOJI.get(skin)
     if premium_id:
         return btn(label, callback_data=callback_data, icon_id=str(premium_id))
-    return InlineKeyboardButton(label, callback_data=callback_data)
+    return btn(label, callback_data=callback_data)
 
 
 def nft_link(nft_url: str, number: str) -> str:
@@ -18039,21 +18131,21 @@ def settings_screen(f: dict) -> tuple[str, InlineKeyboardMarkup]:
     war_state  = "вкл" if f.get("war_notify", 1) else "выкл"
 
     kb = InlineKeyboardMarkup([
-        [InlineKeyboardButton(f"🎨 Стикеры{SEP}{mode_state}", callback_data="toggle_static")],
-        [InlineKeyboardButton(f"🍽 Кормление{SEP}{feed_state}", callback_data="toggle_feed_notify")],
-        [InlineKeyboardButton(f"🦟 Комар{SEP}{mosq_state}", callback_data="toggle_mosquito_notify")],
-        [InlineKeyboardButton(f"🎁 Переводы{SEP}{gift_state}", callback_data="toggle_gift_notify")],
-        [InlineKeyboardButton(f"⚔️ Набеги{SEP}{war_state}", callback_data="toggle_war_notify")],
-        [InlineKeyboardButton("🚫 Блокировки кормления", callback_data="feed_blocks_menu")],
+        [btn(f"🎨 Стикеры{SEP}{mode_state}", callback_data="toggle_static")],
+        [btn(f"🍽 Кормление{SEP}{feed_state}", callback_data="toggle_feed_notify")],
+        [btn(f"🦟 Комар{SEP}{mosq_state}", callback_data="toggle_mosquito_notify")],
+        [btn(f"🎁 Переводы{SEP}{gift_state}", callback_data="toggle_gift_notify")],
+        [btn(f"⚔️ Набеги{SEP}{war_state}", callback_data="toggle_war_notify")],
+        [btn("🚫 Блокировки кормления", callback_data="feed_blocks_menu")],
         [
-            InlineKeyboardButton(t("btn_lang", f),      callback_data="lang_set_menu"),
-            InlineKeyboardButton(t("btn_hibernate", f), callback_data="hibernation_menu"),
+            btn(t("btn_lang", f),      callback_data="lang_set_menu"),
+            btn(t("btn_hibernate", f), callback_data="hibernation_menu"),
         ],
         [
-            InlineKeyboardButton("📋 Правила", callback_data="game_rules"),
-            InlineKeyboardButton(t("btn_feedback", f), callback_data="feedback_start"),
+            btn("📋 Правила", callback_data="game_rules"),
+            btn(t("btn_feedback", f), callback_data="feedback_start"),
         ],
-        [InlineKeyboardButton(t("btn_back", f), callback_data="menu_more")],
+        [btn(t("btn_back", f), callback_data="menu_more")],
     ])
 
     text = ui_card(
@@ -18093,13 +18185,13 @@ def main_kb(f: dict, is_group: bool = False, sacrifice_active: bool = False,
     if auction_active:
         event_btns.append(btn("Аукцион", callback_data="auction_menu", style="danger"))
     if sacrifice_active:
-        event_btns.append(InlineKeyboardButton(t("menu_event", f), callback_data="sacrifice_menu"))
+        event_btns.append(btn(t("menu_event", f), callback_data="sacrifice_menu"))
     if contest_active:
-        event_btns.append(InlineKeyboardButton("Конкурс", callback_data="contest_my_stats"))
+        event_btns.append(btn("Конкурс", callback_data="contest_my_stats"))
     if nft_contest_active and f.get("league", 0) in NFT_CONTEST_TARGET_LEAGUES:
-        event_btns.append(InlineKeyboardButton("NFT-конкурс", callback_data="nft_contest_menu"))
+        event_btns.append(btn("NFT-конкурс", callback_data="nft_contest_menu"))
     if legend_pct is not None:
-        event_btns.append(InlineKeyboardButton(
+        event_btns.append(btn(
             f"{legend_emoji} Легенда{SEP}{legend_pct}%", callback_data="legend_status"
         ))
 
@@ -18185,25 +18277,25 @@ def care_kb(f: dict) -> InlineKeyboardMarkup:
     return InlineKeyboardMarkup(
         [
             [
-                InlineKeyboardButton(feed_lbl,  callback_data="menu_feed"),
-                InlineKeyboardButton(play_lbl,  callback_data="menu_play"),
+                btn(feed_lbl,  callback_data="menu_feed"),
+                btn(play_lbl,  callback_data="menu_play"),
             ],
             [
-                InlineKeyboardButton(heal_lbl,  callback_data="heal"),
-                InlineKeyboardButton(wash_lbl,  callback_data="wash"),
+                btn(heal_lbl,  callback_data="heal"),
+                btn(wash_lbl,  callback_data="wash"),
             ],
             [
-                InlineKeyboardButton(sleep_lbl, callback_data="sleep"),
-                InlineKeyboardButton(daily_lbl, callback_data="daily"),
+                btn(sleep_lbl, callback_data="sleep"),
+                btn(daily_lbl, callback_data="daily"),
             ],
-            [InlineKeyboardButton(t("back", f), callback_data="refresh")],
+            [btn(t("back", f), callback_data="refresh")],
         ]
     )
 
 
 def back_to_main(f: dict = None) -> InlineKeyboardMarkup:
     lbl = t("back", f) if f else "◀️ Назад"
-    return InlineKeyboardMarkup([[InlineKeyboardButton(lbl, callback_data="refresh")]])
+    return InlineKeyboardMarkup([[btn(lbl, callback_data="refresh")]])
 
 
 # ══════════════════════════════════════════
@@ -18740,7 +18832,7 @@ async def vanilla_redirect(
     try:
         bot_me = await ctx.bot.get_me()
         deep_link = f"https://t.me/{bot_me.username}?start={feature}"
-        kb = InlineKeyboardMarkup([[InlineKeyboardButton(label, url=deep_link)]])
+        kb = InlineKeyboardMarkup([[btn(label, url=deep_link)]])
         msg = await update.message.reply_text("👇", reply_markup=kb)
         try:
             await update.message.delete()
@@ -19406,7 +19498,7 @@ async def cmd_activate(update: Update, ctx: ContextTypes.DEFAULT_TYPE):
                 f"<tg-emoji emoji-id='5341367834935075028'>🐸</tg-emoji> Frog Tamagotchi активирован! Напиши /frog чтобы начать.",
                 parse_mode=ParseMode.HTML,
                 reply_markup=InlineKeyboardMarkup([[
-                    InlineKeyboardButton("🐸 Начать", url=bot_link),
+                    btn("🐸 Начать", url=bot_link),
                 ]]) if bot_link else None,
             )
         except Exception:
@@ -19428,7 +19520,7 @@ async def cmd_activate(update: Update, ctx: ContextTypes.DEFAULT_TYPE):
                 f"<i>Твои прогресс, монеты и достижения сохраняются даже если выйдешь из чата</i>",
                 parse_mode=ParseMode.HTML,
                 reply_markup=InlineKeyboardMarkup([[
-                    InlineKeyboardButton("🐸 Начать игру", url=bot_link),
+                    btn("🐸 Начать игру", url=bot_link),
                 ]]) if bot_link else None,
             )
         except Exception:
@@ -20079,18 +20171,18 @@ async def _handle_chatadmin_callback(q, uid: int, ctx):
             return btn(f"{pfx}{lbl}", callback_data=f"ca_wm_{val}_{cid}")
 
         rows = [
-            [InlineKeyboardButton("── Режим работы ──", callback_data="ca_noop")],
+            [btn("── Режим работы ──", callback_data="ca_noop")],
             [_mbtn("🐸 Полный", "full"),   _mbtn("⚡ Лёгкий",   "lite")],
             [_mbtn("🤫 Ваниль", "vanilla"), _mbtn("📖 Читатель", "readonly")],
-            [InlineKeyboardButton("── Анонсы ──", callback_data="ca_noop")],
+            [btn("── Анонсы ──", callback_data="ca_noop")],
             [_albtn("📢 Все", "all"), _albtn("⭐ Важные", "major"), _albtn("🔇 Нет", "none")],
-            [InlineKeyboardButton("── Приветствие ──", callback_data="ca_noop")],
+            [btn("── Приветствие ──", callback_data="ca_noop")],
             [_wmbtn("🎉 Полное", "full"), _wmbtn("📝 Минимал", "minimal"), _wmbtn("🤫 Тихо", "silent")],
             [btn(f"💬 Реакции: {sr}", callback_data=f"ca_toggle_reactions_{cid}"),
              btn(f"💰 Монеты: {cv}", callback_data=f"ca_toggle_coins_{cid}")],
         ]
         if susp:
-            rows.append([InlineKeyboardButton("⏸ Анонсы на паузе", callback_data="ca_noop")])
+            rows.append([btn("⏸ Анонсы на паузе", callback_data="ca_noop")])
         rows.append([btn("◀️ Назад", callback_data=f"ca_main_{cid}")])
         return InlineKeyboardMarkup(rows)
 
@@ -20193,8 +20285,8 @@ async def _handle_chatadmin_callback(q, uid: int, ctx):
             [btn(f"🧹 Удалять команды игр: {acmd}",          callback_data=f"ca_toggle_del_cmds_{cid}")],
             [btn(f"🧊 Удалять ква/фриз: {afriz}",            callback_data=f"ca_toggle_del_friz_{cid}"),
              btn(f"⏱ Задержка: {fdel}с",                     callback_data=f"ca_cycle_friz_delay_{cid}")],
-            [InlineKeyboardButton(f"⏱ Средние: {dm}с",      callback_data=f"ca_cycle_med_{cid}"),
-             InlineKeyboardButton(f"⏱ Важные: {dh}с",       callback_data=f"ca_cycle_high_{cid}")],
+            [btn(f"⏱ Средние: {dm}с",      callback_data=f"ca_cycle_med_{cid}"),
+             btn(f"⏱ Важные: {dh}с",       callback_data=f"ca_cycle_high_{cid}")],
             [btn(f"🤬 Фильтр мата: {pf}",                   callback_data=f"ca_toggle_prof_{cid}"),
              btn(f"⚠️ Реакция: {pw}",                        callback_data=f"ca_toggle_profwarn_{cid}")],
             [btn(f"🔕 /start в группе: {ig}",                callback_data=f"ca_toggle_start_{cid}")],
@@ -21403,14 +21495,14 @@ async def show_antibot_panel(message, ctx, edit: bool = False):
         f"Доверенные (инфлюэнсеры) — всегда проходят без проверки.</i>"
     )
     kb = InlineKeyboardMarkup([
-        [InlineKeyboardButton(f"⏳ Разобрать подозрительных ({pending})", callback_data="aab_pending_0")],
-        [InlineKeyboardButton(f"✅ Одобрить всех ({pending})", callback_data="aab_approve_all")],
-        [InlineKeyboardButton("🚫 Список забаненых", callback_data="aab_banned_0")],
-        [InlineKeyboardButton("↩️ Отклонённые рефералы", callback_data="aab_rejected_0")],
-        [InlineKeyboardButton("⭐ Whitelist рефереров", callback_data="aab_whitelist")],
-        [InlineKeyboardButton("🔍 Поиск по ID реферера", callback_data="aab_search_hint")],
-        [InlineKeyboardButton("💾 Сделать бэкап БД", callback_data="aab_backup")],
-        [InlineKeyboardButton("🔄 Обновить", callback_data="aab_refresh")],
+        [btn(f"⏳ Разобрать подозрительных ({pending})", callback_data="aab_pending_0")],
+        [btn(f"✅ Одобрить всех ({pending})", callback_data="aab_approve_all")],
+        [btn("🚫 Список забаненых", callback_data="aab_banned_0")],
+        [btn("↩️ Отклонённые рефералы", callback_data="aab_rejected_0")],
+        [btn("⭐ Whitelist рефереров", callback_data="aab_whitelist")],
+        [btn("🔍 Поиск по ID реферера", callback_data="aab_search_hint")],
+        [btn("💾 Сделать бэкап БД", callback_data="aab_backup")],
+        [btn("🔄 Обновить", callback_data="aab_refresh")],
     ])
     fn = message.edit_text if edit else message.reply_text
     try:
@@ -21474,10 +21566,10 @@ async def handle_antibot_callback(q, d, uid, ctx):
                 btn(f"🔍 Расследовать ({bot_count} подозр.)", callback_data=f"aab_investigate_{ref_er}", style="danger"),
             ])
         nav = []
-        if page > 0: nav.append(InlineKeyboardButton("◀️", callback_data=f"aab_pending_{page-1}"))
-        if (page+1)*per < total: nav.append(InlineKeyboardButton("▶️", callback_data=f"aab_pending_{page+1}"))
+        if page > 0: nav.append(btn("◀️", callback_data=f"aab_pending_{page-1}"))
+        if (page+1)*per < total: nav.append(btn("▶️", callback_data=f"aab_pending_{page+1}"))
         if nav: buttons.append(nav)
-        buttons.append([InlineKeyboardButton("◀️ Назад", callback_data="aab_refresh")])
+        buttons.append([btn("◀️ Назад", callback_data="aab_refresh")])
         try:
             await q.message.edit_text("\n".join(lines), parse_mode=ParseMode.HTML, reply_markup=InlineKeyboardMarkup(buttons))
         except Exception: pass
@@ -21555,7 +21647,7 @@ async def handle_antibot_callback(q, d, uid, ctx):
             uname_disp = f"@{uname_b}" if uname_b else f"id:{uid_b}"
             lines.append(f"• <b>{_html.escape(str(name))}</b> {uname_disp} <code>{uid_b}</code>")
             buttons.append([
-                InlineKeyboardButton(
+                btn(
                     f"🔓 Разбанить {str(name)[:12]}",
                     callback_data=f"aab_unban_{uid_b}"
                 )
@@ -21563,12 +21655,12 @@ async def handle_antibot_callback(q, d, uid, ctx):
 
         nav = []
         if page > 0:
-            nav.append(InlineKeyboardButton("◀️", callback_data=f"aab_banned_{page-1}"))
+            nav.append(btn("◀️", callback_data=f"aab_banned_{page-1}"))
         if (page + 1) * per < total:
-            nav.append(InlineKeyboardButton("▶️", callback_data=f"aab_banned_{page+1}"))
+            nav.append(btn("▶️", callback_data=f"aab_banned_{page+1}"))
         if nav:
             buttons.append(nav)
-        buttons.append([InlineKeyboardButton("◀️ Назад", callback_data="aab_refresh")])
+        buttons.append([btn("◀️ Назад", callback_data="aab_refresh")])
 
         try:
             await q.message.edit_text(
@@ -21621,10 +21713,10 @@ async def handle_antibot_callback(q, d, uid, ctx):
             nm = frog_b or first_b or "?"
             ud = f"@{uname_b}" if uname_b else f"id:{uid_b}"
             lines2.append(f"• <b>{_html.escape(str(nm))}</b> {ud} <code>{uid_b}</code>")
-            buttons2.append([InlineKeyboardButton(
+            buttons2.append([btn(
                 f"🔓 Разбанить {str(nm)[:12]}", callback_data=f"aab_unban_{uid_b}"
             )])
-        buttons2.append([InlineKeyboardButton("◀️ Назад", callback_data="aab_refresh")])
+        buttons2.append([btn("◀️ Назад", callback_data="aab_refresh")])
         try:
             await q.message.edit_text(
                 "\n".join(lines2), parse_mode=ParseMode.HTML,
@@ -21658,15 +21750,15 @@ async def handle_antibot_callback(q, d, uid, ctx):
         for ref_er, ref_ed, reason, det_at in rows:
             dt = datetime.fromtimestamp(det_at).strftime("%d.%m %H:%M")
             lines.append(f"• <code>{ref_er}</code>→<code>{ref_ed}</code> <i>{reason[:30]}</i> [{dt}]")
-            buttons.append([InlineKeyboardButton(
+            buttons.append([btn(
                 f"↩️ Восстановить {ref_er}→{ref_ed}",
                 callback_data=f"aab_restore_{ref_er}_{ref_ed}",
             )])
         nav = []
-        if page > 0: nav.append(InlineKeyboardButton("◀️", callback_data=f"aab_rejected_{page-1}"))
-        if (page+1)*per < total: nav.append(InlineKeyboardButton("▶️", callback_data=f"aab_rejected_{page+1}"))
+        if page > 0: nav.append(btn("◀️", callback_data=f"aab_rejected_{page-1}"))
+        if (page+1)*per < total: nav.append(btn("▶️", callback_data=f"aab_rejected_{page+1}"))
         if nav: buttons.append(nav)
-        buttons.append([InlineKeyboardButton("◀️ Назад", callback_data="aab_refresh")])
+        buttons.append([btn("◀️ Назад", callback_data="aab_refresh")])
         try:
             await q.message.edit_text("\n".join(lines), parse_mode=ParseMode.HTML,
                                       reply_markup=InlineKeyboardMarkup(buttons))
@@ -21699,7 +21791,7 @@ async def handle_antibot_callback(q, d, uid, ctx):
             lines.append(f"• <b>{_html.escape(name)}</b> <code>{uid_r}</code> <i>{note}</i> [{at_s}]")
             buttons.append([btn(f"❌ Убрать {name}", callback_data=f"aab_untrust_{uid_r}", style="danger")])
         lines.append(f"\n<i>Чтобы добавить: /adminaddtrust [ID] [заметка]</i>")
-        buttons.append([InlineKeyboardButton("◀️ Назад", callback_data="aab_refresh")])
+        buttons.append([btn("◀️ Назад", callback_data="aab_refresh")])
         try:
             await q.message.edit_text("\n".join(lines) if lines else "Список пуст.", parse_mode=ParseMode.HTML, reply_markup=InlineKeyboardMarkup(buttons))
         except Exception: pass
@@ -21758,7 +21850,7 @@ async def handle_antibot_callback(q, d, uid, ctx):
             [btn(f"🚫 Забанить + {len(suspects)} ботов", callback_data=f"aab_banfraud_{ref_er}", style="danger")],
             [btn("🔨 3. Откатить монеты и скины", callback_data=f"aab_rollbackonly_{ref_er}", style="danger")],
             [btn("⚡ Всё сразу (бан + откат)", callback_data=f"aab_fullban_{ref_er}", style="danger")],
-            [InlineKeyboardButton("◀️ Назад", callback_data="aab_pending_0")],
+            [btn("◀️ Назад", callback_data="aab_pending_0")],
         ])
         try:
             await q.message.edit_text(text, parse_mode=ParseMode.HTML, reply_markup=kb)
@@ -22720,11 +22812,11 @@ async def cmd_adminrisk(update: Update, ctx: ContextTypes.DEFAULT_TYPE) -> None:
     )
     kb = InlineKeyboardMarkup([
         [
-            InlineKeyboardButton("🔴 Risk +1", callback_data=f"risk_bump_{uid}"),
-            InlineKeyboardButton("🟢 Сбросить риск", callback_data=f"risk_reset_{uid}"),
+            btn("🔴 Risk +1", callback_data=f"risk_bump_{uid}"),
+            btn("🟢 Сбросить риск", callback_data=f"risk_reset_{uid}"),
         ],
-        [InlineKeyboardButton("🤖 Пометить ботом", callback_data=f"risk_markbot_{uid}")],
-        [InlineKeyboardButton("🔗 Цепочка переводов (72ч)", callback_data=f"risk_chain_{uid}")],
+        [btn("🤖 Пометить ботом", callback_data=f"risk_markbot_{uid}")],
+        [btn("🔗 Цепочка переводов (72ч)", callback_data=f"risk_chain_{uid}")],
     ])
     await update.message.reply_text(text, parse_mode=ParseMode.HTML, reply_markup=kb)
 
@@ -22762,33 +22854,33 @@ async def _send_bot_contacts_page(bot, admin_id: int, bot_uid: int, bot_name: st
             f"  {desc}"
         )
         row = [
-            InlineKeyboardButton(
+            btn(
                 "🚫 Бан" if not is_banned else "🔓 Разбан",
                 callback_data=f"bcp_ban_{bot_uid}_{contact_uid}_{page}" if not is_banned
                               else f"bcp_unban_{bot_uid}_{contact_uid}_{page}",
             ),
-            InlineKeyboardButton("🤖 Бот", callback_data=f"bcp_markbot_{bot_uid}_{contact_uid}_{page}"),
-            InlineKeyboardButton("🔗 Цепочка", callback_data=f"bcp_chain_{bot_uid}_{contact_uid}_{page}"),
+            btn("🤖 Бот", callback_data=f"bcp_markbot_{bot_uid}_{contact_uid}_{page}"),
+            btn("🔗 Цепочка", callback_data=f"bcp_chain_{bot_uid}_{contact_uid}_{page}"),
         ]
         if not is_banned:
-            row.append(InlineKeyboardButton("🔨 Откат", callback_data=f"bcp_rollback_{bot_uid}_{contact_uid}_{page}"))
+            row.append(btn("🔨 Откат", callback_data=f"bcp_rollback_{bot_uid}_{contact_uid}_{page}"))
         buttons.append(row)
 
     # Навигация
     nav = []
     if page > 0:
-        nav.append(InlineKeyboardButton("◀️ Пред", callback_data=f"bcp_page_{bot_uid}_{page-1}"))
+        nav.append(btn("◀️ Пред", callback_data=f"bcp_page_{bot_uid}_{page-1}"))
     if (page + 1) * per < total:
-        nav.append(InlineKeyboardButton("▶️ След", callback_data=f"bcp_page_{bot_uid}_{page+1}"))
+        nav.append(btn("▶️ След", callback_data=f"bcp_page_{bot_uid}_{page+1}"))
     if nav:
         buttons.append(nav)
 
     # Кнопка "Забанить всех на этой странице"
     buttons.append([
-        InlineKeyboardButton("🚫 Забанить всех на странице", callback_data=f"bcp_banall_{bot_uid}_{page}"),
+        btn("🚫 Забанить всех на странице", callback_data=f"bcp_banall_{bot_uid}_{page}"),
     ])
     buttons.append([
-        InlineKeyboardButton(
+        btn(
             f"🔨 Откат ботовода (dry)",
             callback_data=f"bcp_dryrb_{bot_uid}_{page}",
         )
@@ -23876,11 +23968,11 @@ async def cmd_start(update: Update, ctx: ContextTypes.DEFAULT_TYPE):
                         callback_data="kva_retry_stars_10",
                         icon_id="6028338546736107668"
                     )],
-                    [InlineKeyboardButton(
+                    [btn(
                         f"{_coins_cost}{_E_COIN}",
                         callback_data="kva_retry_coins"
                     )],
-                    [InlineKeyboardButton("❌ Закрыть", callback_data="kva_retry_cancel")],
+                    [btn("❌ Закрыть", callback_data="kva_retry_cancel")],
                 ]),
             )
             return
@@ -24045,7 +24137,7 @@ async def cmd_start(update: Update, ctx: ContextTypes.DEFAULT_TYPE):
             f"<i>Напиши имя (1–20 символов) или нажми «Пропустить»</i>",
             parse_mode=ParseMode.HTML,
             reply_markup=InlineKeyboardMarkup([[
-                InlineKeyboardButton("⏭ Пропустить", callback_data="onboard_skip"),
+                btn("⏭ Пропустить", callback_data="onboard_skip"),
             ]]),
         )
         return  # ── конец онбординга ──
@@ -24064,11 +24156,11 @@ async def cmd_start(update: Update, ctx: ContextTypes.DEFAULT_TYPE):
             ev = await _sacrifice_active_event()
             if ev:
                 sac_kb = InlineKeyboardMarkup([
-                    [InlineKeyboardButton(
+                    [btn(
                         "🔥 Участвовать в жертвоприношении!",
                         callback_data=f"sacrifice_join_{ev['id']}",
                     )],
-                    [InlineKeyboardButton("◀️ Моя лягушка", callback_data="refresh")],
+                    [btn("◀️ Моя лягушка", callback_data="refresh")],
                 ])
                 await group_reply(
                     update,
@@ -24089,7 +24181,7 @@ async def cmd_start(update: Update, ctx: ContextTypes.DEFAULT_TYPE):
                 await update.message.reply_text(
                     "<tg-emoji emoji-id='5341735149128159966'>🔥</tg-emoji> Нажми кнопку, чтобы перейти в ивент:",
                     reply_markup=InlineKeyboardMarkup([[
-                        InlineKeyboardButton("🔥 Воронка", callback_data=f"funnel_menu_{ev_f['id']}")
+                        btn("🔥 Воронка", callback_data=f"funnel_menu_{ev_f['id']}")
                     ]]),
                 )
                 return
@@ -24398,7 +24490,7 @@ async def cmd_topsponsors(update: Update, ctx: ContextTypes.DEFAULT_TYPE):
             f"Запусти розыгрыш: <code>/giveaway 100</code>"
         )
         kb = InlineKeyboardMarkup([
-            [InlineKeyboardButton("🔄 Обновить", callback_data="topsponsors_refresh")]
+            [btn("🔄 Обновить", callback_data="topsponsors_refresh")]
         ])
     else:
         medals = ["🥇", "🥈", "🥉"] + ["💝"] * 17
@@ -24412,7 +24504,7 @@ async def cmd_topsponsors(update: Update, ctx: ContextTypes.DEFAULT_TYPE):
         lines.append(f"\n<i>Твоя позиция: #{my_pos} · Ты задонатил: {my_donated:,}{_E_COIN}</i>")
         text = "\n".join(lines)
         kb = InlineKeyboardMarkup([
-            [InlineKeyboardButton("🔄 Обновить", callback_data="topsponsors_refresh")]
+            [btn("🔄 Обновить", callback_data="topsponsors_refresh")]
         ])
 
     msg = await update.message.reply_text(text, parse_mode=ParseMode.HTML, reply_markup=kb)
@@ -24488,8 +24580,8 @@ async def _build_forbes_text(viewer_uid: int) -> tuple[str, InlineKeyboardMarkup
     toggle_cb = "forbes_hide" if is_my_public else "forbes_show"
 
     kb = InlineKeyboardMarkup([
-        [InlineKeyboardButton(toggle_label, callback_data=toggle_cb)],
-        [InlineKeyboardButton("🔄 Обновить", callback_data="forbes_refresh")],
+        [btn(toggle_label, callback_data=toggle_cb)],
+        [btn("🔄 Обновить", callback_data="forbes_refresh")],
     ])
     return "\n".join(lines), kb
 
@@ -24539,12 +24631,12 @@ async def cmd_top(update: Update, ctx: ContextTypes.DEFAULT_TYPE):
     text = _build_top_lines(rows, "all", user_row=f, user_rank=rank, user_total=total)
     kb = InlineKeyboardMarkup([
         [
-            InlineKeyboardButton("🏆 Общий",  callback_data="top_all"),
-            InlineKeyboardButton(t("btn_top_week", f) if f else "📅 Неделя", callback_data="top_week"),
-            InlineKeyboardButton(t("btn_top_month", f) if f else "📆 Месяц", callback_data="top_month"),
+            btn("🏆 Общий",  callback_data="top_all"),
+            btn(t("btn_top_week", f) if f else "📅 Неделя", callback_data="top_week"),
+            btn(t("btn_top_month", f) if f else "📆 Месяц", callback_data="top_month"),
         ],
         [
-            InlineKeyboardButton("🏅 Моя лига", callback_data="top_league"),
+            btn("🏅 Моя лига", callback_data="top_league"),
         ],
     ])
     msg = await update.message.reply_text(text, parse_mode=ParseMode.HTML, reply_markup=kb)
@@ -24691,8 +24783,8 @@ async def cmd_revive(update: Update, ctx: ContextTypes.DEFAULT_TYPE):  # plog in
             parse_mode=ParseMode.HTML,
             reply_markup=InlineKeyboardMarkup([
                 [btn(f"💀 Воскресить ({cost}🪙)", callback_data="revive_confirm", style="success")],
-                [InlineKeyboardButton("📊 Прогресс", callback_data="trial_status"),
-                 InlineKeyboardButton("🎲 Игры", callback_data="menu_games")],
+                [btn("📊 Прогресс", callback_data="trial_status"),
+                 btn("🎲 Игры", callback_data="menu_games")],
             ]),
         )
         return
@@ -24989,10 +25081,10 @@ async def cmd_tournament(update: Update, ctx: ContextTypes.DEFAULT_TYPE):
     kb = InlineKeyboardMarkup(
         [
             [
-                InlineKeyboardButton(
+                btn(
                     "⚔️ Вступить!", callback_data=f"tournament_join_{tid}"
                 ),
-                InlineKeyboardButton(
+                btn(
                     "🚀 Начать", callback_data=f"tournament_start_{tid}"
                 ),
             ]
@@ -25127,8 +25219,8 @@ async def _casino_auto_loop(
                     ),
                     parse_mode=ParseMode.HTML,
                     reply_markup=InlineKeyboardMarkup([[
-                        InlineKeyboardButton("🎰 Казино", callback_data="casino_menu"),
-                        InlineKeyboardButton("⭐ Пополнить", callback_data="buy_stars_quick"),
+                        btn("🎰 Казино", callback_data="casino_menu"),
+                        btn("⭐ Пополнить", callback_data="buy_stars_quick"),
                     ]]),
                 )
             except Exception:
@@ -25268,8 +25360,8 @@ async def _casino_auto_loop(
                     text=result_text + "\n\n❌ <b>Монеты закончились!</b>",
                     parse_mode=ParseMode.HTML,
                     reply_markup=InlineKeyboardMarkup([[
-                        InlineKeyboardButton("🎰 Казино", callback_data="casino_menu"),
-                        InlineKeyboardButton("⭐ Пополнить", callback_data="buy_stars_quick"),
+                        btn("🎰 Казино", callback_data="casino_menu"),
+                        btn("⭐ Пополнить", callback_data="buy_stars_quick"),
                     ]]),
                 )
             except Exception:
@@ -25465,10 +25557,10 @@ async def cmd_battle(update: Update, ctx: ContextTypes.DEFAULT_TYPE):
     kb = InlineKeyboardMarkup(
         [
             [
-                InlineKeyboardButton(
+                btn(
                     "⚔️ Принять батл!", callback_data=f"battle_accept_{battle_id}"
                 ),
-                InlineKeyboardButton(
+                btn(
                     "❌ Отказаться", callback_data=f"battle_decline_{battle_id}"
                 ),
             ]
@@ -25677,10 +25769,10 @@ async def cmd_duel(update: Update, ctx: ContextTypes.DEFAULT_TYPE):
     kb = InlineKeyboardMarkup(
         [
             [
-                InlineKeyboardButton(
+                btn(
                     "⚔️ Принять!", callback_data=f"duel_accept_{duel_id}"
                 ),
-                InlineKeyboardButton(
+                btn(
                     "❌ Отклонить", callback_data=f"duel_decline_{duel_id}"
                 ),
             ]
@@ -25936,20 +26028,20 @@ async def cmd_feed(update: Update, ctx: ContextTypes.DEFAULT_TYPE):
             _feed_kb_rows = []
             if not _already_blocked_this and not _already_blocked_all:
                 _feed_kb_rows.append([
-                    InlineKeyboardButton(
+                    btn(
                         f"🚫 Запретить кормить мне только этому игроку",
                         callback_data=f"feedblock_one_{user.id}",
                     )
                 ])
             if not _already_blocked_all:
                 _feed_kb_rows.append([
-                    InlineKeyboardButton(
+                    btn(
                         "🔒 Запретить кормить мне ВСЕМ игрокам",
                         callback_data="feedblock_all",
                     )
                 ])
             # Кнопка чаевых — первой строкой, всегда
-            _tip_row = [InlineKeyboardButton(
+            _tip_row = [btn(
                 f"🪙 Поблагодарить {he(fname(f))} чаевыми (10🪙)",
                 callback_data=f"tip_feed_{user.id}_10",
             )]
@@ -26230,8 +26322,8 @@ async def cmd_nft(update: Update, ctx: ContextTypes.DEFAULT_TYPE):
         model_info = f"🎨 Модель: <b>{model_name}</b>" if model_name else "🎨 Модель: <i>не определена</i>"
         owner_info = f"👤 Владелец на стр.: <b>{owner_name}</b>" if owner_name else "👤 Владелец: <i>не найден</i>"
         kb = InlineKeyboardMarkup([[
-            InlineKeyboardButton("✅ Подтвердить", callback_data=f"nft_approve_{nft_id}"),
-            InlineKeyboardButton("❌ Отклонить", callback_data=f"nft_reject_{nft_id}"),
+            btn("✅ Подтвердить", callback_data=f"nft_approve_{nft_id}"),
+            btn("❌ Отклонить", callback_data=f"nft_reject_{nft_id}"),
         ]])
         await announce(
             ctx.bot,
@@ -26356,8 +26448,8 @@ async def cmd_nft(update: Update, ctx: ContextTypes.DEFAULT_TYPE):
                     nft_id = (await c.fetchone())[0]
 
             kb = InlineKeyboardMarkup([[
-                InlineKeyboardButton("✅ Подтвердить", callback_data=f"nft_approve_{nft_id}"),
-                InlineKeyboardButton("❌ Отклонить",   callback_data=f"nft_reject_{nft_id}"),
+                btn("✅ Подтвердить", callback_data=f"nft_approve_{nft_id}"),
+                btn("❌ Отклонить",   callback_data=f"nft_reject_{nft_id}"),
             ]])
             await announce(
                 ctx.bot,
@@ -26466,7 +26558,7 @@ async def show_nft_list(update_or_query, context, page=0, edit=False):
             owner = row["owner_name"] if row["owner_name"] else "?"
             # Строка с информацией о заявке
             info = f"{status_emoji} #{row['nft_number']} | {model} | {owner} (id {row['id']})"
-            kb_rows.append([InlineKeyboardButton(info, callback_data="ignore")])
+            kb_rows.append([btn(info, callback_data="ignore")])
 
             # Кнопки действий (передаём номер страницы, чтобы после обновить её)
             approve_cb = f"nft_approve_list_{row['id']}_{page}"
@@ -26482,20 +26574,20 @@ async def show_nft_list(update_or_query, context, page=0, edit=False):
         nav_btns = []
         if page > 0:
             nav_btns.append(
-                InlineKeyboardButton(
+                btn(
                     "◀️ Предыдущая", callback_data=f"nft_list_page_{page-1}"
                 )
             )
         if page < total_pages - 1:
             nav_btns.append(
-                InlineKeyboardButton(
+                btn(
                     "Следующая ▶️", callback_data=f"nft_list_page_{page+1}"
                 )
             )
         if nav_btns:
             kb_rows.append(nav_btns)
         kb_rows.append(
-            [InlineKeyboardButton("🔄 Обновить", callback_data=f"nft_list_page_{page}")]
+            [btn("🔄 Обновить", callback_data=f"nft_list_page_{page}")]
         )
 
         kb = InlineKeyboardMarkup(kb_rows)
@@ -26569,13 +26661,13 @@ async def cmd_buy(update: Update, ctx: ContextTypes.DEFAULT_TYPE):
             lbl = f"⭐ {p['stars']} → {coins_d}🪙"
             if stars_mult_b > 1.0:
                 lbl += " ✨"
-        coin_rows.append([InlineKeyboardButton(lbl, callback_data=f"buy_stars_{i}")])
+        coin_rows.append([btn(lbl, callback_data=f"buy_stars_{i}")])
 
     # ── Раздел 3: Гача-билеты ─────────────────────────────────────────
     ticket_rows = []
     for j, tp in enumerate(TICKET_PACKAGES):
         lbl = f"🎟 {tp['stars']}⭐ → {tp['label']}"
-        ticket_rows.append([InlineKeyboardButton(lbl, callback_data=f"buy_ticket_{j}")])
+        ticket_rows.append([btn(lbl, callback_data=f"buy_ticket_{j}")])
 
     # ── Текст ─────────────────────────────────────────────────────────
     rate_note  = f"  ✨ Буст ×{stars_mult_b:.1f}" if stars_mult_b > 1.0 else ""
@@ -26594,9 +26686,9 @@ async def cmd_buy(update: Update, ctx: ContextTypes.DEFAULT_TYPE):
 
     kb = InlineKeyboardMarkup(
         sub_rows
-        + [[InlineKeyboardButton("🪙 КваКоины", callback_data="ignore")]]
+        + [[btn("🪙 КваКоины", callback_data="ignore")]]
         + coin_rows
-        + [[InlineKeyboardButton("🎫 Гача-билеты", callback_data="ignore")]]
+        + [[btn("🎫 Гача-билеты", callback_data="ignore")]]
         + ticket_rows
     )
     await update.message.reply_text(text, parse_mode=ParseMode.HTML, reply_markup=kb)
@@ -26639,11 +26731,11 @@ def _secretgift_keyboard(admin_free: bool = False) -> InlineKeyboardMarkup:
     for i, g in enumerate(SECRET_GIFTS):
         suffix = "_free" if admin_free else ""
         price_label = "🆓 БЕСПЛАТНО" if admin_free else f"{g['price']}⭐"
-        rows.append([InlineKeyboardButton(
+        rows.append([btn(
             f"{g['emoji']} {g['name']} — {price_label}",
             callback_data=f"sgift_{i}{suffix}",
         )])
-    rows.append([InlineKeyboardButton("❌ Закрыть", callback_data="sgift_close")])
+    rows.append([btn("❌ Закрыть", callback_data="sgift_close")])
     return InlineKeyboardMarkup(rows)
 
 
@@ -26772,8 +26864,8 @@ async def cmd_subscribe(update: Update, ctx: ContextTypes.DEFAULT_TYPE):
         )
         toggle_lbl = "⏸ Поставить на паузу" if sub_auto else "▶️ Возобновить автозаботу"
         kb_rows = [
-            [InlineKeyboardButton(toggle_lbl, callback_data="sub_toggle_auto")],
-            [InlineKeyboardButton("🔄 Продлить подписку", callback_data="sub_renew")],
+            [btn(toggle_lbl, callback_data="sub_toggle_auto")],
+            [btn("🔄 Продлить подписку", callback_data="sub_renew")],
         ]
         if sub_type == 1:
             kb_rows.append([btn("🔼 Улучшить до Трудяги · 800⭐", callback_data="sub_buy_worker", style="primary")])
@@ -26907,7 +26999,7 @@ async def cmd_trial(update: Update, ctx: ContextTypes.DEFAULT_TYPE):
         f"<i>После окончания продлить можно через /subscribe</i>",
         parse_mode=ParseMode.HTML,
         reply_markup=InlineKeyboardMarkup([[
-            InlineKeyboardButton("🏪 Продлить после пробника", callback_data="sub_buy_worker"),
+            btn("🏪 Продлить после пробника", callback_data="sub_buy_worker"),
         ]]),
     )
 
@@ -26959,7 +27051,7 @@ async def cmd_broadcast_sub(update: Update, ctx: ContextTypes.DEFAULT_TYPE):
                 await ctx.bot.send_message(
                     p["user_id"], text, parse_mode=ParseMode.HTML,
                     reply_markup=InlineKeyboardMarkup([[
-                        InlineKeyboardButton("🎁 Забрать 3 дня бесплатно", callback_data="sub_trial_worker"),
+                        btn("🎁 Забрать 3 дня бесплатно", callback_data="sub_trial_worker"),
                     ]]),
                 )
                 sent += 1
@@ -27095,44 +27187,44 @@ async def show_admin_panel(message, edit=False, bot_data=None):
     kb = InlineKeyboardMarkup(
         [
             [
-                InlineKeyboardButton("👥 Игроки", callback_data="admin_players_0"),
-                InlineKeyboardButton("💰 Экономика", callback_data="admin_eco"),
+                btn("👥 Игроки", callback_data="admin_players_0"),
+                btn("💰 Экономика", callback_data="admin_eco"),
             ],
             [
-                InlineKeyboardButton("🎲 Ивенты", callback_data="admin_events"),
-                InlineKeyboardButton("📊 Статистика", callback_data="admin_stats"),
+                btn("🎲 Ивенты", callback_data="admin_events"),
+                btn("📊 Статистика", callback_data="admin_stats"),
             ],
             [
-                InlineKeyboardButton("🔧 Система", callback_data="admin_system"),
-                InlineKeyboardButton("📋 Логи", callback_data="admin_logs_view"),
+                btn("🔧 Система", callback_data="admin_system"),
+                btn("📋 Логи", callback_data="admin_logs_view"),
             ],
             [
-                InlineKeyboardButton("🪸 NFT заявки", callback_data="admin_nft"),
-                InlineKeyboardButton("🎭 Стикеры", callback_data="admin_stickers"),
+                btn("🪸 NFT заявки", callback_data="admin_nft"),
+                btn("🎭 Стикеры", callback_data="admin_stickers"),
             ],
             [
-                InlineKeyboardButton("🔗 Рефералы", callback_data="admin_referrals"),
-                InlineKeyboardButton("🎟 Лотерея", callback_data="admin_lottery"),
+                btn("🔗 Рефералы", callback_data="admin_referrals"),
+                btn("🎟 Лотерея", callback_data="admin_lottery"),
             ],
             [
-                InlineKeyboardButton("💎 Топ богачи", callback_data="admin_rich"),
-                InlineKeyboardButton("🎁 Переводы /gift", callback_data="admin_gifts_0"),
+                btn("💎 Топ богачи", callback_data="admin_rich"),
+                btn("🎁 Переводы /gift", callback_data="admin_gifts_0"),
             ],
             [
-                InlineKeyboardButton("🏘 Партнёрские чаты", callback_data="admin_partner_chats"),
+                btn("🏘 Партнёрские чаты", callback_data="admin_partner_chats"),
             ],
             [
-                InlineKeyboardButton("🤖 Управление ботами", callback_data="admin_bots_0"),
+                btn("🤖 Управление ботами", callback_data="admin_bots_0"),
             ],
             [
-                InlineKeyboardButton("🛡 Антинакрут", callback_data="aab_refresh"),
-                InlineKeyboardButton("💾 Бэкап БД", callback_data="aab_backup"),
+                btn("🛡 Антинакрут", callback_data="aab_refresh"),
+                btn("💾 Бэкап БД", callback_data="aab_backup"),
             ],
             [
-                InlineKeyboardButton("🔍 Поиск по ID/username", callback_data="admin_search_hint"),
+                btn("🔍 Поиск по ID/username", callback_data="admin_search_hint"),
             ],
             [
-                InlineKeyboardButton("🔄 Обновить", callback_data="admin_refresh"),
+                btn("🔄 Обновить", callback_data="admin_refresh"),
             ],
         ]
     )
@@ -27155,7 +27247,7 @@ async def show_player_card(
             await message.edit_text(
                 "❌ Игрок не найден.",
                 reply_markup=InlineKeyboardMarkup(
-                    [[InlineKeyboardButton("◀️ Назад", callback_data=back_cb)]]
+                    [[btn("◀️ Назад", callback_data=back_cb)]]
                 ),
             )
         except Exception:
@@ -27202,81 +27294,81 @@ async def show_player_card(
     revive_row = []
     if not p["alive"]:
         revive_row = [
-            InlineKeyboardButton(
+            btn(
                 "💚 Воскресить", callback_data=f"admin_revive_{target_uid}"
             )
         ]
     kill_row = []
     if p["alive"]:
         kill_row = [
-            InlineKeyboardButton(
+            btn(
                 "💀 Убить лягушку", callback_data=f"admin_kill_{target_uid}"
             )
         ]
     kb = InlineKeyboardMarkup(
         [
             [
-                InlineKeyboardButton(
+                btn(
                     "🪙 +100", callback_data=f"admin_coins_p100_{target_uid}"
                 ),
-                InlineKeyboardButton(
+                btn(
                     "🪙 +1000", callback_data=f"admin_coins_p1000_{target_uid}"
                 ),
-                InlineKeyboardButton(
+                btn(
                     "🪙 -100", callback_data=f"admin_coins_m100_{target_uid}"
                 ),
             ],
             [
-                InlineKeyboardButton(
+                btn(
                     "⭐ +100 XP", callback_data=f"admin_xp_p100_{target_uid}"
                 ),
-                InlineKeyboardButton(
+                btn(
                     "⭐ +500 XP", callback_data=f"admin_xp_p500_{target_uid}"
                 ),
-                InlineKeyboardButton(
+                btn(
                     "⭐ -100 XP", callback_data=f"admin_xp_m100_{target_uid}"
                 ),
             ],
             [
                 btn(ban_btn_label, callback_data=ban_cb, style="danger"),
-                InlineKeyboardButton(
+                btn(
                     "🔄 Сбросить КД", callback_data=f"admin_reset_cd_{target_uid}"
                 ),
             ],
             [
-                InlineKeyboardButton(
+                btn(
                     "🎁 Выдать предмет", callback_data=f"admin_giveitem_menu_{target_uid}"
                 ),
-                InlineKeyboardButton(
+                btn(
                     "🎨 Выдать облик", callback_data=f"admin_giveskin_menu_{target_uid}"
                 ),
             ],
             [
-                InlineKeyboardButton(
+                btn(
                     "⚔️ +1 слот похода", callback_data=f"admin_give_advslot_{target_uid}"
                 ),
-                InlineKeyboardButton(
+                btn(
                     "🔄 Сбросить КД похода", callback_data=f"admin_reset_advcd_{target_uid}"
                 ),
             ],
             [
-                InlineKeyboardButton(
+                btn(
                     "🗑 Забрать облик", callback_data=f"admin_takeskin_menu_{target_uid}"
                 ),
-                InlineKeyboardButton(
+                btn(
                     "🪙 Установить монеты", callback_data=f"admin_setcoins_menu_{target_uid}"
                 ),
             ],
             [
-                InlineKeyboardButton(bot_btn_label, callback_data=bot_cb),
-                InlineKeyboardButton(
+                btn(bot_btn_label, callback_data=bot_cb),
+                btn(
                     "❌ Удалить игрока", callback_data=f"admin_deleteplayer_{target_uid}"
                 ),
             ],
             *([revive_row] if revive_row else []),
             *([kill_row] if kill_row else []),
-            [InlineKeyboardButton("📋 Логи", callback_data=f"admin_logs_uid_{target_uid}"),
-             InlineKeyboardButton("◀️ Назад", callback_data=back_cb)],
+            [btn("📋 Логи", callback_data=f"admin_logs_uid_{target_uid}"),
+             btn("◀️ Назад", callback_data=back_cb)],
         ]
     )
     try:
@@ -29157,9 +29249,9 @@ async def cmd_lang(update: Update, ctx: ContextTypes.DEFAULT_TYPE):
     cur_label = {"ru": "🇷🇺 Русский", "en": "🇬🇧 English", "zh": "🇨🇳 中文"}.get(cur, "🇷🇺 Русский")
     kb = InlineKeyboardMarkup([
         [
-            InlineKeyboardButton("🇷🇺 Русский", callback_data="lang_set_ru"),
-            InlineKeyboardButton("🇬🇧 English", callback_data="lang_set_en"),
-            InlineKeyboardButton("🇨🇳 中文",    callback_data="lang_set_zh"),
+            btn("🇷🇺 Русский", callback_data="lang_set_ru"),
+            btn("🇬🇧 English", callback_data="lang_set_en"),
+            btn("🇨🇳 中文",    callback_data="lang_set_zh"),
         ],
     ])
     await update.message.reply_text(
@@ -29279,24 +29371,24 @@ async def cmd_lottery(update: Update, ctx: ContextTypes.DEFAULT_TYPE):
     kb = InlineKeyboardMarkup(
         [
             [
-                InlineKeyboardButton(
+                btn(
                     f"🎟 Купить 1 билет ({LOTTERY_TICKET_COST}{coin_plain()})",
                     callback_data="lottery_buy_1",
                 ),
             ],
             [
-                InlineKeyboardButton(
+                btn(
                     f"🎟×5 ({LOTTERY_TICKET_COST*5}{coin_plain()})",
                     callback_data="lottery_buy_5",
                 ),
-                InlineKeyboardButton(
+                btn(
                     f"🎟×10 ({LOTTERY_TICKET_COST*10}{coin_plain()})",
                     callback_data="lottery_buy_10",
                 ),
             ],
             [
-                InlineKeyboardButton("🔄 Обновить", callback_data="lottery_refresh"),
-                InlineKeyboardButton("◀️ Назад", callback_data="menu_games"),
+                btn("🔄 Обновить", callback_data="lottery_refresh"),
+                btn("◀️ Назад", callback_data="menu_games"),
             ],
         ]
     )
@@ -29354,7 +29446,7 @@ async def cmd_casino(update: Update, ctx: ContextTypes.DEFAULT_TYPE):
     kb = InlineKeyboardMarkup(
         [
             [
-                InlineKeyboardButton(
+                btn(
                     f"{v['emoji']} {v['name']}",
                     callback_data=f"casino_pick_{k}",
                 )
@@ -29362,9 +29454,9 @@ async def cmd_casino(update: Update, ctx: ContextTypes.DEFAULT_TYPE):
             for k, v in CASINO.items()
         ]
         + [
-            [InlineKeyboardButton("🎯 Режим желания", callback_data="casino_wish_menu")],
+            [btn("🎯 Режим желания", callback_data="casino_wish_menu")],
             [
-                InlineKeyboardButton(
+                btn(
                     "🎰 Джекпот", callback_data="menu_jackpot"
                 )
             ],
@@ -30012,18 +30104,18 @@ async def cmd_admin_nft_recheck(update: Update, ctx: ContextTypes.DEFAULT_TYPE):
 
         kb = InlineKeyboardMarkup([
             [
-                InlineKeyboardButton(
+                btn(
                     "\u2705 \u041e\u0441\u0442\u0430\u0432\u0438\u0442\u044c",
                     callback_data=f"nft_recheck_keep_{row['id']}"
                 ),
-                InlineKeyboardButton(
+                btn(
                     "\u274c \u0417\u0430\u0431\u0440\u0430\u0442\u044c \u0441\u043a\u0438\u043d",
                     callback_data=f"nft_recheck_revoke_{row['id']}_{row['user_id']}"
                 ),
             ],
             [
-                InlineKeyboardButton("\U0001f517 see.tg",   url=seetg_url),
-                InlineKeyboardButton("\U0001f4ce t.me/nft", url=nft_url),
+                btn("\U0001f517 see.tg",   url=seetg_url),
+                btn("\U0001f4ce t.me/nft", url=nft_url),
             ],
         ])
 
@@ -30140,7 +30232,7 @@ async def cmd_admin_nft_invite(update: Update, ctx: ContextTypes.DEFAULT_TYPE):
         invite_text = "\n".join(lines)
 
         kb = InlineKeyboardMarkup([[
-            InlineKeyboardButton("🐸 Войти в чат", url=HOLDERS_CHAT_LINK)
+            btn("🐸 Войти в чат", url=HOLDERS_CHAT_LINK)
         ]])
 
         sent_ok = False
@@ -30847,7 +30939,7 @@ async def _nft_contest_menu_text(uid: int) -> tuple[str, InlineKeyboardMarkup]:
             "Конкурс сейчас не активен.\n"
             "Следи за анонсами в чате!"
         )
-        kb = InlineKeyboardMarkup([[InlineKeyboardButton("◀️ Назад", callback_data="refresh")]])
+        kb = InlineKeyboardMarkup([[btn("◀️ Назад", callback_data="refresh")]])
         return text, kb
 
     prizes_raw = contest.get("prizes", "[]")
@@ -30902,7 +30994,7 @@ async def _nft_contest_menu_text(uid: int) -> tuple[str, InlineKeyboardMarkup]:
             lines.append(f"Твоя позиция: #{rank} из {total}")
             lines.append(f"До призовой тройки: ещё {rank - 3} позиций")
 
-    kb = InlineKeyboardMarkup([[InlineKeyboardButton("◀️ Назад", callback_data="refresh")]])
+    kb = InlineKeyboardMarkup([[btn("◀️ Назад", callback_data="refresh")]])
     return "\n".join(lines), kb
 
 
@@ -31701,7 +31793,7 @@ async def _contest_my_stats_text(uid: int) -> tuple[str, InlineKeyboardMarkup]:
                 row = await c.fetchone()
         if not row:
             return "🎟 <b>Конкурс ещё не запускался.</b>\n\nСледи за анонсами!", \
-                InlineKeyboardMarkup([[InlineKeyboardButton("◀️ Назад", callback_data="refresh")]])
+                InlineKeyboardMarkup([[btn("◀️ Назад", callback_data="refresh")]])
         contest = {"id": row[0], "title": row[1], "active": 0}
 
     c_id = contest["id"]
@@ -31746,9 +31838,9 @@ async def _contest_my_stats_text(uid: int) -> tuple[str, InlineKeyboardMarkup]:
         lines.append("Пригласи друга → он достигает 2-го уровня и выбивает 10 скинов → +20 билетов тебе!")
         lines.append("Крути гачу → каждый новый уникальный облик = +1 билет (макс. 50).")
 
-    kb_rows = [[InlineKeyboardButton("◀️ Назад", callback_data="refresh")]]
+    kb_rows = [[btn("◀️ Назад", callback_data="refresh")]]
     if is_active:
-        kb_rows.insert(0, [InlineKeyboardButton("📋 Мои рефералы", callback_data="contest_refs_inline")])
+        kb_rows.insert(0, [btn("📋 Мои рефералы", callback_data="contest_refs_inline")])
     return "\n".join(lines), InlineKeyboardMarkup(kb_rows)
 
 
@@ -31917,7 +32009,7 @@ async def build_feed_kb(uid: int, f: dict) -> InlineKeyboardMarkup:
         if fly_ready
         else f"🪰 Муха (через {remaining_fly} ч)"
     )
-    rows = [[InlineKeyboardButton(fly_label, callback_data="feed_fly")]]
+    rows = [[btn(fly_label, callback_data="feed_fly")]]
     for fid, food in FOOD.items():
         if fid == "fly":
             continue
@@ -31925,7 +32017,7 @@ async def build_feed_kb(uid: int, f: dict) -> InlineKeyboardMarkup:
         if qty > 0:
             rows.append(
                 [
-                    InlineKeyboardButton(
+                    btn(
                         f"{food['emoji']} {food['name']} ×{qty}",
                         callback_data=f"feed_inv_{fid}",
                     )
@@ -31933,13 +32025,13 @@ async def build_feed_kb(uid: int, f: dict) -> InlineKeyboardMarkup:
             )
     rows.append(
         [
-            InlineKeyboardButton("🍽 Скормить всё", callback_data="feed_all"),
-            InlineKeyboardButton("🛒 Купить еду", callback_data="shop_food"),
+            btn("🍽 Скормить всё", callback_data="feed_all"),
+            btn("🛒 Купить еду", callback_data="shop_food"),
         ]
     )
     rows.append([
-        InlineKeyboardButton("🧹 Ухаживать", callback_data="menu_care"),
-        InlineKeyboardButton(t("btn_back_main", f), callback_data="refresh"),
+        btn("🧹 Ухаживать", callback_data="menu_care"),
+        btn(t("btn_back_main", f), callback_data="refresh"),
     ])
     return InlineKeyboardMarkup(rows)
 
@@ -32291,7 +32383,7 @@ async def on_callback(update: Update, ctx: ContextTypes.DEFAULT_TYPE):
                     "<i>Следующая — в четверг в 15:00 МСК</i>",
                     parse_mode=ParseMode.HTML,
                     reply_markup=InlineKeyboardMarkup([[
-                        InlineKeyboardButton("◀️ Назад", callback_data="refresh")
+                        btn("◀️ Назад", callback_data="refresh")
                     ]]),
                 )
             except Exception:
@@ -32338,7 +32430,7 @@ async def on_callback(update: Update, ctx: ContextTypes.DEFAULT_TYPE):
                 "\n".join(lines),
                 parse_mode=ParseMode.HTML,
                 reply_markup=InlineKeyboardMarkup([[
-                    InlineKeyboardButton("◀️ Назад", callback_data="refresh")
+                    btn("◀️ Назад", callback_data="refresh")
                 ]]),
             )
         except Exception:
@@ -32611,7 +32703,7 @@ async def on_callback(update: Update, ctx: ContextTypes.DEFAULT_TYPE):
                     status_text(f),
                     parse_mode=ParseMode.HTML,
                     reply_markup=InlineKeyboardMarkup([[
-                        InlineKeyboardButton("🔄 Обновить", callback_data="trial_status")
+                        btn("🔄 Обновить", callback_data="trial_status")
                     ]]),
                 )
             except Exception:
@@ -32635,8 +32727,8 @@ async def on_callback(update: Update, ctx: ContextTypes.DEFAULT_TYPE):
                 "\n".join(lines),
                 parse_mode=ParseMode.HTML,
                 reply_markup=InlineKeyboardMarkup([[
-                    InlineKeyboardButton("📊 Прогресс", callback_data="trial_status"),
-                    InlineKeyboardButton("🎲 Игры", callback_data="menu_games"),
+                    btn("📊 Прогресс", callback_data="trial_status"),
+                    btn("🎲 Игры", callback_data="menu_games"),
                 ]]),
             )
         except Exception:
@@ -32667,8 +32759,8 @@ async def on_callback(update: Update, ctx: ContextTypes.DEFAULT_TYPE):
             await q.message.edit_text(
                 "\n".join(lines),
                 reply_markup=InlineKeyboardMarkup([[
-                    InlineKeyboardButton("📊 Прогресс", callback_data="trial_status"),
-                    InlineKeyboardButton("🎲 Игры", callback_data="menu_games"),
+                    btn("📊 Прогресс", callback_data="trial_status"),
+                    btn("🎲 Игры", callback_data="menu_games"),
                 ]]),
             )
         except Exception:
@@ -32703,8 +32795,8 @@ async def on_callback(update: Update, ctx: ContextTypes.DEFAULT_TYPE):
                 status_text(f),
                 parse_mode=ParseMode.HTML,
                 reply_markup=InlineKeyboardMarkup([
-                    [InlineKeyboardButton("🎲 Игры", callback_data="menu_games")],
-                    [InlineKeyboardButton("🔄 Обновить", callback_data="trial_status")],
+                    [btn("🎲 Игры", callback_data="menu_games")],
+                    [btn("🔄 Обновить", callback_data="trial_status")],
                 ]),
             )
         except Exception:
@@ -32727,7 +32819,7 @@ async def on_callback(update: Update, ctx: ContextTypes.DEFAULT_TYPE):
             if fly_ready
             else f"🪰 Муха (через {remaining_fly} ч)"
         )
-        rows = [[InlineKeyboardButton(fly_label, callback_data="feed_fly")]]
+        rows = [[btn(fly_label, callback_data="feed_fly")]]
         # Еда из инвентаря
         feed_kb = await build_feed_kb(uid, f)
         try:
@@ -32949,8 +33041,8 @@ async def on_callback(update: Update, ctx: ContextTypes.DEFAULT_TYPE):
                 result_all + f"\n\n{status_text(f)}",
                 parse_mode=ParseMode.HTML,
                 reply_markup=InlineKeyboardMarkup([
-                    [InlineKeyboardButton("🧹 Ухаживать", callback_data="menu_care"),
-                     InlineKeyboardButton(t("btn_back_main", f), callback_data="refresh")],
+                    [btn("🧹 Ухаживать", callback_data="menu_care"),
+                     btn(t("btn_back_main", f), callback_data="refresh")],
                 ]),
                 link_preview_options=LinkPreviewOptions(),
             )
@@ -32971,14 +33063,14 @@ async def on_callback(update: Update, ctx: ContextTypes.DEFAULT_TYPE):
         kb = InlineKeyboardMarkup(
             [
                 [
-                    InlineKeyboardButton("🎾 Мяч", callback_data="play_ball"),
-                    InlineKeyboardButton("🪁 Прыжки", callback_data="play_jump"),
+                    btn("🎾 Мяч", callback_data="play_ball"),
+                    btn("🪁 Прыжки", callback_data="play_jump"),
                 ],
                 [
-                    InlineKeyboardButton("🫧 Пузыри", callback_data="play_bubbles"),
-                    InlineKeyboardButton("🎵 Пение", callback_data="play_sing"),
+                    btn("🫧 Пузыри", callback_data="play_bubbles"),
+                    btn("🎵 Пение", callback_data="play_sing"),
                 ],
-                [InlineKeyboardButton("◀️ Назад", callback_data="menu_care")],
+                [btn("◀️ Назад", callback_data="menu_care")],
             ]
         )
         try:
@@ -33347,7 +33439,7 @@ async def on_callback(update: Update, ctx: ContextTypes.DEFAULT_TYPE):
         if ticket_count > 0:
             kb_rows.append(
                 [
-                    InlineKeyboardButton(
+                    btn(
                         f"🎫 Использовать билет (×{ticket_count})",
                         callback_data="gacha_use_ticket",
                     )
@@ -33460,9 +33552,9 @@ async def on_callback(update: Update, ctx: ContextTypes.DEFAULT_TYPE):
                 [btn(f"✅ Надеть {skin}", callback_data=f"equip_{skin}", style="success")],
                 [
                     btn("🎰 Ещё (50🪙)", callback_data="gacha", style="primary"),
-                    InlineKeyboardButton("◀️ Назад", callback_data="gacha"),
+                    btn("◀️ Назад", callback_data="gacha"),
                 ],
-                [InlineKeyboardButton("⭐ Пополнить монеты", callback_data="buy_stars_quick")],
+                [btn("⭐ Пополнить монеты", callback_data="buy_stars_quick")],
             ]
         )
         try:
@@ -33560,8 +33652,8 @@ async def on_callback(update: Update, ctx: ContextTypes.DEFAULT_TYPE):
             [
                 [coin_btn(f"🎰 Ещё ×{count} ({total_cost}🪙)", d)],
                 [coin_btn("🎰 ×1 (50🪙)", "gacha_confirm"),
-                 InlineKeyboardButton("◀️ Назад", callback_data="refresh")],
-                [InlineKeyboardButton("⭐ Пополнить монеты", callback_data="buy_stars_quick")],
+                 btn("◀️ Назад", callback_data="refresh")],
+                [btn("⭐ Пополнить монеты", callback_data="buy_stars_quick")],
             ]
         )
         try:
@@ -33666,8 +33758,8 @@ async def on_callback(update: Update, ctx: ContextTypes.DEFAULT_TYPE):
             lines.append(f"🎉 <b>Уровень {lvl}!</b> {display_skin(rskin, use_st)}")
 
         kb = InlineKeyboardMarkup([
-            [InlineKeyboardButton("◀️ Главное меню", callback_data="refresh")],
-            [InlineKeyboardButton("⭐ Пополнить монеты", callback_data="buy_stars_quick")],
+            [btn("◀️ Главное меню", callback_data="refresh")],
+            [btn("⭐ Пополнить монеты", callback_data="buy_stars_quick")],
         ])
         try:
             await q.message.edit_text("\n".join(lines), parse_mode=ParseMode.HTML, reply_markup=kb,
@@ -33740,7 +33832,7 @@ async def on_callback(update: Update, ctx: ContextTypes.DEFAULT_TYPE):
         if new_ticket_count > 0:
             kb_rows.append(
                 [
-                    InlineKeyboardButton(
+                    btn(
                         "🎫 Ещё (билет)", callback_data="gacha_use_ticket"
                     )
                 ]
@@ -33748,7 +33840,7 @@ async def on_callback(update: Update, ctx: ContextTypes.DEFAULT_TYPE):
         kb_rows.append(
             [
                 btn("🎰 Ещё (50🪙)", callback_data="gacha", style="primary"),
-                InlineKeyboardButton("◀️ Назад", callback_data="refresh"),
+                btn("◀️ Назад", callback_data="refresh"),
             ]
         )
         try:
@@ -33830,16 +33922,16 @@ async def on_callback(update: Update, ctx: ContextTypes.DEFAULT_TYPE):
                 lines.append(f"🔒 {R_ICON[sv['rarity']]} {pemoji(sk)} <i>{sk}</i>")
         nav = []
         if page > 0:
-            nav.append(InlineKeyboardButton("◀", callback_data=f"catalog_{page-1}"))
+            nav.append(btn("◀", callback_data=f"catalog_{page-1}"))
         if page < total_pages - 1:
-            nav.append(InlineKeyboardButton("▶", callback_data=f"catalog_{page+1}"))
+            nav.append(btn("▶", callback_data=f"catalog_{page+1}"))
         rows = []
         if nav:
             rows.append(nav)
         rows.append(
             [
-                InlineKeyboardButton("🎒 Инвентарь", callback_data="inv_0"),
-                InlineKeyboardButton("◀️ Назад", callback_data="refresh"),
+                btn("🎒 Инвентарь", callback_data="inv_0"),
+                btn("◀️ Назад", callback_data="refresh"),
             ]
         )
         try:
@@ -33906,8 +33998,8 @@ async def on_callback(update: Update, ctx: ContextTypes.DEFAULT_TYPE):
             text = "🎒 <b>Инвентарь пуст</b>\n\n<i>Выбивай облики в гаче или крафть</i>"
             rows = [
                 [
-                    InlineKeyboardButton("📖 Каталог", callback_data="catalog_0"),
-                    InlineKeyboardButton("◀️ Назад", callback_data="refresh"),
+                    btn("📖 Каталог", callback_data="catalog_0"),
+                    btn("◀️ Назад", callback_data="refresh"),
                 ]
             ]
         else:
@@ -33947,7 +34039,7 @@ async def on_callback(update: Update, ctx: ContextTypes.DEFAULT_TYPE):
                 )
                 if not is_equipped:
                     equip_rows.append(
-                        [InlineKeyboardButton(
+                        [btn(
                             f"🪸 Надеть NFT {skin_key[:18]}",
                             callback_data=f"equip_{skin_key}"
                         )]
@@ -33959,15 +34051,15 @@ async def on_callback(update: Update, ctx: ContextTypes.DEFAULT_TYPE):
             text = "\n".join(lines)
             nav = []
             if page > 0:
-                nav.append(InlineKeyboardButton("◀", callback_data=f"inv_{page-1}"))
+                nav.append(btn("◀", callback_data=f"inv_{page-1}"))
             if page < total_pages - 1:
-                nav.append(InlineKeyboardButton("▶", callback_data=f"inv_{page+1}"))
+                nav.append(btn("▶", callback_data=f"inv_{page+1}"))
             if nav:
                 equip_rows.append(nav)
             equip_rows.append(
                 [
-                    InlineKeyboardButton("📖 Каталог", callback_data="catalog_0"),
-                    InlineKeyboardButton("◀️ Назад", callback_data="refresh"),
+                    btn("📖 Каталог", callback_data="catalog_0"),
+                    btn("◀️ Назад", callback_data="refresh"),
                 ]
             )
             rows = equip_rows
@@ -34009,16 +34101,16 @@ async def on_callback(update: Update, ctx: ContextTypes.DEFAULT_TYPE):
                 lines.append(f"🔒 {R_ICON[sv['rarity']]} {pemoji(sk)} <i>{sk}</i>")
         nav = []
         if page > 0:
-            nav.append(InlineKeyboardButton("◀", callback_data=f"catalog_{page-1}"))
+            nav.append(btn("◀", callback_data=f"catalog_{page-1}"))
         if page < total_pages - 1:
-            nav.append(InlineKeyboardButton("▶", callback_data=f"catalog_{page+1}"))
+            nav.append(btn("▶", callback_data=f"catalog_{page+1}"))
         rows = []
         if nav:
             rows.append(nav)
         rows.append(
             [
-                InlineKeyboardButton("🎒 Инвентарь", callback_data="inv_0"),
-                InlineKeyboardButton("◀️ Назад", callback_data="refresh"),
+                btn("🎒 Инвентарь", callback_data="inv_0"),
+                btn("◀️ Назад", callback_data="refresh"),
             ]
         )
         try:
@@ -34165,7 +34257,7 @@ async def on_callback(update: Update, ctx: ContextTypes.DEFAULT_TYPE):
             lines.append(f"<i>...и ещё {len(valid)+len(pending)-30}</i>")
         if not rows:
             lines.append("У тебя пока нет рефералов в этом конкурсе.")
-        kb2 = InlineKeyboardMarkup([[InlineKeyboardButton("◀️ Назад", callback_data="contest_my_stats")]])
+        kb2 = InlineKeyboardMarkup([[btn("◀️ Назад", callback_data="contest_my_stats")]])
         try:
             await q.message.edit_text("\n".join(lines), parse_mode=ParseMode.HTML, reply_markup=kb2)
         except Exception:
@@ -34208,25 +34300,25 @@ async def on_callback(update: Update, ctx: ContextTypes.DEFAULT_TYPE):
         _active_seasons = get_active_seasonal()
         _shop_rows = [
             [
-                InlineKeyboardButton(t("btn_shop_food", f), callback_data="shop_food"),
-                InlineKeyboardButton(t("btn_shop_skins", f), callback_data="shop_skins_0"),
+                btn(t("btn_shop_food", f), callback_data="shop_food"),
+                btn(t("btn_shop_skins", f), callback_data="shop_skins_0"),
             ],
             [
-                InlineKeyboardButton("🎰 Гача", callback_data="gacha"),
-                InlineKeyboardButton(t("btn_shop_stars", f), callback_data="stars_menu"),
+                btn("🎰 Гача", callback_data="gacha"),
+                btn(t("btn_shop_stars", f), callback_data="stars_menu"),
             ],
             [
-                InlineKeyboardButton("🔨 Крафт", callback_data="craft_menu"),
-                InlineKeyboardButton(sub_lbl, callback_data="shop_sub"),
+                btn("🔨 Крафт", callback_data="craft_menu"),
+                btn(sub_lbl, callback_data="shop_sub"),
             ],
             [
-                InlineKeyboardButton("🐸 NFT KissedFrog", callback_data="nft_shop_0_all"),
+                btn("🐸 NFT KissedFrog", callback_data="nft_shop_0_all"),
             ],
         ]
         if _active_seasons:
-            pass  # SEASONAL_HIDDEN: _shop_rows.insert(1, [InlineKeyboardButton("🌸 Сезонные облики ✨", callback_data="shop_seasonal")])
-        # MARKET_HIDDEN: _shop_rows.insert(-1, [InlineKeyboardButton("🏪 Болотный Рынок", callback_data="market_main")])
-        _shop_rows.append([InlineKeyboardButton("◀️ Назад", callback_data="refresh")])
+            pass  # SEASONAL_HIDDEN: _shop_rows.insert(1, [btn("🌸 Сезонные облики ✨", callback_data="shop_seasonal")])
+        # MARKET_HIDDEN: _shop_rows.insert(-1, [btn("🏪 Болотный Рынок", callback_data="market_main")])
+        _shop_rows.append([btn("◀️ Назад", callback_data="refresh")])
         kb = InlineKeyboardMarkup(_shop_rows)
         try:
             await q.message.edit_text(
@@ -34256,17 +34348,17 @@ async def on_callback(update: Update, ctx: ContextTypes.DEFAULT_TYPE):
                 seller_f = await db_get(lot["seller_id"])
                 seller_name = fname(seller_f) if seller_f else "?"
                 lines.append(f"{rarity_m} {emoji_m} <b>{lot['skin']}</b> — {lot['price']}🪙 от {he(seller_name)}")
-                kb_rows_m.append([InlineKeyboardButton(
+                kb_rows_m.append([btn(
                     f"{emoji_m} {lot['skin']} — {lot['price']}🪙",
                     callback_data=f"market_view_{lot['id']}",
                 )])
         else:
             lines.append("<i>Пока никто ничего не продаёт. Будь первым</i>")
         kb_rows_m.append([
-            InlineKeyboardButton("📤 Продать облик", callback_data="market_sell_choose"),
-            InlineKeyboardButton("📋 Мои лоты", callback_data="market_my"),
+            btn("📤 Продать облик", callback_data="market_sell_choose"),
+            btn("📋 Мои лоты", callback_data="market_my"),
         ])
-        kb_rows_m.append([InlineKeyboardButton("◀️ Назад", callback_data="menu_shop")])
+        kb_rows_m.append([btn("◀️ Назад", callback_data="menu_shop")])
         try:
             await q.message.edit_text(
                 "\n".join(lines), parse_mode=ParseMode.HTML,
@@ -34290,13 +34382,13 @@ async def on_callback(update: Update, ctx: ContextTypes.DEFAULT_TYPE):
         is_own = lot_v["seller_id"] == uid
         kb_v = []
         if is_own:
-            kb_v.append([InlineKeyboardButton("❌ Снять с продажи", callback_data=f"market_cancel_{lid}")])
+            kb_v.append([btn("❌ Снять с продажи", callback_data=f"market_cancel_{lid}")])
         else:
-            kb_v.append([InlineKeyboardButton(
+            kb_v.append([btn(
                 f"💰 Купить за {lot_v['price']}🪙",
                 callback_data=f"market_confirm_{lid}",
             )])
-        kb_v.append([InlineKeyboardButton("◀️ Рынок", callback_data="market_main")])
+        kb_v.append([btn("◀️ Рынок", callback_data="market_main")])
         try:
             await q.message.edit_text(
                 f"🏪 <b>Лот #{lid}</b>\n\n"
@@ -34357,7 +34449,7 @@ async def on_callback(update: Update, ctx: ContextTypes.DEFAULT_TYPE):
                 f"Баланс: <b>{f['coins']}{_E_COIN}</b>",
                 parse_mode=ParseMode.HTML,
                 reply_markup=InlineKeyboardMarkup([[
-                    InlineKeyboardButton("🏪 На рынок", callback_data="market_main"),
+                    btn("🏪 На рынок", callback_data="market_main"),
                 ]]),
             )
         except Exception:
@@ -34395,11 +34487,11 @@ async def on_callback(update: Update, ctx: ContextTypes.DEFAULT_TYPE):
         kb_sell = []
         for skin_s, qty_s in sellable[:12]:
             s_d = SKINS.get(skin_s, {})
-            kb_sell.append([InlineKeyboardButton(
+            kb_sell.append([btn(
                 f"{pemoji(skin_s)} {skin_s} ×{qty_s} ({R_NAME.get(s_d.get('rarity','common'), '?')})",
                 callback_data=f"market_set_price_{skin_s.replace(' ', '_')}",
             )])
-        kb_sell.append([InlineKeyboardButton("◀️ Назад", callback_data="market_main")])
+        kb_sell.append([btn("◀️ Назад", callback_data="market_main")])
         try:
             await q.message.edit_text(
                 "📤 <b>Выбери облик для продажи</b>\n\n"
@@ -34426,7 +34518,7 @@ async def on_callback(update: Update, ctx: ContextTypes.DEFAULT_TYPE):
                 f"Твой баланс: <b>{f['coins']}{_E_COIN}</b>",
                 parse_mode=ParseMode.HTML,
                 reply_markup=InlineKeyboardMarkup([[
-                    InlineKeyboardButton("❌ Отмена", callback_data="market_main"),
+                    btn("❌ Отмена", callback_data="market_main"),
                 ]]),
             )
         except Exception:
@@ -34443,11 +34535,11 @@ async def on_callback(update: Update, ctx: ContextTypes.DEFAULT_TYPE):
         kb_my = []
         for lot_m in my_lots:
             lines_my.append(f"{pemoji(lot_m['skin'])} <b>{lot_m['skin']}</b> — {lot_m['price']}🪙")
-            kb_my.append([InlineKeyboardButton(
+            kb_my.append([btn(
                 f"❌ Снять {lot_m['skin']}",
                 callback_data=f"market_cancel_{lot_m['id']}",
             )])
-        kb_my.append([InlineKeyboardButton("◀️ Рынок", callback_data="market_main")])
+        kb_my.append([btn("◀️ Рынок", callback_data="market_main")])
         try:
             await q.message.edit_text(
                 "\n".join(lines_my), parse_mode=ParseMode.HTML,
@@ -34480,18 +34572,18 @@ async def on_callback(update: Update, ctx: ContextTypes.DEFAULT_TYPE):
         rows_ss = []
         if active_ss:
             toggle_ss = "⏸ Выключить авто-продление" if sub_auto_ss else "▶️ Включить авто-продление"
-            rows_ss.append([InlineKeyboardButton(toggle_ss, callback_data="sub_toggle_auto")])
+            rows_ss.append([btn(toggle_ss, callback_data="sub_toggle_auto")])
             if sub_type_ss == 1:
-                rows_ss.append([InlineKeyboardButton("🔼 Улучшить до Трудяги — 800⭐", callback_data="sub_buy_worker")])
-            rows_ss.append([InlineKeyboardButton("🔄 Продлить подписку", callback_data="sub_renew")])
+                rows_ss.append([btn("🔼 Улучшить до Трудяги — 800⭐", callback_data="sub_buy_worker")])
+            rows_ss.append([btn("🔄 Продлить подписку", callback_data="sub_renew")])
         else:
             # Бесплатный пробник Трудяги — только после того как пробник Няни уже закончился
             if not trial_nanny:
-                rows_ss.append([InlineKeyboardButton("🎁 3 дня Болотной Няни бесплатно", callback_data="sub_trial_nanny")])
+                rows_ss.append([btn("🎁 3 дня Болотной Няни бесплатно", callback_data="sub_trial_nanny")])
             elif nanny_trial_expired and not trial_worker:
-                rows_ss.append([InlineKeyboardButton("🎁 1 день Трудяги бесплатно", callback_data="sub_trial_worker")])
-            rows_ss.append([InlineKeyboardButton("🧑‍🍼 Болотная Няня — 200⭐/мес", callback_data="sub_buy_nanny")])
-            rows_ss.append([InlineKeyboardButton("🏪 Трудяга — 800⭐/мес", callback_data="sub_buy_worker")])
+                rows_ss.append([btn("🎁 1 день Трудяги бесплатно", callback_data="sub_trial_worker")])
+            rows_ss.append([btn("🧑‍🍼 Болотная Няня — 200⭐/мес", callback_data="sub_buy_nanny")])
+            rows_ss.append([btn("🏪 Трудяга — 800⭐/мес", callback_data="sub_buy_worker")])
 
         # Дневник рабочего дня (только для активной Трудяги)
         workday_block_ss = ""
@@ -34525,7 +34617,7 @@ async def on_callback(update: Update, ctx: ContextTypes.DEFAULT_TYPE):
         elif nanny_trial_expired and not trial_worker:
             trial_note = "\n\n🎁 <i>Пробник Няни закончился — можешь бесплатно попробовать 1 день Трудяги</i>"
 
-        rows_ss.append([InlineKeyboardButton("◀️ Назад", callback_data="menu_shop")])
+        rows_ss.append([btn("◀️ Назад", callback_data="menu_shop")])
         try:
             await q.message.edit_text(
                 f"🐸 <b>Подписки</b>\n\n"
@@ -34588,15 +34680,15 @@ async def on_callback(update: Update, ctx: ContextTypes.DEFAULT_TYPE):
         rows_ss = []
         if active_ss:
             toggle_ss = "⏸ Поставить на паузу" if sub_auto_ss else "▶️ Возобновить"
-            rows_ss.append([InlineKeyboardButton(toggle_ss, callback_data="sub_toggle_auto")])
+            rows_ss.append([btn(toggle_ss, callback_data="sub_toggle_auto")])
             if sub_type_ss == 1:
-                rows_ss.append([InlineKeyboardButton("🔼 Улучшить до Трудяги — 800⭐", callback_data="sub_buy_worker")])
-            rows_ss.append([InlineKeyboardButton("🔄 Продлить подписку", callback_data="sub_renew")])
+                rows_ss.append([btn("🔼 Улучшить до Трудяги — 800⭐", callback_data="sub_buy_worker")])
+            rows_ss.append([btn("🔄 Продлить подписку", callback_data="sub_renew")])
         else:
             if not trial_used_ss:
-                rows_ss.append([InlineKeyboardButton("🎁 3 дня Трудяги бесплатно", callback_data="sub_trial_worker")])
-            rows_ss.append([InlineKeyboardButton("🧑‍🍼 Болотная Няня — 200⭐/мес", callback_data="sub_buy_nanny")])
-            rows_ss.append([InlineKeyboardButton("🏪 Трудяга — 800⭐/мес", callback_data="sub_buy_worker")])
+                rows_ss.append([btn("🎁 3 дня Трудяги бесплатно", callback_data="sub_trial_worker")])
+            rows_ss.append([btn("🧑‍🍼 Болотная Няня — 200⭐/мес", callback_data="sub_buy_nanny")])
+            rows_ss.append([btn("🏪 Трудяга — 800⭐/мес", callback_data="sub_buy_worker")])
 
         # ── Дневник рабочего дня (только для Трудяги) ────────────────────────
         workday_block_ss = ""
@@ -34703,17 +34795,17 @@ async def on_callback(update: Update, ctx: ContextTypes.DEFAULT_TYPE):
                 f"   {effects_str} · <i>{food['desc']}</i>"
             )
             rows.append([
-                InlineKeyboardButton(
+                btn(
                     f"Купить ×1 {food['emoji']} {food['name']} ({food['price']}🪙)",
                     callback_data=f"buy_food_{fid}",
                 ),
-                InlineKeyboardButton(
+                btn(
                     f"×10 ({food['price']*10}🪙)",
                     callback_data=f"buy_food_bulk_{fid}_10",
                 ),
             ])
 
-        rows.append([InlineKeyboardButton("◀️ Назад", callback_data="menu_shop")])
+        rows.append([btn("◀️ Назад", callback_data="menu_shop")])
         text = header + "\n" + "\n\n".join(item_lines)
         try:
             await q.message.edit_text(
@@ -34750,16 +34842,16 @@ async def on_callback(update: Update, ctx: ContextTypes.DEFAULT_TYPE):
                 f"   {effects_str} · <i>{food['desc']}</i>"
             )
             rows.append([
-                InlineKeyboardButton(
+                btn(
                     f"Купить ×1 {food['emoji']} {food['name']} ({food['price']}🪙)",
                     callback_data=f"buy_food_{fid}",
                 ),
-                InlineKeyboardButton(
+                btn(
                     f"×10 ({food['price']*10}🪙)",
                     callback_data=f"buy_food_bulk_{fid}_10",
                 ),
             ])
-        rows.append([InlineKeyboardButton("◀️ Назад в столовую", callback_data="canteen_menu")])
+        rows.append([btn("◀️ Назад в столовую", callback_data="canteen_menu")])
         text = header + "\n" + "\n\n".join(item_lines)
         try:
             await q.message.edit_text(
@@ -34791,12 +34883,12 @@ async def on_callback(update: Update, ctx: ContextTypes.DEFAULT_TYPE):
         kb_conf = InlineKeyboardMarkup(
             [
                 [
-                    InlineKeyboardButton(
+                    btn(
                         f"✅ Купить ×{qty_bulk} за {total_cost}🪙",
                         callback_data=f"buy_food_confirm_{fid_bulk}_{qty_bulk}",
                     ),
                 ],
-                [InlineKeyboardButton("◀️ Отмена", callback_data="shop_food")],
+                [btn("◀️ Отмена", callback_data="shop_food")],
             ]
         )
         try:
@@ -34851,17 +34943,17 @@ async def on_callback(update: Update, ctx: ContextTypes.DEFAULT_TYPE):
             )
             rows.append(
                 [
-                    InlineKeyboardButton(
+                    btn(
                         f"Купить {food2['emoji']} ×1 ({food2['price']}🪙)",
                         callback_data=f"buy_food_{fid2}",
                     ),
-                    InlineKeyboardButton(
+                    btn(
                         f"×10 ({food2['price']*10}🪙)",
                         callback_data=f"buy_food_bulk_{fid2}_10",
                     ),
                 ]
             )
-        rows.append([InlineKeyboardButton("◀️ Назад", callback_data="menu_shop")])
+        rows.append([btn("◀️ Назад", callback_data="menu_shop")])
         try:
             await q.message.edit_text(
                 "\n".join(lines),
@@ -34908,17 +35000,17 @@ async def on_callback(update: Update, ctx: ContextTypes.DEFAULT_TYPE):
             )
             rows.append(
                 [
-                    InlineKeyboardButton(
+                    btn(
                         f"Купить {food2['emoji']} ×1 ({food2['price']}🪙)",
                         callback_data=f"buy_food_{fid2}",
                     ),
-                    InlineKeyboardButton(
+                    btn(
                         f"×10 ({food2['price']*10}🪙)",
                         callback_data=f"buy_food_bulk_{fid2}_10",
                     ),
                 ]
             )
-        rows.append([InlineKeyboardButton("◀️ Назад", callback_data="menu_shop")])
+        rows.append([btn("◀️ Назад", callback_data="menu_shop")])
         try:
             await q.message.edit_text(
                 "\n".join(lines),
@@ -34961,15 +35053,15 @@ async def on_callback(update: Update, ctx: ContextTypes.DEFAULT_TYPE):
                 )
         nav = []
         if page > 0:
-            nav.append(InlineKeyboardButton("◀", callback_data=f"shop_skins_{page-1}"))
+            nav.append(btn("◀", callback_data=f"shop_skins_{page-1}"))
         if page < total - 1:
-            nav.append(InlineKeyboardButton("▶", callback_data=f"shop_skins_{page+1}"))
+            nav.append(btn("▶", callback_data=f"shop_skins_{page+1}"))
         if nav:
             rows.append(nav)
         rows.append([
-            InlineKeyboardButton("💎 Купить Stars и TON за рубли", url="https://t.me/FrogsStar_bot"),
+            btn("💎 Купить Stars и TON за рубли", url="https://t.me/FrogsStar_bot"),
         ])
-        rows.append([InlineKeyboardButton("◀️ Назад", callback_data="menu_shop")])
+        rows.append([btn("◀️ Назад", callback_data="menu_shop")])
         try:
             await q.message.edit_text(
                 "\n".join(lines),
@@ -35030,7 +35122,7 @@ async def on_callback(update: Update, ctx: ContextTypes.DEFAULT_TYPE):
                     f"{R_ICON[rar]} {R_NAME[rar]} ×{recipe['needs']} → 🔮 Осколок Мифика {ready_lbl}"
                 )
                 if have >= recipe["needs"]:
-                    rows.append([InlineKeyboardButton(
+                    rows.append([btn(
                         f"🔨 Скрафтить Осколок ({have}/{recipe['needs']} легенд)",
                         callback_data=f"craft_{rar}",
                     )])
@@ -35044,7 +35136,7 @@ async def on_callback(update: Update, ctx: ContextTypes.DEFAULT_TYPE):
                     f"{R_ICON[result_rar]} {R_NAME[result_rar]}{chance_txt} {ready_lbl}"
                 )
                 if have >= recipe["needs"]:
-                    rows.append([InlineKeyboardButton(
+                    rows.append([btn(
                         f"🔨 Крафтить из {R_NAME[rar]}",
                         callback_data=f"craft_{rar}",
                     )])
@@ -35053,7 +35145,7 @@ async def on_callback(update: Update, ctx: ContextTypes.DEFAULT_TYPE):
         lines.append(f"\n🔮 <b>Осколки Мифика:</b> {shard_count}/{MYTHIC_SHARDS_NEEDED}")
         if shard_count >= MYTHIC_SHARDS_NEEDED:
             lines.append("<i>✅ Достаточно для сборки мифического облика</i>")
-            rows.append([InlineKeyboardButton(
+            rows.append([btn(
                 f"🔮 Собрать Мифический облик ({shard_count}/{MYTHIC_SHARDS_NEEDED} осколков)",
                 callback_data="craft_assemble_mythic",
             )])
@@ -35066,12 +35158,12 @@ async def on_callback(update: Update, ctx: ContextTypes.DEFAULT_TYPE):
             for rar, recipe in CRAFT_RECIPES.items()
         ) or shard_count >= MYTHIC_SHARDS_NEEDED
         if can_craft_any and f.get("coins", 0) >= 1000:
-            rows.insert(0, [InlineKeyboardButton(
+            rows.insert(0, [btn(
                 "⚡ Скрафтить всё (1 000🪙)",
                 callback_data="craft_all",
             )])
 
-        rows.append([InlineKeyboardButton("◀️ Назад", callback_data="menu_shop")])
+        rows.append([btn("◀️ Назад", callback_data="menu_shop")])
         try:
             await q.message.edit_text(
                 "\n".join(lines),
@@ -35196,8 +35288,8 @@ async def on_callback(update: Update, ctx: ContextTypes.DEFAULT_TYPE):
         for lvl, rskin in rewards:
             text += f"\n🎉 <b>Уровень {lvl}!</b> Облик: {display_skin(rskin)}"
         kb = InlineKeyboardMarkup([
-            [InlineKeyboardButton("🔨 Крафт", callback_data="craft_menu")],
-            [InlineKeyboardButton("◀️ Главное меню", callback_data="refresh")],
+            [btn("🔨 Крафт", callback_data="craft_menu")],
+            [btn("◀️ Главное меню", callback_data="refresh")],
         ])
         try:
             await q.message.edit_text(text, parse_mode=ParseMode.HTML, reply_markup=kb,
@@ -35279,13 +35371,13 @@ async def on_callback(update: Update, ctx: ContextTypes.DEFAULT_TYPE):
             for lvl, rskin in rewards:
                 text += f"\n🎉 <b>Уровень {lvl}!</b> Облик: {display_skin(rskin, use_st)}"
             kb = InlineKeyboardMarkup([
-                [InlineKeyboardButton("🔨 Крафтить ещё", callback_data="craft_menu")],
-                [InlineKeyboardButton("◀️ Назад", callback_data="refresh")],
+                [btn("🔨 Крафтить ещё", callback_data="craft_menu")],
+                [btn("◀️ Назад", callback_data="refresh")],
             ])
             if shard_now >= MYTHIC_SHARDS_NEEDED:
                 kb = InlineKeyboardMarkup([
-                    [InlineKeyboardButton("🔮 Собрать Мифический", callback_data="craft_assemble_mythic")],
-                    [InlineKeyboardButton("🔨 Крафтить ещё", callback_data="craft_menu")],
+                    [btn("🔮 Собрать Мифический", callback_data="craft_assemble_mythic")],
+                    [btn("🔨 Крафтить ещё", callback_data="craft_menu")],
                 ])
             try:
                 await q.message.edit_text(text, parse_mode=ParseMode.HTML, reply_markup=kb,
@@ -35311,8 +35403,8 @@ async def on_callback(update: Update, ctx: ContextTypes.DEFAULT_TYPE):
                 f"{fail_text}"
             )
             kb = InlineKeyboardMarkup([
-                [InlineKeyboardButton("🔨 Попробовать снова", callback_data=f"craft_{rar}")],
-                [InlineKeyboardButton("◀️ Назад", callback_data="craft_menu")],
+                [btn("🔨 Попробовать снова", callback_data=f"craft_{rar}")],
+                [btn("◀️ Назад", callback_data="craft_menu")],
             ])
             try:
                 await q.message.edit_text(text, parse_mode=ParseMode.HTML, reply_markup=kb,
@@ -35344,10 +35436,10 @@ async def on_callback(update: Update, ctx: ContextTypes.DEFAULT_TYPE):
         for lvl, rskin in rewards:
             text += f"\n🎉 <b>Уровень {lvl}!</b> Облик: {display_skin(rskin, use_st)}"
         kb = InlineKeyboardMarkup([
-            [InlineKeyboardButton(f"✅ Надеть {result_skin}", callback_data=f"equip_{result_skin}")],
+            [btn(f"✅ Надеть {result_skin}", callback_data=f"equip_{result_skin}")],
             [
-                InlineKeyboardButton("🔨 Крафтить ещё", callback_data="craft_menu"),
-                InlineKeyboardButton("◀️ Назад", callback_data="refresh"),
+                btn("🔨 Крафтить ещё", callback_data="craft_menu"),
+                btn("◀️ Назад", callback_data="refresh"),
             ],
         ])
         try:
@@ -35420,8 +35512,8 @@ async def on_callback(update: Update, ctx: ContextTypes.DEFAULT_TYPE):
             pass
 
         kb = InlineKeyboardMarkup([
-            [InlineKeyboardButton(f"✅ Надеть {result_skin}", callback_data=f"equip_{result_skin}")],
-            [InlineKeyboardButton("◀️ Назад", callback_data="refresh")],
+            [btn(f"✅ Надеть {result_skin}", callback_data=f"equip_{result_skin}")],
+            [btn("◀️ Назад", callback_data="refresh")],
         ])
         try:
             await q.message.edit_text(text, parse_mode=ParseMode.HTML, reply_markup=kb,
@@ -35459,13 +35551,13 @@ async def on_callback(update: Update, ctx: ContextTypes.DEFAULT_TYPE):
             if done and not is_cl:
                 rows.append(
                     [
-                        InlineKeyboardButton(
+                        btn(
                             f"🎁 Забрать: {qd['desc'][:25]}",
                             callback_data=f"quest_claim_{qid}",
                         )
                     ]
                 )
-        rows.append([InlineKeyboardButton("◀️ Назад", callback_data="refresh")])
+        rows.append([btn("◀️ Назад", callback_data="refresh")])
         try:
             await q.message.edit_text(
                 "\n".join(lines),
@@ -35541,13 +35633,13 @@ async def on_callback(update: Update, ctx: ContextTypes.DEFAULT_TYPE):
             if done and not is_cl:
                 rows.append(
                     [
-                        InlineKeyboardButton(
+                        btn(
                             f"🎁 Забрать: {qd2['desc'][:25]}",
                             callback_data=f"quest_claim_{qid2}",
                         )
                     ]
                 )
-        rows.append([InlineKeyboardButton("◀️ Назад", callback_data="refresh")])
+        rows.append([btn("◀️ Назад", callback_data="refresh")])
         try:
             await q.message.edit_text(
                 "\n".join(lines),
@@ -35574,15 +35666,15 @@ async def on_callback(update: Update, ctx: ContextTypes.DEFAULT_TYPE):
         # ── Базовый набор — всегда доступен ──────────────────────────────
         base_rows = [
             [
-                InlineKeyboardButton(t("btn_sapper",  f), callback_data="sapper_start"),
-                InlineKeyboardButton(t("btn_guess",   f), callback_data="guess_start"),
+                btn(t("btn_sapper",  f), callback_data="sapper_start"),
+                btn(t("btn_guess",   f), callback_data="guess_start"),
             ],
             [
-                InlineKeyboardButton(t("btn_memory",  f), callback_data="memo_start"),
-                InlineKeyboardButton(t("btn_ttt",     f), callback_data="ttt_menu" if not is_private else "ttt_menu"),
+                btn(t("btn_memory",  f), callback_data="memo_start"),
+                btn(t("btn_ttt",     f), callback_data="ttt_menu" if not is_private else "ttt_menu"),
             ],
             [
-                InlineKeyboardButton(t("btn_rps",     f), callback_data="rps_solo_menu" if is_private else "rps_menu"),
+                btn(t("btn_rps",     f), callback_data="rps_solo_menu" if is_private else "rps_menu"),
             ],
         ]
 
@@ -35590,26 +35682,26 @@ async def on_callback(update: Update, ctx: ContextTypes.DEFAULT_TYPE):
         if unlocked_adv:
             adv_rows = [
                 [
-                    InlineKeyboardButton(t("btn_casino",   f), callback_data="casino_menu"),
-                    InlineKeyboardButton(t("btn_hangman",  f), callback_data="hangman_solo" if is_private else "hangman_menu"),
+                    btn(t("btn_casino",   f), callback_data="casino_menu"),
+                    btn(t("btn_hangman",  f), callback_data="hangman_solo" if is_private else "hangman_menu"),
                 ],
                 [
-                    InlineKeyboardButton(t("btn_duel",     f), callback_data="duel_search"),
-                    InlineKeyboardButton(t("btn_lottery",  f), callback_data="menu_lottery"),
+                    btn(t("btn_duel",     f), callback_data="duel_search"),
+                    btn(t("btn_lottery",  f), callback_data="menu_lottery"),
                 ],
                 [
-                    InlineKeyboardButton(t("btn_jackpot",  f), callback_data="menu_jackpot"),
+                    btn(t("btn_jackpot",  f), callback_data="menu_jackpot"),
                 ],
             ]
             # Тяжёлые стратегии — на ур.8
             if unlocked_hard:
                 adv_rows.append([
-                    InlineKeyboardButton(t("btn_checkers",   f), callback_data="checkers_menu"),
-                    InlineKeyboardButton(t("btn_battleship", f), callback_data="bs_menu"),
+                    btn(t("btn_checkers",   f), callback_data="checkers_menu"),
+                    btn(t("btn_battleship", f), callback_data="bs_menu"),
                 ])
             else:
                 adv_rows.append([
-                    InlineKeyboardButton(
+                    btn(
                         f"🔒 Откроется на {UNLOCK_HARD} уровне",
                         callback_data="games_locked_hard",
                     )
@@ -35618,7 +35710,7 @@ async def on_callback(update: Update, ctx: ContextTypes.DEFAULT_TYPE):
             # Показываем заблокированный раздел как мотивация
             adv_rows = [
                 [
-                    InlineKeyboardButton(
+                    btn(
                         f"🔒 Откроется на {UNLOCK_ADV} уровне",
                         callback_data="games_locked_adv",
                     )
@@ -35631,9 +35723,9 @@ async def on_callback(update: Update, ctx: ContextTypes.DEFAULT_TYPE):
         if await _get_active_contest():
             rows.insert(0, [btn("🎟 Конкурс — мои билеты", callback_data="contest_my_stats", style="success")])
         if funnel_ev:
-            rows.insert(0, [InlineKeyboardButton(t("btn_funnel", f), callback_data=f"funnel_menu_{funnel_ev['id']}")])
+            rows.insert(0, [btn(t("btn_funnel", f), callback_data=f"funnel_menu_{funnel_ev['id']}")])
 
-        rows.append([InlineKeyboardButton(t("btn_back", f), callback_data="refresh")])
+        rows.append([btn(t("btn_back", f), callback_data="refresh")])
         kb = InlineKeyboardMarkup(rows)
 
         # Список игр не дублируется в тексте — он и так на кнопках.
@@ -35716,26 +35808,26 @@ async def on_callback(update: Update, ctx: ContextTypes.DEFAULT_TYPE):
             kb = InlineKeyboardMarkup(
                 [
                     [
-                        InlineKeyboardButton(
+                        btn(
                             f"🎟 Купить 1 билет ({LOTTERY_TICKET_COST}{coin_plain()})",
                             callback_data="lottery_buy_1",
                         ),
                     ],
                     [
-                        InlineKeyboardButton(
+                        btn(
                             f"🎟×5 ({LOTTERY_TICKET_COST*5}{coin_plain()})",
                             callback_data="lottery_buy_5",
                         ),
-                        InlineKeyboardButton(
+                        btn(
                             f"🎟×10 ({LOTTERY_TICKET_COST*10}{coin_plain()})",
                             callback_data="lottery_buy_10",
                         ),
                     ],
                     [
-                        InlineKeyboardButton(
+                        btn(
                             "🔄 Обновить", callback_data="lottery_refresh"
                         ),
-                        InlineKeyboardButton("◀️ Назад", callback_data="menu_games"),
+                        btn("◀️ Назад", callback_data="menu_games"),
                     ],
                 ]
             )
@@ -35750,8 +35842,8 @@ async def on_callback(update: Update, ctx: ContextTypes.DEFAULT_TYPE):
             )
             kb = InlineKeyboardMarkup(
                 [
-                    [InlineKeyboardButton("🎲 Казино", callback_data="casino_menu")],
-                    [InlineKeyboardButton("◀️ Назад", callback_data="menu_games")],
+                    [btn("🎲 Казино", callback_data="casino_menu")],
+                    [btn("◀️ Назад", callback_data="menu_games")],
                 ]
             )
         try:
@@ -35825,7 +35917,7 @@ async def on_callback(update: Update, ctx: ContextTypes.DEFAULT_TYPE):
                     f"<i>Проверь свои подарки в Telegram.</i>",
                     parse_mode=ParseMode.HTML,
                     reply_markup=InlineKeyboardMarkup([[
-                        InlineKeyboardButton("◀️ Назад в магазин", callback_data="sgift_admin_reopen"),
+                        btn("◀️ Назад в магазин", callback_data="sgift_admin_reopen"),
                     ]]),
                 )
             except Exception:
@@ -35838,7 +35930,7 @@ async def on_callback(update: Update, ctx: ContextTypes.DEFAULT_TYPE):
                     f"<i>Возможно, неверный gift_id или у бота нет Stars.</i>",
                     parse_mode=ParseMode.HTML,
                     reply_markup=InlineKeyboardMarkup([[
-                        InlineKeyboardButton("◀️ Назад", callback_data="sgift_admin_reopen"),
+                        btn("◀️ Назад", callback_data="sgift_admin_reopen"),
                     ]]),
                 )
             except Exception:
@@ -35891,8 +35983,8 @@ async def on_callback(update: Update, ctx: ContextTypes.DEFAULT_TYPE):
                 lbl_quick = f"⭐ {p['stars']} Stars → {coins_display_quick}🪙 ({farm_str})"
             if stars_mult_quick > 1.0 and not p.get("newbie") and not p.get("daily_deal"):
                 lbl_quick += " ✨"
-            kb_rows.append([InlineKeyboardButton(lbl_quick, callback_data=f"buy_pkg_{i}")])
-        kb_rows.append([InlineKeyboardButton("◀️ Назад", callback_data="refresh")])
+            kb_rows.append([btn(lbl_quick, callback_data=f"buy_pkg_{i}")])
+        kb_rows.append([btn("◀️ Назад", callback_data="refresh")])
         boost_note = f"\n✨ <b>Золотая лягушка:</b> 1{_E_XP} = {int(5*stars_mult_quick)}{_E_COIN}" if stars_mult_quick > 1.0 else ""
         try:
             await q.message.edit_text(
@@ -35941,7 +36033,7 @@ async def on_callback(update: Update, ctx: ContextTypes.DEFAULT_TYPE):
                     f"⚠️ Если сообщение не пришло — сначала напиши /start боту в личку.",
                     parse_mode=ParseMode.HTML,
                     reply_markup=InlineKeyboardMarkup(
-                        [[InlineKeyboardButton("◀️ Назад", callback_data="buy_stars_quick")]]
+                        [[btn("◀️ Назад", callback_data="buy_stars_quick")]]
                     ),
                 )
             except (BadRequest, Forbidden):
@@ -35959,7 +36051,7 @@ async def on_callback(update: Update, ctx: ContextTypes.DEFAULT_TYPE):
                         "4. Вернись сюда и попробуй снова.",
                         parse_mode=ParseMode.HTML,
                         reply_markup=InlineKeyboardMarkup(
-                            [[InlineKeyboardButton("◀️ Назад", callback_data="buy_stars_quick")]]
+                            [[btn("◀️ Назад", callback_data="buy_stars_quick")]]
                         ),
                     )
                 except (BadRequest, Forbidden):
@@ -35970,7 +36062,7 @@ async def on_callback(update: Update, ctx: ContextTypes.DEFAULT_TYPE):
                         f"❌ Ошибка при создании счёта: {str(e)[:100]}",
                         parse_mode=ParseMode.HTML,
                         reply_markup=InlineKeyboardMarkup(
-                            [[InlineKeyboardButton("◀️ Назад", callback_data="buy_stars_quick")]]
+                            [[btn("◀️ Назад", callback_data="buy_stars_quick")]]
                         ),
                     )
                 except (BadRequest, Forbidden):
@@ -35987,7 +36079,7 @@ async def on_callback(update: Update, ctx: ContextTypes.DEFAULT_TYPE):
                     "<i>Ведётся техническое обслуживание. Попробуй позже.</i>",
                     parse_mode=ParseMode.HTML,
                     reply_markup=InlineKeyboardMarkup([[
-                        InlineKeyboardButton("◀️ Назад", callback_data="menu_games")
+                        btn("◀️ Назад", callback_data="menu_games")
                     ]]),
                 )
             except Exception:
@@ -35996,7 +36088,7 @@ async def on_callback(update: Update, ctx: ContextTypes.DEFAULT_TYPE):
         kb = InlineKeyboardMarkup(
             [
                 [
-                    InlineKeyboardButton(
+                    btn(
                         f"{v['emoji']} {v['name']}",
                         callback_data=f"casino_pick_{k}",
                     )
@@ -36004,13 +36096,13 @@ async def on_callback(update: Update, ctx: ContextTypes.DEFAULT_TYPE):
                 for k, v in CASINO.items()
             ]
             + [
-                [InlineKeyboardButton("🎯 Режим желания", callback_data="casino_wish_menu")],
+                [btn("🎯 Режим желания", callback_data="casino_wish_menu")],
                 [
-                    InlineKeyboardButton(
+                    btn(
                         "🎰 Джекпот", callback_data="menu_jackpot"
                     )
                 ],
-                [InlineKeyboardButton("◀️ Назад", callback_data="menu_games")],
+                [btn("◀️ Назад", callback_data="menu_games")],
             ]
         )
         jp = await jackpot_get()
@@ -36037,7 +36129,7 @@ async def on_callback(update: Update, ctx: ContextTypes.DEFAULT_TYPE):
             kb_rows = [
                 [coin_btn(f"{s}🪙", f"casino_bet_double_{s}") for s in stakes[:3]],
                 [coin_btn(f"{s}🪙", f"casino_bet_double_{s}") for s in stakes[3:]],
-                [InlineKeyboardButton("◀️ Назад", callback_data="casino_menu")],
+                [btn("◀️ Назад", callback_data="casino_menu")],
             ]
             kb = InlineKeyboardMarkup(kb_rows)
             extra_info = (
@@ -36064,20 +36156,20 @@ async def on_callback(update: Update, ctx: ContextTypes.DEFAULT_TYPE):
         ]
         if gtype == "slots":
             kb_rows.append([
-                InlineKeyboardButton("5️⃣×50🪙 (5 круток)", callback_data=f"casino_slots5_{50}"),
-                InlineKeyboardButton("5️⃣×100🪙 (5 круток)", callback_data=f"casino_slots5_{100}"),
+                btn("5️⃣×50🪙 (5 круток)", callback_data=f"casino_slots5_{50}"),
+                btn("5️⃣×100🪙 (5 круток)", callback_data=f"casino_slots5_{100}"),
             ])
         if gtype not in ("slots",):
             # Режим «Брошу сам» доступен только в личных чатах
             _is_private_chat = not (q.message and q.message.chat.type in ("group", "supergroup"))
             if _is_private_chat:
                 kb_rows.insert(-1, [
-                    InlineKeyboardButton(
+                    btn(
                         f"🎲 Брошу сам — выбери ставку",
                         callback_data=f"casino_selfpick_{gtype}",
                     )
                 ])
-        kb_rows.append([InlineKeyboardButton("◀️ Назад", callback_data="casino_menu")])
+        kb_rows.append([btn("◀️ Назад", callback_data="casino_menu")])
         kb = InlineKeyboardMarkup(kb_rows)
         if gtype == "slots":
             jp = await jackpot_get()
@@ -36113,7 +36205,7 @@ async def on_callback(update: Update, ctx: ContextTypes.DEFAULT_TYPE):
         kb_rows = [
             [coin_btn(f"{s}🪙", f"casino_self_{gtype}_{s}") for s in stakes[:3]],
             [coin_btn(f"{s}🪙", f"casino_self_{gtype}_{s}") for s in stakes[3:]],
-            [InlineKeyboardButton("◀️ Назад", callback_data=f"casino_pick_{gtype}")],
+            [btn("◀️ Назад", callback_data=f"casino_pick_{gtype}")],
         ]
         try:
             await q.message.edit_text(
@@ -36195,7 +36287,7 @@ async def on_callback(update: Update, ctx: ContextTypes.DEFAULT_TYPE):
                 f"💼 Баланс: {f2['coins'] if f2 else '?'}{coin_emoji()}",
                 parse_mode=ParseMode.HTML,
                 reply_markup=InlineKeyboardMarkup([
-                    [InlineKeyboardButton("🎰 Казино", callback_data="casino_menu")],
+                    [btn("🎰 Казино", callback_data="casino_menu")],
                 ]),
             )
         except Exception:
@@ -36214,7 +36306,7 @@ async def on_callback(update: Update, ctx: ContextTypes.DEFAULT_TYPE):
             [coin_btn(f"{s}🪙", f"casino_wish_bet_{s}") for s in stakes_wish[:3]],
             [coin_btn(f"{s}🪙", f"casino_wish_bet_{s}") for s in stakes_wish[3:]],
         ]
-        stake_rows.append([InlineKeyboardButton("◀️ Назад", callback_data="casino_menu")])
+        stake_rows.append([btn("◀️ Назад", callback_data="casino_menu")])
         try:
             await q.message.edit_text(
                 f"🎯 <b>Режим желания</b>\n\n"
@@ -36254,7 +36346,7 @@ async def on_callback(update: Update, ctx: ContextTypes.DEFAULT_TYPE):
                 f"💼 Баланс: <b>{f['coins']}{coin_emoji()}</b>",
                 parse_mode=ParseMode.HTML,
                 reply_markup=InlineKeyboardMarkup([
-                    [InlineKeyboardButton("❌ Отмена", callback_data="casino_wish_menu")],
+                    [btn("❌ Отмена", callback_data="casino_wish_menu")],
                 ]),
             )
         except Exception:
@@ -36335,8 +36427,8 @@ async def on_callback(update: Update, ctx: ContextTypes.DEFAULT_TYPE):
                 parse_mode=ParseMode.HTML,
                 reply_markup=InlineKeyboardMarkup([
                     [coin_btn(f"🔄 Ещё раз ({wish_stake_p}🪙)", f"casino_wish_bet_{wish_stake_p}")],
-                    [InlineKeyboardButton("🎯 Изменить ставку", callback_data="casino_wish_menu")],
-                    [InlineKeyboardButton("◀️ Казино", callback_data="casino_menu")],
+                    [btn("🎯 Изменить ставку", callback_data="casino_wish_menu")],
+                    [btn("◀️ Казино", callback_data="casino_menu")],
                 ]),
             )
         except Exception:
@@ -36429,8 +36521,8 @@ async def on_callback(update: Update, ctx: ContextTypes.DEFAULT_TYPE):
         )
         kb = InlineKeyboardMarkup([
             [coin_btn(f"↩️ Ещё 5×{stake}🪙", f"casino_slots5_{stake}")],
-            [InlineKeyboardButton("🎰 Другая игра", callback_data="casino_menu"),
-             InlineKeyboardButton("◀️ Назад", callback_data="refresh")],
+            [btn("🎰 Другая игра", callback_data="casino_menu"),
+             btn("◀️ Назад", callback_data="refresh")],
         ])
         try:
             await q.message.edit_text(result, parse_mode=ParseMode.HTML, reply_markup=kb)
@@ -36455,7 +36547,7 @@ async def on_callback(update: Update, ctx: ContextTypes.DEFAULT_TYPE):
             kb_d = InlineKeyboardMarkup([
                 [
                     coin_btn(f"✅ Забрать {cur_bank}🪙", f"double_take_{uid}"),
-                    InlineKeyboardButton(t("btn_casino_risk", f), callback_data=f"double_risk_{uid}"),
+                    btn(t("btn_casino_risk", f), callback_data=f"double_risk_{uid}"),
                 ]
             ])
             try:
@@ -36493,7 +36585,7 @@ async def on_callback(update: Update, ctx: ContextTypes.DEFAULT_TYPE):
         kb_d = InlineKeyboardMarkup([
             [
                 coin_btn(f"✅ Забрать {stake}🪙", f"double_take_{uid}"),
-                InlineKeyboardButton(t("btn_casino_risk", f), callback_data=f"double_risk_{uid}"),
+                btn(t("btn_casino_risk", f), callback_data=f"double_risk_{uid}"),
             ]
         ])
         edited = False
@@ -36564,8 +36656,8 @@ async def on_callback(update: Update, ctx: ContextTypes.DEFAULT_TYPE):
                 parse_mode=ParseMode.HTML,
                 reply_markup=InlineKeyboardMarkup([
                     [coin_btn(f"🔄 Сыграть снова ({state['stake']}🪙)", f"casino_bet_double_{state['stake']}")],
-                    [InlineKeyboardButton("🎰 Казино", callback_data="casino_menu"),
-                     InlineKeyboardButton("◀️ Назад", callback_data="refresh")],
+                    [btn("🎰 Казино", callback_data="casino_menu"),
+                     btn("◀️ Назад", callback_data="refresh")],
                 ]),
             )
         except Exception:
@@ -36603,7 +36695,7 @@ async def on_callback(update: Update, ctx: ContextTypes.DEFAULT_TYPE):
                     f"💼 Баланс: {f['coins']}{coin_emoji()}",
                     parse_mode=ParseMode.HTML,
                     reply_markup=InlineKeyboardMarkup([
-                        [InlineKeyboardButton("🎰 Казино", callback_data="casino_menu")],
+                        [btn("🎰 Казино", callback_data="casino_menu")],
                     ]),
                 )
             except Exception:
@@ -36620,7 +36712,7 @@ async def on_callback(update: Update, ctx: ContextTypes.DEFAULT_TYPE):
             kb_d = InlineKeyboardMarkup([
                 [
                     coin_btn(f"✅ Забрать {new_bank}🪙", f"double_take_{uid}"),
-                    InlineKeyboardButton(t("btn_casino_risk2", f), callback_data=f"double_risk_{uid}"),
+                    btn(t("btn_casino_risk2", f), callback_data=f"double_risk_{uid}"),
                 ]
             ])
             try:
@@ -36673,8 +36765,8 @@ async def on_callback(update: Update, ctx: ContextTypes.DEFAULT_TYPE):
                     parse_mode=ParseMode.HTML,
                     reply_markup=InlineKeyboardMarkup([
                         [coin_btn(f"🔄 Реванш ({lost}🪙)", f"casino_bet_double_{lost}")],
-                        [InlineKeyboardButton("🎰 Казино", callback_data="casino_menu"),
-                         InlineKeyboardButton("◀️ Назад", callback_data="refresh")],
+                        [btn("🎰 Казино", callback_data="casino_menu"),
+                         btn("◀️ Назад", callback_data="refresh")],
                     ]),
                 )
             except Exception:
@@ -36844,13 +36936,13 @@ async def on_callback(update: Update, ctx: ContextTypes.DEFAULT_TYPE):
                         f"↩️ Ещё ({stake}🪙)",
                         f"casino_bet_{gtype}_{stake}",
                     ),
-                    InlineKeyboardButton(t("btn_casino_auto", f), callback_data=f"casino_auto_{gtype}_{stake}"),
+                    btn(t("btn_casino_auto", f), callback_data=f"casino_auto_{gtype}_{stake}"),
                 ],
                 [
-                    InlineKeyboardButton("🎰 Другая игра", callback_data="casino_menu"),
-                    InlineKeyboardButton("◀️ Назад", callback_data="refresh"),
+                    btn("🎰 Другая игра", callback_data="casino_menu"),
+                    btn("◀️ Назад", callback_data="refresh"),
                 ],
-                [InlineKeyboardButton("⭐ Пополнить монеты", callback_data="buy_stars_quick")],
+                [btn("⭐ Пополнить монеты", callback_data="buy_stars_quick")],
             ]
         )
         try:
@@ -36910,7 +37002,7 @@ async def on_callback(update: Update, ctx: ContextTypes.DEFAULT_TYPE):
                 f"⏹ <b>Авто-режим остановлен.</b>\n💼 Баланс: {f['coins']}{_E_COIN}",
                 parse_mode=ParseMode.HTML,
                 reply_markup=InlineKeyboardMarkup([[
-                    InlineKeyboardButton("🎰 Казино", callback_data="casino_menu"),
+                    btn("🎰 Казино", callback_data="casino_menu"),
                     coin_btn(f"🔁 Авто снова ({state['stake'] if state else '?'}🪙)",
                              f"casino_auto_{state['gtype']}_{state['stake']}" if state else "casino_menu"),
                 ]]),
@@ -36994,7 +37086,7 @@ async def on_callback(update: Update, ctx: ContextTypes.DEFAULT_TYPE):
         for i in range(0, len(shuffled), 4):
             kb_rows.append(
                 [
-                    InlineKeyboardButton(e, callback_data=f"memo_pick_{e}_{uid}")
+                    btn(e, callback_data=f"memo_pick_{e}_{uid}")
                     for e in shuffled[i : i + 4]
                 ]
             )
@@ -37059,7 +37151,7 @@ async def on_callback(update: Update, ctx: ContextTypes.DEFAULT_TYPE):
         for i in range(0, len(shuffled), 4):
             kb_rows.append(
                 [
-                    InlineKeyboardButton(e, callback_data=f"memo_pick_{e}_{uid}")
+                    btn(e, callback_data=f"memo_pick_{e}_{uid}")
                     for e in shuffled[i : i + 4]
                 ]
             )
@@ -37174,7 +37266,7 @@ async def on_callback(update: Update, ctx: ContextTypes.DEFAULT_TYPE):
                 for i in range(0, len(shuffled), 4):
                     kb_rows.append(
                         [
-                            InlineKeyboardButton(
+                            btn(
                                 e, callback_data=f"memo_pick_{e}_{uid}"
                             )
                             for e in shuffled[i : i + 4]
@@ -37266,9 +37358,9 @@ async def on_callback(update: Update, ctx: ContextTypes.DEFAULT_TYPE):
                 else:
                     label = "🟩"
                 if game_over:
-                    btns.append(InlineKeyboardButton(label, callback_data="noop"))
+                    btns.append(btn(label, callback_data="noop"))
                 else:
-                    btns.append(InlineKeyboardButton(label, callback_data=f"sapper_pick_{r}_{c}"))
+                    btns.append(btn(label, callback_data=f"sapper_pick_{r}_{c}"))
             rows.append(btns)
         return rows
 
@@ -37284,7 +37376,7 @@ async def on_callback(update: Update, ctx: ContextTypes.DEFAULT_TYPE):
         ]
         if not is_private:
             kb_rows.append([btn(t("btn_chk_pvp", f), callback_data="ck_mode|pvp", style="success")])
-        kb_rows.append([InlineKeyboardButton("◀️ Назад", callback_data="menu_games")])
+        kb_rows.append([btn("◀️ Назад", callback_data="menu_games")])
         try:
             await q.message.edit_text(
                 "♟️ <b>Шашки</b>\n\n"
@@ -37306,7 +37398,7 @@ async def on_callback(update: Update, ctx: ContextTypes.DEFAULT_TYPE):
         ]
         if not is_private:
             kb_rows.append([btn("👥 Вызов в чате (/bs [ставка])", callback_data="bs_pvp_info", style="success")])
-        kb_rows.append([InlineKeyboardButton("◀️ Назад", callback_data="menu_games")])
+        kb_rows.append([btn("◀️ Назад", callback_data="menu_games")])
         try:
             await q.message.edit_text(
                 "🚢 <b>Морской бой</b>\n\n"
@@ -37358,7 +37450,7 @@ async def on_callback(update: Update, ctx: ContextTypes.DEFAULT_TYPE):
                     f"🚢 <b>Морской бой vs 🤖 Бот</b> · {size}×{size}\n\n"
                     "📨 Расставь флот в <b>личных сообщениях</b> бота!",
                     parse_mode=ParseMode.HTML,
-                    reply_markup=InlineKeyboardMarkup([[InlineKeyboardButton("◀️ Назад", callback_data="bs_menu")]]),
+                    reply_markup=InlineKeyboardMarkup([[btn("◀️ Назад", callback_data="bs_menu")]]),
                 )
             except Exception: pass
         return
@@ -37377,11 +37469,11 @@ async def on_callback(update: Update, ctx: ContextTypes.DEFAULT_TYPE):
         rem5 = int(cd5 - (now_ttt - f.get("last_ttt5_solo", 0)))
         cd_str_5 = f"⏳ Кд {rem5//60}м {rem5%60}с" if rem5 > 0 else "✅ Готово"
         kb = InlineKeyboardMarkup([
-            [InlineKeyboardButton(f"🤖 Соло vs бот 3×3 ({cd_str_ttt})", callback_data="ttt_solo_start")],
-            [InlineKeyboardButton(f"🤖 Соло vs бот 5×5 ({cd_str_5})", callback_data="ttt5_solo_start")],
-            [InlineKeyboardButton("👥 3×3 в чате", callback_data="ttt_group_stake_menu")],
-            [InlineKeyboardButton("⬛ 5×5 в чате (4 в ряд) /ttt5", callback_data="ttt5_info")],
-            [InlineKeyboardButton("◀️ Назад", callback_data="menu_games")],
+            [btn(f"🤖 Соло vs бот 3×3 ({cd_str_ttt})", callback_data="ttt_solo_start")],
+            [btn(f"🤖 Соло vs бот 5×5 ({cd_str_5})", callback_data="ttt5_solo_start")],
+            [btn("👥 3×3 в чате", callback_data="ttt_group_stake_menu")],
+            [btn("⬛ 5×5 в чате (4 в ряд) /ttt5", callback_data="ttt5_info")],
+            [btn("◀️ Назад", callback_data="menu_games")],
         ])
         try:
             await q.message.edit_text(
@@ -37419,7 +37511,7 @@ async def on_callback(update: Update, ctx: ContextTypes.DEFAULT_TYPE):
                 else:
                     btn_text = EMPTY
                     cb = f"ttt5_move_{game_id}_{idx}" if game_id else "noop"
-                row.append(InlineKeyboardButton(btn_text, callback_data=cb))
+                row.append(btn(btn_text, callback_data=cb))
             rows.append(row)
         return rows
 
@@ -37581,7 +37673,7 @@ async def on_callback(update: Update, ctx: ContextTypes.DEFAULT_TYPE):
                         btn("❌ Играть за крестики", callback_data="ttt5_solo_choose_X", style="primary"),
                         btn("⭕ Играть за нолики", callback_data="ttt5_solo_choose_O", style="primary"),
                     ],
-                    [InlineKeyboardButton("◀️ Назад", callback_data="ttt_menu")],
+                    [btn("◀️ Назад", callback_data="ttt_menu")],
                 ]),
             )
         except Exception:
@@ -37630,8 +37722,8 @@ async def on_callback(update: Update, ctx: ContextTypes.DEFAULT_TYPE):
 
         rows5 = _ttt5_render(board5, game_id=f"solo{uid}")
         rows5.append([
-            InlineKeyboardButton(t("chk_surrender", f), callback_data="ttt5_solo_surrender"),
-            InlineKeyboardButton("◀️ Назад", callback_data="ttt_menu"),
+            btn(t("chk_surrender", f), callback_data="ttt5_solo_surrender"),
+            btn("◀️ Назад", callback_data="ttt_menu"),
         ])
         try:
             await q.message.edit_text(
@@ -37702,8 +37794,8 @@ async def on_callback(update: Update, ctx: ContextTypes.DEFAULT_TYPE):
                 await levelup(f_fr, ctx.bot)
                 await db_save(f_fr)
                 rows_fin = _ttt5_render(board_5s)
-                rows_fin.append([InlineKeyboardButton("🔄 Ещё", callback_data="ttt5_solo_start"),
-                                  InlineKeyboardButton(t("btn_back_games", f), callback_data="menu_games")])
+                rows_fin.append([btn("🔄 Ещё", callback_data="ttt5_solo_start"),
+                                  btn(t("btn_back_games", f), callback_data="menu_games")])
                 try:
                     await q.message.edit_text(f"⬛ <b>5×5 Соло</b>\n\n{txt}",
                         parse_mode=ParseMode.HTML, reply_markup=InlineKeyboardMarkup(rows_fin))
@@ -37726,8 +37818,8 @@ async def on_callback(update: Update, ctx: ContextTypes.DEFAULT_TYPE):
         gdata_5s["board"] = board_5s
         rows5 = _ttt5_render(board_5s, game_id=f"solo{uid}")
         rows5.append([
-            InlineKeyboardButton(t("chk_surrender", f), callback_data="ttt5_solo_surrender"),
-            InlineKeyboardButton("◀️ Назад", callback_data="ttt_menu"),
+            btn(t("chk_surrender", f), callback_data="ttt5_solo_surrender"),
+            btn("◀️ Назад", callback_data="ttt_menu"),
         ])
         aggr_label = " <tg-emoji emoji-id='5341735149128159966'>🔥</tg-emoji>" if aggressive_5s else ""
         try:
@@ -37757,9 +37849,9 @@ async def on_callback(update: Update, ctx: ContextTypes.DEFAULT_TYPE):
                         cb = f"ttt_move_{game_id}_{idx}"
                     else:
                         cb = f"ttt_solo_move_{idx}"
-                    row.append(InlineKeyboardButton(symbols[""], callback_data=cb))
+                    row.append(btn(symbols[""], callback_data=cb))
                 else:
-                    row.append(InlineKeyboardButton(symbols[cell], callback_data="noop"))
+                    row.append(btn(symbols[cell], callback_data="noop"))
             rows.append(row)
         return rows
 
@@ -37833,7 +37925,7 @@ async def on_callback(update: Update, ctx: ContextTypes.DEFAULT_TYPE):
                 btn("❌ Играть за крестики", callback_data="ttt_solo_side_X", style="primary"),
                 btn("⭕ Играть за нолики", callback_data="ttt_solo_side_O", style="primary"),
             ],
-            [InlineKeyboardButton("◀️ Назад", callback_data="ttt_menu")],
+            [btn("◀️ Назад", callback_data="ttt_menu")],
         ])
         try:
             await q.message.edit_text(
@@ -37864,8 +37956,8 @@ async def on_callback(update: Update, ctx: ContextTypes.DEFAULT_TYPE):
                 board[bot_idx] = bot_mark
         rows = _ttt_render(board)
         rows.append([
-            InlineKeyboardButton(t("chk_surrender", f), callback_data="ttt_solo_surrender"),
-            InlineKeyboardButton("◀️ Назад", callback_data="ttt_menu"),
+            btn(t("chk_surrender", f), callback_data="ttt_solo_surrender"),
+            btn("◀️ Назад", callback_data="ttt_menu"),
         ])
         side_hint = f"Ты — {player_mark_emoji(player_mark)}, бот — {player_mark_emoji(bot_mark)}"
         try:
@@ -37931,8 +38023,8 @@ async def on_callback(update: Update, ctx: ContextTypes.DEFAULT_TYPE):
                 await levelup(f_fresh, ctx.bot)
                 await db_save(f_fresh)
                 rows_f = _ttt_render(board_ttt)
-                rows_f.append([InlineKeyboardButton(t("btn_play_again", f), callback_data="ttt_solo_start"),
-                                InlineKeyboardButton(t("btn_back_games", f), callback_data="menu_games")])
+                rows_f.append([btn(t("btn_play_again", f), callback_data="ttt_solo_start"),
+                                btn(t("btn_back_games", f), callback_data="menu_games")])
                 try:
                     await q.message.edit_text(
                         f"❌ <b>Крестики-нолики</b>\n\n{res_txt}",
@@ -37967,8 +38059,8 @@ async def on_callback(update: Update, ctx: ContextTypes.DEFAULT_TYPE):
                 await levelup(f_fresh, ctx.bot)
                 await db_save(f_fresh)
                 rows_f = _ttt_render(board_ttt)
-                rows_f.append([InlineKeyboardButton(t("btn_play_again", f), callback_data="ttt_solo_start"),
-                                InlineKeyboardButton(t("btn_back_games", f), callback_data="menu_games")])
+                rows_f.append([btn(t("btn_play_again", f), callback_data="ttt_solo_start"),
+                                btn(t("btn_back_games", f), callback_data="menu_games")])
                 try:
                     await q.message.edit_text(
                         f"❌ <b>Крестики-нолики</b>\n\n{res_txt}",
@@ -37982,8 +38074,8 @@ async def on_callback(update: Update, ctx: ContextTypes.DEFAULT_TYPE):
         gdata_ttt["board"] = board_ttt
         rows = _ttt_render(board_ttt)
         rows.append([
-            InlineKeyboardButton(t("chk_surrender", f), callback_data="ttt_solo_surrender"),
-            InlineKeyboardButton("◀️ Назад", callback_data="ttt_menu"),
+            btn(t("chk_surrender", f), callback_data="ttt_solo_surrender"),
+            btn("◀️ Назад", callback_data="ttt_menu"),
         ])
         try:
             await q.message.edit_text(
@@ -37999,8 +38091,8 @@ async def on_callback(update: Update, ctx: ContextTypes.DEFAULT_TYPE):
     if d == "ttt_group_stake_menu":
         stakes_ttt = [20, 50, 100, 200]
         kb = InlineKeyboardMarkup([
-            [InlineKeyboardButton(f"🪙 {s}", callback_data=f"ttt_group_start_{s}") for s in stakes_ttt],
-            [InlineKeyboardButton("◀️ Назад", callback_data="ttt_menu")],
+            [btn(f"🪙 {s}", callback_data=f"ttt_group_start_{s}") for s in stakes_ttt],
+            [btn("◀️ Назад", callback_data="ttt_menu")],
         ])
         try:
             await q.message.edit_text(
@@ -38052,7 +38144,7 @@ async def on_callback(update: Update, ctx: ContextTypes.DEFAULT_TYPE):
                 parse_mode=ParseMode.HTML,
                 reply_markup=InlineKeyboardMarkup([
                     [btn("🚫 Отменить вызов", callback_data=f"ttt_cancel_{game_id_ttt}", style="danger")],
-                    [InlineKeyboardButton(t("btn_back_games", f), callback_data="menu_games")],
+                    [btn(t("btn_back_games", f), callback_data="menu_games")],
                 ]),
             )
         except Exception:
@@ -38092,11 +38184,11 @@ async def on_callback(update: Update, ctx: ContextTypes.DEFAULT_TYPE):
         creator_name = gdata_ttt["creator_name"]
         opp_name = q.from_user.first_name
         rows = _ttt_render(board_ttt, game_id=game_id_ttt)
-        rows.append([InlineKeyboardButton(
+        rows.append([btn(
             f"❌ {he(creator_name)} vs ⭕ {he(opp_name)} | ход: ❌ {he(creator_name)}",
             callback_data="noop"
         )])
-        rows.append([InlineKeyboardButton(t("chk_surrender", f), callback_data=f"ttt_surrender_{game_id_ttt}")])
+        rows.append([btn(t("chk_surrender", f), callback_data=f"ttt_surrender_{game_id_ttt}")])
         try:
             await q.message.edit_text(
                 f"❌ <b>Крестики-нолики</b> · Ставка: {stake_ttt}{coin_emoji()}\n"
@@ -38180,8 +38272,8 @@ async def on_callback(update: Update, ctx: ContextTypes.DEFAULT_TYPE):
         next_sym = "⭕" if symbol == "X" else "❌"
         gdata_ttt["turn"] = next_uid
         rows = _ttt_render(board_ttt, game_id=game_id_ttt)
-        rows.append([InlineKeyboardButton(f"Ход: {next_sym} {he(next_name)}", callback_data="noop")])
-        rows.append([InlineKeyboardButton(t("chk_surrender", f), callback_data=f"ttt_surrender_{game_id_ttt}")])
+        rows.append([btn(f"Ход: {next_sym} {he(next_name)}", callback_data="noop")])
+        rows.append([btn(t("chk_surrender", f), callback_data=f"ttt_surrender_{game_id_ttt}")])
         try:
             await q.message.edit_text(
                 f"❌ <b>Крестики-нолики</b> · Ставка: {stake_ttt}{coin_emoji()}\n"
@@ -38229,7 +38321,7 @@ async def on_callback(update: Update, ctx: ContextTypes.DEFAULT_TYPE):
             await q.message.edit_text(
                 f"✅ Вызов отменён. +{stake_ttt}{_E_COIN} возвращено.",
                 parse_mode=ParseMode.HTML,
-                reply_markup=InlineKeyboardMarkup([[InlineKeyboardButton(t("btn_back_games", f), callback_data="menu_games")]]),
+                reply_markup=InlineKeyboardMarkup([[btn(t("btn_back_games", f), callback_data="menu_games")]]),
             )
         except Exception:
             pass
@@ -38266,7 +38358,7 @@ async def on_callback(update: Update, ctx: ContextTypes.DEFAULT_TYPE):
                 f"🏳 <b>{he(loser_name)}</b> сдался!\n"
                 f"🏆 <b>{he(winner_name_ttt)}</b> забирает <b>{prize_ttt}{coin_emoji()}</b>!",
                 parse_mode=ParseMode.HTML,
-                reply_markup=InlineKeyboardMarkup([[InlineKeyboardButton(t("btn_back_games", f), callback_data="menu_games")]]),
+                reply_markup=InlineKeyboardMarkup([[btn(t("btn_back_games", f), callback_data="menu_games")]]),
             )
         except Exception:
             pass
@@ -38305,11 +38397,11 @@ async def on_callback(update: Update, ctx: ContextTypes.DEFAULT_TYPE):
         creator_name_t5 = gdata_t5["creator_name"]
         opp_name_t5 = q.from_user.first_name
         rows = _ttt5_render(board_t5, game_id=game_id_t5)
-        rows.append([InlineKeyboardButton(
+        rows.append([btn(
             f"❌ {he(creator_name_t5)} vs ⭕ {he(opp_name_t5)} | ход: ❌",
             callback_data="noop"
         )])
-        rows.append([InlineKeyboardButton(t("chk_surrender", f), callback_data=f"ttt5_surrender_{game_id_t5}")])
+        rows.append([btn(t("chk_surrender", f), callback_data=f"ttt5_surrender_{game_id_t5}")])
         try:
             await q.message.edit_text(
                 f"⬛ <b>Крестики-нолики 5×5</b> · Ставка: {stake_t5}{coin_emoji()}\n"
@@ -38389,8 +38481,8 @@ async def on_callback(update: Update, ctx: ContextTypes.DEFAULT_TYPE):
         next_sym_t5 = "⭕" if symbol_t5 == "X" else "❌"
         gdata_t5["turn"] = next_uid_t5
         rows = _ttt5_render(board_t5, game_id=game_id_t5)
-        rows.append([InlineKeyboardButton(f"Ход: {next_sym_t5} {he(next_name_t5)}", callback_data="noop")])
-        rows.append([InlineKeyboardButton(t("chk_surrender", f), callback_data=f"ttt5_surrender_{game_id_t5}")])
+        rows.append([btn(f"Ход: {next_sym_t5} {he(next_name_t5)}", callback_data="noop")])
+        rows.append([btn(t("chk_surrender", f), callback_data=f"ttt5_surrender_{game_id_t5}")])
         try:
             await q.message.edit_text(
                 f"⬛ <b>Крестики-нолики 5×5</b> · Ставка: {stake_t5}{coin_emoji()}\n"
@@ -38437,7 +38529,7 @@ async def on_callback(update: Update, ctx: ContextTypes.DEFAULT_TYPE):
             await q.message.edit_text(
                 f"✅ Вызов 5×5 отменён. +{stake_t5}{_E_COIN} возвращено.",
                 parse_mode=ParseMode.HTML,
-                reply_markup=InlineKeyboardMarkup([[InlineKeyboardButton(t("btn_back_games", f), callback_data="menu_games")]]),
+                reply_markup=InlineKeyboardMarkup([[btn(t("btn_back_games", f), callback_data="menu_games")]]),
             )
         except Exception:
             pass
@@ -38474,7 +38566,7 @@ async def on_callback(update: Update, ctx: ContextTypes.DEFAULT_TYPE):
                 f"🏳 <b>{he(loser_name_t5)}</b> сдался!\n"
                 f"🏆 <b>{he(winner_name_t5)}</b> забирает <b>{prize_t5}{coin_emoji()}</b>!",
                 parse_mode=ParseMode.HTML,
-                reply_markup=InlineKeyboardMarkup([[InlineKeyboardButton(t("btn_back_games", f), callback_data="menu_games")]]),
+                reply_markup=InlineKeyboardMarkup([[btn(t("btn_back_games", f), callback_data="menu_games")]]),
             )
         except Exception:
             pass
@@ -38493,8 +38585,8 @@ async def on_callback(update: Update, ctx: ContextTypes.DEFAULT_TYPE):
         cells = _sapper_new_board()
         ctx.user_data[f"sapper_{uid}"] = {"cells": cells, "revealed": [], "start": now, "on_cd": on_cd_sapper}
         board_rows = _sapper_render(cells, set())
-        board_rows.append([InlineKeyboardButton(t("chk_surrender", f), callback_data="sapper_surrender"),
-                           InlineKeyboardButton("◀️ Назад", callback_data="menu_games")])
+        board_rows.append([btn(t("chk_surrender", f), callback_data="sapper_surrender"),
+                           btn("◀️ Назад", callback_data="menu_games")])
         total_safe = sum(1 for v in cells if v != -1)
         cd_note = "\n<i>⚠️ Режим без награды (КД)</i>" if on_cd_sapper else ""
         try:
@@ -38560,8 +38652,8 @@ async def on_callback(update: Update, ctx: ContextTypes.DEFAULT_TYPE):
             # Мина!
             revealed_s.add(i_s)
             board_rows = _sapper_render(cells_s, revealed_s, game_over=True, won=False)
-            board_rows.append([InlineKeyboardButton(t("btn_play_again", f), callback_data="sapper_start"),
-                               InlineKeyboardButton("◀️ Назад", callback_data="menu_games")])
+            board_rows.append([btn(t("btn_play_again", f), callback_data="sapper_start"),
+                               btn("◀️ Назад", callback_data="menu_games")])
             is_on_cd_s = gdata.get("on_cd", False)
             f["last_sapper"] = time.time()  # Всегда обновляем КД
             add_xp(f, 0)
@@ -38591,8 +38683,8 @@ async def on_callback(update: Update, ctx: ContextTypes.DEFAULT_TYPE):
                 await db_save(f)
                 del ctx.user_data[f"sapper_{uid}"]
                 board_rows = _sapper_render(cells_s, revealed_s, game_over=True, won=True)
-                board_rows.append([InlineKeyboardButton(t("btn_play_again", f), callback_data="sapper_start"),
-                                   InlineKeyboardButton("◀️ Назад", callback_data="menu_games")])
+                board_rows.append([btn(t("btn_play_again", f), callback_data="sapper_start"),
+                                   btn("◀️ Назад", callback_data="menu_games")])
                 result_text = (
                     f"🎉 <b>Поле разминировано!</b>\n\n+{prize}{coin_emoji()} {_E_XP} +30 XP"
                     if not is_on_cd_s else
@@ -38605,8 +38697,8 @@ async def on_callback(update: Update, ctx: ContextTypes.DEFAULT_TYPE):
                     pass
             else:
                 board_rows = _sapper_render(cells_s, revealed_s)
-                board_rows.append([InlineKeyboardButton(t("chk_surrender", f), callback_data="sapper_surrender"),
-                                   InlineKeyboardButton("◀️ Назад", callback_data="menu_games")])
+                board_rows.append([btn(t("chk_surrender", f), callback_data="sapper_surrender"),
+                                   btn("◀️ Назад", callback_data="menu_games")])
                 opened = len(revealed_s)
                 partial_prize = opened * 1
                 cd_note = "\n<i>⚠️ Режим без награды (КД)</i>" if is_on_cd_s else ""
@@ -38638,8 +38730,8 @@ async def on_callback(update: Update, ctx: ContextTypes.DEFAULT_TYPE):
         await db_save(f)
         del ctx.user_data[f"sapper_{uid}"]
         board_rows = _sapper_render(cells_s, revealed_s, game_over=True, won=False)
-        board_rows.append([InlineKeyboardButton(t("btn_play_again", f), callback_data="sapper_start"),
-                           InlineKeyboardButton("◀️ Назад", callback_data="menu_games")])
+        board_rows.append([btn(t("btn_play_again", f), callback_data="sapper_start"),
+                           btn("◀️ Назад", callback_data="menu_games")])
         result_text = (
             f"🏳 <b>Сдался!</b> Открыл {len(revealed_s)} клеток\n\n+{prize}{coin_emoji()} {_E_XP} +10 XP"
             if not is_on_cd_s else
@@ -38703,7 +38795,7 @@ async def on_callback(update: Update, ctx: ContextTypes.DEFAULT_TYPE):
         row = []
         for ch in alphabet:
             label = ch if ch not in used else "·"
-            row.append(InlineKeyboardButton(label, callback_data=f"hm_letter_{game_id}_{ch}"))
+            row.append(btn(label, callback_data=f"hm_letter_{game_id}_{ch}"))
             if len(row) == 7:
                 rows.append(row)
                 row = []
@@ -38722,7 +38814,7 @@ async def on_callback(update: Update, ctx: ContextTypes.DEFAULT_TYPE):
                 "Ставка спишется с тебя, победитель заберёт её целиком.\n"
                 "Минимум: 10<tg-emoji emoji-id='5341524176039615767'>🪙</tg-emoji>, максимум: 500<tg-emoji emoji-id='5341524176039615767'>🪙</tg-emoji>",
                 parse_mode=ParseMode.HTML,
-                reply_markup=InlineKeyboardMarkup([[InlineKeyboardButton("◀️ Назад", callback_data="hangman_menu")]]),
+                reply_markup=InlineKeyboardMarkup([[btn("◀️ Назад", callback_data="hangman_menu")]]),
             )
         except Exception:
             pass
@@ -38731,8 +38823,8 @@ async def on_callback(update: Update, ctx: ContextTypes.DEFAULT_TYPE):
     if d == "hangman_menu":
         kb = InlineKeyboardMarkup([
             [btn("🤖 Играть с ботом", callback_data="hangman_solo", style="primary")],
-            [InlineKeyboardButton(t("btn_hm_group", f), callback_data="hangman_group_create")],
-            [InlineKeyboardButton("◀️ Назад", callback_data="menu_games")],
+            [btn(t("btn_hm_group", f), callback_data="hangman_group_create")],
+            [btn("◀️ Назад", callback_data="menu_games")],
         ])
         try:
             await q.message.edit_text(
@@ -38753,10 +38845,10 @@ async def on_callback(update: Update, ctx: ContextTypes.DEFAULT_TYPE):
         # Показываем выбор сложности
         kb_diff = InlineKeyboardMarkup([
             [
-                InlineKeyboardButton(t("btn_hm_solo", f), callback_data="hangman_solo_easy"),
-                InlineKeyboardButton(t("btn_hm_solo_hard", f), callback_data="hangman_solo_hard"),
+                btn(t("btn_hm_solo", f), callback_data="hangman_solo_easy"),
+                btn(t("btn_hm_solo_hard", f), callback_data="hangman_solo_hard"),
             ],
-            [InlineKeyboardButton("◀️ Назад", callback_data="hangman_menu")],
+            [btn("◀️ Назад", callback_data="hangman_menu")],
         ])
         try:
             await q.message.edit_text(
@@ -38795,7 +38887,7 @@ async def on_callback(update: Update, ctx: ContextTypes.DEFAULT_TYPE):
         }
         display = _hangman_display(word, [])
         letter_rows = _hangman_kb(word, [], game_id)
-        letter_rows.append([InlineKeyboardButton(t("chk_surrender", f), callback_data=f"hm_give_up_{game_id}")])
+        letter_rows.append([btn(t("chk_surrender", f), callback_data=f"hm_give_up_{game_id}")])
         diff_label = "📕 Сложный" if is_hard else "📗 Лёгкий"
         bonus_hint = " (x1.5🪙 за победу)" if is_hard else ""
         try:
@@ -38922,7 +39014,7 @@ async def on_callback(update: Update, ctx: ContextTypes.DEFAULT_TYPE):
                 await q.answer(f"🎉 Победа", show_alert=False)
             try:
                 await q.message.edit_text(result_text, parse_mode=ParseMode.HTML,
-                                           reply_markup=InlineKeyboardMarkup([[InlineKeyboardButton("◀️ Назад", callback_data="menu_games")]]))
+                                           reply_markup=InlineKeyboardMarkup([[btn("◀️ Назад", callback_data="menu_games")]]))
             except Exception:
                 pass
         elif lost:
@@ -38949,7 +39041,7 @@ async def on_callback(update: Update, ctx: ContextTypes.DEFAULT_TYPE):
                     f"{pic}\n\n"
                     f"{_E_XP} +5 XP за попытку",
                     parse_mode=ParseMode.HTML,
-                    reply_markup=InlineKeyboardMarkup([[InlineKeyboardButton("◀️ Назад", callback_data="menu_games")]]),
+                    reply_markup=InlineKeyboardMarkup([[btn("◀️ Назад", callback_data="menu_games")]]),
                 )
             except Exception:
                 pass
@@ -38960,7 +39052,7 @@ async def on_callback(update: Update, ctx: ContextTypes.DEFAULT_TYPE):
             else:
                 await q.answer(f"❌ «{letter}» — нет такой буквы", show_alert=False)
             letter_rows = _hangman_kb(word_h, guessed, game_id)
-            letter_rows.append([InlineKeyboardButton(t("chk_surrender", f), callback_data=f"hm_give_up_{game_id}")])
+            letter_rows.append([btn(t("chk_surrender", f), callback_data=f"hm_give_up_{game_id}")])
             try:
                 await q.message.edit_text(
                     f"🪢 <b>Виселица</b> · Слово: {len(word_h)} букв\n\n"
@@ -39010,7 +39102,7 @@ async def on_callback(update: Update, ctx: ContextTypes.DEFAULT_TYPE):
             await q.message.edit_text(
                 f"🏳 <b>Сдался!</b> Слово было: <b>{word_h}</b>",
                 parse_mode=ParseMode.HTML,
-                reply_markup=InlineKeyboardMarkup([[InlineKeyboardButton(t("btn_back_games", f), callback_data="menu_games")]]),
+                reply_markup=InlineKeyboardMarkup([[btn(t("btn_back_games", f), callback_data="menu_games")]]),
             )
         except Exception:
             pass
@@ -39026,9 +39118,9 @@ async def on_callback(update: Update, ctx: ContextTypes.DEFAULT_TYPE):
     if d == "rps_menu":
         await q.answer()
         kb = InlineKeyboardMarkup([
-            [InlineKeyboardButton("🤖 Соло vs бот (×2 при победе)", callback_data="rps_solo_menu")],
-            [InlineKeyboardButton("👥 В чате (победитель забирает всё)", callback_data="rps_group_menu")],
-            [InlineKeyboardButton("◀️ Назад", callback_data="menu_games")],
+            [btn("🤖 Соло vs бот (×2 при победе)", callback_data="rps_solo_menu")],
+            [btn("👥 В чате (победитель забирает всё)", callback_data="rps_group_menu")],
+            [btn("◀️ Назад", callback_data="menu_games")],
         ])
         try:
             await q.message.edit_text(
@@ -39046,8 +39138,8 @@ async def on_callback(update: Update, ctx: ContextTypes.DEFAULT_TYPE):
     if d == "rps_solo_menu":
         stakes_rps = [10, 25, 50, 100, 200]
         kb = InlineKeyboardMarkup([
-            [InlineKeyboardButton(f"🪙 {s}", callback_data=f"rps_solo_{s}") for s in stakes_rps],
-            [InlineKeyboardButton("◀️ Назад", callback_data="rps_menu")],
+            [btn(f"🪙 {s}", callback_data=f"rps_solo_{s}") for s in stakes_rps],
+            [btn("◀️ Назад", callback_data="rps_menu")],
         ])
         try:
             await q.message.edit_text(
@@ -39103,8 +39195,8 @@ async def on_callback(update: Update, ctx: ContextTypes.DEFAULT_TYPE):
                 f"💼 Баланс: {f['coins']}{coin_emoji()}",
                 parse_mode=ParseMode.HTML,
                 reply_markup=InlineKeyboardMarkup([
-                    [InlineKeyboardButton(f"↩️ Ещё ({stake_rps}🪙)", callback_data=f"rps_solo_{stake_rps}")],
-                    [InlineKeyboardButton(t("btn_back_games", f), callback_data="menu_games")],
+                    [btn(f"↩️ Ещё ({stake_rps}🪙)", callback_data=f"rps_solo_{stake_rps}")],
+                    [btn(t("btn_back_games", f), callback_data="menu_games")],
                 ]),
             )
         except Exception:
@@ -39118,11 +39210,11 @@ async def on_callback(update: Update, ctx: ContextTypes.DEFAULT_TYPE):
             return
         kb = InlineKeyboardMarkup([
             [
-                InlineKeyboardButton(t("btn_rps_rock",     f), callback_data=f"rps_solo_pick_rock_{stake_rps}"),
-                InlineKeyboardButton(t("btn_rps_scissors", f), callback_data=f"rps_solo_pick_scissors_{stake_rps}"),
-                InlineKeyboardButton(t("btn_rps_paper",    f), callback_data=f"rps_solo_pick_paper_{stake_rps}"),
+                btn(t("btn_rps_rock",     f), callback_data=f"rps_solo_pick_rock_{stake_rps}"),
+                btn(t("btn_rps_scissors", f), callback_data=f"rps_solo_pick_scissors_{stake_rps}"),
+                btn(t("btn_rps_paper",    f), callback_data=f"rps_solo_pick_paper_{stake_rps}"),
             ],
-            [InlineKeyboardButton("◀️ Назад", callback_data="rps_solo_menu")],
+            [btn("◀️ Назад", callback_data="rps_solo_menu")],
         ])
         try:
             await q.message.edit_text(
@@ -39137,8 +39229,8 @@ async def on_callback(update: Update, ctx: ContextTypes.DEFAULT_TYPE):
     if d == "rps_group_menu":
         stakes_rpsg = [25, 50, 100, 200, 500]
         kb = InlineKeyboardMarkup([
-            [InlineKeyboardButton(f"🪙 {s}", callback_data=f"rps_group_{s}") for s in stakes_rpsg],
-            [InlineKeyboardButton("◀️ Назад", callback_data="rps_menu")],
+            [btn(f"🪙 {s}", callback_data=f"rps_group_{s}") for s in stakes_rpsg],
+            [btn("◀️ Назад", callback_data="rps_menu")],
         ])
         try:
             await q.message.edit_text(
@@ -39169,9 +39261,9 @@ async def on_callback(update: Update, ctx: ContextTypes.DEFAULT_TYPE):
             "msg_id": None,
         }
         pub_kb = InlineKeyboardMarkup([[
-            InlineKeyboardButton(t("btn_rps_rock",     f), callback_data=f"rps_join_rock_{game_id_rps}"),
-            InlineKeyboardButton(t("btn_rps_scissors", f), callback_data=f"rps_join_scissors_{game_id_rps}"),
-            InlineKeyboardButton(t("btn_rps_paper",    f), callback_data=f"rps_join_paper_{game_id_rps}"),
+            btn(t("btn_rps_rock",     f), callback_data=f"rps_join_rock_{game_id_rps}"),
+            btn(t("btn_rps_scissors", f), callback_data=f"rps_join_scissors_{game_id_rps}"),
+            btn(t("btn_rps_paper",    f), callback_data=f"rps_join_paper_{game_id_rps}"),
         ]])
         challenge_msg = await ctx.bot.send_message(
             q.message.chat.id,
@@ -39190,9 +39282,9 @@ async def on_callback(update: Update, ctx: ContextTypes.DEFAULT_TYPE):
                 f"✊ <b>Твой вызов опубликован!</b>\n\nВыбери свой ход (соперник не увидит до конца):",
                 parse_mode=ParseMode.HTML,
                 reply_markup=InlineKeyboardMarkup([[
-                    InlineKeyboardButton(t("btn_rps_rock",     f), callback_data=f"rps_creator_rock_{game_id_rps}"),
-                    InlineKeyboardButton(t("btn_rps_scissors", f), callback_data=f"rps_creator_scissors_{game_id_rps}"),
-                    InlineKeyboardButton(t("btn_rps_paper",    f), callback_data=f"rps_creator_paper_{game_id_rps}"),
+                    btn(t("btn_rps_rock",     f), callback_data=f"rps_creator_rock_{game_id_rps}"),
+                    btn(t("btn_rps_scissors", f), callback_data=f"rps_creator_scissors_{game_id_rps}"),
+                    btn(t("btn_rps_paper",    f), callback_data=f"rps_creator_paper_{game_id_rps}"),
                 ]]),
             )
         except Forbidden:
@@ -39202,7 +39294,7 @@ async def on_callback(update: Update, ctx: ContextTypes.DEFAULT_TYPE):
             await q.message.edit_text(
                 "✊ Вызов опубликован! Жди соперника...",
                 parse_mode=ParseMode.HTML,
-                reply_markup=InlineKeyboardMarkup([[InlineKeyboardButton(t("btn_back_games", f), callback_data="menu_games")]]),
+                reply_markup=InlineKeyboardMarkup([[btn(t("btn_back_games", f), callback_data="menu_games")]]),
             )
         except Exception:
             pass
@@ -39388,16 +39480,16 @@ async def on_callback(update: Update, ctx: ContextTypes.DEFAULT_TYPE):
             gdata_rps["round_num"] += 1
             next_round_kb = InlineKeyboardMarkup([
                 [
-                    InlineKeyboardButton("🪨 Камень", callback_data=f"rps_join_rock_{game_id_rps}"),
-                    InlineKeyboardButton("✂️ Ножницы", callback_data=f"rps_join_scissors_{game_id_rps}"),
-                    InlineKeyboardButton("📄 Бумага", callback_data=f"rps_join_paper_{game_id_rps}"),
+                    btn("🪨 Камень", callback_data=f"rps_join_rock_{game_id_rps}"),
+                    btn("✂️ Ножницы", callback_data=f"rps_join_scissors_{game_id_rps}"),
+                    btn("📄 Бумага", callback_data=f"rps_join_paper_{game_id_rps}"),
                 ]
             ])
             next_round_creator_kb = InlineKeyboardMarkup([
                 [
-                    InlineKeyboardButton(t("btn_rps_rock",     f), callback_data=f"rps_creator_rock_{game_id_rps}"),
-                    InlineKeyboardButton(t("btn_rps_scissors", f), callback_data=f"rps_creator_scissors_{game_id_rps}"),
-                    InlineKeyboardButton(t("btn_rps_paper",    f), callback_data=f"rps_creator_paper_{game_id_rps}"),
+                    btn(t("btn_rps_rock",     f), callback_data=f"rps_creator_rock_{game_id_rps}"),
+                    btn(t("btn_rps_scissors", f), callback_data=f"rps_creator_scissors_{game_id_rps}"),
+                    btn(t("btn_rps_paper",    f), callback_data=f"rps_creator_paper_{game_id_rps}"),
                 ]
             ])
             next_msg = f"{round_info}⚔️ <b>Раунд {gdata_rps['round_num']}!</b> Организатор выбирает знак в личке, соперник ждёт..."
@@ -39426,9 +39518,9 @@ async def on_callback(update: Update, ctx: ContextTypes.DEFAULT_TYPE):
             cd_notice = "\n<i>⚠️ Режим без награды (КД)</i>" if gdata_active.get("on_cd") else ""
             kb = InlineKeyboardMarkup(
                 [
-                    [InlineKeyboardButton(str(n), callback_data=f"guess_{n}") for n in range(1, 6)],
-                    [InlineKeyboardButton(str(n), callback_data=f"guess_{n}") for n in range(6, 11)],
-                    [InlineKeyboardButton("🏳 Сдаться", callback_data="guess_forfeit")],
+                    [btn(str(n), callback_data=f"guess_{n}") for n in range(1, 6)],
+                    [btn(str(n), callback_data=f"guess_{n}") for n in range(6, 11)],
+                    [btn("🏳 Сдаться", callback_data="guess_forfeit")],
                 ]
             )
             try:
@@ -39454,14 +39546,14 @@ async def on_callback(update: Update, ctx: ContextTypes.DEFAULT_TYPE):
         kb = InlineKeyboardMarkup(
             [
                 [
-                    InlineKeyboardButton(str(n), callback_data=f"guess_{n}")
+                    btn(str(n), callback_data=f"guess_{n}")
                     for n in range(1, 6)
                 ],
                 [
-                    InlineKeyboardButton(str(n), callback_data=f"guess_{n}")
+                    btn(str(n), callback_data=f"guess_{n}")
                     for n in range(6, 11)
                 ],
-                [InlineKeyboardButton("🏳 Сдаться", callback_data="guess_forfeit")],
+                [btn("🏳 Сдаться", callback_data="guess_forfeit")],
             ]
         )
         try:
@@ -39552,14 +39644,14 @@ async def on_callback(update: Update, ctx: ContextTypes.DEFAULT_TYPE):
             kb = InlineKeyboardMarkup(
                 [
                     [
-                        InlineKeyboardButton(str(n), callback_data=f"guess_{n}")
+                        btn(str(n), callback_data=f"guess_{n}")
                         for n in range(1, 6)
                     ],
                     [
-                        InlineKeyboardButton(str(n), callback_data=f"guess_{n}")
+                        btn(str(n), callback_data=f"guess_{n}")
                         for n in range(6, 11)
                     ],
-                    [InlineKeyboardButton("🏳 Сдаться", callback_data="guess_forfeit")],
+                    [btn("🏳 Сдаться", callback_data="guess_forfeit")],
                 ]
             )
             try:
@@ -39582,28 +39674,28 @@ async def on_callback(update: Update, ctx: ContextTypes.DEFAULT_TYPE):
         kb = InlineKeyboardMarkup(
             [
                 [
-                    InlineKeyboardButton(t("btn_stats",        f), callback_data="stats_btn"),
-                    InlineKeyboardButton(t("btn_achievements", f), callback_data="achievements"),
+                    btn(t("btn_stats",        f), callback_data="stats_btn"),
+                    btn(t("btn_achievements", f), callback_data="achievements"),
                 ],
                 [
-                    InlineKeyboardButton(t("btn_inventory",    f), callback_data="inv_0"),
-                    InlineKeyboardButton(t("btn_nft",          f), callback_data="nft_menu"),
+                    btn(t("btn_inventory",    f), callback_data="inv_0"),
+                    btn(t("btn_nft",          f), callback_data="nft_menu"),
                 ],
                 [
-                    InlineKeyboardButton(t("btn_quests",       f), callback_data="quests"),
-                    InlineKeyboardButton(t("btn_top",          f), callback_data="top_select"),
+                    btn(t("btn_quests",       f), callback_data="quests"),
+                    btn(t("btn_top",          f), callback_data="top_select"),
                 ],
                 [
-                    InlineKeyboardButton("📖 Дневник",   callback_data="diary"),
-                    InlineKeyboardButton("🎭 Характер",  callback_data="personality_view"),
-                    InlineKeyboardButton("🔮 Гороскоп",  callback_data="horoscope"),
+                    btn("📖 Дневник",   callback_data="diary"),
+                    btn("🎭 Характер",  callback_data="personality_view"),
+                    btn("🔮 Гороскоп",  callback_data="horoscope"),
                 ],
                 [btn("✨ Множитель наград", callback_data="bonus_menu", style="primary")],
                 [
-                    InlineKeyboardButton(t("btn_referrals", f), callback_data="referral_menu"),
-                    InlineKeyboardButton(t("btn_settings",  f), callback_data="settings"),
+                    btn(t("btn_referrals", f), callback_data="referral_menu"),
+                    btn(t("btn_settings",  f), callback_data="settings"),
                 ],
-                [InlineKeyboardButton(t("btn_back", f), callback_data="refresh")],
+                [btn(t("btn_back", f), callback_data="refresh")],
             ]
         )
         try:
@@ -39655,7 +39747,7 @@ async def on_callback(update: Update, ctx: ContextTypes.DEFAULT_TYPE):
         kb = InlineKeyboardMarkup([
             [btn(freeze_label, callback_data="skin_freeze_menu",
                  style="danger" if frozen_skin else "success")],
-            [InlineKeyboardButton("◀️ Главное меню", callback_data="refresh")],
+            [btn("◀️ Главное меню", callback_data="refresh")],
         ])
         try:
             await q.message.edit_text(text, parse_mode=ParseMode.HTML, reply_markup=kb)
@@ -39685,7 +39777,7 @@ async def on_callback(update: Update, ctx: ContextTypes.DEFAULT_TYPE):
             )
             kb = InlineKeyboardMarkup([
                 [btn("🔓 Разморозить (бесплатно)", callback_data="skin_freeze_off", style="danger")],
-                [InlineKeyboardButton("◀️ Назад", callback_data="bonus_menu")],
+                [btn("◀️ Назад", callback_data="bonus_menu")],
             ])
         elif skin_bonus_pct == 0:
             # Текущий облик не даёт бонуса — нечего замораживать
@@ -39697,7 +39789,7 @@ async def on_callback(update: Update, ctx: ContextTypes.DEFAULT_TYPE):
                 f"затем возвращайся сюда.</i>"
             )
             kb = InlineKeyboardMarkup([[
-                InlineKeyboardButton("◀️ Назад", callback_data="bonus_menu"),
+                btn("◀️ Назад", callback_data="bonus_menu"),
             ]])
         else:
             # Можно заморозить текущий облик
@@ -39716,11 +39808,11 @@ async def on_callback(update: Update, ctx: ContextTypes.DEFAULT_TYPE):
             if can_afford:
                 kb = InlineKeyboardMarkup([
                     [btn(f"❄️ Заморозить {he(skin)} за 1000🪙", callback_data="skin_freeze_on", style="primary")],
-                    [InlineKeyboardButton("◀️ Назад", callback_data="bonus_menu")],
+                    [btn("◀️ Назад", callback_data="bonus_menu")],
                 ])
             else:
                 kb = InlineKeyboardMarkup([[
-                    InlineKeyboardButton("◀️ Назад", callback_data="bonus_menu"),
+                    btn("◀️ Назад", callback_data="bonus_menu"),
                 ]])
         try:
             await q.message.edit_text(text, parse_mode=ParseMode.HTML, reply_markup=kb)
@@ -39760,7 +39852,7 @@ async def on_callback(update: Update, ctx: ContextTypes.DEFAULT_TYPE):
         )
         kb = InlineKeyboardMarkup([
             [btn("🔓 Разморозить (бесплатно)", callback_data="skin_freeze_off", style="danger")],
-            [InlineKeyboardButton("◀️ Назад", callback_data="bonus_menu")],
+            [btn("◀️ Назад", callback_data="bonus_menu")],
         ])
         try:
             await q.message.edit_text(text, parse_mode=ParseMode.HTML, reply_markup=kb)
@@ -39792,7 +39884,7 @@ async def on_callback(update: Update, ctx: ContextTypes.DEFAULT_TYPE):
                 f"<i>Надень легендарный (+25%), мифический (+50%) или секретный (+100%) облик, "
                 f"затем возвращайся сюда.</i>"
             )
-            kb = InlineKeyboardMarkup([[InlineKeyboardButton("◀️ Назад", callback_data="bonus_menu")]])
+            kb = InlineKeyboardMarkup([[btn("◀️ Назад", callback_data="bonus_menu")]])
         else:
             afford_note = f"💰 Монет: <b>{coins}</b>" if can_afford else f"💰 Монет: <b>{coins}</b> — не хватает 1000🪙"
             text = (
@@ -39806,7 +39898,7 @@ async def on_callback(update: Update, ctx: ContextTypes.DEFAULT_TYPE):
             )
             kb = InlineKeyboardMarkup([
                 [btn(f"❄️ Заморозить {he(skin)} за 1000🪙", callback_data="skin_freeze_on", style="primary")] if can_afford else [],
-                [InlineKeyboardButton("◀️ Назад", callback_data="bonus_menu")],
+                [btn("◀️ Назад", callback_data="bonus_menu")],
             ])
         try:
             await q.message.edit_text(text, parse_mode=ParseMode.HTML, reply_markup=kb)
@@ -39885,22 +39977,22 @@ async def on_callback(update: Update, ctx: ContextTypes.DEFAULT_TYPE):
         # Соседи с бейджем если есть заявки
         sosedi_label = f"👥 Соседи +{pending_cnt}🔴" if pending_cnt else "👥 Соседи"
         kb_rows.append([
-            InlineKeyboardButton(sosedi_label, callback_data="plaza_sosedi"),
-            InlineKeyboardButton("🌿 Стая", callback_data="plaza_staya"),
+            btn(sosedi_label, callback_data="plaza_sosedi"),
+            btn("🌿 Стая", callback_data="plaza_staya"),
         ])
         kb_rows.append([
-            InlineKeyboardButton("⚔️ Поход", callback_data="plaza_pohod"),
-            InlineKeyboardButton("💚 Связь", callback_data="plaza_bond"),
+            btn("⚔️ Поход", callback_data="plaza_pohod"),
+            btn("💚 Связь", callback_data="plaza_bond"),
         ])
         kb_rows.append([
-            InlineKeyboardButton("🗺️ Экспедиция", callback_data="plaza_expedition"),
-            InlineKeyboardButton("🎣 Порыбачить", callback_data="plaza_fish_invite"),
+            btn("🗺️ Экспедиция", callback_data="plaza_expedition"),
+            btn("🎣 Порыбачить", callback_data="plaza_fish_invite"),
         ])
         kb_rows.append([
-            InlineKeyboardButton("📖 Летопись", callback_data="letopis_view"),
-            InlineKeyboardButton("🏆 Рейтинг стай", callback_data="staya_top_inline"),
+            btn("📖 Летопись", callback_data="letopis_view"),
+            btn("🏆 Рейтинг стай", callback_data="staya_top_inline"),
         ])
-        kb_rows.append([InlineKeyboardButton("◀️ Главное меню", callback_data="refresh")])
+        kb_rows.append([btn("◀️ Главное меню", callback_data="refresh")])
 
         try:
             await q.message.edit_text(text, parse_mode=ParseMode.HTML,
@@ -39933,8 +40025,8 @@ async def on_callback(update: Update, ctx: ContextTypes.DEFAULT_TYPE):
                     "или ответив на чьё-то сообщение словом <b>сосед</b>.",
                     parse_mode=ParseMode.HTML,
                     reply_markup=InlineKeyboardMarkup([
-                        [InlineKeyboardButton("🔍 Найти игрока", callback_data="plaza_find")],
-                        [InlineKeyboardButton("◀️ Назад", callback_data="plaza")],
+                        [btn("🔍 Найти игрока", callback_data="plaza_find")],
+                        [btn("◀️ Назад", callback_data="plaza")],
                     ])
                 )
             except Exception:
@@ -39948,7 +40040,7 @@ async def on_callback(update: Update, ctx: ContextTypes.DEFAULT_TYPE):
             lines.append(f"📬 Новых заявок: <b>{len(pending)}</b>")
         kb_rows = []
         if pending:
-            kb_rows.append([InlineKeyboardButton(f"📬 Заявки ({len(pending)})", callback_data="plaza_requests")])
+            kb_rows.append([btn(f"📬 Заявки ({len(pending)})", callback_data="plaza_requests")])
         today_start = (datetime.now(timezone.utc).replace(hour=0,minute=0,second=0,microsecond=0).timestamp())
         for fr in page_friends:
             fn   = fr.get("frog_name") or fr.get("first_name") or "?"
@@ -39956,20 +40048,20 @@ async def on_callback(update: Update, ctx: ContextTypes.DEFAULT_TYPE):
             icon, lvl_name = FRIEND_LEVELS.get(flvl, ("🌱", "Знакомые"))
             tf_q = await db_get(fr["user_id"])
             online = " 🟢" if tf_q and tf_q.get("last_seen", 0) > today_start else ""
-            kb_rows.append([InlineKeyboardButton(
+            kb_rows.append([btn(
                 f"{icon} {he(fn)}{online} · {lvl_name}",
                 callback_data=f"plaza_friend_{fr['user_id']}"
             )])
         nav = []
         if page > 0:
-            nav.append(InlineKeyboardButton("◀️", callback_data=f"plaza_sosedi_{page-1}"))
+            nav.append(btn("◀️", callback_data=f"plaza_sosedi_{page-1}"))
         if (page+1)*per < total_fr:
-            nav.append(InlineKeyboardButton("▶️", callback_data=f"plaza_sosedi_{page+1}"))
+            nav.append(btn("▶️", callback_data=f"plaza_sosedi_{page+1}"))
         if nav:
             kb_rows.append(nav)
         kb_rows.append([
-            InlineKeyboardButton("➕ Добавить", callback_data="plaza_find"),
-            InlineKeyboardButton("◀️ Назад", callback_data="plaza"),
+            btn("➕ Добавить", callback_data="plaza_find"),
+            btn("◀️ Назад", callback_data="plaza"),
         ])
         try:
             await q.message.edit_text("\n".join(lines), parse_mode=ParseMode.HTML,
@@ -40056,16 +40148,16 @@ async def on_callback(update: Update, ctx: ContextTypes.DEFAULT_TYPE):
 
         kb_rows = [
             [
-                InlineKeyboardButton(f"🤗 Обнять{hug_cd}",      callback_data=f"social_hug_{target_id}"),
-                InlineKeyboardButton(f"✋ Пузико{scr_cd}",      callback_data=f"social_scratch_{target_id}"),
+                btn(f"🤗 Обнять{hug_cd}",      callback_data=f"social_hug_{target_id}"),
+                btn(f"✋ Пузико{scr_cd}",      callback_data=f"social_scratch_{target_id}"),
             ],
             [
-                InlineKeyboardButton(f"🛁 Помыть{wash_cd}",     callback_data=f"social_wash_{target_id}"),
-                InlineKeyboardButton(f"🌟 Похвалить{prs_cd}",   callback_data=f"social_praise_{target_id}"),
+                btn(f"🛁 Помыть{wash_cd}",     callback_data=f"social_wash_{target_id}"),
+                btn(f"🌟 Похвалить{prs_cd}",   callback_data=f"social_praise_{target_id}"),
             ],
             [
-                InlineKeyboardButton(f"💤 Убаюкать{lul_cd}",    callback_data=f"social_lullaby_{target_id}"),
-                InlineKeyboardButton(f"🍎 Угостить{trt_cd}",    callback_data=f"social_treat_{target_id}"),
+                btn(f"💤 Убаюкать{lul_cd}",    callback_data=f"social_lullaby_{target_id}"),
+                btn(f"🍎 Угостить{trt_cd}",    callback_data=f"social_treat_{target_id}"),
             ],
 
         ]
@@ -40073,20 +40165,20 @@ async def on_callback(update: Update, ctx: ContextTypes.DEFAULT_TYPE):
         # Активные действия (поход, рыбалка, связь)
         extra = []
         if not adv_locked and fr and not fr.get("pending") and lvl >= 1:
-            extra.append(InlineKeyboardButton("⚔️ В поход",   callback_data=f"plaza_invite_adv_{target_id}"))
-            extra.append(InlineKeyboardButton("🎣 Рыбалка",   callback_data=f"plaza_invite_fish_{target_id}"))
+            extra.append(btn("⚔️ В поход",   callback_data=f"plaza_invite_adv_{target_id}"))
+            extra.append(btn("🎣 Рыбалка",   callback_data=f"plaza_invite_fish_{target_id}"))
         if extra:
             kb_rows.append(extra)
 
         if fr and not fr.get("pending") and lvl >= 2:
             my_bonds_nc = await get_user_bonds(uid)
             if not any(b["partner_id"] == target_id for b in my_bonds_nc):
-                kb_rows.append([InlineKeyboardButton(
+                kb_rows.append([btn(
                     "💚 Болотная Связь", callback_data=f"plaza_bond_invite_{target_id}"
                 )])
 
-        kb_rows.append([InlineKeyboardButton("◀️ Назад", callback_data="plaza_sosedi")])
-        kb_rows.append([InlineKeyboardButton("🗑 Удалить из соседей", callback_data=f"plaza_unfriend_{target_id}")])
+        kb_rows.append([btn("◀️ Назад", callback_data="plaza_sosedi")])
+        kb_rows.append([btn("🗑 Удалить из соседей", callback_data=f"plaza_unfriend_{target_id}")])
 
         try:
             await q.message.edit_text(text, parse_mode=ParseMode.HTML,
@@ -40115,10 +40207,10 @@ async def on_callback(update: Update, ctx: ContextTypes.DEFAULT_TYPE):
             name = r.get("frog_name") or r.get("first_name") or "?"
             lines.append(f"🌱 {he(name)} (ур. {r.get('level',1)})")
             kb_rows.append([
-                InlineKeyboardButton(f"✅ Принять — {he(name)[:12]}", callback_data=f"friend_accept_{r['user_id']}"),
-                InlineKeyboardButton("❌", callback_data=f"friend_decline_{r['user_id']}"),
+                btn(f"✅ Принять — {he(name)[:12]}", callback_data=f"friend_accept_{r['user_id']}"),
+                btn("❌", callback_data=f"friend_decline_{r['user_id']}"),
             ])
-        kb_rows.append([InlineKeyboardButton("◀️ Назад", callback_data="plaza_sosedi")])
+        kb_rows.append([btn("◀️ Назад", callback_data="plaza_sosedi")])
         try:
             await q.message.edit_text("\n".join(lines), parse_mode=ParseMode.HTML,
                                       reply_markup=InlineKeyboardMarkup(kb_rows))
@@ -40138,7 +40230,7 @@ async def on_callback(update: Update, ctx: ContextTypes.DEFAULT_TYPE):
                 "<i>Или напиши просто:</i> <code>сосед @username</code>",
                 parse_mode=ParseMode.HTML,
                 reply_markup=InlineKeyboardMarkup([[
-                    InlineKeyboardButton("❌ Отмена", callback_data="plaza_sosedi")
+                    btn("❌ Отмена", callback_data="plaza_sosedi")
                 ]])
             )
         except Exception:
@@ -40169,8 +40261,8 @@ async def on_callback(update: Update, ctx: ContextTypes.DEFAULT_TYPE):
                 await q.message.edit_text(
                     "🌿 Нет доступных стай для вступления.\nСоздай свою!",
                     reply_markup=InlineKeyboardMarkup([[
-                        InlineKeyboardButton(f"🌿 Создать ({STAYA_CREATE_COST}🪙)", callback_data="staya_create_start"),
-                        InlineKeyboardButton("◀️ Назад", callback_data="plaza_staya"),
+                        btn(f"🌿 Создать ({STAYA_CREATE_COST}🪙)", callback_data="staya_create_start"),
+                        btn("◀️ Назад", callback_data="plaza_staya"),
                     ]])
                 )
             except Exception: pass
@@ -40187,19 +40279,19 @@ async def on_callback(update: Update, ctx: ContextTypes.DEFAULT_TYPE):
                 f"{s['emoji']} <b>{he(s['name'])}</b> ур.{lvl} {cnt}/{s_max}\n"
                 + (f"   <i>✨ {bonuses_preview}</i>" if bonuses_preview else "")
             )
-            kb_rows.append([InlineKeyboardButton(
+            kb_rows.append([btn(
                 f"{s['emoji']} {he(s['name'])} ур.{lvl} ({cnt}/{s_max})",
                 callback_data=f"plaza_staya_view_{s['id']}"
             )])
 
         nav = []
         if page > 0:
-            nav.append(InlineKeyboardButton("◀️", callback_data=f"plaza_staya_list_{page-1}"))
+            nav.append(btn("◀️", callback_data=f"plaza_staya_list_{page-1}"))
         if (page+1)*per < total:
-            nav.append(InlineKeyboardButton("▶️", callback_data=f"plaza_staya_list_{page+1}"))
+            nav.append(btn("▶️", callback_data=f"plaza_staya_list_{page+1}"))
         if nav:
             kb_rows.append(nav)
-        kb_rows.append([InlineKeyboardButton("◀️ Назад", callback_data="plaza_staya")])
+        kb_rows.append([btn("◀️ Назад", callback_data="plaza_staya")])
 
         try:
             await q.message.edit_text("\n".join(lines), parse_mode=ParseMode.HTML,
@@ -40249,10 +40341,10 @@ async def on_callback(update: Update, ctx: ContextTypes.DEFAULT_TYPE):
             f"<b>Участники:</b> {members_short}"
         )
         if already_member:
-            kb = InlineKeyboardMarkup([[InlineKeyboardButton("◀️ Назад", callback_data="plaza_staya_list")]])
+            kb = InlineKeyboardMarkup([[btn("◀️ Назад", callback_data="plaza_staya_list")]])
         elif full:
             text += "\n\n🔒 <i>Стая заполнена</i>"
-            kb = InlineKeyboardMarkup([[InlineKeyboardButton("◀️ Назад", callback_data="plaza_staya_list")]])
+            kb = InlineKeyboardMarkup([[btn("◀️ Назад", callback_data="plaza_staya_list")]])
         elif existing_app:
             app_status = existing_app[0]
             status_label = {"pending": "⏳ Заявка на рассмотрении — ждём ответа Вожака",
@@ -40260,13 +40352,13 @@ async def on_callback(update: Update, ctx: ContextTypes.DEFAULT_TYPE):
             text += f"\n\n{status_label}"
             rows_app = []
             if app_status == "rejected":
-                rows_app.append([InlineKeyboardButton("📝 Подать заново", callback_data=f"plaza_apply_{staya_id}")])
-            rows_app.append([InlineKeyboardButton("◀️ Назад", callback_data="plaza_staya_list")])
+                rows_app.append([btn("📝 Подать заново", callback_data=f"plaza_apply_{staya_id}")])
+            rows_app.append([btn("◀️ Назад", callback_data="plaza_staya_list")])
             kb = InlineKeyboardMarkup(rows_app)
         else:
             kb = InlineKeyboardMarkup([
-                [InlineKeyboardButton("📝 Подать заявку", callback_data=f"plaza_apply_{staya_id}")],
-                [InlineKeyboardButton("◀️ Назад", callback_data="plaza_staya_list")],
+                [btn("📝 Подать заявку", callback_data=f"plaza_apply_{staya_id}")],
+                [btn("◀️ Назад", callback_data="plaza_staya_list")],
             ])
         try:
             await q.message.edit_text(text, parse_mode=ParseMode.HTML, reply_markup=kb)
@@ -40285,7 +40377,7 @@ async def on_callback(update: Update, ctx: ContextTypes.DEFAULT_TYPE):
                 "<i>(или просто «+» если хочешь без объяснений)</i>",
                 parse_mode=ParseMode.HTML,
                 reply_markup=InlineKeyboardMarkup([[
-                    InlineKeyboardButton("❌ Отмена", callback_data=f"plaza_staya_view_{staya_id}")
+                    btn("❌ Отмена", callback_data=f"plaza_staya_view_{staya_id}")
                 ]])
             )
         except Exception: pass
@@ -40319,7 +40411,7 @@ async def on_callback(update: Update, ctx: ContextTypes.DEFAULT_TYPE):
                     f"📬 <b>Заявки в стаю «{he(staya['name'])}»</b>\n\nНет новых заявок.",
                     parse_mode=ParseMode.HTML,
                     reply_markup=InlineKeyboardMarkup([[
-                        InlineKeyboardButton("◀️ Назад", callback_data="plaza_staya")
+                        btn("◀️ Назад", callback_data="plaza_staya")
                     ]])
                 )
             except Exception: pass
@@ -40333,10 +40425,10 @@ async def on_callback(update: Update, ctx: ContextTypes.DEFAULT_TYPE):
             app_text = app.get("text", "")[:50] or "—"
             lines.append(f"<tg-emoji emoji-id='5341367834935075028'>🐸</tg-emoji> <b>{he(name)}</b> ур.{lvl}: <i>{he(app_text)}</i>")
             kb_rows.append([
-                InlineKeyboardButton(f"✅ {he(name)[:10]}", callback_data=f"staya_app_ok_{app['user_id']}"),
-                InlineKeyboardButton(f"❌ Откл.", callback_data=f"staya_app_no_{app['user_id']}"),
+                btn(f"✅ {he(name)[:10]}", callback_data=f"staya_app_ok_{app['user_id']}"),
+                btn(f"❌ Откл.", callback_data=f"staya_app_no_{app['user_id']}"),
             ])
-        kb_rows.append([InlineKeyboardButton("◀️ Назад", callback_data="plaza_staya")])
+        kb_rows.append([btn("◀️ Назад", callback_data="plaza_staya")])
         try:
             await q.message.edit_text("\n".join(lines), parse_mode=ParseMode.HTML,
                                       reply_markup=InlineKeyboardMarkup(kb_rows))
@@ -40423,8 +40515,8 @@ async def on_callback(update: Update, ctx: ContextTypes.DEFAULT_TYPE):
         await q.answer(f"✉️ Приглашение отправлено {he(tname)}")
         try:
             kb = InlineKeyboardMarkup([[
-                InlineKeyboardButton("✅ Вступить", callback_data=f"staya_join_{staya['id']}_{uid}"),
-                InlineKeyboardButton("❌ Отказать", callback_data=f"staya_decline_{staya['id']}"),
+                btn("✅ Вступить", callback_data=f"staya_join_{staya['id']}_{uid}"),
+                btn("❌ Отказать", callback_data=f"staya_decline_{staya['id']}"),
             ]])
             await ctx.bot.send_message(
                 target_id,
@@ -40468,7 +40560,7 @@ async def on_callback(update: Update, ctx: ContextTypes.DEFAULT_TYPE):
                 f"Открой Болотную Площадь чтобы участвовать в событиях.",
                 parse_mode=ParseMode.HTML,
                 reply_markup=InlineKeyboardMarkup([[
-                    InlineKeyboardButton("🌿 Моя стая", callback_data="plaza_staya")
+                    btn("🌿 Моя стая", callback_data="plaza_staya")
                 ]])
             )
         except Exception: pass
@@ -40493,9 +40585,9 @@ async def on_callback(update: Update, ctx: ContextTypes.DEFAULT_TYPE):
                     f"Создать стаю: <b>{STAYA_CREATE_COST}{_E_COIN}</b> · У тебя: <b>{f['coins']}{_E_COIN}</b>",
                     parse_mode=ParseMode.HTML,
                     reply_markup=InlineKeyboardMarkup([
-                        [InlineKeyboardButton(f"🌿 Создать стаю ({STAYA_CREATE_COST}🪙)", callback_data="staya_create_start")],
-                        [InlineKeyboardButton("🔍 Найти и вступить", callback_data="plaza_staya_list_0")],
-                        [InlineKeyboardButton("◀️ Назад", callback_data="plaza")],
+                        [btn(f"🌿 Создать стаю ({STAYA_CREATE_COST}🪙)", callback_data="staya_create_start")],
+                        [btn("🔍 Найти и вступить", callback_data="plaza_staya_list_0")],
+                        [btn("◀️ Назад", callback_data="plaza")],
                     ])
                 )
             except Exception:
@@ -40552,31 +40644,31 @@ async def on_callback(update: Update, ctx: ContextTypes.DEFAULT_TYPE):
 
         kb_rows = []
         if active_ev:
-            kb_rows.append([InlineKeyboardButton("🎭 Событие — голосуй", callback_data="staya_events_view")])
+            kb_rows.append([btn("🎭 Событие — голосуй", callback_data="staya_events_view")])
         kb_rows.append([
-            InlineKeyboardButton("👥 Участники", callback_data="plaza_staya_members"),
-            InlineKeyboardButton("🪙 Котёл", callback_data="staya_cauldron"),
+            btn("👥 Участники", callback_data="plaza_staya_members"),
+            btn("🪙 Котёл", callback_data="staya_cauldron"),
         ])
         kb_rows.append([
-            InlineKeyboardButton("🛒 Магазин стаи", callback_data="staya_shop"),
-            InlineKeyboardButton("🏔️ Уровень болота", callback_data="staya_level_info"),
+            btn("🛒 Магазин стаи", callback_data="staya_shop"),
+            btn("🏔️ Уровень болота", callback_data="staya_level_info"),
         ])
         _plaza_war_btns = []
         if staya.get("level", 1) >= 5:
-            _plaza_war_btns.append(InlineKeyboardButton("⚔️ Война", callback_data="war_menu"))
+            _plaza_war_btns.append(btn("⚔️ Война", callback_data="war_menu"))
         if staya.get("level", 1) >= 6:
-            _plaza_war_btns.append(InlineKeyboardButton("🍲 Столовая", callback_data="canteen_menu"))
+            _plaza_war_btns.append(btn("🍲 Столовая", callback_data="canteen_menu"))
         if _plaza_war_btns:
             kb_rows.append(_plaza_war_btns)
         if my_role in ("chief", "elder"):
             kb_rows.append([
-                InlineKeyboardButton("📬 Заявки", callback_data="staya_applications"),
-                InlineKeyboardButton("⚙️ Управление", callback_data="staya_manage"),
+                btn("📬 Заявки", callback_data="staya_applications"),
+                btn("⚙️ Управление", callback_data="staya_manage"),
             ])
         kb_rows.append([
-            InlineKeyboardButton("🚪 Покинуть" if my_role != "chief" else "💔 Распустить",
+            btn("🚪 Покинуть" if my_role != "chief" else "💔 Распустить",
                                  callback_data="staya_leave" if my_role != "chief" else "staya_disband"),
-            InlineKeyboardButton("◀️ Назад", callback_data="plaza"),
+            btn("◀️ Назад", callback_data="plaza"),
         ])
 
         try:
@@ -40639,8 +40731,8 @@ async def on_callback(update: Update, ctx: ContextTypes.DEFAULT_TYPE):
         try:
             await q.message.edit_text("\n".join(lines), parse_mode=ParseMode.HTML,
                 reply_markup=InlineKeyboardMarkup([[
-                    InlineKeyboardButton("🪙 Пополнить котёл", callback_data="staya_cauldron"),
-                    InlineKeyboardButton("◀️ Назад", callback_data="plaza_staya"),
+                    btn("🪙 Пополнить котёл", callback_data="staya_cauldron"),
+                    btn("◀️ Назад", callback_data="plaza_staya"),
                 ]]))
         except Exception:
             pass
@@ -40662,7 +40754,7 @@ async def on_callback(update: Update, ctx: ContextTypes.DEFAULT_TYPE):
                 f"Напиши сообщение — оно придёт всем {len(members_bc)} участникам:",
                 parse_mode=ParseMode.HTML,
                 reply_markup=InlineKeyboardMarkup([[
-                    InlineKeyboardButton("❌ Отмена", callback_data="staya_manage")
+                    btn("❌ Отмена", callback_data="staya_manage")
                 ]])
             )
         except Exception:
@@ -40691,7 +40783,7 @@ async def on_callback(update: Update, ctx: ContextTypes.DEFAULT_TYPE):
             await q.message.edit_text(
                 "\n".join(lines), parse_mode=ParseMode.HTML,
                 reply_markup=InlineKeyboardMarkup([[
-                    InlineKeyboardButton("◀️ Назад", callback_data="plaza_staya")
+                    btn("◀️ Назад", callback_data="plaza_staya")
                 ]])
             )
         except Exception:
@@ -40719,8 +40811,8 @@ async def on_callback(update: Update, ctx: ContextTypes.DEFAULT_TYPE):
                 await q.message.edit_text(
                     text, parse_mode=ParseMode.HTML,
                     reply_markup=InlineKeyboardMarkup([
-                        [InlineKeyboardButton("🔄 Обновить", callback_data="plaza_pohod")],
-                        [InlineKeyboardButton("◀️ Назад", callback_data="plaza")],
+                        [btn("🔄 Обновить", callback_data="plaza_pohod")],
+                        [btn("◀️ Назад", callback_data="plaza")],
                     ])
                 )
             except Exception:
@@ -40752,8 +40844,8 @@ async def on_callback(update: Update, ctx: ContextTypes.DEFAULT_TYPE):
                     "<i>Подружись с кем-нибудь сначала</i>",
                     parse_mode=ParseMode.HTML,
                     reply_markup=InlineKeyboardMarkup([
-                        [InlineKeyboardButton("👥 К соседям", callback_data="plaza_sosedi")],
-                        [InlineKeyboardButton("◀️ Назад", callback_data="plaza")],
+                        [btn("👥 К соседям", callback_data="plaza_sosedi")],
+                        [btn("◀️ Назад", callback_data="plaza")],
                     ])
                 )
             except Exception:
@@ -40769,11 +40861,11 @@ async def on_callback(update: Update, ctx: ContextTypes.DEFAULT_TYPE):
         for fr in eligible[:8]:
             name = fr.get("frog_name") or fr.get("first_name") or "?"
             icon = FRIEND_LEVELS.get(fr.get("fr_level", 0), ("🌱",""))[0]
-            kb_rows.append([InlineKeyboardButton(
+            kb_rows.append([btn(
                 f"{icon} {he(name)}",
                 callback_data=f"plaza_invite_adv_{fr['user_id']}"
             )])
-        kb_rows.append([InlineKeyboardButton("◀️ Назад", callback_data="plaza")])
+        kb_rows.append([btn("◀️ Назад", callback_data="plaza")])
         try:
             await q.message.edit_text(
                 "\n".join(lines), parse_mode=ParseMode.HTML,
@@ -40796,7 +40888,7 @@ async def on_callback(update: Update, ctx: ContextTypes.DEFAULT_TYPE):
                     "Сначала воскресни с помощью /revive",
                     parse_mode=ParseMode.HTML,
                     reply_markup=InlineKeyboardMarkup([
-                        [InlineKeyboardButton("◀️ Назад", callback_data="plaza")],
+                        [btn("◀️ Назад", callback_data="plaza")],
                     ]),
                 )
             except Exception:
@@ -40823,7 +40915,7 @@ async def on_callback(update: Update, ctx: ContextTypes.DEFAULT_TYPE):
                     parse_mode=ParseMode.HTML,
                     reply_markup=InlineKeyboardMarkup([
                         [btn("⭐ Открыть доступ (10 Stars)", callback_data="exp_buy_extra_slot", style="primary")],
-                        [InlineKeyboardButton("◀️ Назад", callback_data="plaza")],
+                        [btn("◀️ Назад", callback_data="plaza")],
                     ]),
                 )
             except Exception:
@@ -40860,7 +40952,7 @@ async def on_callback(update: Update, ctx: ContextTypes.DEFAULT_TYPE):
                     "Нет подходящих соседей для рыбалки.\n"
                     "Нужен уровень дружбы Приятели и выше.",
                     parse_mode=ParseMode.HTML,
-                    reply_markup=InlineKeyboardMarkup([[InlineKeyboardButton("◀️ Назад", callback_data="plaza")]])
+                    reply_markup=InlineKeyboardMarkup([[btn("◀️ Назад", callback_data="plaza")]])
                 )
             except Exception:
                 pass
@@ -40868,10 +40960,10 @@ async def on_callback(update: Update, ctx: ContextTypes.DEFAULT_TYPE):
         kb_fish_rows = []
         for fr in eligible_fish[:10]:
             fn = fr.get("frog_name") or fr.get("first_name") or "?"
-            kb_fish_rows.append([InlineKeyboardButton(
+            kb_fish_rows.append([btn(
                 f"🎣 {he(fn)}", callback_data=f"plaza_invite_fish_{fr['user_id']}"
             )])
-        kb_fish_rows.append([InlineKeyboardButton("◀️ Назад", callback_data="plaza")])
+        kb_fish_rows.append([btn("◀️ Назад", callback_data="plaza")])
         try:
             await q.message.edit_text(
                 f"🎣 <b>Рыбалка с другом</b>\n\n"
@@ -40937,10 +41029,10 @@ async def on_callback(update: Update, ctx: ContextTypes.DEFAULT_TYPE):
         await q.answer(f"⚔️ Приглашение отправлено {he(tname)}")
         try:
             kb = InlineKeyboardMarkup([
-                [InlineKeyboardButton("⚔️ 2 часа", callback_data=f"adv_accept_{uid}_2"),
-                 InlineKeyboardButton("⚔️ 4 часа", callback_data=f"adv_accept_{uid}_4"),
-                 InlineKeyboardButton("⚔️ 8 часов", callback_data=f"adv_accept_{uid}_8")],
-                [InlineKeyboardButton("❌ Отказать", callback_data=f"adv_decline_{uid}")],
+                [btn("⚔️ 2 часа", callback_data=f"adv_accept_{uid}_2"),
+                 btn("⚔️ 4 часа", callback_data=f"adv_accept_{uid}_4"),
+                 btn("⚔️ 8 часов", callback_data=f"adv_accept_{uid}_8")],
+                [btn("❌ Отказать", callback_data=f"adv_decline_{uid}")],
             ])
             sent = await ctx.bot.send_message(
                 target_id,
@@ -40963,8 +41055,8 @@ async def on_callback(update: Update, ctx: ContextTypes.DEFAULT_TYPE):
                 f"<i>Приглашение действительно 15 минут.</i>",
                 parse_mode=ParseMode.HTML,
                 reply_markup=InlineKeyboardMarkup([[
-                    InlineKeyboardButton("❌ Отменить приглашение", callback_data=f"adv_cancel_invite_{target_id}"),
-                    InlineKeyboardButton("◀️ Назад", callback_data="plaza"),
+                    btn("❌ Отменить приглашение", callback_data=f"adv_cancel_invite_{target_id}"),
+                    btn("◀️ Назад", callback_data="plaza"),
                 ]]),
             )
         except Exception:
@@ -41008,8 +41100,8 @@ async def on_callback(update: Update, ctx: ContextTypes.DEFAULT_TYPE):
         await q.answer("🎣 Приглашение отправлено")
         try:
             kb = InlineKeyboardMarkup([[
-                InlineKeyboardButton("🎣 Принять", callback_data=f"fish_accept_{uid}_{FISH_COST}"),
-                InlineKeyboardButton("❌ Отказать", callback_data=f"fish_decline_{uid}"),
+                btn("🎣 Принять", callback_data=f"fish_accept_{uid}_{FISH_COST}"),
+                btn("❌ Отказать", callback_data=f"fish_decline_{uid}"),
             ]])
             sent_fish = await ctx.bot.send_message(
                 target_id,
@@ -41030,8 +41122,8 @@ async def on_callback(update: Update, ctx: ContextTypes.DEFAULT_TYPE):
                 f"Ставка: <b>{FISH_COST}{_E_COIN}</b>",
                 parse_mode=ParseMode.HTML,
                 reply_markup=InlineKeyboardMarkup([[
-                    InlineKeyboardButton("❌ Отменить", callback_data=f"fish_cancel_{target_id}"),
-                    InlineKeyboardButton("◀️ Назад", callback_data="plaza"),
+                    btn("❌ Отменить", callback_data=f"fish_cancel_{target_id}"),
+                    btn("◀️ Назад", callback_data="plaza"),
                 ]]),
             )
         except Exception:
@@ -41062,18 +41154,18 @@ async def on_callback(update: Update, ctx: ContextTypes.DEFAULT_TYPE):
                 streak = b.get("streak", 0)
                 bond_lines.append(f"💚 <b>{he(pname)}</b> — 🔥 {streak} дн.")
                 kb_rows_bond.append([
-                    InlineKeyboardButton(f"💚 {he(pname)}", callback_data=f"plaza_bond_view_{b['partner_id']}"),
-                    InlineKeyboardButton("💔", callback_data=f"plaza_bond_break_{b['partner_id']}"),
+                    btn(f"💚 {he(pname)}", callback_data=f"plaza_bond_view_{b['partner_id']}"),
+                    btn("💔", callback_data=f"plaza_bond_break_{b['partner_id']}"),
                 ])
 
             # Пагинация
             if total_pages > 1:
                 nav = []
                 if page > 0:
-                    nav.append(InlineKeyboardButton("◀️", callback_data=f"plaza_bond_page_{page-1}"))
-                nav.append(InlineKeyboardButton(f"{page+1}/{total_pages}", callback_data="ignore"))
+                    nav.append(btn("◀️", callback_data=f"plaza_bond_page_{page-1}"))
+                nav.append(btn(f"{page+1}/{total_pages}", callback_data="ignore"))
                 if page < total_pages - 1:
-                    nav.append(InlineKeyboardButton("▶️", callback_data=f"plaza_bond_page_{page+1}"))
+                    nav.append(btn("▶️", callback_data=f"plaza_bond_page_{page+1}"))
                 kb_rows_bond.append(nav)
 
             # Кнопки приглашения (только на первой странице)
@@ -41088,11 +41180,11 @@ async def on_callback(update: Update, ctx: ContextTypes.DEFAULT_TYPE):
             if page == 0 and eligible:
                 text += "\n\n<b>Пригласить ещё партнёра:</b>"
                 for fr in eligible[:3]:
-                    kb_rows_bond.append([InlineKeyboardButton(
+                    kb_rows_bond.append([btn(
                         f"➕ {he(fr.get('frog_name') or fr.get('first_name','?'))}",
                         callback_data=f"plaza_bond_invite_{fr['user_id']}"
                     )])
-            kb_rows_bond.append([InlineKeyboardButton("◀️ Назад", callback_data="plaza")])
+            kb_rows_bond.append([btn("◀️ Назад", callback_data="plaza")])
             kb = InlineKeyboardMarkup(kb_rows_bond)
         else:
             friends = await friend_list(uid, accepted_only=True)
@@ -41109,13 +41201,13 @@ async def on_callback(update: Update, ctx: ContextTypes.DEFAULT_TYPE):
                    "<i>Взаимодействуй с соседями чтобы поднять уровень</i>")
             )
             kb_rows_bond = [
-                [InlineKeyboardButton(
+                [btn(
                     f"💚 {he(fr.get('frog_name') or fr.get('first_name','?'))}",
                     callback_data=f"plaza_bond_invite_{fr['user_id']}"
                 )]
                 for fr in eligible[:8]
             ]
-            kb_rows_bond.append([InlineKeyboardButton("◀️ Назад", callback_data="plaza")])
+            kb_rows_bond.append([btn("◀️ Назад", callback_data="plaza")])
             kb = InlineKeyboardMarkup(kb_rows_bond)
         try:
             await q.message.edit_text(text, parse_mode=ParseMode.HTML, reply_markup=kb)
@@ -41150,8 +41242,8 @@ async def on_callback(update: Update, ctx: ContextTypes.DEFAULT_TYPE):
             f"<i>Заходи каждый день — стрик не прервётся</i>"
         )
         kb = InlineKeyboardMarkup([
-            [InlineKeyboardButton("💔 Разорвать связь", callback_data=f"plaza_bond_break_{partner_id_v}")],
-            [InlineKeyboardButton("◀️ Назад", callback_data="plaza_bond")],
+            [btn("💔 Разорвать связь", callback_data=f"plaza_bond_break_{partner_id_v}")],
+            [btn("◀️ Назад", callback_data="plaza_bond")],
         ])
         try:
             await q.message.edit_text(text, parse_mode=ParseMode.HTML, reply_markup=kb)
@@ -41175,8 +41267,8 @@ async def on_callback(update: Update, ctx: ContextTypes.DEFAULT_TYPE):
         await q.answer(f"💚 Предложение отправлено {he(tname)}")
         try:
             kb = InlineKeyboardMarkup([[
-                InlineKeyboardButton("💚 Принять Связь", callback_data=f"bond_accept_{uid}"),
-                InlineKeyboardButton("❌ Отказать", callback_data=f"bond_decline_{uid}"),
+                btn("💚 Принять Связь", callback_data=f"bond_accept_{uid}"),
+                btn("❌ Отказать", callback_data=f"bond_decline_{uid}"),
             ]])
             await ctx.bot.send_message(
                 target_id,
@@ -41211,7 +41303,7 @@ async def on_callback(update: Update, ctx: ContextTypes.DEFAULT_TYPE):
             await q.message.edit_text(
                 "💔 Болотная Связь разорвана.",
                 reply_markup=InlineKeyboardMarkup([[
-                    InlineKeyboardButton("◀️ Назад", callback_data="plaza_bond")
+                    btn("◀️ Назад", callback_data="plaza_bond")
                 ]])
             )
         except Exception:
@@ -41289,8 +41381,8 @@ async def on_callback(update: Update, ctx: ContextTypes.DEFAULT_TYPE):
         my_name = f.get("frog_name") or f.get("first_name") or "Кто-то"
         try:
             kb = InlineKeyboardMarkup([[
-                InlineKeyboardButton("✅ Принять", callback_data=f"friend_accept_{uid}"),
-                InlineKeyboardButton("❌ Отклонить", callback_data=f"friend_decline_{uid}"),
+                btn("✅ Принять", callback_data=f"friend_accept_{uid}"),
+                btn("❌ Отклонить", callback_data=f"friend_decline_{uid}"),
             ]])
             await ctx.bot.send_message(
                 target_id,
@@ -41370,7 +41462,7 @@ async def on_callback(update: Update, ctx: ContextTypes.DEFAULT_TYPE):
             try:
                 receiver_text = random.choice(action["texts_receiver"]).format(me=my_name)
                 _care_tip_kb = InlineKeyboardMarkup([[
-                    InlineKeyboardButton(
+                    btn(
                         f"🪙 Поблагодарить {he(my_name)} (10🪙)",
                         callback_data=f"tip_feed_{uid}_10",
                     )
@@ -41398,23 +41490,23 @@ async def on_callback(update: Update, ctx: ContextTypes.DEFAULT_TYPE):
                 last_lullaby2 = fr2.get("last_lullaby", 0)
                 last_treat2   = fr2.get("last_treat", 0)
                 kb2 = InlineKeyboardMarkup([
-                    [InlineKeyboardButton(f"🤗 Обнять{_cd2(last_hug2, SOCIAL_ACTIONS['hug']['cd'])}",
+                    [btn(f"🤗 Обнять{_cd2(last_hug2, SOCIAL_ACTIONS['hug']['cd'])}",
                         callback_data=f"social_hug_{target_id}"),
-                     InlineKeyboardButton(f"✋ Пузико{_cd2(last_scratch2, SOCIAL_ACTIONS['scratch']['cd'])}",
+                     btn(f"✋ Пузико{_cd2(last_scratch2, SOCIAL_ACTIONS['scratch']['cd'])}",
                         callback_data=f"social_scratch_{target_id}")],
-                    [InlineKeyboardButton(f"🛁 Помыть{_cd2(last_wash2, SOCIAL_ACTIONS['wash']['cd'])}",
+                    [btn(f"🛁 Помыть{_cd2(last_wash2, SOCIAL_ACTIONS['wash']['cd'])}",
                         callback_data=f"social_wash_{target_id}"),
-                     InlineKeyboardButton(f"🌟 Похвалить{_cd2(last_praise2, SOCIAL_ACTIONS['praise']['cd'])}",
+                     btn(f"🌟 Похвалить{_cd2(last_praise2, SOCIAL_ACTIONS['praise']['cd'])}",
                         callback_data=f"social_praise_{target_id}")],
-                    [InlineKeyboardButton(f"💤 Убаюкать{_cd2(last_lullaby2, SOCIAL_ACTIONS['lullaby']['cd'])}",
+                    [btn(f"💤 Убаюкать{_cd2(last_lullaby2, SOCIAL_ACTIONS['lullaby']['cd'])}",
                         callback_data=f"social_lullaby_{target_id}"),
-                     InlineKeyboardButton(f"🍎 Угостить{_cd2(last_treat2, SOCIAL_ACTIONS['treat']['cd'])}",
+                     btn(f"🍎 Угостить{_cd2(last_treat2, SOCIAL_ACTIONS['treat']['cd'])}",
                         callback_data=f"social_treat_{target_id}")],
-                    [InlineKeyboardButton("💚 Болотная Связь", callback_data=f"plaza_bond_invite_{target_id}")
+                    [btn("💚 Болотная Связь", callback_data=f"plaza_bond_invite_{target_id}")
                      if fr2.get("fr_level", 0) >= 2 and not f.get("bond_with") else
-                     InlineKeyboardButton("⚔️ В поход", callback_data=f"plaza_invite_adv_{target_id}")],
-                    [InlineKeyboardButton("🗑 Удалить из соседей", callback_data=f"plaza_unfriend_{target_id}"),
-                     InlineKeyboardButton("◀️ Назад", callback_data="plaza_sosedi")],
+                     btn("⚔️ В поход", callback_data=f"plaza_invite_adv_{target_id}")],
+                    [btn("🗑 Удалить из соседей", callback_data=f"plaza_unfriend_{target_id}"),
+                     btn("◀️ Назад", callback_data="plaza_sosedi")],
                 ])
                 await q.message.edit_reply_markup(reply_markup=kb2)
         except Exception:
@@ -41614,7 +41706,7 @@ async def on_callback(update: Update, ctx: ContextTypes.DEFAULT_TYPE):
                 "❌ Приглашение отменено.",
                 parse_mode=ParseMode.HTML,
                 reply_markup=InlineKeyboardMarkup([[
-                    InlineKeyboardButton("◀️ Назад", callback_data="plaza")
+                    btn("◀️ Назад", callback_data="plaza")
                 ]]),
             )
         except Exception:
@@ -41650,10 +41742,10 @@ async def on_callback(update: Update, ctx: ContextTypes.DEFAULT_TYPE):
         ctx.bot_data[f"adv_invite_{uid}"] = {"inviter": uid, "target": target_id, "created": time.time()}
         try:
             kb = InlineKeyboardMarkup([
-                [InlineKeyboardButton("⚔️ 2 часа", callback_data=f"adv_accept_{uid}_2"),
-                 InlineKeyboardButton("⚔️ 4 часа", callback_data=f"adv_accept_{uid}_4"),
-                 InlineKeyboardButton("⚔️ 8 часов", callback_data=f"adv_accept_{uid}_8")],
-                [InlineKeyboardButton("❌ Отказать", callback_data=f"adv_decline_{uid}")],
+                [btn("⚔️ 2 часа", callback_data=f"adv_accept_{uid}_2"),
+                 btn("⚔️ 4 часа", callback_data=f"adv_accept_{uid}_4"),
+                 btn("⚔️ 8 часов", callback_data=f"adv_accept_{uid}_8")],
+                [btn("❌ Отказать", callback_data=f"adv_decline_{uid}")],
             ])
             await ctx.bot.send_message(
                 target_id,
@@ -41937,7 +42029,7 @@ async def on_callback(update: Update, ctx: ContextTypes.DEFAULT_TYPE):
             await q.message.edit_text(
                 text, parse_mode=ParseMode.HTML,
                 reply_markup=InlineKeyboardMarkup([[
-                    InlineKeyboardButton("🔄 Обновить", callback_data="plaza_pohod"),
+                    btn("🔄 Обновить", callback_data="plaza_pohod"),
                 ]]),
             )
         except Exception:
@@ -41996,7 +42088,7 @@ async def on_callback(update: Update, ctx: ContextTypes.DEFAULT_TYPE):
             await q.message.edit_text(
                 "✉️ <b>Сообщение игроку от администрации</b>\n\nНапиши текст сообщения:",
                 parse_mode=ParseMode.HTML,
-                reply_markup=InlineKeyboardMarkup([[InlineKeyboardButton("❌ Отмена", callback_data="admin_refresh")]])
+                reply_markup=InlineKeyboardMarkup([[btn("❌ Отмена", callback_data="admin_refresh")]])
             )
         except Exception: pass
         return
@@ -42043,8 +42135,8 @@ async def on_callback(update: Update, ctx: ContextTypes.DEFAULT_TYPE):
             await q.message.edit_text(
                 "\n".join(lines), parse_mode=ParseMode.HTML,
                 reply_markup=InlineKeyboardMarkup([[
-                    InlineKeyboardButton("🔄 Обновить", callback_data="staya_top_inline"),
-                    InlineKeyboardButton("🌿 Моя стая", callback_data="plaza_staya"),
+                    btn("🔄 Обновить", callback_data="staya_top_inline"),
+                    btn("🌿 Моя стая", callback_data="plaza_staya"),
                 ]])
             )
         except Exception: pass
@@ -42067,7 +42159,7 @@ async def on_callback(update: Update, ctx: ContextTypes.DEFAULT_TYPE):
             await q.message.edit_text(
                 f"🗑 <b>{he(tname)}</b> удалён из соседей.",
                 parse_mode=ParseMode.HTML,
-                reply_markup=InlineKeyboardMarkup([[InlineKeyboardButton("◀️ К соседям", callback_data="plaza_sosedi")]])
+                reply_markup=InlineKeyboardMarkup([[btn("◀️ К соседям", callback_data="plaza_sosedi")]])
             )
         except Exception: pass
         return
@@ -42085,8 +42177,8 @@ async def on_callback(update: Update, ctx: ContextTypes.DEFAULT_TYPE):
                 f"❓ Удалить <b>{he(tname)}</b> из соседей?\n\nЭто действие необратимо.",
                 parse_mode=ParseMode.HTML,
                 reply_markup=InlineKeyboardMarkup([
-                    [InlineKeyboardButton("🗑 Да, удалить", callback_data=f"plaza_unfriend_confirm_{target_id}"),
-                     InlineKeyboardButton("◀️ Нет", callback_data=f"plaza_friend_{target_id}")],
+                    [btn("🗑 Да, удалить", callback_data=f"plaza_unfriend_confirm_{target_id}"),
+                     btn("◀️ Нет", callback_data=f"plaza_friend_{target_id}")],
                 ])
             )
         except Exception: pass
@@ -42123,8 +42215,8 @@ async def on_callback(update: Update, ctx: ContextTypes.DEFAULT_TYPE):
             await q.message.edit_text(
                 text_out, parse_mode=ParseMode.HTML,
                 reply_markup=InlineKeyboardMarkup([[
-                    InlineKeyboardButton("🔄 Обновить", callback_data="letopis_view"),
-                    InlineKeyboardButton("◀️ Назад", callback_data="plaza"),
+                    btn("🔄 Обновить", callback_data="letopis_view"),
+                    btn("◀️ Назад", callback_data="plaza"),
                 ]]),
             )
         except Exception:
@@ -42152,8 +42244,8 @@ async def on_callback(update: Update, ctx: ContextTypes.DEFAULT_TYPE):
         await q.answer(f"🌱 Заявка отправлена {he(tname)}")
         try:
             kb = InlineKeyboardMarkup([[
-                InlineKeyboardButton("✅ Принять", callback_data=f"friend_accept_{uid}"),
-                InlineKeyboardButton("❌ Отклонить", callback_data=f"friend_decline_{uid}"),
+                btn("✅ Принять", callback_data=f"friend_accept_{uid}"),
+                btn("❌ Отклонить", callback_data=f"friend_decline_{uid}"),
             ]])
             await ctx.bot.send_message(
                 target_id,
@@ -42235,10 +42327,10 @@ async def on_callback(update: Update, ctx: ContextTypes.DEFAULT_TYPE):
             name = r.get("frog_name") or r.get("first_name") or "?"
             lines.append(f"🌱 {he(name)}")
             kb_rows.append([
-                InlineKeyboardButton(f"✅ {he(name)}", callback_data=f"friend_accept_{r['user_id']}"),
-                InlineKeyboardButton("❌", callback_data=f"friend_decline_{r['user_id']}"),
+                btn(f"✅ {he(name)}", callback_data=f"friend_accept_{r['user_id']}"),
+                btn("❌", callback_data=f"friend_decline_{r['user_id']}"),
             ])
-        kb_rows.append([InlineKeyboardButton("◀️ Назад", callback_data="plaza_sosedi")])
+        kb_rows.append([btn("◀️ Назад", callback_data="plaza_sosedi")])
         try:
             await q.message.edit_text(
                 "\n".join(lines), parse_mode=ParseMode.HTML,
@@ -42343,7 +42435,7 @@ async def on_callback(update: Update, ctx: ContextTypes.DEFAULT_TYPE):
             await q.message.edit_text(
                 "❌ Приглашение отменено.",
                 reply_markup=InlineKeyboardMarkup([[
-                    InlineKeyboardButton("◀️ Назад", callback_data="plaza")
+                    btn("◀️ Назад", callback_data="plaza")
                 ]]),
             )
         except Exception:
@@ -42382,7 +42474,7 @@ async def on_callback(update: Update, ctx: ContextTypes.DEFAULT_TYPE):
                 f"<i>Отправь текст прямо сейчас 👇</i>",
                 parse_mode=ParseMode.HTML,
                 reply_markup=InlineKeyboardMarkup([[
-                    InlineKeyboardButton("❌ Отмена", callback_data="staya_create_cancel"),
+                    btn("❌ Отмена", callback_data="staya_create_cancel"),
                 ]]),
             )
         except Exception:
@@ -42411,11 +42503,11 @@ async def on_callback(update: Update, ctx: ContextTypes.DEFAULT_TYPE):
             # Вожак не может уйти — нужно передать лидерство
             others = [m for m in members_lv if m["user_id"] != uid]
             if others:
-                kb_transfer = [[InlineKeyboardButton(
+                kb_transfer = [[btn(
                     f"👑 Передать {(m.get('frog_name') or m.get('first_name') or '?')[:12]}",
                     callback_data=f"staya_transfer_{m['user_id']}"
                 )] for m in others[:6]]
-                kb_transfer.append([InlineKeyboardButton("◀️ Отмена", callback_data="plaza_staya")])
+                kb_transfer.append([btn("◀️ Отмена", callback_data="plaza_staya")])
                 try:
                     await q.message.edit_text(
                         "👑 <b>Ты Вожак</b>\n\nЧтобы покинуть стаю — сначала передай лидерство другому участнику:",
@@ -42429,8 +42521,8 @@ async def on_callback(update: Update, ctx: ContextTypes.DEFAULT_TYPE):
                     await q.message.edit_text(
                         f"🚪 Ты единственный участник. Покинуть = распустить стаю «{he(staya['name'])}»?",
                         reply_markup=InlineKeyboardMarkup([[
-                            InlineKeyboardButton("💔 Да, распустить", callback_data="staya_disband"),
-                            InlineKeyboardButton("◀️ Отмена", callback_data="plaza_staya"),
+                            btn("💔 Да, распустить", callback_data="staya_disband"),
+                            btn("◀️ Отмена", callback_data="plaza_staya"),
                         ]])
                     )
                 except Exception: pass
@@ -42440,8 +42532,8 @@ async def on_callback(update: Update, ctx: ContextTypes.DEFAULT_TYPE):
             await q.message.edit_text(
                 f"🚪 Покинуть стаю «{he(staya['name'])}»?\nВступить можно будет снова без ограничений.",
                 reply_markup=InlineKeyboardMarkup([[
-                    InlineKeyboardButton("✅ Да, покинуть", callback_data="staya_leave_confirm"),
-                    InlineKeyboardButton("◀️ Отмена", callback_data="plaza_staya"),
+                    btn("✅ Да, покинуть", callback_data="staya_leave_confirm"),
+                    btn("◀️ Отмена", callback_data="plaza_staya"),
                 ]])
             )
         except Exception: pass
@@ -42461,7 +42553,7 @@ async def on_callback(update: Update, ctx: ContextTypes.DEFAULT_TYPE):
         try:
             await q.message.edit_text(
                 f"🚪 Ты покинул стаю «{he(staya['name'])}». Удачи на болоте! 🌿",
-                reply_markup=InlineKeyboardMarkup([[InlineKeyboardButton("Площадь", callback_data="plaza")]])
+                reply_markup=InlineKeyboardMarkup([[btn("Площадь", callback_data="plaza")]])
             )
         except Exception: pass
         return
@@ -42492,8 +42584,8 @@ async def on_callback(update: Update, ctx: ContextTypes.DEFAULT_TYPE):
                 f"👑 Лидерство передано <b>{new_name}</b>!\nТеперь можешь покинуть стаю.",
                 parse_mode=ParseMode.HTML,
                 reply_markup=InlineKeyboardMarkup([[
-                    InlineKeyboardButton("🚪 Покинуть стаю", callback_data="staya_leave"),
-                    InlineKeyboardButton("◀️ Остаться", callback_data="plaza_staya"),
+                    btn("🚪 Покинуть стаю", callback_data="staya_leave"),
+                    btn("◀️ Остаться", callback_data="plaza_staya"),
                 ]])
             )
         except Exception: pass
@@ -42591,14 +42683,14 @@ async def on_callback(update: Update, ctx: ContextTypes.DEFAULT_TYPE):
                 rec_lines.append(f"• {he(rname)} +{r['amount']}🪙 ({time_str})")
             recent_block = "\n<b>Последние пополнения:</b>\n" + "\n".join(rec_lines)
         rows_c = [
-            [InlineKeyboardButton("🪙 50", callback_data="staya_cauldron_50"),
-             InlineKeyboardButton("🪙 200", callback_data="staya_cauldron_200"),
-             InlineKeyboardButton("🪙 500", callback_data="staya_cauldron_500")],
-            [InlineKeyboardButton("✏️ Своя сумма", callback_data="staya_cauldron_custom")],
+            [btn("🪙 50", callback_data="staya_cauldron_50"),
+             btn("🪙 200", callback_data="staya_cauldron_200"),
+             btn("🪙 500", callback_data="staya_cauldron_500")],
+            [btn("✏️ Своя сумма", callback_data="staya_cauldron_custom")],
         ]
         if my_role_c in ("chief", "elder"):
-            rows_c.append([InlineKeyboardButton("🛒 Магазин стаи", callback_data="staya_shop")])
-        rows_c.append([InlineKeyboardButton("◀️ Назад", callback_data="plaza_staya")])
+            rows_c.append([btn("🛒 Магазин стаи", callback_data="staya_shop")])
+        rows_c.append([btn("◀️ Назад", callback_data="plaza_staya")])
         # Прогресс до следующего уровня
         _upgrade_c = STAYA_UPGRADES.get(staya["level"] + 1)
         if _upgrade_c:
@@ -42639,7 +42731,7 @@ async def on_callback(update: Update, ctx: ContextTypes.DEFAULT_TYPE):
                 f"✏️ Введи сумму для взноса в котёл (у тебя <b>{f['coins']}{_E_COIN}</b>):",
                 parse_mode=ParseMode.HTML,
                 reply_markup=InlineKeyboardMarkup([[
-                    InlineKeyboardButton("❌ Отмена", callback_data="staya_cauldron")
+                    btn("❌ Отмена", callback_data="staya_cauldron")
                 ]])
             )
         except Exception:
@@ -42670,11 +42762,11 @@ async def on_callback(update: Update, ctx: ContextTypes.DEFAULT_TYPE):
         need_upd = max(0, upgrade_upd["cost"] - cauldron_now) if upgrade_upd else 0
         need_line_upd = f"До следующего уровня: <b>{need_upd}🪙</b>\n" if need_upd else ""
         rows_upd = [
-            [InlineKeyboardButton("🪙 50", callback_data="staya_cauldron_50"),
-             InlineKeyboardButton("🪙 200", callback_data="staya_cauldron_200"),
-             InlineKeyboardButton("🪙 500", callback_data="staya_cauldron_500")],
-            [InlineKeyboardButton("✏️ Своя сумма", callback_data="staya_cauldron_custom")],
-            [InlineKeyboardButton("◀️ Назад", callback_data="plaza_staya")],
+            [btn("🪙 50", callback_data="staya_cauldron_50"),
+             btn("🪙 200", callback_data="staya_cauldron_200"),
+             btn("🪙 500", callback_data="staya_cauldron_500")],
+            [btn("✏️ Своя сумма", callback_data="staya_cauldron_custom")],
+            [btn("◀️ Назад", callback_data="plaza_staya")],
         ]
         try:
             await q.message.edit_text(
@@ -42710,8 +42802,8 @@ async def on_callback(update: Update, ctx: ContextTypes.DEFAULT_TYPE):
                     f"Сейчас нет активных событий.\nСледи за обновлениями 🌿",
                     parse_mode=ParseMode.HTML,
                     reply_markup=InlineKeyboardMarkup([[
-                        InlineKeyboardButton("🪙 Котёл", callback_data="staya_cauldron"),
-                        InlineKeyboardButton("◀️ Назад", callback_data="plaza_staya"),
+                        btn("🪙 Котёл", callback_data="staya_cauldron"),
+                        btn("◀️ Назад", callback_data="plaza_staya"),
                     ]]),
                 )
             except Exception:
@@ -42748,12 +42840,12 @@ async def on_callback(update: Update, ctx: ContextTypes.DEFAULT_TYPE):
         )
         if my_vote:
             text += f"\n\n✅ Ты проголосовал: {my_vote[0]}"
-            kb = InlineKeyboardMarkup([[InlineKeyboardButton("◀️ Назад", callback_data="plaza_staya")]])
+            kb = InlineKeyboardMarkup([[btn("◀️ Назад", callback_data="plaza_staya")]])
         else:
             kb = InlineKeyboardMarkup([
-                [InlineKeyboardButton(ch["label"], callback_data=f"staya_vote_{ev['id']}_{ch['key']}")]
+                [btn(ch["label"], callback_data=f"staya_vote_{ev['id']}_{ch['key']}")]
                 for ch in ev_data["choices"]
-            ] + [[InlineKeyboardButton("◀️ Назад", callback_data="plaza_staya")]])
+            ] + [[btn("◀️ Назад", callback_data="plaza_staya")]])
         try:
             await q.message.edit_text(text, parse_mode=ParseMode.HTML, reply_markup=kb)
         except Exception:
@@ -42832,16 +42924,16 @@ async def on_callback(update: Update, ctx: ContextTypes.DEFAULT_TYPE):
             f"{invite_preview}"
         )
         kb_rows_manage = [
-            [InlineKeyboardButton(recruit_lbl, callback_data="staya_recruit")],
-            [InlineKeyboardButton("📣 Рассылка", callback_data="staya_broadcast"),
-             InlineKeyboardButton("✏️ Переименовать", callback_data="staya_rename")],
-            [InlineKeyboardButton("👥 Управление уч.", callback_data="staya_members_manage"),
-             InlineKeyboardButton("🏠 Докупить места", callback_data="staya_buy_slots")],
-            [InlineKeyboardButton("✏️ Текст приглашения", callback_data="staya_set_invite_text")],
-            [InlineKeyboardButton("🏷️ Названия ролей", callback_data="staya_roles_rename")],
-            [InlineKeyboardButton("📬 Заявки", callback_data="staya_applications")],
+            [btn(recruit_lbl, callback_data="staya_recruit")],
+            [btn("📣 Рассылка", callback_data="staya_broadcast"),
+             btn("✏️ Переименовать", callback_data="staya_rename")],
+            [btn("👥 Управление уч.", callback_data="staya_members_manage"),
+             btn("🏠 Докупить места", callback_data="staya_buy_slots")],
+            [btn("✏️ Текст приглашения", callback_data="staya_set_invite_text")],
+            [btn("🏷️ Названия ролей", callback_data="staya_roles_rename")],
+            [btn("📬 Заявки", callback_data="staya_applications")],
         ]
-        kb_rows_manage.append([InlineKeyboardButton("◀️ Назад", callback_data="plaza_staya")])
+        kb_rows_manage.append([btn("◀️ Назад", callback_data="plaza_staya")])
         kb = InlineKeyboardMarkup(kb_rows_manage)
         try:
             await q.message.edit_text(text, parse_mode=ParseMode.HTML, reply_markup=kb)
@@ -42884,8 +42976,8 @@ async def on_callback(update: Update, ctx: ContextTypes.DEFAULT_TYPE):
             f"Вступай через кнопку 👇"
         )
         join_kb = InlineKeyboardMarkup([[
-            InlineKeyboardButton("🌿 Вступить в стаю", callback_data=f"staya_join_{staya['id']}_{uid}"),
-            InlineKeyboardButton("💬 Наш чат", url="https://t.me/FrogGame"),
+            btn("🌿 Вступить в стаю", callback_data=f"staya_join_{staya['id']}_{uid}"),
+            btn("💬 Наш чат", url="https://t.me/FrogGame"),
         ]])
         try:
             await ctx.bot.send_message(CHAT_ID, default_text, parse_mode=ParseMode.HTML, reply_markup=join_kb)
@@ -42896,10 +42988,10 @@ async def on_callback(update: Update, ctx: ContextTypes.DEFAULT_TYPE):
         # Обновляем кнопку в меню управления
         try:
             await q.message.edit_reply_markup(reply_markup=InlineKeyboardMarkup([
-                [InlineKeyboardButton("📣 Набор (через 60м)", callback_data="staya_recruit")],
-                [InlineKeyboardButton("✏️ Текст приглашения", callback_data="staya_set_invite_text")],
-                [InlineKeyboardButton("📬 Заявки", callback_data="staya_applications")],
-                [InlineKeyboardButton("◀️ Назад", callback_data="plaza_staya")],
+                [btn("📣 Набор (через 60м)", callback_data="staya_recruit")],
+                [btn("✏️ Текст приглашения", callback_data="staya_set_invite_text")],
+                [btn("📬 Заявки", callback_data="staya_applications")],
+                [btn("◀️ Назад", callback_data="plaza_staya")],
             ]))
         except Exception:
             pass
@@ -42922,11 +43014,11 @@ async def on_callback(update: Update, ctx: ContextTypes.DEFAULT_TYPE):
             role_icon = {"chief":"🐸","elder":"🦎","member":"🐟"}.get(m["role"],"🐟")
             if m["user_id"] != uid:
                 lines_mm.append(f"{role_icon} {he(mn)}")
-                kb_mm.append([InlineKeyboardButton(
+                kb_mm.append([btn(
                     f"⚙️ {role_icon} {he(mn)[:12]}",
                     callback_data=f"staya_member_action_{m['user_id']}"
                 )])
-        kb_mm.append([InlineKeyboardButton("◀️ Назад", callback_data="staya_manage")])
+        kb_mm.append([btn("◀️ Назад", callback_data="staya_manage")])
         try:
             await q.message.edit_text("\n".join(lines_mm), parse_mode=ParseMode.HTML,
                                       reply_markup=InlineKeyboardMarkup(kb_mm))
@@ -42944,10 +43036,10 @@ async def on_callback(update: Update, ctx: ContextTypes.DEFAULT_TYPE):
         target_role = next((m["role"] for m in members_ma if m["user_id"] == target_uid_ma), "member")
         my_role_ma  = next((m["role"] for m in members_ma if m["user_id"] == uid), "member")
         kb_ma = [
-            [InlineKeyboardButton("🦎 Повысить до Старейшины" if target_role == "member" else "🐟 Понизить до Жителя",
+            [btn("🦎 Повысить до Старейшины" if target_role == "member" else "🐟 Понизить до Жителя",
                                   callback_data=f"staya_promote_{target_uid_ma}" if target_role == "member" else f"staya_demote_{target_uid_ma}")],
-            [InlineKeyboardButton("🚫 Исключить", callback_data=f"staya_kick_{target_uid_ma}")],
-            [InlineKeyboardButton("◀️ Назад", callback_data="staya_members_manage")],
+            [btn("🚫 Исключить", callback_data=f"staya_kick_{target_uid_ma}")],
+            [btn("◀️ Назад", callback_data="staya_members_manage")],
         ]
         try:
             await q.message.edit_text(
@@ -43036,10 +43128,10 @@ async def on_callback(update: Update, ctx: ContextTypes.DEFAULT_TYPE):
                 f"Выбери роль для переименования:",
                 parse_mode=ParseMode.HTML,
                 reply_markup=InlineKeyboardMarkup([
-                    [InlineKeyboardButton(f"👑 Вожак: {he(chief_name)}", callback_data="staya_rename_role_chief")],
-                    [InlineKeyboardButton(f"⭐ Старейшина: {he(elder_name)}", callback_data="staya_rename_role_elder")],
-                    [InlineKeyboardButton(f"🐟 Житель: {he(member_name)}", callback_data="staya_rename_role_member")],
-                    [InlineKeyboardButton("◀️ Назад", callback_data="staya_manage")],
+                    [btn(f"👑 Вожак: {he(chief_name)}", callback_data="staya_rename_role_chief")],
+                    [btn(f"⭐ Старейшина: {he(elder_name)}", callback_data="staya_rename_role_elder")],
+                    [btn(f"🐟 Житель: {he(member_name)}", callback_data="staya_rename_role_member")],
+                    [btn("◀️ Назад", callback_data="staya_manage")],
                 ]),
             )
         except Exception: pass
@@ -43061,7 +43153,7 @@ async def on_callback(update: Update, ctx: ContextTypes.DEFAULT_TYPE):
                 f"✏️ Введи новое название для роли <b>{role_defaults[role_key]}</b>\n"
                 f"(до 20 символов, или «-» чтобы вернуть стандартное):",
                 parse_mode=ParseMode.HTML,
-                reply_markup=InlineKeyboardMarkup([[InlineKeyboardButton("❌ Отмена", callback_data="staya_roles_rename")]]),
+                reply_markup=InlineKeyboardMarkup([[btn("❌ Отмена", callback_data="staya_roles_rename")]]),
             )
         except Exception: pass
         return
@@ -43109,14 +43201,14 @@ async def on_callback(update: Update, ctx: ContextTypes.DEFAULT_TYPE):
             if my_role_sh in ("chief", "elder"):
                 label += f" ({votes_pct}% хотят)"
             if my_role_sh == "chief" and affordable:
-                kb_sh.append([InlineKeyboardButton(f"✅ {label}", callback_data=f"staya_shop_buy_{i}")])
+                kb_sh.append([btn(f"✅ {label}", callback_data=f"staya_shop_buy_{i}")])
             else:
-                kb_sh.append([InlineKeyboardButton(
+                kb_sh.append([btn(
                     f"{'🗳️' if my_role_sh == 'member' else '🔒'} {label}",
                     callback_data=f"staya_shop_vote_{item['type']}_{item['hours']}"
                     if my_role_sh == "member" else "ignore",
                 )])
-        kb_sh.append([InlineKeyboardButton("◀️ Назад", callback_data="staya_cauldron")])
+        kb_sh.append([btn("◀️ Назад", callback_data="staya_cauldron")])
         try:
             await q.message.edit_text(text_sh, parse_mode=ParseMode.HTML, reply_markup=InlineKeyboardMarkup(kb_sh))
         except Exception: pass
@@ -43189,7 +43281,7 @@ async def on_callback(update: Update, ctx: ContextTypes.DEFAULT_TYPE):
                 f"✏️ <b>Переименование стаи</b> — стоит <b>800{_E_COIN}</b>\n"
                 f"У тебя: {f['coins']}{_E_COIN}\n\nНапиши новое название (2–30 символов):",
                 parse_mode=ParseMode.HTML,
-                reply_markup=InlineKeyboardMarkup([[InlineKeyboardButton("❌ Отмена", callback_data="staya_manage")]])
+                reply_markup=InlineKeyboardMarkup([[btn("❌ Отмена", callback_data="staya_manage")]])
             )
         except Exception: pass
         return
@@ -43205,11 +43297,11 @@ async def on_callback(update: Update, ctx: ContextTypes.DEFAULT_TYPE):
         current_max = staya.get("max_members") or STAYA_MAX_MEMBERS
         SLOT_COST = 800
         kb_bs = [
-            [InlineKeyboardButton(f"➕ +1 место за {SLOT_COST}🪙 (личные)", callback_data="staya_buy_slot_p_1")],
-            [InlineKeyboardButton(f"➕ +5 мест за {SLOT_COST*5}🪙 (личные)", callback_data="staya_buy_slot_p_5")],
-            [InlineKeyboardButton(f"➕ +1 место за {SLOT_COST}🪙 (из котла)", callback_data="staya_buy_slot_c_1")],
-            [InlineKeyboardButton(f"➕ +5 мест за {SLOT_COST*5}🪙 (из котла)", callback_data="staya_buy_slot_c_5")],
-            [InlineKeyboardButton("◀️ Назад", callback_data="staya_manage")],
+            [btn(f"➕ +1 место за {SLOT_COST}🪙 (личные)", callback_data="staya_buy_slot_p_1")],
+            [btn(f"➕ +5 мест за {SLOT_COST*5}🪙 (личные)", callback_data="staya_buy_slot_p_5")],
+            [btn(f"➕ +1 место за {SLOT_COST}🪙 (из котла)", callback_data="staya_buy_slot_c_1")],
+            [btn(f"➕ +5 мест за {SLOT_COST*5}🪙 (из котла)", callback_data="staya_buy_slot_c_5")],
+            [btn("◀️ Назад", callback_data="staya_manage")],
         ]
         try:
             await q.message.edit_text(
@@ -43280,7 +43372,7 @@ async def on_callback(update: Update, ctx: ContextTypes.DEFAULT_TYPE):
                 "<i>Пример: «Ищем активных болотян! Ежедневные события и котёл 5000<tg-emoji emoji-id='5341524176039615767'>🪙</tg-emoji>»</i>",
                 parse_mode=ParseMode.HTML,
                 reply_markup=InlineKeyboardMarkup([[
-                    InlineKeyboardButton("❌ Отмена", callback_data="staya_manage")
+                    btn("❌ Отмена", callback_data="staya_manage")
                 ]])
             )
         except Exception:
@@ -43295,7 +43387,7 @@ async def on_callback(update: Update, ctx: ContextTypes.DEFAULT_TYPE):
                 diary_text,
                 parse_mode=ParseMode.HTML,
                 reply_markup=InlineKeyboardMarkup([[
-                    InlineKeyboardButton("◀️ Назад", callback_data="menu_more")
+                    btn("◀️ Назад", callback_data="menu_more")
                 ]]),
             )
         except Exception:
@@ -43328,8 +43420,8 @@ async def on_callback(update: Update, ctx: ContextTypes.DEFAULT_TYPE):
                 "\n".join(lines),
                 parse_mode=ParseMode.HTML,
                 reply_markup=InlineKeyboardMarkup([[
-                    InlineKeyboardButton("🔮 Гороскоп на сегодня", callback_data="horoscope"),
-                    InlineKeyboardButton("◀️ Назад", callback_data="menu_more"),
+                    btn("🔮 Гороскоп на сегодня", callback_data="horoscope"),
+                    btn("◀️ Назад", callback_data="menu_more"),
                 ]]),
             )
         except Exception:
@@ -43352,7 +43444,7 @@ async def on_callback(update: Update, ctx: ContextTypes.DEFAULT_TYPE):
                     f"{horo}\n\n"
                     f"<i>Следующий гороскоп — завтра за {HOROSCOPE_COST}{_E_COIN}</i>",
                     parse_mode=ParseMode.HTML,
-                    reply_markup=InlineKeyboardMarkup([[InlineKeyboardButton("◀️ Назад", callback_data="menu_more")]]),
+                    reply_markup=InlineKeyboardMarkup([[btn("◀️ Назад", callback_data="menu_more")]]),
                 )
             except Exception:
                 pass
@@ -43366,8 +43458,8 @@ async def on_callback(update: Update, ctx: ContextTypes.DEFAULT_TYPE):
                 f"У тебя: <b>{f['coins']}{_E_COIN}</b>",
                 parse_mode=ParseMode.HTML,
                 reply_markup=InlineKeyboardMarkup([
-                    [InlineKeyboardButton(f"🔮 Открыть за {HOROSCOPE_COST}🪙", callback_data="horoscope_buy")],
-                    [InlineKeyboardButton("◀️ Назад", callback_data="menu_more")],
+                    [btn(f"🔮 Открыть за {HOROSCOPE_COST}🪙", callback_data="horoscope_buy")],
+                    [btn("◀️ Назад", callback_data="menu_more")],
                 ]),
             )
         except Exception:
@@ -43397,7 +43489,7 @@ async def on_callback(update: Update, ctx: ContextTypes.DEFAULT_TYPE):
                 f"{horo2}\n\n"
                 f"<i>Следующий гороскоп — завтра</i>",
                 parse_mode=ParseMode.HTML,
-                reply_markup=InlineKeyboardMarkup([[InlineKeyboardButton("◀️ Назад", callback_data="menu_more")]]),
+                reply_markup=InlineKeyboardMarkup([[btn("◀️ Назад", callback_data="menu_more")]]),
             )
         except Exception:
             pass
@@ -43416,22 +43508,22 @@ async def on_callback(update: Update, ctx: ContextTypes.DEFAULT_TYPE):
             rem_m = int(((hiber_until - now_h) % 3600) / 60)
             status_hiber = f"❄️ <b>Активен!</b> Осталось: {rem_h}ч {rem_m}м"
             kb_hiber = InlineKeyboardMarkup([
-                [InlineKeyboardButton(t("btn_unhibernate", f), callback_data="hibernation_cancel")],
-                [InlineKeyboardButton(t("btn_back", f), callback_data="settings")],
+                [btn(t("btn_unhibernate", f), callback_data="hibernation_cancel")],
+                [btn(t("btn_back", f), callback_data="settings")],
             ])
         else:
             status_hiber = "⬜ Не активен"
             kb_hiber = InlineKeyboardMarkup([
                 [
-                    InlineKeyboardButton(t("btn_hibernate_1",  f), callback_data="hibernation_set_1"),
-                    InlineKeyboardButton(t("btn_hibernate_3",  f), callback_data="hibernation_set_3"),
-                    InlineKeyboardButton(t("btn_hibernate_7",  f), callback_data="hibernation_set_7"),
+                    btn(t("btn_hibernate_1",  f), callback_data="hibernation_set_1"),
+                    btn(t("btn_hibernate_3",  f), callback_data="hibernation_set_3"),
+                    btn(t("btn_hibernate_7",  f), callback_data="hibernation_set_7"),
                 ],
                 [
-                    InlineKeyboardButton(t("btn_hibernate_14", f), callback_data="hibernation_set_14"),
-                    InlineKeyboardButton(t("btn_hibernate_30", f), callback_data="hibernation_set_30"),
+                    btn(t("btn_hibernate_14", f), callback_data="hibernation_set_14"),
+                    btn(t("btn_hibernate_30", f), callback_data="hibernation_set_30"),
                 ],
-                [InlineKeyboardButton("◀️ Назад", callback_data="settings")],
+                [btn("◀️ Назад", callback_data="settings")],
             ])
         try:
             await q.message.edit_text(
@@ -43468,7 +43560,7 @@ async def on_callback(update: Update, ctx: ContextTypes.DEFAULT_TYPE):
                 f"Деградация остановлена. Лягушка в безопасности! <tg-emoji emoji-id='5341367834935075028'>🐸</tg-emoji>",
                 parse_mode=ParseMode.HTML,
                 reply_markup=InlineKeyboardMarkup([
-                    [InlineKeyboardButton("◀️ Назад", callback_data="settings")],
+                    [btn("◀️ Назад", callback_data="settings")],
                 ]),
             )
         except Exception:
@@ -43486,7 +43578,7 @@ async def on_callback(update: Update, ctx: ContextTypes.DEFAULT_TYPE):
                 "Анабиоз снят. Не забывай кормить лягушку! <tg-emoji emoji-id='5341367834935075028'>🐸</tg-emoji>",
                 parse_mode=ParseMode.HTML,
                 reply_markup=InlineKeyboardMarkup([
-                    [InlineKeyboardButton("◀️ Назад", callback_data="menu_more")],
+                    [btn("◀️ Назад", callback_data="menu_more")],
                 ]),
             )
         except Exception:
@@ -43507,16 +43599,16 @@ async def on_callback(update: Update, ctx: ContextTypes.DEFAULT_TYPE):
         )
         kb_boost = InlineKeyboardMarkup([
             [
-                InlineKeyboardButton("1 ч",  callback_data="admin_boost_start_1"),
-                InlineKeyboardButton("3 ч",  callback_data="admin_boost_start_3"),
-                InlineKeyboardButton("6 ч",  callback_data="admin_boost_start_6"),
+                btn("1 ч",  callback_data="admin_boost_start_1"),
+                btn("3 ч",  callback_data="admin_boost_start_3"),
+                btn("6 ч",  callback_data="admin_boost_start_6"),
             ],
             [
-                InlineKeyboardButton("12 ч", callback_data="admin_boost_start_12"),
-                InlineKeyboardButton("24 ч", callback_data="admin_boost_start_24"),
+                btn("12 ч", callback_data="admin_boost_start_12"),
+                btn("24 ч", callback_data="admin_boost_start_24"),
             ],
-            [InlineKeyboardButton("⏹ Остановить событие", callback_data="admin_boost_stop")],
-            [InlineKeyboardButton("◀️ Назад", callback_data="admin_events")],
+            [btn("⏹ Остановить событие", callback_data="admin_boost_stop")],
+            [btn("◀️ Назад", callback_data="admin_events")],
         ])
         try:
             await q.message.edit_text(
@@ -43607,7 +43699,7 @@ async def on_callback(update: Update, ctx: ContextTypes.DEFAULT_TYPE):
                 await q.message.edit_text(
                     "<tg-emoji emoji-id='5341735149128159966'>🔥</tg-emoji> Ивент жертвоприношения уже завершён.",
                     parse_mode=ParseMode.HTML,
-                    reply_markup=InlineKeyboardMarkup([[InlineKeyboardButton("◀️ Назад", callback_data="refresh")]]),
+                    reply_markup=InlineKeyboardMarkup([[btn("◀️ Назад", callback_data="refresh")]]),
                 )
             except Exception:
                 pass
@@ -43644,8 +43736,8 @@ async def on_callback(update: Update, ctx: ContextTypes.DEFAULT_TYPE):
         )
 
         kb_sac = InlineKeyboardMarkup([
-            [InlineKeyboardButton("🔥 Сжечь эпик и участвовать", callback_data=f"sacrifice_join_{event_id}")],
-            [InlineKeyboardButton("◀️ Назад", callback_data="refresh")],
+            [btn("🔥 Сжечь эпик и участвовать", callback_data=f"sacrifice_join_{event_id}")],
+            [btn("◀️ Назад", callback_data="refresh")],
         ])
         try:
             await q.message.edit_text(
@@ -43706,11 +43798,11 @@ async def on_callback(update: Update, ctx: ContextTypes.DEFAULT_TYPE):
             qty = epics[skin]
             emoji = SKINS[skin].get("emoji", "🟣")
             label = f"🟣 {emoji} {skin}" + (f" ×{qty}" if qty > 1 else "")
-            rows.append([InlineKeyboardButton(
+            rows.append([btn(
                 label,
                 callback_data=f"sacrifice_pick_{event_id}_{skin.replace(' ', '_')}",
             )])
-        rows.append([InlineKeyboardButton("◀️ Назад к ивенту", callback_data="sacrifice_menu")])
+        rows.append([btn("◀️ Назад к ивенту", callback_data="sacrifice_menu")])
 
         epic_list = "\n".join(
             f"  🟣 {SKINS[skin].get('emoji','🟣')} <b>{skin}</b> ×{qty}"
@@ -43754,15 +43846,15 @@ async def on_callback(update: Update, ctx: ContextTypes.DEFAULT_TYPE):
         skin_data = SKINS.get(skin_name, {})
         skin_emoji = skin_data.get("emoji", "🟣")
         kb_confirm = InlineKeyboardMarkup([
-            [InlineKeyboardButton(
+            [btn(
                 f"🔥 ДА, сжечь {skin_emoji} {skin_name}!",
                 callback_data=f"sacrifice_join_confirm_{event_id}_{skin_name.replace(' ', '_')}",
             )],
-            [InlineKeyboardButton(
+            [btn(
                 "❌ Нет, выбрать другой",
                 callback_data=f"sacrifice_join_{event_id}",
             )],
-            [InlineKeyboardButton("◀️ Назад к ивенту", callback_data="sacrifice_menu")],
+            [btn("◀️ Назад к ивенту", callback_data="sacrifice_menu")],
         ])
         try:
             await q.message.edit_text(
@@ -43841,9 +43933,9 @@ async def on_callback(update: Update, ctx: ContextTypes.DEFAULT_TYPE):
         epics_left = sum(qty for sk, qty in coll_after.items() if SKINS.get(sk, {}).get("rarity") == "epic" and qty > 0)
 
         kb_after = InlineKeyboardMarkup([
-            *([[InlineKeyboardButton("🔥 Сжечь ещё один", callback_data=f"sacrifice_join_{event_id}")]] if can_burn_left > 0 and epics_left > 0 else []),
-            [InlineKeyboardButton("📊 Статистика ивента", callback_data="sacrifice_menu")],
-            [InlineKeyboardButton(t("btn_back_main", f), callback_data="refresh")],
+            *([[btn("🔥 Сжечь ещё один", callback_data=f"sacrifice_join_{event_id}")]] if can_burn_left > 0 and epics_left > 0 else []),
+            [btn("📊 Статистика ивента", callback_data="sacrifice_menu")],
+            [btn(t("btn_back_main", f), callback_data="refresh")],
         ])
         try:
             await q.message.edit_text(
@@ -43872,7 +43964,7 @@ async def on_callback(update: Update, ctx: ContextTypes.DEFAULT_TYPE):
                 "Просто отправь текст в <b>личку боту</b>, и оно попадёт к администраторам.",
                 parse_mode=ParseMode.HTML,
                 reply_markup=InlineKeyboardMarkup(
-                    [[InlineKeyboardButton("◀️ Отмена", callback_data="settings")]]
+                    [[btn("◀️ Отмена", callback_data="settings")]]
                 ),
             )
         except Exception:
@@ -43890,7 +43982,7 @@ async def on_callback(update: Update, ctx: ContextTypes.DEFAULT_TYPE):
         ev = await _funnel_active_event()
         if not ev or ev["id"] != event_id:
             try:
-                await q.message.edit_text("🔥 Ивент уже завершён.", reply_markup=InlineKeyboardMarkup([[InlineKeyboardButton("◀️ Назад", callback_data="menu_games")]]))
+                await q.message.edit_text("🔥 Ивент уже завершён.", reply_markup=InlineKeyboardMarkup([[btn("◀️ Назад", callback_data="menu_games")]]))
             except Exception:
                 pass
             return
@@ -43916,8 +44008,8 @@ async def on_callback(update: Update, ctx: ContextTypes.DEFAULT_TYPE):
             f"<i>Выбери облик для сжигания</i>"
         )
         kb = InlineKeyboardMarkup([
-            [InlineKeyboardButton("🔥 Сжечь облик", callback_data=f"funnel_join_{event_id}")],
-            [InlineKeyboardButton("◀️ Назад", callback_data="menu_games")],
+            [btn("🔥 Сжечь облик", callback_data=f"funnel_join_{event_id}")],
+            [btn("◀️ Назад", callback_data="menu_games")],
         ])
         try:
             await q.message.edit_text(text, parse_mode=ParseMode.HTML, reply_markup=kb)
@@ -43957,11 +44049,11 @@ async def on_callback(update: Update, ctx: ContextTypes.DEFAULT_TYPE):
             for skin, qty in sorted(skins_list):
                 emoji = SKINS[skin].get("emoji", "🎨")
                 label = f"{emoji} {skin}" + (f" ×{qty}" if qty > 1 else "")
-                rows.append([InlineKeyboardButton(
+                rows.append([btn(
                     label,
                     callback_data=f"funnel_pick_{event_id}_{skin.replace(' ', '_')}",
                 )])
-        rows.append([InlineKeyboardButton("◀️ Назад", callback_data=f"funnel_menu_{event_id}")])
+        rows.append([btn("◀️ Назад", callback_data=f"funnel_menu_{event_id}")])
         kb = InlineKeyboardMarkup(rows)
         try:
             await q.message.edit_text(
@@ -44005,19 +44097,19 @@ async def on_callback(update: Update, ctx: ContextTypes.DEFAULT_TYPE):
         mn_pick, mx_pick = int(r_range_pick[0]), int(r_range_pick[1])
 
         btn_rows = [
-            [InlineKeyboardButton(
+            [btn(
                 f"🔥 Сжечь 1 шт",
                 callback_data=f"funnel_confirm_{event_id}_{skin_name.replace(' ', '_')}",
             )],
         ]
         if qty > 1:
-            btn_rows.insert(0, [InlineKeyboardButton(
+            btn_rows.insert(0, [btn(
                 f"🔥🔥 Сжечь все {qty} шт сразу!",
                 callback_data=f"funnel_all_{event_id}_{skin_name.replace(' ', '_')}",
             )])
         btn_rows += [
-            [InlineKeyboardButton("❌ Выбрать другой", callback_data=f"funnel_join_{event_id}")],
-            [InlineKeyboardButton("◀️ К ивенту", callback_data=f"funnel_menu_{event_id}")],
+            [btn("❌ Выбрать другой", callback_data=f"funnel_join_{event_id}")],
+            [btn("◀️ К ивенту", callback_data=f"funnel_menu_{event_id}")],
         ]
         qty_str = f" (у тебя: <b>{qty} шт</b>)" if qty > 1 else ""
         range_str = f"{mn_pick}–{mx_pick}{coin_emoji()}"
@@ -44103,8 +44195,8 @@ async def on_callback(update: Update, ctx: ContextTypes.DEFAULT_TYPE):
                 f"💰 Твой баланс: {f2['coins']}{coin_emoji()}",
                 parse_mode=ParseMode.HTML,
                 reply_markup=InlineKeyboardMarkup([
-                    [InlineKeyboardButton("🔥 Сжечь ещё", callback_data=f"funnel_join_{event_id}")],
-                    [InlineKeyboardButton("◀️ К ивенту", callback_data=f"funnel_menu_{event_id}")],
+                    [btn("🔥 Сжечь ещё", callback_data=f"funnel_join_{event_id}")],
+                    [btn("◀️ К ивенту", callback_data=f"funnel_menu_{event_id}")],
                 ]),
             )
         except Exception:
@@ -44187,8 +44279,8 @@ async def on_callback(update: Update, ctx: ContextTypes.DEFAULT_TYPE):
                 f"💰 Твой баланс: {f2['coins']}{coin_emoji()}",
                 parse_mode=ParseMode.HTML,
                 reply_markup=InlineKeyboardMarkup([
-                    [InlineKeyboardButton("🔥 Сжечь ещё", callback_data=f"funnel_join_{event_id}")],
-                    [InlineKeyboardButton("◀️ К ивенту", callback_data=f"funnel_menu_{event_id}")],
+                    [btn("🔥 Сжечь ещё", callback_data=f"funnel_join_{event_id}")],
+                    [btn("◀️ К ивенту", callback_data=f"funnel_menu_{event_id}")],
                 ]),
             )
         except Exception:
@@ -44218,7 +44310,7 @@ async def on_callback(update: Update, ctx: ContextTypes.DEFAULT_TYPE):
                 help_text,
                 parse_mode=ParseMode.HTML,
                 reply_markup=InlineKeyboardMarkup(
-                    [[InlineKeyboardButton("◀️ Назад", callback_data="menu_more")]]
+                    [[btn("◀️ Назад", callback_data="menu_more")]]
                 ),
             )
         except Exception:
@@ -44284,15 +44376,15 @@ async def on_callback(update: Update, ctx: ContextTypes.DEFAULT_TYPE):
                 text_r += f"\n<i>...и ещё {total_r-10}. Полный список: /referral</i>"
         kb_rows = []
         if ref_stars_bal >= 50:
-            kb_rows.append([InlineKeyboardButton(
+            kb_rows.append([btn(
                 f"💸 Подать заявку на вывод ({ref_stars_bal}⭐)",
                 callback_data="ref_withdraw_request"
             )])
-        kb_rows.append([InlineKeyboardButton(
+        kb_rows.append([btn(
             f"{'🔔 Уведомления · вкл' if notify_on else '🔕 Уведомления · выкл'}",
             callback_data="ref_toggle_notify"
         )])
-        kb_rows.append([InlineKeyboardButton("◀️ Назад", callback_data="menu_more")])
+        kb_rows.append([btn("◀️ Назад", callback_data="menu_more")])
         try:
             await q.message.edit_text(
                 text_r,
@@ -44340,12 +44432,12 @@ async def on_callback(update: Update, ctx: ContextTypes.DEFAULT_TYPE):
         )
         kb_rows = []
         if ref_stars_bal >= 50:
-            kb_rows.append([InlineKeyboardButton(f"💸 Подать заявку на вывод ({ref_stars_bal}⭐)", callback_data="ref_withdraw_request")])
-        kb_rows.append([InlineKeyboardButton(
+            kb_rows.append([btn(f"💸 Подать заявку на вывод ({ref_stars_bal}⭐)", callback_data="ref_withdraw_request")])
+        kb_rows.append([btn(
             f"{'🔔 Уведомления · вкл' if notify_on else '🔕 Уведомления · выкл'}",
             callback_data="ref_toggle_notify"
         )])
-        kb_rows.append([InlineKeyboardButton("◀️ Назад", callback_data="menu_more")])
+        kb_rows.append([btn("◀️ Назад", callback_data="menu_more")])
         try:
             await q.message.edit_text(text_r, parse_mode=ParseMode.HTML,
                                       link_preview_options=LinkPreviewOptions(is_disabled=True),
@@ -44470,29 +44562,29 @@ async def on_callback(update: Update, ctx: ContextTypes.DEFAULT_TYPE):
 
         # Кнопки вкладок
         tab_btns = [
-            InlineKeyboardButton(
+            btn(
                 ("▶ 🔒 Не открыты" if tab == "locked" else "🔒 Не открыты"),
                 callback_data="ach_tab_locked"
             ),
-            InlineKeyboardButton(
+            btn(
                 ("▶ ✅ Открытые" if tab == "earned" else "✅ Открытые"),
                 callback_data="ach_tab_earned"
             ),
-            InlineKeyboardButton(
+            btn(
                 ("▶ 📋 Все" if tab == "all" else "📋 Все"),
                 callback_data="ach_tab_all"
             ),
         ]
         nav_btns = []
         if page > 0:
-            nav_btns.append(InlineKeyboardButton("◀️", callback_data=f"ach_tab_{tab}|{page-1}"))
+            nav_btns.append(btn("◀️", callback_data=f"ach_tab_{tab}|{page-1}"))
         if page < total_pages - 1:
-            nav_btns.append(InlineKeyboardButton("▶️", callback_data=f"ach_tab_{tab}|{page+1}"))
+            nav_btns.append(btn("▶️", callback_data=f"ach_tab_{tab}|{page+1}"))
 
         kb_rows = [tab_btns]
         if nav_btns:
             kb_rows.append(nav_btns)
-        kb_rows.append([InlineKeyboardButton("◀️ Назад", callback_data="menu_more")])
+        kb_rows.append([btn("◀️ Назад", callback_data="menu_more")])
 
         try:
             await q.message.edit_text(
@@ -44541,7 +44633,7 @@ async def on_callback(update: Update, ctx: ContextTypes.DEFAULT_TYPE):
                 parse_mode=ParseMode.HTML,
                 link_preview_options=LinkPreviewOptions(),
                 reply_markup=InlineKeyboardMarkup(
-                    [[InlineKeyboardButton("◀️ Назад", callback_data="menu_more")]]
+                    [[btn("◀️ Назад", callback_data="menu_more")]]
                 ),
             )
         except Exception:
@@ -44557,12 +44649,12 @@ async def on_callback(update: Update, ctx: ContextTypes.DEFAULT_TYPE):
                 parse_mode=ParseMode.HTML,
                 reply_markup=InlineKeyboardMarkup([
                     [
-                        InlineKeyboardButton("🏆 Общий",  callback_data="top_all"),
-                        InlineKeyboardButton(t("btn_top_week", f), callback_data="top_week"),
-                        InlineKeyboardButton("📆 Месяц",  callback_data="top_month"),
+                        btn("🏆 Общий",  callback_data="top_all"),
+                        btn(t("btn_top_week", f), callback_data="top_week"),
+                        btn("📆 Месяц",  callback_data="top_month"),
                     ],
-                    [InlineKeyboardButton("🏅 Моя лига", callback_data="top_league")],
-                    [InlineKeyboardButton("◀️ Назад", callback_data="menu_more")],
+                    [btn("🏅 Моя лига", callback_data="top_league")],
+                    [btn("◀️ Назад", callback_data="menu_more")],
                 ]),
             )
         except Exception:
@@ -44596,12 +44688,12 @@ async def on_callback(update: Update, ctx: ContextTypes.DEFAULT_TYPE):
                 parse_mode=ParseMode.HTML,
                 reply_markup=InlineKeyboardMarkup([
                     [
-                        InlineKeyboardButton("🏆 Общий",  callback_data="top_all"),
-                        InlineKeyboardButton(t("btn_top_week", f), callback_data="top_week"),
-                        InlineKeyboardButton("📆 Месяц",  callback_data="top_month"),
+                        btn("🏆 Общий",  callback_data="top_all"),
+                        btn(t("btn_top_week", f), callback_data="top_week"),
+                        btn("📆 Месяц",  callback_data="top_month"),
                     ],
-                    [InlineKeyboardButton("🏅 Моя лига", callback_data="top_league")],
-                    [InlineKeyboardButton("◀️ Назад", callback_data="menu_more")],
+                    [btn("🏅 Моя лига", callback_data="top_league")],
+                    [btn("◀️ Назад", callback_data="menu_more")],
                 ]),
             )
         except Exception:
@@ -44653,7 +44745,7 @@ async def on_callback(update: Update, ctx: ContextTypes.DEFAULT_TYPE):
             text = "\n".join(lines)
         try:
             await q.message.edit_text(text, parse_mode=ParseMode.HTML,
-                reply_markup=InlineKeyboardMarkup([[InlineKeyboardButton("🔄 Обновить", callback_data="topsponsors_refresh")]]))
+                reply_markup=InlineKeyboardMarkup([[btn("🔄 Обновить", callback_data="topsponsors_refresh")]]))
         except Exception:
             pass
         return
@@ -44744,7 +44836,7 @@ async def on_callback(update: Update, ctx: ContextTypes.DEFAULT_TYPE):
         nav = []
         if page > 0:
             nav.append(btn("◀️", callback_data=f"nft_shop_{page-1}_{flt}"))
-        nav.append(InlineKeyboardButton(f"{page+1} / {total_pages}", callback_data="noop"))
+        nav.append(btn(f"{page+1} / {total_pages}", callback_data="noop"))
         if page < total_pages - 1:
             nav.append(btn("▶️", callback_data=f"nft_shop_{page+1}_{flt}"))
         buttons.append(nav)
@@ -44761,7 +44853,7 @@ async def on_callback(update: Update, ctx: ContextTypes.DEFAULT_TYPE):
             btn("🟣",      callback_data="nft_shop_0_epic"),
         ])
         buttons.append([
-            InlineKeyboardButton("💎 Купить Stars и TON за рубли", url="https://t.me/FrogsStar_bot"),
+            btn("💎 Купить Stars и TON за рубли", url="https://t.me/FrogsStar_bot"),
         ])
         buttons.append([btn("◀️ Магазин", callback_data="menu_shop")])
 
@@ -44820,12 +44912,12 @@ async def on_callback(update: Update, ctx: ContextTypes.DEFAULT_TYPE):
                 if is_boosted:
                     lbl += " ✨"
             coin_rows.append(
-                [InlineKeyboardButton(lbl, callback_data=f"buy_stars_{i}")]
+                [btn(lbl, callback_data=f"buy_stars_{i}")]
             )
 
         kb = InlineKeyboardMarkup(
             coin_rows
-            + [[InlineKeyboardButton("◀️ Назад", callback_data="menu_shop")]]
+            + [[btn("◀️ Назад", callback_data="menu_shop")]]
         )
         try:
             await q.message.edit_text(
@@ -44882,7 +44974,7 @@ async def on_callback(update: Update, ctx: ContextTypes.DEFAULT_TYPE):
                     f"⚠️ Если сообщение не пришло — сначала напиши /start боту в личку.",
                     parse_mode=ParseMode.HTML,
                     reply_markup=InlineKeyboardMarkup(
-                        [[InlineKeyboardButton("◀️ Назад", callback_data="stars_menu")]]
+                        [[btn("◀️ Назад", callback_data="stars_menu")]]
                     ),
                 )
             except (BadRequest, Forbidden):
@@ -44906,7 +44998,7 @@ async def on_callback(update: Update, ctx: ContextTypes.DEFAULT_TYPE):
                         reply_markup=InlineKeyboardMarkup(
                             [
                                 [
-                                    InlineKeyboardButton(
+                                    btn(
                                         "◀️ Назад", callback_data="stars_menu"
                                     )
                                 ]
@@ -44923,7 +45015,7 @@ async def on_callback(update: Update, ctx: ContextTypes.DEFAULT_TYPE):
                         reply_markup=InlineKeyboardMarkup(
                             [
                                 [
-                                    InlineKeyboardButton(
+                                    btn(
                                         "◀️ Назад", callback_data="stars_menu"
                                     )
                                 ]
@@ -44961,7 +45053,7 @@ async def on_callback(update: Update, ctx: ContextTypes.DEFAULT_TYPE):
                     f"<i>Проверь личные сообщения с ботом и нажми «Оплатить».</i>",
                     parse_mode=ParseMode.HTML,
                     reply_markup=InlineKeyboardMarkup(
-                        [[InlineKeyboardButton("◀️ Назад", callback_data="stars_menu")]]
+                        [[btn("◀️ Назад", callback_data="stars_menu")]]
                     ),
                 )
             except (BadRequest, Forbidden):
@@ -44976,7 +45068,7 @@ async def on_callback(update: Update, ctx: ContextTypes.DEFAULT_TYPE):
                         reply_markup=InlineKeyboardMarkup(
                             [
                                 [
-                                    InlineKeyboardButton(
+                                    btn(
                                         "◀️ Назад", callback_data="stars_menu"
                                     )
                                 ]
@@ -44993,7 +45085,7 @@ async def on_callback(update: Update, ctx: ContextTypes.DEFAULT_TYPE):
                         reply_markup=InlineKeyboardMarkup(
                             [
                                 [
-                                    InlineKeyboardButton(
+                                    btn(
                                         "◀️ Назад", callback_data="stars_menu"
                                     )
                                 ]
@@ -45033,14 +45125,14 @@ async def on_callback(update: Update, ctx: ContextTypes.DEFAULT_TYPE):
                 if n["verified"] and model and model in SKINS:
                     kb_rows.append(
                         [
-                            InlineKeyboardButton(
+                            btn(
                                 f"👗 Надеть {model}", callback_data=f"equip_{model}"
                             )
                         ]
                     )
             lines.append("\n<i>Добавить ещё: /nft ссылка</i>")
             text = "\n".join(lines)
-            kb_rows.append([InlineKeyboardButton("◀️ Назад", callback_data="menu_more")])
+            kb_rows.append([btn("◀️ Назад", callback_data="menu_more")])
             kb = InlineKeyboardMarkup(kb_rows)
         else:
             text = (
@@ -45049,7 +45141,7 @@ async def on_callback(update: Update, ctx: ContextTypes.DEFAULT_TYPE):
                 "<code>/nft https://t.me/nft/KissedFrog-XXXX</code>"
             )
             kb = InlineKeyboardMarkup(
-                [[InlineKeyboardButton("◀️ Назад", callback_data="menu_more")]]
+                [[btn("◀️ Назад", callback_data="menu_more")]]
             )
         try:
             await q.message.edit_text(
@@ -45205,7 +45297,7 @@ async def on_callback(update: Update, ctx: ContextTypes.DEFAULT_TYPE):
                 rules_text,
                 parse_mode=ParseMode.HTML,
                 reply_markup=InlineKeyboardMarkup([
-                    [InlineKeyboardButton("◀️ Назад", callback_data="settings")]
+                    [btn("◀️ Назад", callback_data="settings")]
                 ]),
                 link_preview_options=LinkPreviewOptions(),
             )
@@ -45258,10 +45350,10 @@ async def on_callback(update: Update, ctx: ContextTypes.DEFAULT_TYPE):
 
         if block_all:
             block_status_text = "🔒 <b>Кормление заблокировано для ВСЕХ игроков</b>"
-            unblock_btn = [InlineKeyboardButton("🔓 Разрешить кормить всем", callback_data="feedunblock_all")]
+            unblock_btn = [btn("🔓 Разрешить кормить всем", callback_data="feedunblock_all")]
         else:
             block_status_text = "✅ Кормление разрешено"
-            unblock_btn = [InlineKeyboardButton("🔒 Запретить кормить ВСЕМ", callback_data="feedblock_all")]
+            unblock_btn = [btn("🔒 Запретить кормить ВСЕМ", callback_data="feedblock_all")]
 
         lines = [f"🚫 <b>Блокировки кормления</b>\n\n{block_status_text}\n"]
         kb_rows = [unblock_btn]
@@ -45271,7 +45363,7 @@ async def on_callback(update: Update, ctx: ContextTypes.DEFAULT_TYPE):
             for b in specific:
                 name = b.get("frog_name") or b.get("first_name") or f"ID:{b['feeder_id']}"
                 lines.append(f"• {he(name)}")
-                kb_rows.append([InlineKeyboardButton(
+                kb_rows.append([btn(
                     f"🔓 Разблокировать {he(name[:20])}",
                     callback_data=f"feedunblock_one_{b['feeder_id']}"
                 )])
@@ -45280,7 +45372,7 @@ async def on_callback(update: Update, ctx: ContextTypes.DEFAULT_TYPE):
                 lines.append("\n<i>Заблокированных игроков нет.</i>")
 
         lines.append("\n<i>Кнопки блокировки появляются в уведомлениях о кормлении.</i>")
-        kb_rows.append([InlineKeyboardButton("◀️ Назад в настройки", callback_data="settings")])
+        kb_rows.append([btn("◀️ Назад в настройки", callback_data="settings")])
         try:
             await q.message.edit_text(
                 "\n".join(lines), parse_mode=ParseMode.HTML,
@@ -45309,7 +45401,7 @@ async def on_callback(update: Update, ctx: ContextTypes.DEFAULT_TYPE):
         await q.answer("🔒 Кормёжка вашей лягушки запрещена всем игрокам.", show_alert=True)
         try:
             await q.message.edit_reply_markup(reply_markup=InlineKeyboardMarkup([[
-                InlineKeyboardButton("🔓 Разрешить кормить снова", callback_data="feedunblock_all"),
+                btn("🔓 Разрешить кормить снова", callback_data="feedunblock_all"),
             ]]))
         except Exception:
             pass
@@ -45326,7 +45418,7 @@ async def on_callback(update: Update, ctx: ContextTypes.DEFAULT_TYPE):
         await q.answer("🚫 Этому игроку запрещено кормить вашу лягушку.", show_alert=True)
         try:
             await q.message.edit_reply_markup(reply_markup=InlineKeyboardMarkup([[
-                InlineKeyboardButton("🔓 Разблокировать этого игрока", callback_data=f"feedunblock_one_{feeder_id}"),
+                btn("🔓 Разблокировать этого игрока", callback_data=f"feedunblock_one_{feeder_id}"),
             ]]))
         except Exception:
             pass
@@ -45380,9 +45472,9 @@ async def on_callback(update: Update, ctx: ContextTypes.DEFAULT_TYPE):
             # Обновляем экран подписки
             try:
                 await q.message.edit_reply_markup(reply_markup=InlineKeyboardMarkup([
-                    [InlineKeyboardButton("🏪 Трудяга — 800⭐/мес", callback_data="sub_buy_worker")],
-                    [InlineKeyboardButton("🎁 1 день Трудяги бесплатно", callback_data="sub_trial_worker")],
-                    [InlineKeyboardButton("◀️ Назад", callback_data="menu_shop")],
+                    [btn("🏪 Трудяга — 800⭐/мес", callback_data="sub_buy_worker")],
+                    [btn("🎁 1 день Трудяги бесплатно", callback_data="sub_trial_worker")],
+                    [btn("◀️ Назад", callback_data="menu_shop")],
                 ]))
             except Exception:
                 pass
@@ -45418,7 +45510,7 @@ async def on_callback(update: Update, ctx: ContextTypes.DEFAULT_TYPE):
             # Показываем обычную кнопку
             try:
                 await q.message.edit_reply_markup(reply_markup=InlineKeyboardMarkup([[
-                    InlineKeyboardButton(
+                    btn(
                         "🏪 Продлить по обычной цене",
                         callback_data="sub_buy_worker" if is_worker else "sub_buy_nanny",
                     )
@@ -46129,7 +46221,7 @@ async def on_callback(update: Update, ctx: ContextTypes.DEFAULT_TYPE):
             f"⚡ @{he(w_user)} +0.3 → {w_final_power}\n⚡ @{he(l_user)} +0.1 → {l_final_power}"
         )
         kb_result = InlineKeyboardMarkup(
-            [[InlineKeyboardButton(t("btn_my_frog", f), callback_data="refresh")]]
+            [[btn(t("btn_my_frog", f), callback_data="refresh")]]
         )
         await edit_both(result_text, kb=kb_result)
         # Логируем результат батла
@@ -46195,9 +46287,9 @@ async def on_callback(update: Update, ctx: ContextTypes.DEFAULT_TYPE):
                 " ✅" if f["coins"] >= s_val else " ❌"
             )
             kb_rows.append(
-                [InlineKeyboardButton(label, callback_data=f"tournament_stake_{s_val}")]
+                [btn(label, callback_data=f"tournament_stake_{s_val}")]
             )
-        kb_rows.append([InlineKeyboardButton("◀️ Назад", callback_data="menu_games")])
+        kb_rows.append([btn("◀️ Назад", callback_data="menu_games")])
         try:
             await q.message.edit_text(
                 f"🏆 <b>Создать турнир</b>\n\n"
@@ -46426,8 +46518,8 @@ async def on_callback(update: Update, ctx: ContextTypes.DEFAULT_TYPE):
             }
             tie_kb = InlineKeyboardMarkup([
                 [
-                    InlineKeyboardButton("🤝 Разделить приз", callback_data=f"tournament_tie_split_{tid}"),
-                    InlineKeyboardButton("🎲 Переброс", callback_data=f"tournament_tie_reroll_{tid}"),
+                    btn("🤝 Разделить приз", callback_data=f"tournament_tie_split_{tid}"),
+                    btn("🎲 Переброс", callback_data=f"tournament_tie_reroll_{tid}"),
                 ]
             ])
             try:
@@ -46611,12 +46703,12 @@ async def on_callback(update: Update, ctx: ContextTypes.DEFAULT_TYPE):
             label = f"{R_ICON[s['rarity']]} {name} — ур.{r['level']}"
             kb_rows.append(
                 [
-                    InlineKeyboardButton(
+                    btn(
                         label, callback_data=f"duel_pick_opp_{r['user_id']}"
                     )
                 ]
             )
-        kb_rows.append([InlineKeyboardButton("◀️ Назад", callback_data="menu_games")])
+        kb_rows.append([btn("◀️ Назад", callback_data="menu_games")])
         try:
             await q.message.edit_text(
                 f"⚔️ <b>Дуэль — выбери соперника</b> {f['coins']}{coin_emoji()}\n\n"
@@ -46642,18 +46734,18 @@ async def on_callback(update: Update, ctx: ContextTypes.DEFAULT_TYPE):
         stakes = [10, 25, 50, 100, 250, 500]
         kb_rows = [
             [
-                InlineKeyboardButton(
+                btn(
                     f"🪙 {s}", callback_data=f"duel_challenge_uid_{target_uid_d}_{s}"
                 )
                 for s in stakes[:3]
             ],
             [
-                InlineKeyboardButton(
+                btn(
                     f"🪙 {s}", callback_data=f"duel_challenge_uid_{target_uid_d}_{s}"
                 )
                 for s in stakes[3:]
             ],
-            [InlineKeyboardButton("◀️ Назад", callback_data="duel_search")],
+            [btn("◀️ Назад", callback_data="duel_search")],
         ]
         t_name = target_d.get("frog_name") or f"Лягушка {target_d['first_name']}"
         try:
@@ -46710,10 +46802,10 @@ async def on_callback(update: Update, ctx: ContextTypes.DEFAULT_TYPE):
         kb_d = InlineKeyboardMarkup(
             [
                 [
-                    InlineKeyboardButton(
+                    btn(
                         "⚔️ Принять!", callback_data=f"duel_accept_{duel_id_d}"
                     ),
-                    InlineKeyboardButton(
+                    btn(
                         "❌ Отклонить", callback_data=f"duel_decline_{duel_id_d}"
                     ),
                 ]
@@ -46782,13 +46874,13 @@ async def on_callback(update: Update, ctx: ContextTypes.DEFAULT_TYPE):
             label = f"{R_ICON[s['rarity']]} {name} — ⚡{r_power}"
             kb_rows.append(
                 [
-                    InlineKeyboardButton(
+                    btn(
                         label,
                         callback_data=f"battle_challenge_uid_{r_full['user_id']}_0",
                     )
                 ]
             )
-        kb_rows.append([InlineKeyboardButton("◀️ Назад", callback_data="menu_games")])
+        kb_rows.append([btn("◀️ Назад", callback_data="menu_games")])
         try:
             await q.message.edit_text(
                 f"🥊 <b>Батл (кубики + Power)</b>\n\n"
@@ -46849,10 +46941,10 @@ async def on_callback(update: Update, ctx: ContextTypes.DEFAULT_TYPE):
         kb = InlineKeyboardMarkup(
             [
                 [
-                    InlineKeyboardButton(
+                    btn(
                         "⚔️ Принять батл!", callback_data=f"battle_accept_{battle_id}"
                     ),
-                    InlineKeyboardButton(
+                    btn(
                         "❌ Отказаться", callback_data=f"battle_decline_{battle_id}"
                     ),
                 ]
@@ -46924,12 +47016,12 @@ async def on_callback(update: Update, ctx: ContextTypes.DEFAULT_TYPE):
             label = f"{R_ICON[s['rarity']]} {name} — ⚡{r_power}"
             kb_rows.append(
                 [
-                    InlineKeyboardButton(
+                    btn(
                         label, callback_data=f"battle_challenge_uid_{r['user_id']}_0"
                     )
                 ]
             )
-        kb_rows.append([InlineKeyboardButton("◀️ Назад", callback_data="menu_games")])
+        kb_rows.append([btn("◀️ Назад", callback_data="menu_games")])
 
         try:
             await q.message.edit_text(
@@ -46990,10 +47082,10 @@ async def on_callback(update: Update, ctx: ContextTypes.DEFAULT_TYPE):
         kb_b = InlineKeyboardMarkup(
             [
                 [
-                    InlineKeyboardButton(
+                    btn(
                         "⚔️ Принять батл!", callback_data=f"battle_accept_{battle_id_b}"
                     ),
-                    InlineKeyboardButton(
+                    btn(
                         "❌ Отказаться", callback_data=f"battle_decline_{battle_id_b}"
                     ),
                 ]
@@ -47046,10 +47138,10 @@ async def on_callback(update: Update, ctx: ContextTypes.DEFAULT_TYPE):
             # Показываем выбор языка инлайн
             await q.answer()
             kb = InlineKeyboardMarkup([
-                [InlineKeyboardButton("🇷🇺 Русский",  callback_data="lang_set_ru"),
-                 InlineKeyboardButton("🇬🇧 English",  callback_data="lang_set_en"),
-                 InlineKeyboardButton("🇨🇳 中文",     callback_data="lang_set_zh")],
-                [InlineKeyboardButton(t("btn_back", f), callback_data="settings")],
+                [btn("🇷🇺 Русский",  callback_data="lang_set_ru"),
+                 btn("🇬🇧 English",  callback_data="lang_set_en"),
+                 btn("🇨🇳 中文",     callback_data="lang_set_zh")],
+                [btn(t("btn_back", f), callback_data="settings")],
             ])
             cur_label = {"ru": "🇷🇺 Русский", "en": "🇬🇧 English", "zh": "🇨🇳 中文"}.get(f.get("lang","ru"), "🇷🇺")
             try:
@@ -47068,10 +47160,10 @@ async def on_callback(update: Update, ctx: ContextTypes.DEFAULT_TYPE):
             labels = {"ru": "🇷🇺 Русский", "en": "🇬🇧 English", "zh": "🇨🇳 中文"}
             await q.answer(f"✅ {labels[new_lang]}", show_alert=False)
             kb = InlineKeyboardMarkup([
-                [InlineKeyboardButton("🇷🇺 Русский",  callback_data="lang_set_ru"),
-                 InlineKeyboardButton("🇬🇧 English",  callback_data="lang_set_en"),
-                 InlineKeyboardButton("🇨🇳 中文",     callback_data="lang_set_zh")],
-                [InlineKeyboardButton(t("btn_back", f), callback_data="settings")],
+                [btn("🇷🇺 Русский",  callback_data="lang_set_ru"),
+                 btn("🇬🇧 English",  callback_data="lang_set_en"),
+                 btn("🇨🇳 中文",     callback_data="lang_set_zh")],
+                [btn(t("btn_back", f), callback_data="settings")],
             ])
             try:
                 await q.message.edit_text(
@@ -47396,10 +47488,10 @@ async def on_callback(update: Update, ctx: ContextTypes.DEFAULT_TYPE):
                 text,
                 parse_mode=ParseMode.HTML,
                 reply_markup=InlineKeyboardMarkup([
-                    [InlineKeyboardButton("👗 Статистика обликов", callback_data="admin_skin_stats")],
-                    [InlineKeyboardButton("🔍 Поиск по облику", callback_data="admin_skin_browse_")],
-                    [InlineKeyboardButton("💀 Детали застрявших", callback_data="admin_stuck_stats")],
-                    [InlineKeyboardButton("◀️ Назад", callback_data="admin_refresh")],
+                    [btn("👗 Статистика обликов", callback_data="admin_skin_stats")],
+                    [btn("🔍 Поиск по облику", callback_data="admin_skin_browse_")],
+                    [btn("💀 Детали застрявших", callback_data="admin_stuck_stats")],
+                    [btn("◀️ Назад", callback_data="admin_refresh")],
                 ]),
             )
         except Exception:
@@ -47475,7 +47567,7 @@ async def on_callback(update: Update, ctx: ContextTypes.DEFAULT_TYPE):
                 "\n".join(lines_txt),
                 parse_mode=ParseMode.HTML,
                 reply_markup=InlineKeyboardMarkup([
-                    [InlineKeyboardButton("◀️ Назад", callback_data="admin_stats")],
+                    [btn("◀️ Назад", callback_data="admin_stats")],
                 ]),
             )
         except Exception:
@@ -47496,8 +47588,8 @@ async def on_callback(update: Update, ctx: ContextTypes.DEFAULT_TYPE):
             for r in rarity_order:
                 icon = R_ICON.get(r, "⚪")
                 name = R_NAME.get(r, r)
-                kb.append([InlineKeyboardButton(f"{icon} {name}", callback_data=f"admin_skin_browse_r_{r}")])
-            kb.append([InlineKeyboardButton("◀️ Назад", callback_data="admin_stats")])
+                kb.append([btn(f"{icon} {name}", callback_data=f"admin_skin_browse_r_{r}")])
+            kb.append([btn("◀️ Назад", callback_data="admin_stats")])
             try:
                 await q.message.edit_text(
                     "🔍 <b>Поиск по облику</b>\n\nВыбери редкость:",
@@ -47520,10 +47612,10 @@ async def on_callback(update: Update, ctx: ContextTypes.DEFAULT_TYPE):
             name_r = R_NAME.get(rarity, rarity)
             kb = []
             for sname, _ in skins_of_rarity:
-                kb.append([InlineKeyboardButton(
+                kb.append([btn(
                     f"{sname}", callback_data=f"admin_skin_browse_r_s_{rarity}|{sname[:40]}"
                 )])
-            kb.append([InlineKeyboardButton("◀️ Назад", callback_data="admin_skin_browse_")])
+            kb.append([btn("◀️ Назад", callback_data="admin_skin_browse_")])
             try:
                 await q.message.edit_text(
                     f"🔍 {icon} <b>{name_r}</b> — выбери облик:",
@@ -47561,7 +47653,7 @@ async def on_callback(update: Update, ctx: ContextTypes.DEFAULT_TYPE):
                     fname_o = he(o["frog_name"] or o["first_name"] or "?")
                     uname_o = f"@{o['username']}" if o["username"] else f"ID:{o['user_id']}"
                     lines.append(f"{alive_icon} <b>{fname_o}</b> ({uname_o}) ур.{o['level']}")
-            kb = [[InlineKeyboardButton("◀️ Назад", callback_data=f"admin_skin_browse_r_{rarity}")]]
+            kb = [[btn("◀️ Назад", callback_data=f"admin_skin_browse_r_{rarity}")]]
             try:
                 await q.message.edit_text(
                     "\n".join(lines),
@@ -47635,7 +47727,7 @@ async def on_callback(update: Update, ctx: ContextTypes.DEFAULT_TYPE):
                 "\n".join(lines),
                 parse_mode=ParseMode.HTML,
                 reply_markup=InlineKeyboardMarkup([
-                    [InlineKeyboardButton("◀️ Назад", callback_data="admin_stats")],
+                    [btn("◀️ Назад", callback_data="admin_stats")],
                 ]),
             )
         except Exception:
@@ -47669,7 +47761,7 @@ async def on_callback(update: Update, ctx: ContextTypes.DEFAULT_TYPE):
             # Используем простой формат callback без _p чтобы избежать парсинг-баги
             kb_rows.append(
                 [
-                    InlineKeyboardButton(
+                    btn(
                         label, callback_data=f"admin_pcard_{r[0]}_{page}"
                     )
                 ]
@@ -47677,16 +47769,16 @@ async def on_callback(update: Update, ctx: ContextTypes.DEFAULT_TYPE):
         nav = []
         if page > 0:
             nav.append(
-                InlineKeyboardButton("◀️", callback_data=f"admin_players_{page-1}")
+                btn("◀️", callback_data=f"admin_players_{page-1}")
             )
         if page < total_pages - 1:
             nav.append(
-                InlineKeyboardButton("▶️", callback_data=f"admin_players_{page+1}")
+                btn("▶️", callback_data=f"admin_players_{page+1}")
             )
         if nav:
             kb_rows.append(nav)
         kb_rows.append(
-            [InlineKeyboardButton("◀️ Назад в панель", callback_data="admin_refresh")]
+            [btn("◀️ Назад в панель", callback_data="admin_refresh")]
         )
         try:
             await q.message.edit_text(
@@ -47828,7 +47920,7 @@ async def on_callback(update: Update, ctx: ContextTypes.DEFAULT_TYPE):
                     f"🗑 <b>Игрок <code>{target_uid_del}</code> полностью удалён из базы данных.</b>",
                     parse_mode=ParseMode.HTML,
                     reply_markup=InlineKeyboardMarkup([
-                        [InlineKeyboardButton("◀️ К списку игроков", callback_data="admin_players_0")]
+                        [btn("◀️ К списку игроков", callback_data="admin_players_0")]
                     ]),
                 )
             except Exception:
@@ -47839,7 +47931,7 @@ async def on_callback(update: Update, ctx: ContextTypes.DEFAULT_TYPE):
                     f"❌ <b>Ошибка при удалении игрока <code>{target_uid_del}</code>:</b>\n<code>{e}</code>",
                     parse_mode=ParseMode.HTML,
                     reply_markup=InlineKeyboardMarkup([
-                        [InlineKeyboardButton("◀️ К списку игроков", callback_data="admin_players_0")]
+                        [btn("◀️ К списку игроков", callback_data="admin_players_0")]
                     ]),
                 )
             except Exception:
@@ -47873,16 +47965,16 @@ async def on_callback(update: Update, ctx: ContextTypes.DEFAULT_TYPE):
             uname_b = f"@{r[2]}" if r[2] else f"id{r[0]}"
             label_b = f"🤖 {r[1]} ({uname_b}) ур.{r[3]}"
             kb_rows_b.append([
-                InlineKeyboardButton(label_b, callback_data=f"admin_pcard_{r[0]}_{page_b}")
+                btn(label_b, callback_data=f"admin_pcard_{r[0]}_{page_b}")
             ])
         nav_b = []
         if page_b > 0:
-            nav_b.append(InlineKeyboardButton("◀️", callback_data=f"admin_bots_{page_b-1}"))
+            nav_b.append(btn("◀️", callback_data=f"admin_bots_{page_b-1}"))
         if page_b < total_pages_b - 1:
-            nav_b.append(InlineKeyboardButton("▶️", callback_data=f"admin_bots_{page_b+1}"))
+            nav_b.append(btn("▶️", callback_data=f"admin_bots_{page_b+1}"))
         if nav_b:
             kb_rows_b.append(nav_b)
-        kb_rows_b.append([InlineKeyboardButton("◀️ Назад в панель", callback_data="admin_refresh")])
+        kb_rows_b.append([btn("◀️ Назад в панель", callback_data="admin_refresh")])
         try:
             await q.message.edit_text(
                 text_b,
@@ -48199,14 +48291,14 @@ async def on_callback(update: Update, ctx: ContextTypes.DEFAULT_TYPE):
         current_coins = p_sc["coins"] if p_sc else 0
         kb_sc = InlineKeyboardMarkup([
             [
-                InlineKeyboardButton("💰 +500", callback_data=f"admin_coins_p500_{target_uid_sc}"),
-                InlineKeyboardButton("💰 +5000", callback_data=f"admin_coins_p5000_{target_uid_sc}"),
+                btn("💰 +500", callback_data=f"admin_coins_p500_{target_uid_sc}"),
+                btn("💰 +5000", callback_data=f"admin_coins_p5000_{target_uid_sc}"),
             ],
             [
-                InlineKeyboardButton("💰 -500", callback_data=f"admin_coins_m500_{target_uid_sc}"),
-                InlineKeyboardButton("💰 -5000", callback_data=f"admin_coins_m5000_{target_uid_sc}"),
+                btn("💰 -500", callback_data=f"admin_coins_m500_{target_uid_sc}"),
+                btn("💰 -5000", callback_data=f"admin_coins_m5000_{target_uid_sc}"),
             ],
-            [InlineKeyboardButton("◀️ Назад", callback_data=f"admin_player_{target_uid_sc}_p0")],
+            [btn("◀️ Назад", callback_data=f"admin_player_{target_uid_sc}_p0")],
         ])
         try:
             await q.message.edit_text(
@@ -48242,11 +48334,11 @@ async def on_callback(update: Update, ctx: ContextTypes.DEFAULT_TYPE):
         for skin_ts in sorted(coll_ts)[:12]:  # до 12 скинов
             s_ts = SKINS.get(skin_ts, {})
             plain_emoji_ts = s_ts.get("emoji", "🐸")  # plain emoji, не HTML-тег
-            skin_rows_ts.append([InlineKeyboardButton(
+            skin_rows_ts.append([btn(
                 f"{plain_emoji_ts} {skin_ts[:20]} ({s_ts.get('rarity','?')[:3]})",
                 callback_data=f"admin_takeskin_do_{target_uid_ts}_{skin_ts[:30]}",
             )])
-        skin_rows_ts.append([InlineKeyboardButton("◀️ Назад", callback_data=f"admin_player_{target_uid_ts}_p0")])
+        skin_rows_ts.append([btn("◀️ Назад", callback_data=f"admin_player_{target_uid_ts}_p0")])
         try:
             await q.message.edit_text(
                 f"🗑 <b>Забрать облик</b>\n"
@@ -48394,11 +48486,11 @@ async def on_callback(update: Update, ctx: ContextTypes.DEFAULT_TYPE):
             emoji = fdata.get("emoji", "🎁")
             name = fdata.get("name", fid)
             item_rows.append([
-                InlineKeyboardButton(f"{emoji} {name} ×1", callback_data=f"admin_giveitem_do_{target_uid_gi}_{fid}_1"),
-                InlineKeyboardButton(f"×5", callback_data=f"admin_giveitem_do_{target_uid_gi}_{fid}_5"),
-                InlineKeyboardButton(f"×10", callback_data=f"admin_giveitem_do_{target_uid_gi}_{fid}_10"),
+                btn(f"{emoji} {name} ×1", callback_data=f"admin_giveitem_do_{target_uid_gi}_{fid}_1"),
+                btn(f"×5", callback_data=f"admin_giveitem_do_{target_uid_gi}_{fid}_5"),
+                btn(f"×10", callback_data=f"admin_giveitem_do_{target_uid_gi}_{fid}_10"),
             ])
-        item_rows.append([InlineKeyboardButton("◀️ Назад", callback_data=f"admin_give_uid_{target_uid_gi}")])
+        item_rows.append([btn("◀️ Назад", callback_data=f"admin_give_uid_{target_uid_gi}")])
         try:
             await q.message.edit_text(
                 f"🎁 <b>Выдача предмета</b>\nИгрок ID: <code>{target_uid_gi}</code>\n\nВыбери предмет и количество:",
@@ -48447,11 +48539,11 @@ async def on_callback(update: Update, ctx: ContextTypes.DEFAULT_TYPE):
         skin_rows = []
         for skin_n in skin_list[offset_gs:offset_gs + 8]:
             s_data = SKINS[skin_n]
-            skin_rows.append([InlineKeyboardButton(
+            skin_rows.append([btn(
                 f"{pemoji(skin_n)} {skin_n[:20]} ({s_data.get('rarity','?')[:3]})",
                 callback_data=f"admin_giveskin_do_{target_uid_gs}_{skin_n[:30]}",
             )])
-        skin_rows.append([InlineKeyboardButton("◀️ Назад", callback_data=f"admin_give_uid_{target_uid_gs}")])
+        skin_rows.append([btn("◀️ Назад", callback_data=f"admin_give_uid_{target_uid_gs}")])
         try:
             await q.message.edit_text(
                 f"🎨 <b>Выдача облика</b>\nИгрок ID: <code>{target_uid_gs}</code>\n\nВыбери облик:",
@@ -48600,7 +48692,7 @@ async def on_callback(update: Update, ctx: ContextTypes.DEFAULT_TYPE):
                 text,
                 parse_mode=ParseMode.HTML,
                 reply_markup=InlineKeyboardMarkup(
-                    [[InlineKeyboardButton("◀️ Назад", callback_data="admin_refresh")]]
+                    [[btn("◀️ Назад", callback_data="admin_refresh")]]
                 ),
             )
         except Exception:
@@ -48623,7 +48715,7 @@ async def on_callback(update: Update, ctx: ContextTypes.DEFAULT_TYPE):
                 "<i>Покажет полную информацию об игроке.</i>",
                 parse_mode=ParseMode.HTML,
                 reply_markup=InlineKeyboardMarkup(
-                    [[InlineKeyboardButton("◀️ Назад", callback_data="admin_refresh")]]
+                    [[btn("◀️ Назад", callback_data="admin_refresh")]]
                 ),
             )
         except Exception:
@@ -48744,8 +48836,8 @@ async def on_callback(update: Update, ctx: ContextTypes.DEFAULT_TYPE):
                 text,
                 parse_mode=ParseMode.HTML,
                 reply_markup=InlineKeyboardMarkup([
-                    [InlineKeyboardButton("🔴 Владельцы мифических обликов", callback_data="admin_mythic_owners")],
-                    [InlineKeyboardButton("◀️ Назад", callback_data="admin_refresh")],
+                    [btn("🔴 Владельцы мифических обликов", callback_data="admin_mythic_owners")],
+                    [btn("◀️ Назад", callback_data="admin_refresh")],
                 ]),
             )
         except Exception:
@@ -48821,8 +48913,8 @@ async def on_callback(update: Update, ctx: ContextTypes.DEFAULT_TYPE):
                 text,
                 parse_mode=ParseMode.HTML,
                 reply_markup=InlineKeyboardMarkup([
-                    [InlineKeyboardButton("◀️ Назад к казино", callback_data="admin_casino_stats")],
-                    [InlineKeyboardButton("🏠 Главное меню", callback_data="admin_refresh")],
+                    [btn("◀️ Назад к казино", callback_data="admin_casino_stats")],
+                    [btn("🏠 Главное меню", callback_data="admin_refresh")],
                 ]),
             )
         except Exception:
@@ -48847,12 +48939,12 @@ async def on_callback(update: Update, ctx: ContextTypes.DEFAULT_TYPE):
             lines.append(f"<b>{label}</b>: <code>{current}</code>")
             kb_rows.append(
                 [
-                    InlineKeyboardButton(
+                    btn(
                         f"✏️ {label}", callback_data=f"admin_sticker_edit_{action}"
                     )
                 ]
             )
-        kb_rows.append([InlineKeyboardButton("◀️ Назад", callback_data="admin_refresh")])
+        kb_rows.append([btn("◀️ Назад", callback_data="admin_refresh")])
         lines.append(
             "\n<i>Нажми на действие чтобы изменить индексы.\n"
             "Индексы 0-49 соответствуют PREMIUM_STICKER_IDS.</i>"
@@ -48893,7 +48985,7 @@ async def on_callback(update: Update, ctx: ContextTypes.DEFAULT_TYPE):
                 reply_markup=InlineKeyboardMarkup(
                     [
                         [
-                            InlineKeyboardButton(
+                            btn(
                                 "◀️ Назад к стикерам", callback_data="admin_stickers"
                             )
                         ]
@@ -48934,7 +49026,7 @@ async def on_callback(update: Update, ctx: ContextTypes.DEFAULT_TYPE):
             flag = " 🚨" if cnt > 50 else ""
             lines.append(f"{'⚠️' if cnt > 50 else '👤'} <b>{name}</b> ({uname}) — {cnt} чел., {earned or 0}{coin_emoji()}{flag}")
             if cnt > 50:
-                kb_rows_ref.append([InlineKeyboardButton(
+                kb_rows_ref.append([btn(
                     f"🔍 {name[:20]} ({cnt} реф.)",
                     callback_data=f"admin_refdetail_{ref_uid}"
                 )])
@@ -48942,7 +49034,7 @@ async def on_callback(update: Update, ctx: ContextTypes.DEFAULT_TYPE):
             lines.append("\n✅ <i>Подозрительных реферальных схем не обнаружено</i>")
         else:
             lines.append("\n⚠️ <b>Нажми на подозрительного пользователя для расследования:</b>")
-        kb_rows_ref.append([InlineKeyboardButton("◀️ Назад", callback_data="admin_refresh")])
+        kb_rows_ref.append([btn("◀️ Назад", callback_data="admin_refresh")])
         try:
             await q.message.edit_text(
                 "\n".join(lines),
@@ -49009,9 +49101,9 @@ async def on_callback(update: Update, ctx: ContextTypes.DEFAULT_TYPE):
             ban_cb = f"admin_unban_{suspect_id}" if ban_s else f"admin_ban_{suspect_id}"
             kb_det = InlineKeyboardMarkup([
                 [btn(ban_lbl, callback_data=ban_cb, style="danger")],
-                [InlineKeyboardButton(f"🗑 Удалить {len(suspicious_ids)} бот-рефералов", callback_data=f"admin_purge_botrefs_{suspect_id}")],
-                [InlineKeyboardButton(f"💸 Списать реф. монеты ({total_earned})", callback_data=f"admin_strip_refcoins_{suspect_id}")],
-                [InlineKeyboardButton("◀️ Назад к рефералам", callback_data="admin_referrals")],
+                [btn(f"🗑 Удалить {len(suspicious_ids)} бот-рефералов", callback_data=f"admin_purge_botrefs_{suspect_id}")],
+                [btn(f"💸 Списать реф. монеты ({total_earned})", callback_data=f"admin_strip_refcoins_{suspect_id}")],
+                [btn("◀️ Назад к рефералам", callback_data="admin_referrals")],
             ])
             await q.message.edit_text("\n".join(lines), parse_mode=ParseMode.HTML, reply_markup=kb_det)
         except Exception as e:
@@ -49021,7 +49113,7 @@ async def on_callback(update: Update, ctx: ContextTypes.DEFAULT_TYPE):
                     f"❌ <b>Ошибка при загрузке расследования</b>\n\n<code>{_html.escape(str(e))}</code>",
                     parse_mode=ParseMode.HTML,
                     reply_markup=InlineKeyboardMarkup(
-                        [[InlineKeyboardButton("◀️ Назад", callback_data="admin_referrals")]]
+                        [[btn("◀️ Назад", callback_data="admin_referrals")]]
                     ),
                 )
             except Exception:
@@ -49095,7 +49187,7 @@ async def on_callback(update: Update, ctx: ContextTypes.DEFAULT_TYPE):
                 "<i>Откроется карточка игрока с возможностью бана, выдачи монет и сброса КД.</i>",
                 parse_mode=ParseMode.HTML,
                 reply_markup=InlineKeyboardMarkup(
-                    [[InlineKeyboardButton("◀️ Назад", callback_data="admin_refresh")]]
+                    [[btn("◀️ Назад", callback_data="admin_refresh")]]
                 ),
             )
         except Exception:
@@ -49128,7 +49220,7 @@ async def on_callback(update: Update, ctx: ContextTypes.DEFAULT_TYPE):
                 "\n".join(lines),
                 parse_mode=ParseMode.HTML,
                 reply_markup=InlineKeyboardMarkup(
-                    [[InlineKeyboardButton("◀️ Назад", callback_data="admin_refresh")]]
+                    [[btn("◀️ Назад", callback_data="admin_refresh")]]
                 ),
             )
         except Exception:
@@ -49161,7 +49253,7 @@ async def on_callback(update: Update, ctx: ContextTypes.DEFAULT_TYPE):
                 "\n".join(lines),
                 parse_mode=ParseMode.HTML,
                 reply_markup=InlineKeyboardMarkup(
-                    [[InlineKeyboardButton("◀️ Назад", callback_data="admin_refresh")]]
+                    [[btn("◀️ Назад", callback_data="admin_refresh")]]
                 ),
                 link_preview_options=LinkPreviewOptions(is_disabled=True),
             )
@@ -49210,13 +49302,13 @@ async def on_callback(update: Update, ctx: ContextTypes.DEFAULT_TYPE):
             )
         nav_g = []
         if offset_g > 0:
-            nav_g.append(InlineKeyboardButton("◀️ Новее", callback_data=f"admin_gifts_{max(0, offset_g-15)}"))
+            nav_g.append(btn("◀️ Новее", callback_data=f"admin_gifts_{max(0, offset_g-15)}"))
         if offset_g + 15 < cnt_g:
-            nav_g.append(InlineKeyboardButton("▶️ Старее", callback_data=f"admin_gifts_{offset_g+15}"))
+            nav_g.append(btn("▶️ Старее", callback_data=f"admin_gifts_{offset_g+15}"))
         kb_g_rows = []
         if nav_g:
             kb_g_rows.append(nav_g)
-        kb_g_rows.append([InlineKeyboardButton("◀️ Назад", callback_data="admin_refresh")])
+        kb_g_rows.append([btn("◀️ Назад", callback_data="admin_refresh")])
         try:
             await q.message.edit_text(
                 "\n".join(lines_g),
@@ -49270,9 +49362,9 @@ async def on_callback(update: Update, ctx: ContextTypes.DEFAULT_TYPE):
             lines.append("<i>Билеты ещё не куплены</i>")
 
         kb_lot = InlineKeyboardMarkup([
-            [InlineKeyboardButton("🎲 Провести розыгрыш сейчас", callback_data="admin_lottery_draw_now")],
-            [InlineKeyboardButton("🗑 Сбросить билеты", callback_data="admin_lottery_reset")],
-            [InlineKeyboardButton("◀️ Назад", callback_data="admin_refresh")],
+            [btn("🎲 Провести розыгрыш сейчас", callback_data="admin_lottery_draw_now")],
+            [btn("🗑 Сбросить билеты", callback_data="admin_lottery_reset")],
+            [btn("◀️ Назад", callback_data="admin_refresh")],
         ])
         try:
             await q.message.edit_text(
@@ -49307,9 +49399,9 @@ async def on_callback(update: Update, ctx: ContextTypes.DEFAULT_TYPE):
         await admin_log(uid, "lottery_reset", details=f"deleted {cnt} tickets for {draw_date}")
         # Обновим страницу лотереи
         kb_lot = InlineKeyboardMarkup([
-            [InlineKeyboardButton("🎲 Провести розыгрыш сейчас", callback_data="admin_lottery_draw_now")],
-            [InlineKeyboardButton("🗑 Сбросить билеты", callback_data="admin_lottery_reset")],
-            [InlineKeyboardButton("◀️ Назад", callback_data="admin_refresh")],
+            [btn("🎲 Провести розыгрыш сейчас", callback_data="admin_lottery_draw_now")],
+            [btn("🗑 Сбросить билеты", callback_data="admin_lottery_reset")],
+            [btn("◀️ Назад", callback_data="admin_refresh")],
         ])
         try:
             await q.message.edit_text(
@@ -49337,7 +49429,7 @@ async def on_callback(update: Update, ctx: ContextTypes.DEFAULT_TYPE):
                 "<i>Сообщение получат все активные игроки.</i>",
                 parse_mode=ParseMode.HTML,
                 reply_markup=InlineKeyboardMarkup(
-                    [[InlineKeyboardButton("◀️ Назад", callback_data="admin_refresh")]]
+                    [[btn("◀️ Назад", callback_data="admin_refresh")]]
                 ),
             )
         except Exception:
@@ -49359,7 +49451,7 @@ async def on_callback(update: Update, ctx: ContextTypes.DEFAULT_TYPE):
                 f"🎁 <b>Выдача игрокам</b>\n\n{hint}",
                 parse_mode=ParseMode.HTML,
                 reply_markup=InlineKeyboardMarkup(
-                    [[InlineKeyboardButton("◀️ Назад", callback_data="admin_refresh")]]
+                    [[btn("◀️ Назад", callback_data="admin_refresh")]]
                 ),
             )
         except Exception:
@@ -49415,11 +49507,11 @@ async def on_callback(update: Update, ctx: ContextTypes.DEFAULT_TYPE):
         kb_eco = InlineKeyboardMarkup(
             [
                 [
-                    InlineKeyboardButton(
+                    btn(
                         "📊 Гача-стат", callback_data="admin_casino_stats"
                     )
                 ],
-                [InlineKeyboardButton("◀️ Назад", callback_data="admin_refresh")],
+                [btn("◀️ Назад", callback_data="admin_refresh")],
             ]
         )
         try:
@@ -49461,14 +49553,14 @@ async def on_callback(update: Update, ctx: ContextTypes.DEFAULT_TYPE):
                 f"Финал: {ends_dt} МСК"
             )
             legend_btns = [
-                [InlineKeyboardButton("🔄 Обновить прогресс в чате", callback_data="admin_legend_update")],
-                [InlineKeyboardButton("🏁 Завершить легенду досрочно", callback_data="admin_legend_finish")],
-                [InlineKeyboardButton("✏️ Изменить цели", callback_data="admin_legend_edit_goals")],
+                [btn("🔄 Обновить прогресс в чате", callback_data="admin_legend_update")],
+                [btn("🏁 Завершить легенду досрочно", callback_data="admin_legend_finish")],
+                [btn("✏️ Изменить цели", callback_data="admin_legend_edit_goals")],
             ]
         else:
             leg_status = "📜 <b>Легенда:</b> не активна"
             legend_btns = [
-                [InlineKeyboardButton("🚀 Запустить легенду сейчас", callback_data="admin_legend_start")],
+                [btn("🚀 Запустить легенду сейчас", callback_data="admin_legend_start")],
             ]
 
         text_ev = (
@@ -49480,11 +49572,11 @@ async def on_callback(update: Update, ctx: ContextTypes.DEFAULT_TYPE):
         )
         kb_ev = InlineKeyboardMarkup(
             legend_btns + [
-                [InlineKeyboardButton("🦟 Запустить комара", callback_data="admin_launch_mosquito")],
-                [InlineKeyboardButton("🎲 Разослать интерактивное событие", callback_data="admin_launch_iev")],
-                [InlineKeyboardButton("✨ Золотая лягушка", callback_data="admin_boost_menu")],
-                [InlineKeyboardButton("📢 Рассылка", callback_data="admin_broadcast")],
-                [InlineKeyboardButton("◀️ Назад", callback_data="admin_refresh")],
+                [btn("🦟 Запустить комара", callback_data="admin_launch_mosquito")],
+                [btn("🎲 Разослать интерактивное событие", callback_data="admin_launch_iev")],
+                [btn("✨ Золотая лягушка", callback_data="admin_boost_menu")],
+                [btn("📢 Рассылка", callback_data="admin_broadcast")],
+                [btn("◀️ Назад", callback_data="admin_refresh")],
             ]
         )
         try:
@@ -49577,7 +49669,7 @@ async def on_callback(update: Update, ctx: ContextTypes.DEFAULT_TYPE):
                 f"Доступные действия: feeds, washes, plays, heals, sleeps, gacha, casino",
                 parse_mode=ParseMode.HTML,
                 reply_markup=InlineKeyboardMarkup([
-                    [InlineKeyboardButton("◀️ Назад", callback_data="admin_events")]
+                    [btn("◀️ Назад", callback_data="admin_events")]
                 ]),
             )
         except Exception:
@@ -49624,21 +49716,21 @@ async def on_callback(update: Update, ctx: ContextTypes.DEFAULT_TYPE):
         )
         kb_sys = InlineKeyboardMarkup(
             [
-                [InlineKeyboardButton("💾 Бекап БД", callback_data="admin_backup")],
+                [btn("💾 Бекап БД", callback_data="admin_backup")],
                 [
-                    InlineKeyboardButton("📊 Статистика", callback_data="admin_stats"),
-                    InlineKeyboardButton("🎭 Стикеры", callback_data="admin_stickers"),
+                    btn("📊 Статистика", callback_data="admin_stats"),
+                    btn("🎭 Стикеры", callback_data="admin_stickers"),
                 ],
                 [
-                    InlineKeyboardButton(
+                    btn(
                         "🔍 Поиск игрока", callback_data="admin_search_hint"
                     ),
-                    InlineKeyboardButton("💀 Мёртвые", callback_data="admin_dead"),
+                    btn("💀 Мёртвые", callback_data="admin_dead"),
                 ],
-                [InlineKeyboardButton("🔄 Сбросить топ недели", callback_data="admin_reset_topw")],
-                [InlineKeyboardButton("🟢 Онлайн", callback_data="admin_online")],
-                [InlineKeyboardButton("📈 Нагрузка сервера", callback_data="admin_server_load")],
-                [InlineKeyboardButton("◀️ Назад", callback_data="admin_refresh")],
+                [btn("🔄 Сбросить топ недели", callback_data="admin_reset_topw")],
+                [btn("🟢 Онлайн", callback_data="admin_online")],
+                [btn("📈 Нагрузка сервера", callback_data="admin_server_load")],
+                [btn("◀️ Назад", callback_data="admin_refresh")],
             ]
         )
         try:
@@ -49672,7 +49764,7 @@ async def on_callback(update: Update, ctx: ContextTypes.DEFAULT_TYPE):
             await q.message.edit_text(
                 "✅ <b>Топ недели сброшен досрочно.</b>\n\nВсе xp_week обнулены.",
                 parse_mode=ParseMode.HTML,
-                reply_markup=InlineKeyboardMarkup([[InlineKeyboardButton("◀️ Назад", callback_data="admin_system")]]),
+                reply_markup=InlineKeyboardMarkup([[btn("◀️ Назад", callback_data="admin_system")]]),
             )
         except Exception:
             pass
@@ -49728,8 +49820,8 @@ async def on_callback(update: Update, ctx: ContextTypes.DEFAULT_TYPE):
                 f"  За месяц: {_fmt_peak('month')}",
                 parse_mode=ParseMode.HTML,
                 reply_markup=InlineKeyboardMarkup([
-                    [InlineKeyboardButton("🔄 Обновить", callback_data="admin_online")],
-                    [InlineKeyboardButton("◀️ Назад", callback_data="admin_system")],
+                    [btn("🔄 Обновить", callback_data="admin_online")],
+                    [btn("◀️ Назад", callback_data="admin_system")],
                 ]),
             )
         except Exception:
@@ -49830,8 +49922,8 @@ async def on_callback(update: Update, ctx: ContextTypes.DEFAULT_TYPE):
                 text_load,
                 parse_mode=ParseMode.HTML,
                 reply_markup=InlineKeyboardMarkup([
-                    [InlineKeyboardButton("🔄 Обновить", callback_data="admin_server_load_refresh")],
-                    [InlineKeyboardButton("◀️ Назад", callback_data="admin_system")],
+                    [btn("🔄 Обновить", callback_data="admin_server_load_refresh")],
+                    [btn("◀️ Назад", callback_data="admin_system")],
                 ]),
             )
         except Exception:
@@ -49968,23 +50060,23 @@ async def on_callback(update: Update, ctx: ContextTypes.DEFAULT_TYPE):
         kb = InlineKeyboardMarkup(
             [
                 [
-                    InlineKeyboardButton(
+                    btn(
                         f"🎟 Купить 1 билет ({LOTTERY_TICKET_COST}{coin_plain()})",
                         callback_data="lottery_buy_1",
                     ),
                 ],
                 [
-                    InlineKeyboardButton(
+                    btn(
                         f"🎟×5 ({LOTTERY_TICKET_COST*5}{coin_plain()})",
                         callback_data="lottery_buy_5",
                     ),
-                    InlineKeyboardButton(
+                    btn(
                         f"🎟×10 ({LOTTERY_TICKET_COST*10}{coin_plain()})",
                         callback_data="lottery_buy_10",
                     ),
                 ],
-                [InlineKeyboardButton("🔄 Обновить", callback_data="lottery_refresh"),
-                 InlineKeyboardButton("◀️ Назад", callback_data="menu_games")],
+                [btn("🔄 Обновить", callback_data="lottery_refresh"),
+                 btn("◀️ Назад", callback_data="menu_games")],
             ]
         )
         try:
@@ -50007,7 +50099,7 @@ async def on_callback(update: Update, ctx: ContextTypes.DEFAULT_TYPE):
                 f"<i>Для открытия карточки: /adminlookup {target_uid_give}</i>",
                 parse_mode=ParseMode.HTML,
                 reply_markup=InlineKeyboardMarkup(
-                    [[InlineKeyboardButton("◀️ Назад", callback_data="admin_refresh")]]
+                    [[btn("◀️ Назад", callback_data="admin_refresh")]]
                 ),
             )
         except Exception:
@@ -50151,7 +50243,7 @@ async def on_callback(update: Update, ctx: ContextTypes.DEFAULT_TYPE):
                 f"<i>Ещё {remaining} {'место' if remaining == 1 else 'места'} свободно</i>"
             )
             new_kb = InlineKeyboardMarkup(
-                [[InlineKeyboardButton(
+                [[btn(
                     f"🦟 Поймать! ({remaining} {'место' if remaining == 1 else 'места' if 2 <= remaining <= 4 else 'мест'})",
                     callback_data=f"mosquito_{eid}",
                 )]]
@@ -50529,11 +50621,11 @@ async def on_callback(update: Update, ctx: ContextTypes.DEFAULT_TYPE):
                 callback_data="kva_retry_stars_10",
                 icon_id="6028338546736107668"
             )],
-            [InlineKeyboardButton(
+            [btn(
                 f"{NFT_KVA_COINS}{_E_COIN}",
                 callback_data="kva_retry_coins"
             )],
-            [InlineKeyboardButton("❌ Закрыть", callback_data="kva_retry_cancel")],
+            [btn("❌ Закрыть", callback_data="kva_retry_cancel")],
         ])
         try:
             await q.message.edit_text(result_text, parse_mode=ParseMode.HTML, reply_markup=_retry_markup)
@@ -50723,8 +50815,8 @@ async def successful_payment(update: Update, ctx: ContextTypes.DEFAULT_TYPE):
         _retry_markup_10 = InlineKeyboardMarkup([
             [btn(f"{NFT_KVA_STARS} Stars", callback_data="kva_retry_stars", icon_id="6028338546736107668"),
              btn(f"{NFT_KVA_STARS * 10} Stars ×10", callback_data="kva_retry_stars_10", icon_id="6028338546736107668")],
-            [InlineKeyboardButton(f"{NFT_KVA_COINS}{_E_COIN}", callback_data="kva_retry_coins")],
-            [InlineKeyboardButton("❌ Закрыть", callback_data="kva_retry_cancel")],
+            [btn(f"{NFT_KVA_COINS}{_E_COIN}", callback_data="kva_retry_coins")],
+            [btn("❌ Закрыть", callback_data="kva_retry_cancel")],
         ])
         await update.message.reply_text(
             f"🐸 <b>Ква ×10!</b>\n\n"
@@ -50801,8 +50893,8 @@ async def successful_payment(update: Update, ctx: ContextTypes.DEFAULT_TYPE):
         _retry_markup_stars = InlineKeyboardMarkup([
             [btn(f"{NFT_KVA_STARS} Stars", callback_data="kva_retry_stars", icon_id="6028338546736107668"),
              btn(f"{NFT_KVA_STARS * 10} Stars ×10", callback_data="kva_retry_stars_10", icon_id="6028338546736107668")],
-            [InlineKeyboardButton(f"{NFT_KVA_COINS}{_E_COIN}", callback_data="kva_retry_coins")],
-            [InlineKeyboardButton("❌ Закрыть", callback_data="kva_retry_cancel")],
+            [btn(f"{NFT_KVA_COINS}{_E_COIN}", callback_data="kva_retry_coins")],
+            [btn("❌ Закрыть", callback_data="kva_retry_cancel")],
         ])
         await update.message.reply_text(
             f"🐸 <b>Ква!</b>\n\n"
@@ -51489,8 +51581,8 @@ async def on_message(update: Update, ctx: ContextTypes.DEFAULT_TYPE):
             f"<i>Облик снят из твоей коллекции до продажи или отмены.</i>",
             parse_mode=ParseMode.HTML,
             reply_markup=InlineKeyboardMarkup([[
-                InlineKeyboardButton("📋 Мои лоты", callback_data="market_my"),
-                InlineKeyboardButton("🏪 Рынок", callback_data="market_main"),
+                btn("📋 Мои лоты", callback_data="market_my"),
+                btn("🏪 Рынок", callback_data="market_main"),
             ]]),
         )
         return
@@ -51576,7 +51668,7 @@ async def on_message(update: Update, ctx: ContextTypes.DEFAULT_TYPE):
             parse_mode=ParseMode.HTML,
             reply_markup=InlineKeyboardMarkup([
                 [coin_btn(f"🔄 Ещё раз ({_wish_stake}🪙)", f"casino_wish_bet_{_wish_stake}")],
-                [InlineKeyboardButton("◀️ Казино", callback_data="casino_menu")],
+                [btn("◀️ Казино", callback_data="casino_menu")],
             ]),
         )
         return
@@ -51688,7 +51780,7 @@ async def on_message(update: Update, ctx: ContextTypes.DEFAULT_TYPE):
                     skin_rows.append(row)
                     row = []
             # Кнопка пропуска выбора облика
-            skin_rows.append([InlineKeyboardButton("⏭ Пропустить выбор облика", callback_data="onboard_skip")])
+            skin_rows.append([btn("⏭ Пропустить выбор облика", callback_data="onboard_skip")])
             kb_skins = InlineKeyboardMarkup(skin_rows)
             await update.message.reply_text(
                 f"✨ Отлично! Твою лягушку зовут <b>{he(text)}</b>!\n\n"
@@ -51702,7 +51794,7 @@ async def on_message(update: Update, ctx: ContextTypes.DEFAULT_TYPE):
                 "<i>Или нажми кнопку ниже чтобы пропустить и начать с именем из Telegram.</i>",
                 parse_mode=ParseMode.HTML,
                 reply_markup=InlineKeyboardMarkup([[
-                    InlineKeyboardButton("⏭ Пропустить", callback_data="onboard_skip")
+                    btn("⏭ Пропустить", callback_data="onboard_skip")
                 ]]),
             )
         return
@@ -51760,7 +51852,7 @@ async def on_message(update: Update, ctx: ContextTypes.DEFAULT_TYPE):
                     f"Открой управление стаей чтобы принять или отклонить.",
                     parse_mode=ParseMode.HTML,
                     reply_markup=InlineKeyboardMarkup([[
-                        InlineKeyboardButton("📬 Заявки", callback_data="staya_applications")
+                        btn("📬 Заявки", callback_data="staya_applications")
                     ]])
                 )
             except Exception: pass
@@ -51811,10 +51903,10 @@ async def on_message(update: Update, ctx: ContextTypes.DEFAULT_TYPE):
                     nm  = tf_fn.get("frog_name") or tf_fn.get("first_name") or "?"
                     un  = f"@{tf_fn['username']}" if tf_fn.get("username") else ""
                     lines_fn.append(f"<tg-emoji emoji-id='5341367834935075028'>🐸</tg-emoji> <b>{he(nm)}</b> {un} ур.{tf_fn.get('level',1)}")
-                    kb_rows_fn.append([InlineKeyboardButton(
+                    kb_rows_fn.append([btn(
                         f"🐸 {he(nm)}", callback_data=f"plaza_friend_{fid}"
                     )])
-            kb_rows_fn.append([InlineKeyboardButton("◀️ Назад", callback_data="plaza_sosedi")])
+            kb_rows_fn.append([btn("◀️ Назад", callback_data="plaza_sosedi")])
             await update.message.reply_text(
                 "\n".join(lines_fn), parse_mode=ParseMode.HTML,
                 reply_markup=InlineKeyboardMarkup(kb_rows_fn)
@@ -51831,8 +51923,8 @@ async def on_message(update: Update, ctx: ContextTypes.DEFAULT_TYPE):
                 f"<i>Попробуй @username или игровое имя лягушки</i>",
                 parse_mode=ParseMode.HTML,
                 reply_markup=InlineKeyboardMarkup([[
-                    InlineKeyboardButton("🔍 Искать снова", callback_data="plaza_find"),
-                    InlineKeyboardButton("◀️ Назад", callback_data="plaza_sosedi"),
+                    btn("🔍 Искать снова", callback_data="plaza_find"),
+                    btn("◀️ Назад", callback_data="plaza_sosedi"),
                 ]])
             )
             return
@@ -51852,18 +51944,18 @@ async def on_message(update: Update, ctx: ContextTypes.DEFAULT_TYPE):
         )
         kb_rows = []
         if target_id == user.id:
-            kb_rows.append([InlineKeyboardButton("Это ты! 🐸", callback_data="plaza_sosedi")])
+            kb_rows.append([btn("Это ты! 🐸", callback_data="plaza_sosedi")])
         elif already:
-            kb_rows.append([InlineKeyboardButton(
+            kb_rows.append([btn(
                 "👤 Открыть карточку", callback_data=f"plaza_friend_{target_id}"
             )])
         elif pending_out:
-            kb_rows.append([InlineKeyboardButton("📬 Заявка уже отправлена", callback_data="plaza_sosedi")])
+            kb_rows.append([btn("📬 Заявка уже отправлена", callback_data="plaza_sosedi")])
         else:
-            kb_rows.append([InlineKeyboardButton(
+            kb_rows.append([btn(
                 "🌱 Добавить соседом", callback_data=f"plaza_add_{target_id}"
             )])
-        kb_rows.append([InlineKeyboardButton("◀️ К соседям", callback_data="plaza_sosedi")])
+        kb_rows.append([btn("◀️ К соседям", callback_data="plaza_sosedi")])
         await update.message.reply_text(
             text_card, parse_mode=ParseMode.HTML,
             reply_markup=InlineKeyboardMarkup(kb_rows)
@@ -51943,8 +52035,8 @@ async def on_message(update: Update, ctx: ContextTypes.DEFAULT_TYPE):
                     )
                     try:
                         _kb = InlineKeyboardMarkup([[
-                            InlineKeyboardButton("✅ Принять", callback_data=f"friend_accept_{user.id}"),
-                            InlineKeyboardButton("❌ Отклонить", callback_data=f"friend_decline_{user.id}"),
+                            btn("✅ Принять", callback_data=f"friend_accept_{user.id}"),
+                            btn("❌ Отклонить", callback_data=f"friend_decline_{user.id}"),
                         ]])
                         await ctx.bot.send_message(
                             _target_id,
@@ -51997,8 +52089,8 @@ async def on_message(update: Update, ctx: ContextTypes.DEFAULT_TYPE):
             f"У тебя осталось: <b>{f_ci['coins']}{_E_COIN}</b>",
             parse_mode=ParseMode.HTML,
             reply_markup=InlineKeyboardMarkup([[
-                InlineKeyboardButton("🪙 Ещё в котёл", callback_data="staya_cauldron"),
-                InlineKeyboardButton("◀️ Стая", callback_data="plaza_staya"),
+                btn("🪙 Ещё в котёл", callback_data="staya_cauldron"),
+                btn("◀️ Стая", callback_data="plaza_staya"),
             ]])
         )
         return
@@ -52022,7 +52114,7 @@ async def on_message(update: Update, ctx: ContextTypes.DEFAULT_TYPE):
         await update.message.reply_text(
             f"✅ Название роли обновлено → {display}",
             reply_markup=InlineKeyboardMarkup([[
-                InlineKeyboardButton("🏷️ Назад к ролям", callback_data="staya_roles_rename"),
+                btn("🏷️ Назад к ролям", callback_data="staya_roles_rename"),
             ]])
         )
         return
@@ -52048,7 +52140,7 @@ async def on_message(update: Update, ctx: ContextTypes.DEFAULT_TYPE):
         await update.message.reply_text(
             f"✅ Стая переименована в <b>«{he(new_name)}»</b>!",
             parse_mode=ParseMode.HTML,
-            reply_markup=InlineKeyboardMarkup([[InlineKeyboardButton("◀️ Управление", callback_data="staya_manage")]])
+            reply_markup=InlineKeyboardMarkup([[btn("◀️ Управление", callback_data="staya_manage")]])
         )
         return
 
@@ -52094,7 +52186,7 @@ async def on_message(update: Update, ctx: ContextTypes.DEFAULT_TYPE):
             f"✅ Текст приглашения сохранён!\n\n<i>{he(invite_text_new)}</i>",
             parse_mode=ParseMode.HTML,
             reply_markup=InlineKeyboardMarkup([[
-                InlineKeyboardButton("◀️ В управление", callback_data="staya_manage")
+                btn("◀️ В управление", callback_data="staya_manage")
             ]])
         )
         return
@@ -52200,13 +52292,13 @@ async def on_message(update: Update, ctx: ContextTypes.DEFAULT_TYPE):
             rows_hm = []
             row_hm = []
             for ch in alphabet:
-                row_hm.append(InlineKeyboardButton(ch, callback_data=f"hm_letter_{game_id_hm}_{ch}"))
+                row_hm.append(btn(ch, callback_data=f"hm_letter_{game_id_hm}_{ch}"))
                 if len(row_hm) == 7:
                     rows_hm.append(row_hm)
                     row_hm = []
             if row_hm:
                 rows_hm.append(row_hm)
-            rows_hm.append([InlineKeyboardButton(t("btn_hm_surrender", f_hm), callback_data=f"hm_give_up_{game_id_hm}")])
+            rows_hm.append([btn(t("btn_hm_surrender", f_hm), callback_data=f"hm_give_up_{game_id_hm}")])
             display_hm = " ".join("_" for _ in word_candidate)
             owner_name = f_hm.get("first_name", "?") if f_hm else "?"
             prize_line = f"💰 Приз за победу: <b>{stake_hm}{_E_COIN}</b> · " if stake_hm else ""
@@ -52739,7 +52831,7 @@ async def on_message(update: Update, ctx: ContextTypes.DEFAULT_TYPE):
             if not _friz_won:
                 _friz_bot_me = await ctx.bot.get_me()
                 _friz_buy_kb = InlineKeyboardMarkup([[
-                    InlineKeyboardButton(
+                    btn(
                         "🧊 Ещё раз",
                         url=f"https://t.me/{_friz_bot_me.username}?start=icecube"
                     )
@@ -52996,7 +53088,7 @@ async def on_message(update: Update, ctx: ContextTypes.DEFAULT_TYPE):
             # Кнопка "Ещё раз" — диплинк в бота
             _bot_username = (await ctx.bot.get_me()).username
             _retry_kb = InlineKeyboardMarkup([[
-                InlineKeyboardButton(
+                btn(
                     "🔄 Ещё раз",
                     url=f"https://t.me/{_bot_username}?start=kva_retry"
                 )
@@ -53024,7 +53116,7 @@ async def on_message(update: Update, ctx: ContextTypes.DEFAULT_TYPE):
         if await _fz_active() and not _fz_won_kva:
             _bot_me = await ctx.bot.get_me()
             _fz_kb = InlineKeyboardMarkup([[
-                InlineKeyboardButton(
+                btn(
                     "🧊 Ещё раз",
                     url=f"https://t.me/{_bot_me.username}?start=icecube"
                 )
@@ -53692,7 +53784,7 @@ async def job_staya_events(ctx: ContextTypes.DEFAULT_TYPE):
             # Рассылаем всем участникам — с кнопками выбора прямо в сообщении
             members = await staya_get_members(staya["id"])
             choice_buttons = [
-                [InlineKeyboardButton(ch["label"], callback_data=f"staya_vote_{ev_id}_{ch['key']}")]
+                [btn(ch["label"], callback_data=f"staya_vote_{ev_id}_{ch['key']}")]
                 for ch in ev_data["choices"]
             ]
             event_kb = InlineKeyboardMarkup(choice_buttons)
@@ -54164,7 +54256,7 @@ async def job_adventure_tick(ctx: ContextTypes.DEFAULT_TYPE):
                         )
                         await db.commit()
                     kb = InlineKeyboardMarkup([[
-                        InlineKeyboardButton(o["label"],
+                        btn(o["label"],
                             callback_data=f"adv_choice_{adv_id}_{o['key']}")
                         for o in ch_data["options"]
                     ]])
@@ -54217,7 +54309,7 @@ async def job_adventure_tick(ctx: ContextTypes.DEFAULT_TYPE):
                     try:
                         await ctx.bot.send_message(frog_id, log_msg, parse_mode=ParseMode.HTML,
                             reply_markup=InlineKeyboardMarkup([[
-                                InlineKeyboardButton("📜 Все события", callback_data="adv_status"),
+                                btn("📜 Все события", callback_data="adv_status"),
                             ]]))
                     except Exception:
                         pass
@@ -54294,11 +54386,11 @@ async def job_sub_expiry_offer(ctx: ContextTypes.DEFAULT_TYPE):
                 f"⏱ Предложение истекает через <b>60 минут</b>!"
             )
             kb = InlineKeyboardMarkup([
-                [InlineKeyboardButton(
+                [btn(
                     f"🔥 Продлить за {sale_price}⭐ (скидка {pct}%)",
                     callback_data=cb_buy,
                 )],
-                [InlineKeyboardButton(
+                [btn(
                     f"💸 Обычная цена ({orig_price}⭐)",
                     callback_data="sub_buy_worker" if is_worker else "sub_buy_nanny",
                 )],
@@ -54479,7 +54571,7 @@ async def job_tutorial_nudge(ctx: ContextTypes.DEFAULT_TYPE):
             await ctx.bot.send_message(
                 uid_t, text_t, parse_mode=ParseMode.HTML,
                 reply_markup=InlineKeyboardMarkup([[
-                    InlineKeyboardButton("🐸 Открыть лягушку", callback_data="refresh"),
+                    btn("🐸 Открыть лягушку", callback_data="refresh"),
                 ]]),
             )
         except Exception:
@@ -54581,7 +54673,7 @@ async def job_reminders(ctx: ContextTypes.DEFAULT_TYPE):
 
         # Кнопка быстрого доступа
         frog_kb = InlineKeyboardMarkup([[
-            InlineKeyboardButton("🐸 Открыть лягушку", url=f"https://t.me/{ctx.bot.username}")
+            btn("🐸 Открыть лягушку", url=f"https://t.me/{ctx.bot.username}")
         ]])
 
         # ── Критично: HP < 10% или голод = 0 → предупреждаем раз в 1ч ──
@@ -54680,7 +54772,7 @@ async def job_mosquito(ctx: ContextTypes.DEFAULT_TYPE):
             eid = (await c.fetchone())[0]
 
     kb = InlineKeyboardMarkup(
-        [[InlineKeyboardButton("🦟 Поймать комара! (5 мест)", callback_data=f"mosquito_{eid}")]]
+        [[btn("🦟 Поймать комара! (5 мест)", callback_data=f"mosquito_{eid}")]]
     )
     text = (
         f"🦟 <b>В воздухе летает {mosq_label} комар!</b>\n\n"
@@ -54922,7 +55014,7 @@ async def job_background_decay(ctx: ContextTypes.DEFAULT_TYPE):
                         f"<i>Если некогда следить — Болотная Няня покормит её пока ты занят.</i>",
                         parse_mode=ParseMode.HTML,
                         reply_markup=InlineKeyboardMarkup([[
-                            InlineKeyboardButton("🧑‍🍼 Няня · 7 дней · 75⭐", callback_data="sub_buy_nanny_7"),
+                            btn("🧑‍🍼 Няня · 7 дней · 75⭐", callback_data="sub_buy_nanny_7"),
                         ]])
                     )
                 except Exception:
@@ -54951,7 +55043,7 @@ async def job_background_decay(ctx: ContextTypes.DEFAULT_TYPE):
                     if not _has_sub_death:
                         death_msg += "\n\n<i>Болотная Няня следила бы за ней пока ты был занят.</i>"
                         death_kb = InlineKeyboardMarkup([[
-                            InlineKeyboardButton("🧑‍🍼 Няня · 7 дней · 75⭐", callback_data="sub_buy_nanny_7"),
+                            btn("🧑‍🍼 Няня · 7 дней · 75⭐", callback_data="sub_buy_nanny_7"),
                         ]])
                     await ctx.bot.send_message(
                         uid_dec,
@@ -56700,11 +56792,11 @@ async def cmd_ttt5_group(update: Update, ctx: ContextTypes.DEFAULT_TYPE):
         "msg_id": None,
     }
     pub_kb = InlineKeyboardMarkup([[
-        InlineKeyboardButton(
+        btn(
             f"🎮 Принять вызов ({stake}{coin_plain()})",
             callback_data=f"ttt5_join_{game_id}"
         ),
-        InlineKeyboardButton("🚫 Отменить", callback_data=f"ttt5_cancel_{game_id}"),
+        btn("🚫 Отменить", callback_data=f"ttt5_cancel_{game_id}"),
     ]])
     pub_msg = await update.message.reply_text(
         f"⬛ <b>{he(user.first_name)}</b> вызывает на крестики-нолики 5×5!\n"
@@ -56761,9 +56853,9 @@ async def cmd_rps_group(update: Update, ctx: ContextTypes.DEFAULT_TYPE):
     }
     pub_kb = InlineKeyboardMarkup([
         [
-            InlineKeyboardButton("🪨 Камень", callback_data=f"rps_join_rock_{game_id}"),
-            InlineKeyboardButton("✂️ Ножницы", callback_data=f"rps_join_scissors_{game_id}"),
-            InlineKeyboardButton("📄 Бумага", callback_data=f"rps_join_paper_{game_id}"),
+            btn("🪨 Камень", callback_data=f"rps_join_rock_{game_id}"),
+            btn("✂️ Ножницы", callback_data=f"rps_join_scissors_{game_id}"),
+            btn("📄 Бумага", callback_data=f"rps_join_paper_{game_id}"),
         ],
         [btn("🚫 Отменить вызов", callback_data=f"rps_cancel_{game_id}", style="danger")],
     ])
@@ -56783,9 +56875,9 @@ async def cmd_rps_group(update: Update, ctx: ContextTypes.DEFAULT_TYPE):
             "✊ <b>Твой вызов опубликован!</b>\nВыбери свой ход (соперник не увидит до конца):",
             parse_mode=ParseMode.HTML,
             reply_markup=InlineKeyboardMarkup([[
-                InlineKeyboardButton("🪨 Камень", callback_data=f"rps_creator_rock_{game_id}"),
-                InlineKeyboardButton("✂️ Ножницы", callback_data=f"rps_creator_scissors_{game_id}"),
-                InlineKeyboardButton("📄 Бумага", callback_data=f"rps_creator_paper_{game_id}"),
+                btn("🪨 Камень", callback_data=f"rps_creator_rock_{game_id}"),
+                btn("✂️ Ножницы", callback_data=f"rps_creator_scissors_{game_id}"),
+                btn("📄 Бумага", callback_data=f"rps_creator_paper_{game_id}"),
             ]]),
         )
     except Exception:
@@ -57278,7 +57370,7 @@ async def cmd_funnel_start(update: Update, ctx: ContextTypes.DEFAULT_TYPE):
     announce_lines.append("\n<i>Нажми кнопку, чтобы сжечь облик</i>")
 
     kb = InlineKeyboardMarkup([[
-        InlineKeyboardButton("🔥 Сжечь облик", callback_data=f"funnel_menu_{event_id}"),
+        btn("🔥 Сжечь облик", callback_data=f"funnel_menu_{event_id}"),
     ]])
     await update.message.reply_text("\n".join(announce_lines), parse_mode=ParseMode.HTML, reply_markup=kb)
 
@@ -57537,7 +57629,7 @@ async def farewell_phase2(ctx: ContextTypes.DEFAULT_TYPE):
     name = fw["frog_name"]
 
     kb = InlineKeyboardMarkup([
-        [InlineKeyboardButton("🕯️ Зажечь свечу", callback_data=f"farewell_candle_{fw['uid']}")],
+        [btn("🕯️ Зажечь свечу", callback_data=f"farewell_candle_{fw['uid']}")],
         [btn("🌿 Воскресить бесплатно", callback_data=f"farewell_revive_{fw['uid']}", style="success")],
     ])
     try:
@@ -58039,8 +58131,8 @@ async def on_inline_query(update: Update, ctx: ContextTypes.DEFAULT_TYPE):
                 "🌿 Присоединяйся к Frog Tamagotchi!\n\nУ меня пока нет стаи — ищу компанию 🐸",
             ),
             reply_markup=InlineKeyboardMarkup([[
-                InlineKeyboardButton("🐸 Играть", url="https://t.me/FrogsGame_bot"),
-                InlineKeyboardButton("💬 Чат", url="https://t.me/FrogGame"),
+                btn("🐸 Играть", url="https://t.me/FrogsGame_bot"),
+                btn("💬 Чат", url="https://t.me/FrogGame"),
             ]]),
         )
         await query.answer([result], cache_time=10)
@@ -58083,12 +58175,12 @@ async def on_inline_query(update: Update, ctx: ContextTypes.DEFAULT_TYPE):
             parse_mode=ParseMode.HTML,
         ),
         reply_markup=InlineKeyboardMarkup([
-            [InlineKeyboardButton(
+            [btn(
                 "🌿 Вступить в стаю",
                 callback_data=f"staya_join_{staya['id']}_{uid}"
             )],
-            [InlineKeyboardButton("💬 Чат болота", url="https://t.me/FrogGame"),
-             InlineKeyboardButton("🐸 Играть", url="https://t.me/FrogsGame_bot")],
+            [btn("💬 Чат болота", url="https://t.me/FrogGame"),
+             btn("🐸 Играть", url="https://t.me/FrogsGame_bot")],
         ]),
     )
     # ── Реферальное приглашение ─────────────────────────────────────────
@@ -58110,7 +58202,7 @@ async def on_inline_query(update: Update, ctx: ContextTypes.DEFAULT_TYPE):
             parse_mode=ParseMode.HTML,
         ),
         reply_markup=InlineKeyboardMarkup([[
-            InlineKeyboardButton("🐸 Начать играть", url=ref_url),
+            btn("🐸 Начать играть", url=ref_url),
         ]]),
     )
 
@@ -58124,7 +58216,7 @@ async def on_inline_query(update: Update, ctx: ContextTypes.DEFAULT_TYPE):
             parse_mode=ParseMode.HTML,
         ),
         reply_markup=InlineKeyboardMarkup([[
-            InlineKeyboardButton("✅ Принять в соседи", url=neighbor_url),
+            btn("✅ Принять в соседи", url=neighbor_url),
         ]]),
     )
 
@@ -58302,7 +58394,7 @@ async def cmd_staya_top(update: Update, ctx: ContextTypes.DEFAULT_TYPE):
     await update.message.reply_text(
         "\n".join(lines), parse_mode=ParseMode.HTML,
         reply_markup=InlineKeyboardMarkup([[
-            InlineKeyboardButton("🔄 Обновить", callback_data="staya_top_inline"),
+            btn("🔄 Обновить", callback_data="staya_top_inline"),
         ]])
     )
 
@@ -58622,8 +58714,8 @@ async def cmd_adminexpev(update: Update, ctx: ContextTypes.DEFAULT_TYPE):
             f"<b>#{exp['id']}</b> {biome_name} [{len(members)}/{exp.get('max_players','?')}]\n{roster}"
         )
         label = f"#{exp['id']} {biome_name} ({len(members)} уч.)"
-        buttons.append([InlineKeyboardButton(label, callback_data=f"aee_exp|{exp['id']}")])
-    buttons.append([InlineKeyboardButton("❌ Отмена", callback_data="aee_cancel")])
+        buttons.append([btn(label, callback_data=f"aee_exp|{exp['id']}")])
+    buttons.append([btn("❌ Отмена", callback_data="aee_cancel")])
 
     await update.message.reply_text(
         "\n\n".join(lines) + "\n\nВыбери экспедицию:",
@@ -58656,11 +58748,11 @@ async def _adminexpev_cb(query, data: str, bot=None):
         }
         buttons = []
         for t in types:
-            buttons.append([InlineKeyboardButton(
+            buttons.append([btn(
                 type_labels.get(t, t),
                 callback_data=f"aee_type|{exp_id}|{t}"
             )])
-        buttons.append([InlineKeyboardButton("❌ Отмена", callback_data="aee_cancel")])
+        buttons.append([btn("❌ Отмена", callback_data="aee_cancel")])
         await query.edit_message_text(
             f"🔧 Экспедиция <b>#{exp_id}</b>\n\nВыбери тип события:",
             parse_mode=ParseMode.HTML,
@@ -58679,9 +58771,9 @@ async def _adminexpev_cb(query, data: str, bot=None):
         for k, v in matching:
             raw_text = v.get("text") or v.get("riddle_text") or v.get("title") or k
             short = raw_text[:35].replace("\n", " ").replace("<b>", "").replace("</b>", "").replace("<i>", "").replace("</i>", "")
-            buttons.append([InlineKeyboardButton(short, callback_data=f"aee_fire|{exp_id}|{k}")])
-        buttons.append([InlineKeyboardButton("◀️ Назад", callback_data=f"aee_exp|{exp_id}"),
-                        InlineKeyboardButton("❌ Отмена", callback_data="aee_cancel")])
+            buttons.append([btn(short, callback_data=f"aee_fire|{exp_id}|{k}")])
+        buttons.append([btn("◀️ Назад", callback_data=f"aee_exp|{exp_id}"),
+                        btn("❌ Отмена", callback_data="aee_cancel")])
         await query.edit_message_text(
             f"🔧 Экспедиция <b>#{exp_id}</b> · <b>{ev_type}</b>\n\nВыбери событие:",
             parse_mode=ParseMode.HTML,
@@ -58899,22 +58991,22 @@ async def cmd_staya(update: Update, ctx: ContextTypes.DEFAULT_TYPE):
             f"{upgrade_line}\n\n"
             f"<b>Участники:</b>\n{member_lines}"
         )
-        kb_rows = [[InlineKeyboardButton("🎭 События стаи", callback_data="staya_events_view")],
-                   [InlineKeyboardButton("🪙 Пополнить котёл", callback_data="staya_cauldron")]]
+        kb_rows = [[btn("🎭 События стаи", callback_data="staya_events_view")],
+                   [btn("🪙 Пополнить котёл", callback_data="staya_cauldron")]]
         # Война и Столовая — прямо на главном экране если разблокированы
         _main_war_btns = []
         if staya.get("level", 1) >= 5:
-            _main_war_btns.append(InlineKeyboardButton("⚔️ Война", callback_data="war_menu"))
+            _main_war_btns.append(btn("⚔️ Война", callback_data="war_menu"))
         if staya.get("level", 1) >= 6:
-            _main_war_btns.append(InlineKeyboardButton("🍲 Столовая", callback_data="canteen_menu"))
+            _main_war_btns.append(btn("🍲 Столовая", callback_data="canteen_menu"))
         if _main_war_btns:
             kb_rows.append(_main_war_btns)
         if my_role in ("chief", "elder"):
-            kb_rows.append([InlineKeyboardButton("⚙️ Управление", callback_data="staya_manage")])
+            kb_rows.append([btn("⚙️ Управление", callback_data="staya_manage")])
         if my_role == "chief":
-            kb_rows.append([InlineKeyboardButton("🚪 Распустить стаю", callback_data="staya_disband")])
+            kb_rows.append([btn("🚪 Распустить стаю", callback_data="staya_disband")])
         else:
-            kb_rows.append([InlineKeyboardButton("🚪 Покинуть стаю", callback_data="staya_leave")])
+            kb_rows.append([btn("🚪 Покинуть стаю", callback_data="staya_leave")])
     else:
         text = (
             f"🌿 <b>Болотные Стаи</b>\n\n"
@@ -58924,7 +59016,7 @@ async def cmd_staya(update: Update, ctx: ContextTypes.DEFAULT_TYPE):
             f"У тебя: <b>{f['coins']}{_E_COIN}</b>"
         )
         kb_rows = [
-            [InlineKeyboardButton(f"🌿 Создать стаю ({STAYA_CREATE_COST}🪙)", callback_data="staya_create_start")],
+            [btn(f"🌿 Создать стаю ({STAYA_CREATE_COST}🪙)", callback_data="staya_create_start")],
         ]
     await update.message.reply_text(text, parse_mode=ParseMode.HTML,
                                     reply_markup=InlineKeyboardMarkup(kb_rows))
@@ -58966,14 +59058,14 @@ async def cmd_sosedi(update: Update, ctx: ContextTypes.DEFAULT_TYPE):
     lines.append("<i>Рыбалка с другом: /fish @username</i>")
 
     kb = InlineKeyboardMarkup([
-        [InlineKeyboardButton("📬 Заявки", callback_data="sosedi_pending")] if pending_in else [],
-        [InlineKeyboardButton("📖 Летопись", callback_data="letopis_view")],
+        [btn("📬 Заявки", callback_data="sosedi_pending")] if pending_in else [],
+        [btn("📖 Летопись", callback_data="letopis_view")],
     ])
     await update.message.reply_text(
         "\n".join(lines), parse_mode=ParseMode.HTML,
         reply_markup=InlineKeyboardMarkup([
-            *([[InlineKeyboardButton("📬 Заявки", callback_data="sosedi_pending")]] if pending_in else []),
-            [InlineKeyboardButton("📖 Летопись болота", callback_data="letopis_view")],
+            *([[btn("📬 Заявки", callback_data="sosedi_pending")]] if pending_in else []),
+            [btn("📖 Летопись болота", callback_data="letopis_view")],
         ])
     )
 
@@ -59016,8 +59108,8 @@ async def cmd_add_soseda(update: Update, ctx: ContextTypes.DEFAULT_TYPE):
     try:
         my_name = f.get("frog_name") or f.get("first_name") or "Кто-то"
         kb = InlineKeyboardMarkup([[
-            InlineKeyboardButton("✅ Принять", callback_data=f"friend_accept_{user.id}"),
-            InlineKeyboardButton("❌ Отклонить", callback_data=f"friend_decline_{user.id}"),
+            btn("✅ Принять", callback_data=f"friend_accept_{user.id}"),
+            btn("❌ Отклонить", callback_data=f"friend_decline_{user.id}"),
         ]])
         await ctx.bot.send_message(
             target_id,
@@ -59129,8 +59221,8 @@ async def cmd_gift_friend(update: Update, ctx: ContextTypes.DEFAULT_TYPE):
                     f"Переводы заморожены на 1 час.",
                     parse_mode=ParseMode.HTML,
                     reply_markup=InlineKeyboardMarkup([[
-                        InlineKeyboardButton("✅ Разморозить", callback_data=f"gift_unfreeze_{_review_id}"),
-                        InlineKeyboardButton("🚫 Продлить 24ч", callback_data=f"gift_keepfreeze_{_review_id}"),
+                        btn("✅ Разморозить", callback_data=f"gift_unfreeze_{_review_id}"),
+                        btn("🚫 Продлить 24ч", callback_data=f"gift_keepfreeze_{_review_id}"),
                     ]])
                 )
             except Exception:
@@ -59222,8 +59314,8 @@ async def cmd_fish(update: Update, ctx: ContextTypes.DEFAULT_TYPE):
     tname_disp = tname or tfirst or uname
     try:
         kb = InlineKeyboardMarkup([[
-            InlineKeyboardButton("🎣 Принять рыбалку", callback_data=f"fish_accept_{user.id}_{FISH_COST}"),
-            InlineKeyboardButton("❌ Отказать", callback_data=f"fish_decline_{user.id}"),
+            btn("🎣 Принять рыбалку", callback_data=f"fish_accept_{user.id}_{FISH_COST}"),
+            btn("❌ Отказать", callback_data=f"fish_decline_{user.id}"),
         ]])
         await ctx.bot.send_message(
             target_id,
@@ -59263,7 +59355,7 @@ async def cmd_letopis(update: Update, ctx: ContextTypes.DEFAULT_TYPE):
     await update.message.reply_text(
         "\n".join(lines), parse_mode=ParseMode.HTML,
         reply_markup=InlineKeyboardMarkup([[
-            InlineKeyboardButton("🔄 Обновить", callback_data="letopis_view"),
+            btn("🔄 Обновить", callback_data="letopis_view"),
         ]]),
     )
 
@@ -59298,26 +59390,26 @@ async def _show_frog_profile(bot, requester_uid: int, target_uid: int, send_fn):
 
     buttons = []
     if fr is None:
-        buttons.append([InlineKeyboardButton("🌱 Добавить соседом", callback_data=f"add_friend_{target_uid}")])
+        buttons.append([btn("🌱 Добавить соседом", callback_data=f"add_friend_{target_uid}")])
     elif fr.get("pending"):
-        buttons.append([InlineKeyboardButton("⏳ Заявка отправлена", callback_data="noop")])
+        buttons.append([btn("⏳ Заявка отправлена", callback_data="noop")])
     else:
         # Социальные действия
         soc_row1 = [
-            InlineKeyboardButton("🤗 Обнять",   callback_data=f"social_hug_{target_uid}"),
-            InlineKeyboardButton("✋ Почесать",  callback_data=f"social_scratch_{target_uid}"),
+            btn("🤗 Обнять",   callback_data=f"social_hug_{target_uid}"),
+            btn("✋ Почесать",  callback_data=f"social_scratch_{target_uid}"),
         ]
         soc_row2 = [
-            InlineKeyboardButton("🌟 Похвалить", callback_data=f"social_praise_{target_uid}"),
-            InlineKeyboardButton("🍎 Угостить",  callback_data=f"social_treat_{target_uid}"),
+            btn("🌟 Похвалить", callback_data=f"social_praise_{target_uid}"),
+            btn("🍎 Угостить",  callback_data=f"social_treat_{target_uid}"),
         ]
         soc_row3 = [
-            InlineKeyboardButton("🛁 Помыть",    callback_data=f"social_wash_{target_uid}"),
-            InlineKeyboardButton("💤 Убаюкать",  callback_data=f"social_lullaby_{target_uid}"),
+            btn("🛁 Помыть",    callback_data=f"social_wash_{target_uid}"),
+            btn("💤 Убаюкать",  callback_data=f"social_lullaby_{target_uid}"),
         ]
         buttons += [soc_row1, soc_row2, soc_row3]
-        buttons.append([InlineKeyboardButton("⚔️ Поход вместе", callback_data=f"adv_invite_{target_uid}")])
-    buttons.append([InlineKeyboardButton("🍎 Покормить", callback_data=f"feed_other_{target_uid}")])
+        buttons.append([btn("⚔️ Поход вместе", callback_data=f"adv_invite_{target_uid}")])
+    buttons.append([btn("🍎 Покормить", callback_data=f"feed_other_{target_uid}")])
     await send_fn(text, parse_mode=ParseMode.HTML, reply_markup=InlineKeyboardMarkup(buttons))
 
 
@@ -59398,10 +59490,10 @@ async def cmd_pohod(update: Update, ctx: ContextTypes.DEFAULT_TYPE):
     }
     try:
         kb = InlineKeyboardMarkup([
-            [InlineKeyboardButton("⚔️ 2 часа", callback_data=f"adv_accept_{user.id}_2"),
-             InlineKeyboardButton("⚔️ 4 часа", callback_data=f"adv_accept_{user.id}_4"),
-             InlineKeyboardButton("⚔️ 8 часов", callback_data=f"adv_accept_{user.id}_8")],
-            [InlineKeyboardButton("❌ Отказать", callback_data=f"adv_decline_{user.id}")],
+            [btn("⚔️ 2 часа", callback_data=f"adv_accept_{user.id}_2"),
+             btn("⚔️ 4 часа", callback_data=f"adv_accept_{user.id}_4"),
+             btn("⚔️ 8 часов", callback_data=f"adv_accept_{user.id}_8")],
+            [btn("❌ Отказать", callback_data=f"adv_decline_{user.id}")],
         ])
         await ctx.bot.send_message(
             target_id,
@@ -59489,8 +59581,8 @@ async def cmd_bond(update: Update, ctx: ContextTypes.DEFAULT_TYPE):
     my_name = f.get("frog_name") or f.get("first_name") or "?"
     try:
         kb = InlineKeyboardMarkup([[
-            InlineKeyboardButton("💚 Принять Связь", callback_data=f"bond_accept_{user.id}"),
-            InlineKeyboardButton("❌ Отказать", callback_data=f"bond_decline_{user.id}"),
+            btn("💚 Принять Связь", callback_data=f"bond_accept_{user.id}"),
+            btn("❌ Отказать", callback_data=f"bond_decline_{user.id}"),
         ]])
         await ctx.bot.send_message(
             target_id,
@@ -60035,7 +60127,7 @@ def _chk_board_kb(gid, board, player, phase, sel=None, locked=False, lang="ru"):
             else:
                 lbl, cb = " ", "noop"
 
-            row.append(InlineKeyboardButton(lbl, callback_data=cb))
+            row.append(btn(lbl, callback_data=cb))
         rows.append(row)
 
     rows.append([
@@ -60123,8 +60215,8 @@ async def cmd_games(update: Update, ctx: ContextTypes.DEFAULT_TYPE):
             btn("🚢 Морской бой", callback_data="bs_menu", style="primary"),
         ],
         [
-            InlineKeyboardButton("🎮 Все игры", callback_data="menu_games"),
-            InlineKeyboardButton("🎲 Казино", callback_data="casino_menu"),
+            btn("🎮 Все игры", callback_data="menu_games"),
+            btn("🎲 Казино", callback_data="casino_menu"),
         ],
     ])
     await update.message.reply_text(
@@ -60266,7 +60358,7 @@ async def handle_checkers_callback(q, d, uid, ctx):
             kb = InlineKeyboardMarkup([
                 [btn(t("chk_play_black", f), callback_data="ck_side|black", style="primary"),
                  btn(t("chk_play_white", f), callback_data="ck_side|white", style="primary")],
-                [InlineKeyboardButton("◀️ Назад", callback_data="ck_mode|back")],
+                [btn("◀️ Назад", callback_data="ck_mode|back")],
             ])
             try:
                 await q.message.edit_text(
@@ -60278,8 +60370,8 @@ async def handle_checkers_callback(q, d, uid, ctx):
             await q.answer()
             stakes = [25, 50, 100, 200]
             kb = InlineKeyboardMarkup([
-                [InlineKeyboardButton(f"💰 {s}🪙", callback_data=f"ck_stake|{s}") for s in stakes],
-                [InlineKeyboardButton("◀️ Назад", callback_data="ck_mode|back")],
+                [btn(f"💰 {s}🪙", callback_data=f"ck_stake|{s}") for s in stakes],
+                [btn("◀️ Назад", callback_data="ck_mode|back")],
             ])
             try:
                 await q.message.edit_text(
@@ -60792,20 +60884,20 @@ def _bs_place_kb(gid: str, placed: set, size: int, max_ships: int) -> InlineKeyb
     COLS = _BS_COLS_MAP[size]
     rows = []
     # Строка-заголовок с буквами колонок
-    header = [InlineKeyboardButton(COLS[c], callback_data="noop") for c in range(size)]
+    header = [btn(COLS[c], callback_data="noop") for c in range(size)]
     rows.append(header)
     for r in range(size):
         row = []
         for c in range(size):
             cell = (r, c)
             lbl = "🟩" if cell in placed else "⬜"
-            row.append(InlineKeyboardButton(lbl, callback_data=f"bsp|{gid}|{r}|{c}"))
+            row.append(btn(lbl, callback_data=f"bsp|{gid}|{r}|{c}"))
         rows.append(row)
     count = len(placed)
     if count == max_ships:
         rows.append([btn("✅ Готово", callback_data=f"bsc|{gid}", style="success")])
     else:
-        rows.append([InlineKeyboardButton(f"🟩 Выбрано {count}/{max_ships}", callback_data="noop")])
+        rows.append([btn(f"🟩 Выбрано {count}/{max_ships}", callback_data="noop")])
     rows.append([btn("🚫 Отменить вызов", callback_data=f"bsq|{gid}", style="danger")])
     return InlineKeyboardMarkup(rows)
 
@@ -60816,12 +60908,12 @@ def _bs_fire_kb(gid: str, ships: dict, shots: dict, size: int, lang: str = "ru")
     COLS = _BS_COLS_MAP[size]
     rows = []
     # Шапка: номер строки + буквы колонок
-    header = [InlineKeyboardButton("·", callback_data="noop")]
-    header += [InlineKeyboardButton(COLS[c], callback_data="noop") for c in range(size)]
+    header = [btn("·", callback_data="noop")]
+    header += [btn(COLS[c], callback_data="noop") for c in range(size)]
     rows.append(header)
     for r in range(size):
         # Первая кнопка в строке — номер строки
-        row = [InlineKeyboardButton(str(r + 1), callback_data="noop")]
+        row = [btn(str(r + 1), callback_data="noop")]
         for c in range(size):
             state = _bs_cell_state(ships, shots, r, c)
             if state == "unseen":
@@ -60830,7 +60922,7 @@ def _bs_fire_kb(gid: str, ships: dict, shots: dict, size: int, lang: str = "ru")
             else:
                 lbl = _BS_EMOJI[state]
                 cb = "noop"
-            row.append(InlineKeyboardButton(lbl, callback_data=cb))
+            row.append(btn(lbl, callback_data=cb))
         rows.append(row)
     rows.append([btn(t("chk_surrender", lang), callback_data=f"bsq|{gid}", style="danger")])
     return InlineKeyboardMarkup(rows)
@@ -66922,7 +67014,7 @@ async def exp_handle_callback(q, uid: int, d: str,
         )
         if _bot_username:
             pub_kb = InlineKeyboardMarkup([[
-                InlineKeyboardButton(
+                btn(
                     "🚪 Вступить в экспедицию",
                     url=f"https://t.me/{_bot_username}?start=exp_join_{exp_id}"
                 )
@@ -67118,7 +67210,7 @@ async def exp_handle_callback(q, uid: int, d: str,
         )
         if _bot_uname:
             pub_kb = InlineKeyboardMarkup([[
-                InlineKeyboardButton("🚪 Вступить",
+                btn("🚪 Вступить",
                     url=f"https://t.me/{_bot_uname}?start=exp_join_{exp_id}")
             ]])
         else:
@@ -67179,7 +67271,7 @@ async def exp_handle_callback(q, uid: int, d: str,
         )
         if _bot_uname2:
             invite_kb = InlineKeyboardMarkup([[
-                InlineKeyboardButton("🚪 Вступить",
+                btn("🚪 Вступить",
                     url=f"https://t.me/{_bot_uname2}?start=exp_join_{exp_id}")
             ]])
         else:
@@ -67786,7 +67878,7 @@ async def exp_handle_callback(q, uid: int, d: str,
                 f"<i>Нажми чтобы присоединиться</i>"
             )
             mid_kb = InlineKeyboardMarkup([[
-                InlineKeyboardButton("🚪 Присоединиться в пути", url=mid_link)
+                btn("🚪 Присоединиться в пути", url=mid_link)
             ]])
             try:
                 await ctx.bot.send_message(CHAT_ID, mid_text, parse_mode=ParseMode.HTML, reply_markup=mid_kb)
@@ -69580,7 +69672,7 @@ async def _war_callbacks_v2(q, d: str, uid: int, f: dict, ctx) -> bool:
             try:
                 await q.message.edit_reply_markup(
                     reply_markup=InlineKeyboardMarkup([[
-                        InlineKeyboardButton(
+                        btn(
                             f"✅ Поставил {amount_b}🪙 → до {win_est}🪙",
                             callback_data="bet_already",
                         )
@@ -69624,7 +69716,7 @@ async def _war_callbacks_v2(q, d: str, uid: int, f: dict, ctx) -> bool:
                 f"Баланс: <b>{bal}{_E_COIN}</b>",
                 parse_mode=ParseMode.HTML,
                 reply_markup=InlineKeyboardMarkup([[
-                    InlineKeyboardButton("❌ Отмена", callback_data=f"bet_cancel_{uid}")
+                    btn("❌ Отмена", callback_data=f"bet_cancel_{uid}")
                 ]]),
             )
         except Exception:
@@ -69830,16 +69922,16 @@ async def _war_callbacks(q, d, uid, f, ctx):
                 f"   {effects_str} · <i>{food_item['desc']}</i>"
             )
             rows.append([
-                InlineKeyboardButton(
+                btn(
                     f"Купить ×1 {food_item['emoji']} {food_item['name']} ({food_item['price']}🪙)",
                     callback_data=f"buy_food_{fid}",
                 ),
-                InlineKeyboardButton(
+                btn(
                     f"×10 ({food_item['price']*10}🪙)",
                     callback_data=f"buy_food_bulk_{fid}_10",
                 ),
             ])
-        rows.append([InlineKeyboardButton("◀️ Назад в столовую", callback_data="canteen_menu")])
+        rows.append([btn("◀️ Назад в столовую", callback_data="canteen_menu")])
         text = header + "\n" + "\n\n".join(item_lines)
         try:
             await q.message.edit_text(text, parse_mode=ParseMode.HTML,
