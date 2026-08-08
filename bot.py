@@ -34959,14 +34959,289 @@ async def casino_router(update: Update, ctx: ContextTypes.DEFAULT_TYPE):
 # ══════════════════════════════════════════════════════════════════════════════
 # Вынесено из on_callback. Регистрируется с pattern='^(duel|battle_|tournament)', поэтому
 # нажатие попадает сразу сюда, минуя чужие условия.
+# ══════════════════════════════════════════════════════════════════════════════
+# ⚔️  ПРОВЕДЕНИЕ ДУЭЛИ
+# ══════════════════════════════════════════════════════════════════════════════
+# Вынесено из ветки duel_accept_, потому что к дуэли ведут две кнопки:
+# «Принять» в личном вызове и «Принять вызов» в открытом. Раньше вторая
+# подменяла d на duel_accept_ и рассчитывала провалиться в соседнюю ветку —
+# после разноса on_callback по роутерам проваливаться стало некуда.
+async def duel_run(q, uid: int, f: dict, duel_id: int, ctx) -> None:
+    async with aiosqlite.connect(DB_PATH) as db:
+        db.row_factory = aiosqlite.Row
+        async with db.execute("SELECT * FROM duels WHERE id=?", (duel_id,)) as c:
+            duel = await c.fetchone()
+    if not duel:
+        await q.answer("Дуэль не найдена", show_alert=True)
+        return
+    duel = dict(duel)
+    if duel["status"] != "pending":
+        await q.answer("Дуэль уже завершена", show_alert=True)
+        return
+    if uid != duel["target_id"]:
+        await q.answer("Это не твоя дуэль", show_alert=True)
+        return
+    challenger = await db_get(duel["challenger_id"])
+    if not challenger:
+        await q.answer("Вызывающий не найден", show_alert=True)
+        return
+    if challenger["coins"] < duel["stake"] or f["coins"] < duel["stake"]:
+        await q.answer("Недостаточно КваКоинов", show_alert=True)
+        async with aiosqlite.connect(DB_PATH) as db:
+            await db.execute(
+                "UPDATE duels SET status='cancelled' WHERE id=?", (duel_id,)
+            )
+            await db.commit()
+        return
+
+    # Атомично переводим статус в in_progress ДО анимации — защита от двойного Accept
+    async with aiosqlite.connect(DB_PATH) as db:
+        cur = await db.execute(
+            "UPDATE duels SET status='in_progress' WHERE id=? AND status='pending'",
+            (duel_id,),
+        )
+        await db.commit()
+        if cur.rowcount == 0:
+            await q.answer("Дуэль уже принята", show_alert=True)
+            return
+
+    # Бонус от редкости облика (мифический +3, легендарный +2, эпический +1, редкий +0)
+    RARITY_BONUS = {
+        "mythic": 0,
+        "legendary": 0,
+        "epic": 0,
+        "rare": 0,
+        "uncommon": 0,
+        "common": 0,
+    }
+    c_skin_rarity = SKINS.get(challenger.get("skin", "Brownie"), {}).get(
+        "rarity", "common"
+    )
+    t_skin_rarity = SKINS.get(f.get("skin", "Brownie"), {}).get("rarity", "common")
+    c_bonus = RARITY_BONUS.get(c_skin_rarity, 0)
+    t_bonus = RARITY_BONUS.get(t_skin_rarity, 0)
+
+    # Анимированный бросок: сначала вызывающий
+    c_name = he(
+        challenger.get("frog_name") or f"Лягушка {challenger['first_name']}"
+    )
+    t_name = he(f.get("frog_name") or f"Лягушка {f['first_name']}")
+
+    # Определяем: дуэль в ЛС или в группе?
+    is_private_duel = q.message.chat.type == "private"
+    is_group_duel = q.message.chat.type in ("group", "supergroup")
+    # Если дуэль в ЛС, нужно дублировать прогресс в чат с challanger
+    mirror_duel_msg = None
+
+    try:
+        await q.message.edit_text(
+            f"{_E_SWORDS} <b>Дуэль начинается!</b>\n\n" f"🎲 {c_name} бросает кубик...",
+            parse_mode=ParseMode.HTML,
+        )
+    except (BadRequest, Forbidden):
+        pass
+    await q.answer()  # ← подтверждаем до длинной анимации (sleep 3.5 × 2)
+
+    # Зеркальное сообщение для challenger если дуэль в ЛС
+    if is_private_duel and duel["challenger_id"] != uid:
+        try:
+            mirror_duel_msg = await ctx.bot.send_message(
+                duel["challenger_id"],
+                f"{_E_SWORDS} <b>Дуэль начинается!</b>\n\n🎲 {c_name} бросает кубик...",
+                parse_mode=ParseMode.HTML,
+            )
+        except (BadRequest, Forbidden, TimedOut):
+            pass
+
+    dice_c = await ctx.bot.send_dice(chat_id=q.message.chat.id, emoji="🎲")
+    if is_group_duel:
+        asyncio.create_task(
+            schedule_delete(ctx.bot, q.message.chat.id, dice_c.message_id)
+        )
+    roll_c = dice_c.dice.value + c_bonus
+    # Пересылаем кубик challenger'у (не отправляем новый — иначе значение будет другим!)
+    if is_private_duel and duel["challenger_id"] != uid:
+        try:
+            await ctx.bot.forward_message(
+                chat_id=duel["challenger_id"],
+                from_chat_id=q.message.chat.id,
+                message_id=dice_c.message_id,
+            )
+        except (BadRequest, Forbidden, TimedOut):
+            pass
+    await asyncio.sleep(3.5)
+
+    # Затем цель
+    step2_text = (
+        f"✅ {c_name}: <b>{dice_c.dice.value}</b>"
+        + (f" = <b>{roll_c}</b>" if c_bonus else "")
+        + f"\n\n🎲 {t_name} бросает кубик..."
+    )
+    try:
+        step2_msg = await ctx.bot.send_message(
+            q.message.chat.id,
+            step2_text,
+            parse_mode=ParseMode.HTML,
+        )
+        if is_group_duel:
+            asyncio.create_task(
+                schedule_delete(ctx.bot, q.message.chat.id, step2_msg.message_id)
+            )
+    except (BadRequest, Forbidden, TimedOut):
+        pass
+    if is_private_duel and duel["challenger_id"] != uid:
+        try:
+            await ctx.bot.send_message(
+                duel["challenger_id"],
+                step2_text,
+                parse_mode=ParseMode.HTML,
+            )
+        except (BadRequest, Forbidden, TimedOut):
+            pass
+
+    dice_t = await ctx.bot.send_dice(chat_id=q.message.chat.id, emoji="🎲")
+    if is_group_duel:
+        asyncio.create_task(
+            schedule_delete(ctx.bot, q.message.chat.id, dice_t.message_id)
+        )
+    roll_t = dice_t.dice.value + t_bonus
+    # Пересылаем кубик цели challenger'у
+    if is_private_duel and duel["challenger_id"] != uid:
+        try:
+            await ctx.bot.forward_message(
+                chat_id=duel["challenger_id"],
+                from_chat_id=q.message.chat.id,
+                message_id=dice_t.message_id,
+            )
+        except (BadRequest, Forbidden, TimedOut):
+            pass
+    await asyncio.sleep(3.5)
+
+    if roll_c > roll_t:
+        winner, loser = challenger, f
+        w_roll, l_roll = roll_c, roll_t
+    elif roll_t > roll_c:
+        winner, loser = f, challenger
+        w_roll, l_roll = roll_t, roll_c
+    else:
+        # Ничья
+        async with aiosqlite.connect(DB_PATH) as db:
+            await db.execute(
+                "UPDATE duels SET status='draw' WHERE id=?", (duel_id,)
+            )
+            await db.commit()
+        try:
+            await q.message.edit_text(
+                f"🤝 <b>Ничья!</b>\n\nОба выбросили {roll_c}!\nСтавки возвращены.",
+                parse_mode=ParseMode.HTML,
+            )
+            if is_group_duel:
+                asyncio.create_task(schedule_delete(ctx.bot, q.message.chat.id, q.message.message_id))
+        except (BadRequest, Forbidden):
+            pass
+        return
+    winner["coins"] += duel["stake"]
+    loser["coins"] -= duel["stake"]
+    # Налог чата — применяем к выигрышу победителя
+    _duel_chat_id = q.message.chat.id if q.message and q.message.chat.type in ("group", "supergroup") else 0
+    if _duel_chat_id:
+        _tax_deduct = duel["stake"] - await apply_chat_tax(_duel_chat_id, winner["user_id"], duel["stake"], ctx)
+        winner["coins"] -= _tax_deduct
+        asyncio.create_task(log_chat_activity(_duel_chat_id, winner["user_id"],
+            winner.get("username", ""), "дуэль победа", duel["stake"] - _tax_deduct))
+    winner["total_duel_wins"] = winner.get("total_duel_wins", 0) + 1
+    winner["total_duels"] = winner.get("total_duels", 0) + 1
+    loser["total_duels"] = loser.get("total_duels", 0) + 1
+    loser["coins_spent"] = loser.get("coins_spent", 0) + duel["stake"]
+    # Дуэль даёт +0.5 exp ко всем боевым статам (независимо от исхода)
+    add_stat_exp(winner, atk=0.5, def_=0.5, hp=0.5)
+    add_stat_exp(loser, atk=0.5, def_=0.5, hp=0.5)
+    await db_save(winner)
+    await db_save(loser)
+    # player action log
+    asyncio.create_task(plog(
+        winner["user_id"], "duel_win",
+        f"vs uid={loser['user_id']} бросок={w_roll}>{l_roll} ставка={duel['stake']}",
+        coins_delta=duel["stake"],
+    ))
+    asyncio.create_task(plog(
+        loser["user_id"], "duel_lose",
+        f"vs uid={winner['user_id']} бросок={l_roll}<{w_roll} ставка={duel['stake']}",
+        coins_delta=-duel["stake"],
+    ))
+    async with aiosqlite.connect(DB_PATH) as db:
+        await db.execute(
+            "UPDATE duels SET status='finished' WHERE id=?", (duel_id,)
+        )
+        await db.commit()
+    # Квесты: участие в дуэли и победа
+    await quest_update(winner["user_id"], "duels")
+    await quest_update(winner["user_id"], "duel_wins")
+    await quest_update(loser["user_id"], "duels")
+    asyncio.create_task(update_trial_progress(winner["user_id"], "duels", bot=ctx.bot))
+    asyncio.create_task(update_trial_progress(winner["user_id"], "duel_wins", bot=ctx.bot))
+    asyncio.create_task(update_trial_progress(loser["user_id"], "duels", bot=ctx.bot))
+    # Проверяем реферальные этапы для победителя дуэли
+    await check_referral_stages(winner, ctx.bot)
+    await check_referral_stages(loser, ctx.bot)
+    # Логируем результат дуэли
+    asyncio.create_task(log_game(
+        winner["user_id"], "duel", duel["stake"], duel["stake"] * 2,
+        "win", {"opponent": loser["user_id"], "roll_winner": w_roll, "roll_loser": l_roll},
+    ))
+    asyncio.create_task(log_game(
+        loser["user_id"], "duel", duel["stake"], 0,
+        "loss", {"opponent": winner["user_id"], "roll_winner": w_roll, "roll_loser": l_roll},
+    ))
+    # ── Проверка подозрительного винрейта (сливные аккаунты) ─────────────
+    # check_duel_suspicious отключён вручную
+    # asyncio.create_task(check_duel_suspicious(loser["user_id"]))
+    # asyncio.create_task(check_duel_suspicious(winner["user_id"]))
+    w_name = he(winner.get("frog_name") or f"Лягушка {winner['first_name']}")
+    l_name = he(loser.get("frog_name") or f"Лягушка {loser['first_name']}")
+    result = (
+        f"{_E_SWORDS} <b>Дуэль завершена!</b>\n\n"
+        f"🎲 {w_name}: <b>{w_roll}</b>\n"
+        f"🎲 {l_name}: <b>{l_roll}</b>\n\n"
+        f"{_E_TROPHY} <b>{w_name}</b> победила!\n"
+        f"+{duel['stake']}{coin_emoji()} победителю"
+    )
+    try:
+        await q.message.edit_text(result, parse_mode=ParseMode.HTML)
+        if is_group_duel:
+            asyncio.create_task(schedule_delete(ctx.bot, q.message.chat.id, q.message.message_id))
+    except (BadRequest, Forbidden):
+        pass
+    # Уведомляем challenger (всегда — в группе это нужно, в ЛС тоже нужно)
+    try:
+        await ctx.bot.send_message(
+            duel["challenger_id"], result, parse_mode=ParseMode.HTML
+        )
+    except (BadRequest, Forbidden, TimedOut):
+        pass
+    # ── Анонс крупного выигрыша в дуэли ──────────
+    duel_prize = duel["stake"] * 2
+    if duel_prize > BIG_WIN_THRESHOLD:
+        asyncio.create_task(maybe_big_win_announce(
+            ctx.bot,
+            w_name,
+            duel_prize,
+            "Дуэль ⚔️",
+            stake=duel["stake"],
+            source_chat_id=winner.get("source_chat_id", 0),
+            uid=winner.get("user_id", 0),
+        ))
+    return
+
+
 async def duel_router(update: Update, ctx: ContextTypes.DEFAULT_TYPE):
     _g = await cb_guard(update, ctx)
     if _g is None:
         return
     q, uid, d, f = _g
 
-    if d.startswith("duel_accept_"):
-        duel_id = int(d[12:])
+    if d.startswith("duel_open_"):
+        duel_id = int(d[len("duel_open_"):])
         async with aiosqlite.connect(DB_PATH) as db:
             db.row_factory = aiosqlite.Row
             async with db.execute("SELECT * FROM duels WHERE id=?", (duel_id,)) as c:
@@ -34978,8 +35253,11 @@ async def duel_router(update: Update, ctx: ContextTypes.DEFAULT_TYPE):
         if duel["status"] != "pending":
             await q.answer("Дуэль уже завершена", show_alert=True)
             return
-        if uid != duel["target_id"]:
-            await q.answer("Это не твоя дуэль", show_alert=True)
+        if uid == duel["challenger_id"]:
+            await q.answer("Нельзя принять свой собственный вызов", show_alert=True)
+            return
+        if not f or not f.get("alive"):
+            await q.answer("Твоя лягушка мертва или не создана", show_alert=True)
             return
         challenger = await db_get(duel["challenger_id"])
         if not challenger:
@@ -34988,249 +35266,26 @@ async def duel_router(update: Update, ctx: ContextTypes.DEFAULT_TYPE):
         if challenger["coins"] < duel["stake"] or f["coins"] < duel["stake"]:
             await q.answer("Недостаточно КваКоинов", show_alert=True)
             async with aiosqlite.connect(DB_PATH) as db:
-                await db.execute(
-                    "UPDATE duels SET status='cancelled' WHERE id=?", (duel_id,)
-                )
+                await db.execute("UPDATE duels SET status='cancelled' WHERE id=?", (duel_id,))
                 await db.commit()
             return
-
-        # Атомично переводим статус в in_progress ДО анимации — защита от двойного Accept
+        # Назначаем нажавшего целью атомарно: открытый вызов принимает первый
         async with aiosqlite.connect(DB_PATH) as db:
             cur = await db.execute(
-                "UPDATE duels SET status='in_progress' WHERE id=? AND status='pending'",
-                (duel_id,),
+                "UPDATE duels SET target_id=? WHERE id=? AND status='pending' AND target_id=0",
+                (uid, duel_id)
             )
             await db.commit()
             if cur.rowcount == 0:
-                await q.answer("Дуэль уже принята", show_alert=True)
+                await q.answer("Дуэль уже принята другим игроком", show_alert=True)
                 return
+        # Дальше — та же дуэль, что и по личному вызову
+        await duel_run(q, uid, f, duel_id, ctx)
+        return
 
-        # Бонус от редкости облика (мифический +3, легендарный +2, эпический +1, редкий +0)
-        RARITY_BONUS = {
-            "mythic": 0,
-            "legendary": 0,
-            "epic": 0,
-            "rare": 0,
-            "uncommon": 0,
-            "common": 0,
-        }
-        c_skin_rarity = SKINS.get(challenger.get("skin", "Brownie"), {}).get(
-            "rarity", "common"
-        )
-        t_skin_rarity = SKINS.get(f.get("skin", "Brownie"), {}).get("rarity", "common")
-        c_bonus = RARITY_BONUS.get(c_skin_rarity, 0)
-        t_bonus = RARITY_BONUS.get(t_skin_rarity, 0)
-
-        # Анимированный бросок: сначала вызывающий
-        c_name = he(
-            challenger.get("frog_name") or f"Лягушка {challenger['first_name']}"
-        )
-        t_name = he(f.get("frog_name") or f"Лягушка {f['first_name']}")
-
-        # Определяем: дуэль в ЛС или в группе?
-        is_private_duel = q.message.chat.type == "private"
-        is_group_duel = q.message.chat.type in ("group", "supergroup")
-        # Если дуэль в ЛС, нужно дублировать прогресс в чат с challanger
-        mirror_duel_msg = None
-
-        try:
-            await q.message.edit_text(
-                f"{_E_SWORDS} <b>Дуэль начинается!</b>\n\n" f"🎲 {c_name} бросает кубик...",
-                parse_mode=ParseMode.HTML,
-            )
-        except (BadRequest, Forbidden):
-            pass
-        await q.answer()  # ← подтверждаем до длинной анимации (sleep 3.5 × 2)
-
-        # Зеркальное сообщение для challenger если дуэль в ЛС
-        if is_private_duel and duel["challenger_id"] != uid:
-            try:
-                mirror_duel_msg = await ctx.bot.send_message(
-                    duel["challenger_id"],
-                    f"{_E_SWORDS} <b>Дуэль начинается!</b>\n\n🎲 {c_name} бросает кубик...",
-                    parse_mode=ParseMode.HTML,
-                )
-            except (BadRequest, Forbidden, TimedOut):
-                pass
-
-        dice_c = await ctx.bot.send_dice(chat_id=q.message.chat.id, emoji="🎲")
-        if is_group_duel:
-            asyncio.create_task(
-                schedule_delete(ctx.bot, q.message.chat.id, dice_c.message_id)
-            )
-        roll_c = dice_c.dice.value + c_bonus
-        # Пересылаем кубик challenger'у (не отправляем новый — иначе значение будет другим!)
-        if is_private_duel and duel["challenger_id"] != uid:
-            try:
-                await ctx.bot.forward_message(
-                    chat_id=duel["challenger_id"],
-                    from_chat_id=q.message.chat.id,
-                    message_id=dice_c.message_id,
-                )
-            except (BadRequest, Forbidden, TimedOut):
-                pass
-        await asyncio.sleep(3.5)
-
-        # Затем цель
-        step2_text = (
-            f"✅ {c_name}: <b>{dice_c.dice.value}</b>"
-            + (f" = <b>{roll_c}</b>" if c_bonus else "")
-            + f"\n\n🎲 {t_name} бросает кубик..."
-        )
-        try:
-            step2_msg = await ctx.bot.send_message(
-                q.message.chat.id,
-                step2_text,
-                parse_mode=ParseMode.HTML,
-            )
-            if is_group_duel:
-                asyncio.create_task(
-                    schedule_delete(ctx.bot, q.message.chat.id, step2_msg.message_id)
-                )
-        except (BadRequest, Forbidden, TimedOut):
-            pass
-        if is_private_duel and duel["challenger_id"] != uid:
-            try:
-                await ctx.bot.send_message(
-                    duel["challenger_id"],
-                    step2_text,
-                    parse_mode=ParseMode.HTML,
-                )
-            except (BadRequest, Forbidden, TimedOut):
-                pass
-
-        dice_t = await ctx.bot.send_dice(chat_id=q.message.chat.id, emoji="🎲")
-        if is_group_duel:
-            asyncio.create_task(
-                schedule_delete(ctx.bot, q.message.chat.id, dice_t.message_id)
-            )
-        roll_t = dice_t.dice.value + t_bonus
-        # Пересылаем кубик цели challenger'у
-        if is_private_duel and duel["challenger_id"] != uid:
-            try:
-                await ctx.bot.forward_message(
-                    chat_id=duel["challenger_id"],
-                    from_chat_id=q.message.chat.id,
-                    message_id=dice_t.message_id,
-                )
-            except (BadRequest, Forbidden, TimedOut):
-                pass
-        await asyncio.sleep(3.5)
-
-        if roll_c > roll_t:
-            winner, loser = challenger, f
-            w_roll, l_roll = roll_c, roll_t
-        elif roll_t > roll_c:
-            winner, loser = f, challenger
-            w_roll, l_roll = roll_t, roll_c
-        else:
-            # Ничья
-            async with aiosqlite.connect(DB_PATH) as db:
-                await db.execute(
-                    "UPDATE duels SET status='draw' WHERE id=?", (duel_id,)
-                )
-                await db.commit()
-            try:
-                await q.message.edit_text(
-                    f"🤝 <b>Ничья!</b>\n\nОба выбросили {roll_c}!\nСтавки возвращены.",
-                    parse_mode=ParseMode.HTML,
-                )
-                if is_group_duel:
-                    asyncio.create_task(schedule_delete(ctx.bot, q.message.chat.id, q.message.message_id))
-            except (BadRequest, Forbidden):
-                pass
-            return
-        winner["coins"] += duel["stake"]
-        loser["coins"] -= duel["stake"]
-        # Налог чата — применяем к выигрышу победителя
-        _duel_chat_id = q.message.chat.id if q.message and q.message.chat.type in ("group", "supergroup") else 0
-        if _duel_chat_id:
-            _tax_deduct = duel["stake"] - await apply_chat_tax(_duel_chat_id, winner["user_id"], duel["stake"], ctx)
-            winner["coins"] -= _tax_deduct
-            asyncio.create_task(log_chat_activity(_duel_chat_id, winner["user_id"],
-                winner.get("username", ""), "дуэль победа", duel["stake"] - _tax_deduct))
-        winner["total_duel_wins"] = winner.get("total_duel_wins", 0) + 1
-        winner["total_duels"] = winner.get("total_duels", 0) + 1
-        loser["total_duels"] = loser.get("total_duels", 0) + 1
-        loser["coins_spent"] = loser.get("coins_spent", 0) + duel["stake"]
-        # Дуэль даёт +0.5 exp ко всем боевым статам (независимо от исхода)
-        add_stat_exp(winner, atk=0.5, def_=0.5, hp=0.5)
-        add_stat_exp(loser, atk=0.5, def_=0.5, hp=0.5)
-        await db_save(winner)
-        await db_save(loser)
-        # player action log
-        asyncio.create_task(plog(
-            winner["user_id"], "duel_win",
-            f"vs uid={loser['user_id']} бросок={w_roll}>{l_roll} ставка={duel['stake']}",
-            coins_delta=duel["stake"],
-        ))
-        asyncio.create_task(plog(
-            loser["user_id"], "duel_lose",
-            f"vs uid={winner['user_id']} бросок={l_roll}<{w_roll} ставка={duel['stake']}",
-            coins_delta=-duel["stake"],
-        ))
-        async with aiosqlite.connect(DB_PATH) as db:
-            await db.execute(
-                "UPDATE duels SET status='finished' WHERE id=?", (duel_id,)
-            )
-            await db.commit()
-        # Квесты: участие в дуэли и победа
-        await quest_update(winner["user_id"], "duels")
-        await quest_update(winner["user_id"], "duel_wins")
-        await quest_update(loser["user_id"], "duels")
-        asyncio.create_task(update_trial_progress(winner["user_id"], "duels", bot=ctx.bot))
-        asyncio.create_task(update_trial_progress(winner["user_id"], "duel_wins", bot=ctx.bot))
-        asyncio.create_task(update_trial_progress(loser["user_id"], "duels", bot=ctx.bot))
-        # Проверяем реферальные этапы для победителя дуэли
-        await check_referral_stages(winner, ctx.bot)
-        await check_referral_stages(loser, ctx.bot)
-        # Логируем результат дуэли
-        asyncio.create_task(log_game(
-            winner["user_id"], "duel", duel["stake"], duel["stake"] * 2,
-            "win", {"opponent": loser["user_id"], "roll_winner": w_roll, "roll_loser": l_roll},
-        ))
-        asyncio.create_task(log_game(
-            loser["user_id"], "duel", duel["stake"], 0,
-            "loss", {"opponent": winner["user_id"], "roll_winner": w_roll, "roll_loser": l_roll},
-        ))
-        # ── Проверка подозрительного винрейта (сливные аккаунты) ─────────────
-        # check_duel_suspicious отключён вручную
-        # asyncio.create_task(check_duel_suspicious(loser["user_id"]))
-        # asyncio.create_task(check_duel_suspicious(winner["user_id"]))
-        w_name = he(winner.get("frog_name") or f"Лягушка {winner['first_name']}")
-        l_name = he(loser.get("frog_name") or f"Лягушка {loser['first_name']}")
-        result = (
-            f"{_E_SWORDS} <b>Дуэль завершена!</b>\n\n"
-            f"🎲 {w_name}: <b>{w_roll}</b>\n"
-            f"🎲 {l_name}: <b>{l_roll}</b>\n\n"
-            f"{_E_TROPHY} <b>{w_name}</b> победила!\n"
-            f"+{duel['stake']}{coin_emoji()} победителю"
-        )
-        try:
-            await q.message.edit_text(result, parse_mode=ParseMode.HTML)
-            if is_group_duel:
-                asyncio.create_task(schedule_delete(ctx.bot, q.message.chat.id, q.message.message_id))
-        except (BadRequest, Forbidden):
-            pass
-        # Уведомляем challenger (всегда — в группе это нужно, в ЛС тоже нужно)
-        try:
-            await ctx.bot.send_message(
-                duel["challenger_id"], result, parse_mode=ParseMode.HTML
-            )
-        except (BadRequest, Forbidden, TimedOut):
-            pass
-        # ── Анонс крупного выигрыша в дуэли ──────────
-        duel_prize = duel["stake"] * 2
-        if duel_prize > BIG_WIN_THRESHOLD:
-            asyncio.create_task(maybe_big_win_announce(
-                ctx.bot,
-                w_name,
-                duel_prize,
-                "Дуэль ⚔️",
-                stake=duel["stake"],
-                source_chat_id=winner.get("source_chat_id", 0),
-                uid=winner.get("user_id", 0),
-            ))
+    # ── ДУЭЛЬ: ПРИНЯТЬ ЛИЧНЫЙ ВЫЗОВ ────────────────
+    if d.startswith("duel_accept_"):
+        await duel_run(q, uid, f, int(d[12:]), ctx)
         return
     # ── ДУЭЛЬ: ОТКЛОНИТЬ ───────────────────────────
     if d.startswith("duel_decline_"):
@@ -47342,64 +47397,6 @@ async def on_callback(update: Update, ctx: ContextTypes.DEFAULT_TYPE):
 
 
     # ─── ОТКРЫТАЯ ДУЭЛЬ (принять вызов без конкретной цели) ────────────────
-    if d.startswith("duel_open_"):
-        duel_id = int(d[len("duel_open_"):])
-        async with aiosqlite.connect(DB_PATH) as db:
-            db.row_factory = aiosqlite.Row
-            async with db.execute("SELECT * FROM duels WHERE id=?", (duel_id,)) as c:
-                duel = await c.fetchone()
-        if not duel:
-            await q.answer("Дуэль не найдена", show_alert=True)
-            return
-        duel = dict(duel)
-        if duel["status"] != "pending":
-            await q.answer("Дуэль уже завершена", show_alert=True)
-            return
-        if uid == duel["challenger_id"]:
-            await q.answer("Нельзя принять свой собственный вызов", show_alert=True)
-            return
-        if not f or not f.get("alive"):
-            await q.answer("Твоя лягушка мертва или не создана", show_alert=True)
-            return
-        challenger = await db_get(duel["challenger_id"])
-        if not challenger:
-            await q.answer("Вызывающий не найден", show_alert=True)
-            return
-        if challenger["coins"] < duel["stake"] or f["coins"] < duel["stake"]:
-            await q.answer("Недостаточно КваКоинов", show_alert=True)
-            async with aiosqlite.connect(DB_PATH) as db:
-                await db.execute("UPDATE duels SET status='cancelled' WHERE id=?", (duel_id,))
-                await db.commit()
-            return
-        # Назначаем этого пользователя как цель атомарно
-        async with aiosqlite.connect(DB_PATH) as db:
-            cur = await db.execute(
-                "UPDATE duels SET target_id=? WHERE id=? AND status='pending' AND target_id=0",
-                (uid, duel_id)
-            )
-            await db.commit()
-            if cur.rowcount == 0:
-                await q.answer("Дуэль уже принята другим игроком", show_alert=True)
-                return
-        # Делаем вид что это обычный duel_accept — перенаправляем на тот же код
-        # через изменение d
-        d = f"duel_accept_{duel_id}"
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
     # Игнорирование пустых кнопок
     if d == "ignore":
         await q.answer()
