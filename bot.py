@@ -14582,17 +14582,292 @@ async def get_nft_count(uid: int) -> int:
             return (await c.fetchone())[0]
 
 
+# ══════════════════════════════════════════════════════════════════════════════
+# 🪸  СТАТУС ПО ГИФТУ
+# ══════════════════════════════════════════════════════════════════════════════
+# Бот умеет узнать, что у игрока есть KissedFrog, но до сих пор почти ничего с
+# этим знанием не делал. Здесь редкость атрибутов гифта превращается в видимый
+# статус: значок в топах, строка в профиле, подпись в публичных объявлениях.
+#
+# Атрибуты берутся из See.tg один раз и кладутся в settings как JSON — новых
+# таблиц и колонок не заводим. Без ключа API статус просто не показывается.
+
+# Порог в промилле → как называется статус. Чем меньше промилле, тем реже
+# атрибут: у KissedFrog самые массовые модели около 50‰, самые редкие — единицы.
+NFT_TIERS = (
+    (5,  "🟠", "Легендарный"),
+    (15, "🟣", "Редкий"),
+    (50, "🔵", "Необычный"),
+)
+NFT_TIER_COMMON = ("⚪", "Обычный")
+
+_NFT_ATTRS_MEM: dict[str, dict] = {}
+
+
+async def nft_attrs_warm() -> int:
+    """
+    Поднимает все известные атрибуты гифтов в память при старте.
+
+    Профиль рисуется синхронной функцией, и ходить за редкостью в базу на
+    каждую отрисовку нельзя. Гифтов сотни, строки короткие — держим в памяти.
+    """
+    async with aiosqlite.connect(DB_PATH) as db:
+        async with db.execute(
+            "SELECT key, value FROM settings WHERE key LIKE 'nft_attrs_%'"
+        ) as c:
+            rows = await c.fetchall()
+    for key, val in rows:
+        try:
+            _NFT_ATTRS_MEM[key[len("nft_attrs_"):]] = json.loads(val)
+        except ValueError:
+            continue
+    return len(_NFT_ATTRS_MEM)
+
+
+def nft_attrs(number) -> dict:
+    """Атрибуты гифта из памяти. Пустой словарь, если их ещё не забирали."""
+    return _NFT_ATTRS_MEM.get(str(number), {})
+
+
+async def nft_attrs_fetch(number) -> dict:
+    """
+    Забирает атрибуты гифта из See.tg и запоминает их.
+
+    Вызывается один раз при подтверждении заявки. Без SEETG_TGAUTH тихо
+    возвращает пустой словарь — игра от этого не ломается, просто не будет
+    строки со статусом.
+    """
+    try:
+        num = int(str(number).strip())
+    except (TypeError, ValueError):
+        return {}
+    if not SEETG_TGAUTH:
+        return {}
+    gift = await seetg_get_gift("KissedFrog", num)
+    if not isinstance(gift, dict):
+        return {}
+    data = {
+        "model":     gift.get("model_name") or "",
+        "pattern":   gift.get("pattern_name") or "",
+        "backdrop":  gift.get("backdrop_name") or "",
+        "model_r":    gift.get("model_rarity_permille"),
+        "pattern_r":  gift.get("pattern_rarity_permille"),
+        "backdrop_r": gift.get("backdrop_rarity_permille"),
+    }
+    _NFT_ATTRS_MEM[str(num)] = data
+    await db_setting(f"nft_attrs_{num}", json.dumps(data, ensure_ascii=False))
+    return data
+
+
+async def nft_attrs_backfill(pause: float = 1.5) -> int:
+    """
+    Дотягивает редкость для гифтов, подтверждённых до появления этой механики.
+
+    Идёт в фоне и по одному запросу с паузой: холдеров сотня, торопиться
+    некуда, а класть See.tg пачкой запросов на старте незачем. Без ключа API
+    просто не запускается.
+    """
+    if not SEETG_TGAUTH:
+        return 0
+    async with aiosqlite.connect(DB_PATH) as db:
+        async with db.execute(
+            "SELECT DISTINCT nft_number FROM nft_frogs WHERE verified=1"
+        ) as c:
+            numbers = [r[0] for r in await c.fetchall()]
+    done = 0
+    for number in numbers:
+        if nft_attrs(number):
+            continue
+        try:
+            if await nft_attrs_fetch(number):
+                done += 1
+        except Exception as e:
+            logger.warning("редкость гифта %s не получена: %s", number, e)
+        await asyncio.sleep(pause)
+    if done:
+        logger.info("🪸 Редкость дотянута для %d гифтов", done)
+    return done
+
+
+def nft_tier(attrs: dict) -> tuple[str, str]:
+    """Статус гифта по самому редкому из трёх атрибутов: (значок, название)."""
+    vals = [v for v in (attrs.get("model_r"), attrs.get("pattern_r"), attrs.get("backdrop_r"))
+            if isinstance(v, (int, float)) and v > 0]
+    if not vals:
+        return ("", "")
+    rarest = min(vals)
+    for limit, dot, name in NFT_TIERS:
+        if rarest <= limit:
+            return (dot, name)
+    return NFT_TIER_COMMON
+
+
+async def nft_badges(uids) -> dict[int, str]:
+    """
+    Значки владельцев гифтов для списка игроков — один запрос на весь топ.
+
+    Значок статуса, если редкость известна, иначе 🪸 — просто «владелец».
+    """
+    uids = [int(u) for u in uids]
+    if not uids:
+        return {}
+    marks = "?" * len(uids)
+    async with aiosqlite.connect(DB_PATH) as db:
+        async with db.execute(
+            f"SELECT user_id, nft_number FROM nft_frogs "
+            f"WHERE verified=1 AND user_id IN ({','.join(marks)})",
+            uids,
+        ) as c:
+            rows = await c.fetchall()
+    # Чем меньше номер, тем реже; 🪸 — владелец, у которого редкость неизвестна
+    rank = {dot: i for i, (_, dot, _) in enumerate(NFT_TIERS)}
+    rank[NFT_TIER_COMMON[0]] = len(NFT_TIERS)
+    rank["🪸"] = len(NFT_TIERS) + 1
+
+    out: dict[int, str] = {}
+    for uid, number in rows:
+        dot = nft_tier(nft_attrs(number))[0] or "🪸"
+        # У владельца нескольких гифтов показываем самый редкий
+        if uid not in out or rank[dot] < rank[out[uid]]:
+            out[uid] = dot
+    return out
+
+
+async def nft_grant_skin(nft: dict, ctx) -> str:
+    """
+    Что происходит после подтверждения заявки: гифт становится лягушкой.
+
+    Раньше облик просто падал в коллекцию, а игроку предлагалось найти его в
+    инвентаре и надеть самому — то есть подтверждение владения ни на что сразу
+    не влияло. Теперь гифт надевается, а его редкость подтягивается из See.tg
+    и дальше видна в профиле и в топах.
+
+    Возвращает название выданного облика.
+    """
+    uid = nft["user_id"]
+    number = nft["nft_number"]
+    model_name = (nft.get("model_name") or "").strip()
+    nft_url = nft.get("nft_url") or f"https://t.me/nft/KissedFrog-{number}"
+
+    if model_name and model_name in SKINS:
+        skin_to_give = model_name
+    else:
+        skin_to_give = f"KissedFrog #{number}"
+        if skin_to_give not in SKINS:
+            SKINS[skin_to_give] = {
+                "chance": 0, "sid": 0, "rarity": "legendary",
+                "emoji": "🪸", "nft_url": nft_url,
+            }
+    await db_add_skin(uid, skin_to_give)
+    await ach_grant(uid, "nft_owner", ctx.bot)
+
+    # Редкость атрибутов — один запрос на гифт, дальше берётся из кэша
+    attrs = nft_attrs(number) or await nft_attrs_fetch(number)
+    dot, tier_name = nft_tier(attrs)
+
+    # Надеваем гифт. Чужой выбор не перебиваем: если на лягушке уже другой
+    # гифт, игрок надел его осознанно — пусть решает сам.
+    f = await db_get(uid)
+    equipped = False
+    if f and not (f.get("equipped_nft_url") or "").strip():
+        f["skin"] = skin_to_give
+        f["equipped_nft_url"] = nft_url
+        await db_save(f)
+        equipped = True
+
+    status = f"{dot} {tier_name}\n" if dot else ""
+    tail = ("Лягушка уже носит его.\n" if equipped
+            else "Надеть: /frog → 🎒 Инвентарь\n")
+    try:
+        await ctx.bot.send_message(
+            uid,
+            f"{_E_CHECK} <b>Гифт подтверждён</b>\n\n"
+            f'🪸 <a href="{nft_url}">KissedFrog #{number}</a>\n'
+            f"{status}"
+            f"Облик: <b>{he(skin_to_give)}</b>\n"
+            f"{tail}",
+            parse_mode=ParseMode.HTML,
+            link_preview_options=LinkPreviewOptions(),
+        )
+    except (BadRequest, Forbidden, TimedOut):
+        pass
+
+    # Приглашение в закрытый клуб холдеров
+    if NFT_CLUB_CHAT_ID:
+        try:
+            invite = await ctx.bot.create_chat_invite_link(
+                chat_id=NFT_CLUB_CHAT_ID,
+                member_limit=1,
+                name=f"invite_{uid}_{int(time.time())}",
+            )
+            await ctx.bot.send_message(
+                uid,
+                f"🪸 <b>Клуб холдеров KissedFrog</b>\n\n"
+                f"{invite.invite_link}\n\n"
+                f"<i>Ссылка одноразовая, не передавай её другим.</i>",
+                parse_mode=ParseMode.HTML,
+            )
+        except (BadRequest, Forbidden, TimedOut) as e:
+            logger.warning("приглашение в NFT-клуб не ушло: %s", e)
+    return skin_to_give
+
+
+def nft_status_line(f: dict) -> str:
+    """
+    Строка статуса для профиля: какой гифт надет и насколько он редкий.
+
+    Пусто, если гифт не надет, — играть без гифта можно, лягушка обычная.
+    """
+    url = (f.get("equipped_nft_url") or "").strip()
+    if not url:
+        return ""
+    m = re.search(r"KissedFrog-(\d+)", url)
+    number = m.group(1) if m else ""
+    attrs = nft_attrs(number) if number else {}
+    dot, name = nft_tier(attrs)
+    head = f'<a href="{url}">KissedFrog #{number}</a>' if number else "KissedFrog"
+    if not dot:
+        return f"🪸 {head}"
+    rare = min(v for v in (attrs.get("model_r"), attrs.get("pattern_r"), attrs.get("backdrop_r"))
+               if isinstance(v, (int, float)) and v > 0)
+    # Процент прижат к названию статуса, без второго разделителя: с шестизначным
+    # номером строка иначе выходит за 21 W и переносится на телефоне.
+    return f"{dot} {head}{SEP}{name} {rare / 10:.1f}%"
+
+
+# Надбавки к наградам. Раньше эти семь чисел были зашиты внутри функции, и
+# понять, во что обойдётся включение бонусов, можно было только чтением кода.
+REWARD_BONUS_DEFAULT = False   # включены ли бонусы, пока админ не решил иначе
+SKIN_BONUS_SECRET    = 1.0
+SKIN_BONUS_MYTHIC    = 0.5
+SKIN_BONUS_LEGENDARY = 0.25
+NFT_BONUS_1 = 0.5    # один подтверждённый гифт  → ×1.5
+NFT_BONUS_2 = 0.75   # два                        → ×1.75
+NFT_BONUS_3 = 1.0    # три и больше               → ×2.0
+
+
+async def reward_bonus_enabled() -> bool:
+    """
+    Включены ли бонусы к наградам.
+
+    Решение админа (/activate_bonus) сильнее настройки: если он хоть раз
+    нажимал, в settings лежит 0 или 1, и оно и действует. Пока не нажимал —
+    берётся REWARD_BONUS_DEFAULT, его можно задать через FROG_REWARD_BONUS_DEFAULT.
+    """
+    val = await db_setting("reward_bonus_active")
+    if val is None:
+        return REWARD_BONUS_DEFAULT
+    return val == "1"
+
+
 async def get_reward_multiplier(uid: int, f: dict = None) -> float:
     """
     Возвращает общий множитель наград для пользователя.
     Суммирует бонус от текущего облика (легендарный/мифический), бонус от NFT
     и бонус партнёрского плана чата игрока.
     Максимум: 1.0 + 0.5 (мифик) + 1.0 (3+ NFT) + 0.5 (enterprise) = ×3.0
-    Активируется только после команды /activate_bonus от администратора.
     """
-    # Проверяем, активирована ли система бонусов администратором
-    bonus_active = await db_setting("reward_bonus_active")
-    if bonus_active != "1":
+    if not await reward_bonus_enabled():
         return 1.0
 
     if f is None:
@@ -14605,22 +14880,22 @@ async def get_reward_multiplier(uid: int, f: dict = None) -> float:
     effective_skin = frozen_skin if frozen_skin else f.get("skin", "Brownie")
     rarity = SKINS.get(effective_skin, {}).get("rarity", "common")
     if rarity == "secret":
-        skin_bonus = 1.0
+        skin_bonus = SKIN_BONUS_SECRET
     elif rarity == "mythic":
-        skin_bonus = 0.5
+        skin_bonus = SKIN_BONUS_MYTHIC
     elif rarity == "legendary":
-        skin_bonus = 0.25
+        skin_bonus = SKIN_BONUS_LEGENDARY
     else:
         skin_bonus = 0.0
 
     # Бонус от NFT
     nft_count = await get_nft_count(uid)
     if nft_count == 1:
-        nft_bonus = 0.5
+        nft_bonus = NFT_BONUS_1
     elif nft_count == 2:
-        nft_bonus = 0.75
+        nft_bonus = NFT_BONUS_2
     elif nft_count >= 3:
-        nft_bonus = 1.0
+        nft_bonus = NFT_BONUS_3
     else:
         nft_bonus = 0.0
 
@@ -16051,6 +16326,8 @@ def status_text(f: dict) -> str:
 
     return ui_card(
         f"{_E_FROG} <b>{name}</b>{SEP}{display_skin(skin, use_st, user_nft_url=nft_url)}",
+        # Гифт игрока — второй строкой, сразу под именем: это его статус
+        nft_status_line(f),
         f"{_E_STAR} {ui_kv('Уровень', f['level'])}\n"
         f"{_E_XP} <code>{bar(xp_pct)}</code> {f['xp']}/{need}",
         stats,
@@ -17351,17 +17628,22 @@ async def maybe_big_win_announce(
     game_label: str,
     stake: int = 0,
     source_chat_id: int = 0,  # оставлен для совместимости, в партнёрские чаты НЕ отправляем
+    uid: int = 0,
 ):
     """
     Если выигрыш > BIG_WIN_THRESHOLD — анонсирует ТОЛЬКО в главный игровой чат (CHAT_ID)
     и в адм-чат. Партнёрские чаты намеренно исключены — туда спам не шлём.
+
+    uid нужен для значка владельца гифта: в публичном объявлении сразу видно,
+    кто из выигравших — холдер.
     """
     if amount <= BIG_WIN_THRESHOLD:
         return
+    badge = (await nft_badges([uid])).get(uid, "") if uid else ""
     stake_part = f" (ставка: {stake}🪙, профит: +{amount - stake}🪙)" if stake > 0 else f" (+{amount}🪙)"
     msg = (
         f"💰 <b>Крупный выигрыш!</b>\n\n"
-        f"<tg-emoji emoji-id='5341367834935075028'>🐸</tg-emoji> <b>{player_name}</b>\n"
+        f"{_E_FROG} <b>{player_name}</b>{badge}\n"
         f"{_E_GAMES} Игра: {game_label}\n"
         f"{_E_TROPHY} Выиграл: <b>{amount}{_E_COIN}</b>{stake_part}"
     )
@@ -22442,7 +22724,14 @@ async def cmd_frog(update: Update, ctx: ContextTypes.DEFAULT_TYPE):
         pass
 
 
-def _build_top_lines(rows: list[dict], mode: str = "all", user_row: dict = None, user_rank: int = None, user_total: int = None) -> str:
+def _build_top_lines(rows: list[dict], mode: str = "all", user_row: dict = None,
+                     user_rank: int = None, user_total: int = None,
+                     badges: dict[int, str] = None) -> str:
+    """
+    badges — значки владельцев гифтов из nft_badges(). Не передали — топ
+    рисуется как раньше, без них.
+    """
+    badges = badges or {}
     medals = ["🥇", "🥈", "🥉", "4️⃣", "5️⃣", "6️⃣", "7️⃣", "8️⃣", "9️⃣", "🔟"]
     if mode == "week":
         l_id = user_row.get("league", 0) if user_row else 0
@@ -22483,11 +22772,13 @@ def _build_top_lines(rows: list[dict], mode: str = "all", user_row: dict = None,
         if xp_key:
             xp_val = r.get(xp_key, 0)
             lines.append(
-                f"{medals[i]} <b>{name}</b>{sub_badge} — <b>+{xp_val:,} XP</b> {pemoji(r['skin'])}"
+                f"{medals[i]} <b>{name}</b>{sub_badge}{badges.get(r['user_id'], '')} — "
+                f"<b>+{xp_val:,} XP</b> {pemoji(r['skin'])}"
             )
         else:
             lines.append(
-                f"{medals[i]} {l_badge}<b>{name}</b>{dead}{sub_badge} — ур.{r['level']} {R_ICON[s['rarity']]} {pemoji(r['skin'])}"
+                f"{medals[i]} {l_badge}<b>{name}</b>{dead}{sub_badge}{badges.get(r['user_id'], '')} — "
+                f"ур.{r['level']} {R_ICON[s['rarity']]} {pemoji(r['skin'])}"
             )
     if not lines[1:]:
         return title + "\n\nЕщё никто не играет!"
@@ -22692,13 +22983,15 @@ async def cmd_top(update: Update, ctx: ContextTypes.DEFAULT_TYPE):
     # Lite mode — компактный топ-3
     if is_group(update) and mode == "lite":
         rows3 = rows[:3]
-        text = _build_top_lines(rows3, "all", user_row=f, user_rank=rank, user_total=total)
+        text = _build_top_lines(rows3, "all", user_row=f, user_rank=rank, user_total=total,
+                                badges=await nft_badges(r["user_id"] for r in rows3))
         msg = await update.message.reply_text(text, parse_mode=ParseMode.HTML)
         if msg:
             asyncio.create_task(schedule_delete(update.get_bot(), msg.chat.id, msg.message_id, 60))
         return
 
-    text = _build_top_lines(rows, "all", user_row=f, user_rank=rank, user_total=total)
+    text = _build_top_lines(rows, "all", user_row=f, user_rank=rank, user_total=total,
+                            badges=await nft_badges(r["user_id"] for r in rows))
     kb = InlineKeyboardMarkup([
         [
             btn("🏆 Общий",  callback_data="top_all"),
@@ -22724,7 +23017,8 @@ async def cmd_topw(update: Update, ctx: ContextTypes.DEFAULT_TYPE):
     rows = await db_top_league(user_league, 10)
     rank, total = await db_get_rank_league(user.id, user_league)
     msg = await update.message.reply_text(
-        _build_top_lines(rows, "week", user_row=f, user_rank=rank, user_total=total),
+        _build_top_lines(rows, "week", user_row=f, user_rank=rank, user_total=total,
+                         badges=await nft_badges(r["user_id"] for r in rows)),
         parse_mode=ParseMode.HTML,
     )
     if msg and is_group(update):
@@ -22739,7 +23033,8 @@ async def cmd_topm(update: Update, ctx: ContextTypes.DEFAULT_TYPE):
     rows = await db_top_monthly(10)
     rank, total = await db_get_rank_monthly(user.id)
     msg = await update.message.reply_text(
-        _build_top_lines(rows, "month", user_row=f, user_rank=rank, user_total=total),
+        _build_top_lines(rows, "month", user_row=f, user_rank=rank, user_total=total,
+                         badges=await nft_badges(r["user_id"] for r in rows)),
         parse_mode=ParseMode.HTML,
     )
     if msg and is_group(update):
@@ -30320,54 +30615,8 @@ async def admin_router(update: Update, ctx: ContextTypes.DEFAULT_TYPE):
         async with aiosqlite.connect(DB_PATH) as db:
             await db.execute("UPDATE nft_frogs SET verified=1 WHERE id=?", (nft_id,))
             await db.commit()
-        model_name = (nft.get("model_name") or "").strip()
-        nft_url = nft.get("nft_url") or f"https://t.me/nft/KissedFrog-{nft['nft_number']}"
-        if model_name and model_name in SKINS:
-            skin_to_give = model_name
-            # Запоминаем nft_url для этого облика в памяти (per-user будет через equipped_nft_url)
-        else:
-            skin_to_give = f"KissedFrog #{nft['nft_number']}"
-            if skin_to_give not in SKINS:
-                SKINS[skin_to_give] = {
-                    "chance": 0,
-                    "sid": 0,
-                    "rarity": "legendary",
-                    "emoji": "🪸",
-                    "nft_url": nft_url,
-                }
-        await db_add_skin(nft["user_id"], skin_to_give)
-        await ach_grant(nft["user_id"], "nft_owner", ctx.bot)
-        try:
-            await ctx.bot.send_message(
-                nft["user_id"],
-                f"✅ <b>Ваша NFT подтверждена!</b>\n\n"
-                f"🪸 <a href=\"{nft_url}\">KissedFrog #{nft['nft_number']}</a>\n"
-                f"🎨 Облик <b>{skin_to_give}</b> добавлен в коллекцию!\n"
-                f"Надеть: /frog → 🎒 Инвентарь",
-                parse_mode=ParseMode.HTML,
-                link_preview_options=LinkPreviewOptions(),
-            )
-        except (BadRequest, Forbidden, TimedOut):
-            pass
-        # Приглашение в закрытый NFT-клуб
-        if NFT_CLUB_CHAT_ID:
-            try:
-                invite_link = await ctx.bot.create_chat_invite_link(
-                    chat_id=NFT_CLUB_CHAT_ID,
-                    member_limit=1,
-                    name=f"invite_{nft['user_id']}_{int(time.time())}",
-                )
-                await ctx.bot.send_message(
-                    nft["user_id"],
-                    f"🎉 <b>Добро пожаловать в клуб NFT-холдеров!</b>\n\n"
-                    f"🪸 Присоединяйся к закрытому сообществу KissedFrog:\n"
-                    f"{invite_link.invite_link}\n\n"
-                    f"<i>Ссылка одноразовая, не передавай её другим.</i>",
-                    parse_mode=ParseMode.HTML,
-                )
-            except Exception as e:
-                print(f"Ошибка отправки приглашения в NFT-клуб: {e}")
-        await q.answer((f"✅ Подтверждено. Выдан: {skin_to_give}")[:200], show_alert=True)
+        skin_to_give = await nft_grant_skin(nft, ctx)
+        await q.answer(f"Подтверждено{SEP}{skin_to_give}"[:200], show_alert=True)
         try:
             await q.edit_message_reply_markup(reply_markup=None)
         except (BadRequest, Forbidden, TimedOut):
@@ -30433,58 +30682,8 @@ async def admin_router(update: Update, ctx: ContextTypes.DEFAULT_TYPE):
             await db.execute("UPDATE nft_frogs SET verified=1 WHERE id=?", (nft_id,))
             await db.commit()
 
-        # Определяем скин: если model_name есть и он в SKINS — используем его
-        model_name = (nft.get("model_name") or "").strip()
-        nft_url = nft.get("nft_url") or f"https://t.me/nft/KissedFrog-{nft['nft_number']}"
-        if model_name and model_name in SKINS:
-            skin_to_give = model_name
-        else:
-            # Фолбек: создаём уникальный скин KissedFrog #N
-            skin_to_give = f"KissedFrog #{nft['nft_number']}"
-            if skin_to_give not in SKINS:
-                SKINS[skin_to_give] = {
-                    "chance": 0,
-                    "sid": 0,
-                    "rarity": "legendary",
-                    "emoji": "🪸",
-                    "nft_url": nft_url,
-                }
-        await db_add_skin(nft["user_id"], skin_to_give)
-        await ach_grant(nft["user_id"], "nft_owner", ctx.bot)
-
-        # Уведомляем пользователя
-        try:
-            await ctx.bot.send_message(
-                nft["user_id"],
-                f"✅ <b>Ваша NFT подтверждена!</b>\n\n"
-                f"🪸 <a href=\"{nft_url}\">KissedFrog #{nft['nft_number']}</a>\n"
-                f"🎨 Облик <b>{skin_to_give}</b> добавлен в коллекцию!\n"
-                f"Надеть: /frog → 🎒 Инвентарь",
-                parse_mode=ParseMode.HTML,
-                link_preview_options=LinkPreviewOptions(),
-            )
-        except (BadRequest, Forbidden, TimedOut):
-            pass
-        # Приглашение в закрытый NFT-клуб
-        if NFT_CLUB_CHAT_ID:
-            try:
-                invite_link = await ctx.bot.create_chat_invite_link(
-                    chat_id=NFT_CLUB_CHAT_ID,
-                    member_limit=1,
-                    name=f"invite_{nft['user_id']}_{int(time.time())}",
-                )
-                await ctx.bot.send_message(
-                    nft["user_id"],
-                    f"🎉 <b>Добро пожаловать в клуб NFT-холдеров!</b>\n\n"
-                    f"🪸 Присоединяйся к закрытому сообществу KissedFrog:\n"
-                    f"{invite_link.invite_link}\n\n"
-                    f"<i>Ссылка одноразовая, не передавай её другим.</i>",
-                    parse_mode=ParseMode.HTML,
-                )
-            except Exception as e:
-                print(f"Ошибка отправки приглашения в NFT-клуб: {e}")
-
-        await q.answer("✅ Заявка подтверждена", show_alert=True)
+        await nft_grant_skin(nft, ctx)
+        await q.answer("Заявка подтверждена", show_alert=True)
         # Обновляем список
         await show_nft_list(q, ctx, page, edit=True)
         return
@@ -34407,7 +34606,7 @@ async def casino_router(update: Update, ctx: ContextTypes.DEFAULT_TYPE):
             s5_name = he(q.from_user.first_name)
             asyncio.create_task(maybe_big_win_announce(
                 ctx.bot, s5_name, total_winnings, "Казино 5×Слотов",
-                stake=total_cost, source_chat_id=f.get("source_chat_id", 0),
+                stake=total_cost, source_chat_id=f.get("source_chat_id", 0), uid=uid,
             ))
         jp_line = f"\n{_E_CASINO} <b>+{jackpot_won_total:,}{coin_emoji()} из банка казино!</b>" if jackpot_won_total > 0 else ""
         result = (
@@ -34647,7 +34846,7 @@ async def casino_router(update: Update, ctx: ContextTypes.DEFAULT_TYPE):
             g_label = CASINO[gtype].get("name", gtype) if gtype in CASINO else gtype
             asyncio.create_task(maybe_big_win_announce(
                 ctx.bot, w_name, winnings, f"Казино ({g_label})",
-                stake=stake, source_chat_id=f.get("source_chat_id", 0),
+                stake=stake, source_chat_id=f.get("source_chat_id", 0), uid=uid,
             ))
         g = CASINO[gtype]
         net = winnings - stake  # net profit (could be negative)
@@ -35030,6 +35229,7 @@ async def duel_router(update: Update, ctx: ContextTypes.DEFAULT_TYPE):
                 "Дуэль ⚔️",
                 stake=duel["stake"],
                 source_chat_id=winner.get("source_chat_id", 0),
+                uid=winner.get("user_id", 0),
             ))
         return
     # ── ДУЭЛЬ: ОТКЛОНИТЬ ───────────────────────────
@@ -41981,8 +42181,7 @@ async def on_callback(update: Update, ctx: ContextTypes.DEFAULT_TYPE):
                 f"\n❄️ <b>Заморожен облик:</b> {he(frozen_skin)} (+{int(frozen_bonus * 100)}%)\n"
                 f"<i>Бонус этого облика засчитывается вместо текущего.</i>\n"
             )
-        bonus_active = await db_setting("reward_bonus_active")
-        active_note = "" if bonus_active == "1" else "\n⚠️ <i>Система бонусов сейчас не активирована администратором.</i>"
+        active_note = "" if await reward_bonus_enabled() else "\n⚠️ <i>Бонусы к наградам сейчас выключены.</i>"
         text = (
             f"✨ <b>Твой множитель наград</b>\n\n"
             f"👑 Облик ({rarity_label}): +{int(skin_bonus * 100)}%\n"
@@ -46840,7 +47039,8 @@ async def on_callback(update: Update, ctx: ContextTypes.DEFAULT_TYPE):
             rows = await db_top(10)
             mode = "all"
             rank, total = await db_get_rank_global(uid)
-        text = _build_top_lines(rows, mode, user_row=f, user_rank=rank, user_total=total)
+        text = _build_top_lines(rows, mode, user_row=f, user_rank=rank, user_total=total,
+                                badges=await nft_badges(r["user_id"] for r in rows))
         try:
             await q.message.edit_text(
                 text,
@@ -53458,7 +53658,7 @@ async def job_lottery_draw(ctx: ContextTypes.DEFAULT_TYPE):
                 w_display = w_f.get("frog_name") or w_f.get("first_name") or f"ID:{w_uid}"
                 asyncio.create_task(maybe_big_win_announce(
                     ctx.bot, he(w_display), w_amount,
-                    "Лотерея 🎟",
+                    "Лотерея 🎟", uid=w_uid,
                     source_chat_id=w_f.get("source_chat_id", 0),
                 ))
         # Логируем выигрыш в лотерее
@@ -53760,6 +53960,8 @@ async def post_init(app: Application):
     # ⚡ Инициализируем пул соединений ПОСЛЕ создания БД
     _db_pool.init(size=10)
     await load_nft_skins()  # загружаем NFT-облики в память
+    logger.info("🪸 Редкость гифтов в памяти: %d", await nft_attrs_warm())
+    asyncio.create_task(nft_attrs_backfill())  # старые холдеры — в фоне
     await _load_peak_online()  # восстанавливаем пиковый онлайн из БД
     # ── Миграция: синхронизируем streak в user_bonds из frogs для старых связей ──
     try:
@@ -54442,6 +54644,7 @@ async def _sacrifice_finish(event_id: int, bot, chat_id: int):
             bot, he(winner_name), winner_prize,
             f"Ивент «{SACRIFICE_EVENT_NAME}»",
             source_chat_id=wf.get("source_chat_id", 0) if wf else 0,
+            uid=wf.get("user_id", 0) if wf else 0,
         ))
 
     # ЛС остальным
