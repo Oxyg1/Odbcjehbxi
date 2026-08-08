@@ -3001,7 +3001,7 @@ async def cmd_fzsetpkg(update: Update, ctx: ContextTypes.DEFAULT_TYPE) -> None:
 
     pkg = next((p for p in FREEZE_PACKAGES if p["idx"] == idx), None)
     if pkg is None:
-        await update.message.reply_text(f"{_E_CROSS} Пакет с idx={idx} не найден. /fzpkglist")
+        await update.message.reply_text(f"{_E_CROSS} Пакет с idx={he(idx)} не найден. /fzpkglist", parse_mode=ParseMode.HTML)
         return
 
     old_stars, old_cubes = pkg["stars"], pkg["cubes"]
@@ -3835,11 +3835,18 @@ _IEV_PROCESSING: dict[int, float] = {}
 # Капча комара: {uid: {"eid": int, "reward": int, "pos": int, "answer": int, "a": int, "b": int, "expires": float}}
 _MOSQUITO_CAPTCHA: dict[int, dict] = {}
 
-# Трекер переводов для антиспама: {(amount, target_id): [(ts, sender_uid), ...]}
-_GIFT_SPAM_TRACKER: dict[tuple, list] = {}
+# Автоматическая заморозка переводов при всплеске одинаковых сумм.
+# По умолчанию выключена: ловит и живых игроков, которые скидываются на общее.
+# Включается без правки кода — FROG_GIFT_ANTISPAM=true в .env.
+GIFT_ANTISPAM = False
+GIFT_ANTISPAM_SENDERS = 5     # столько разных отправителей одной суммы за минуту
+GIFT_ANTISPAM_FREEZE = 3600   # на столько секунд замораживаются переводы
+
+# Трекер переводов для антиспама: {amount: [(ts, sender_uid, target_id), ...]}
+_GIFT_SPAM_TRACKER: dict[int, list] = {}
 # Замороженные переводы: {(sender_uid, target_id): float} — время заморозки
 _GIFT_FROZEN: dict[tuple, float] = {}
-# Ожидают решения админа: {freeze_key: {info}} 
+# Ожидают решения админа: {freeze_key: {info}}
 _GIFT_PENDING_REVIEW: dict[str, dict] = {}
 
 # ── Per-user asyncio.Lock ─────────────────────────────────────────────────────
@@ -7792,8 +7799,6 @@ FRIEND_LEVELS = {
 }
 FRIEND_LEVEL_XP = [0, 5, 20, 60]   # XP для перехода (проще накопить)
 
-GIFT_COINS_MAX   = 100   # макс монет в день другу
-GIFT_COINS_TAX   = 0.10  # 10% болотная пошлина
 FISH_COST        = 50    # ставка совместной рыбалки
 FISH_COOLDOWN    = 86400 # раз в сутки
 
@@ -19427,7 +19432,7 @@ async def cmd_backup(update: Update, ctx: ContextTypes.DEFAULT_TYPE):
         except Exception as _e:
             logger.exception("подавлено исключение: %s", _e)
     except Exception as e:
-        await msg.edit_text(f"{_E_CROSS} Ошибка бэкапа: {e}")
+        await msg.edit_text(f"{_E_CROSS} Ошибка бэкапа: {he(e)}", parse_mode=ParseMode.HTML)
 
 
 async def cmd_adminantibot(update: Update, ctx: ContextTypes.DEFAULT_TYPE):
@@ -20385,7 +20390,7 @@ async def cmd_adminlogs(update: Update, ctx: ContextTypes.DEFAULT_TYPE):
                 parse_mode=ParseMode.HTML,
             )
         except Exception as e:
-            await msg.reply_text(f"{_E_CROSS} Ошибка чтения лога: {e}")
+            await msg.reply_text(f"{_E_CROSS} Ошибка чтения лога: {he(e)}", parse_mode=ParseMode.HTML)
         return
 
     # Режим: последние N строк
@@ -20420,7 +20425,7 @@ async def cmd_adminlogs(update: Update, ctx: ContextTypes.DEFAULT_TYPE):
                 parse_mode=ParseMode.HTML,
             )
         except Exception as e:
-            await msg.reply_text(f"{_E_CROSS} Ошибка чтения лога: {e}")
+            await msg.reply_text(f"{_E_CROSS} Ошибка чтения лога: {he(e)}", parse_mode=ParseMode.HTML)
         return
 
     # Режим: весь файл (если < 50 МБ)
@@ -20459,7 +20464,7 @@ async def cmd_adminlogs(update: Update, ctx: ContextTypes.DEFAULT_TYPE):
             parse_mode=ParseMode.HTML,
         )
     except Exception as e:
-        await msg.reply_text(f"{_E_CROSS} Не удалось отправить файл: {e}")
+        await msg.reply_text(f"{_E_CROSS} Не удалось отправить файл: {he(e)}", parse_mode=ParseMode.HTML)
 
 
 # ══════════════════════════════════════════════════════════════════════════════
@@ -21670,7 +21675,7 @@ async def cmd_adminundo(update: Update, ctx: ContextTypes.DEFAULT_TYPE):
             ) as c:
                 rows = await c.fetchall()
         if not rows:
-            await update.message.reply_text(f"{_E_CROSS} Стай с названием «{query}» не найдено.")
+            await update.message.reply_text(f"{_E_CROSS} Стай с названием «{he(query)}» не найдено.", parse_mode=ParseMode.HTML)
             return
         lines = [f"{_E_SEARCH} Найдено стай: {len(rows)}\n"]
         for r in rows:
@@ -21722,7 +21727,10 @@ async def cmd_adminundo(update: Update, ctx: ContextTypes.DEFAULT_TYPE):
             )
             return
         if not staya_id:
-            await update.message.reply_text(f"{_E_CROSS} Стая «{staya_arg}» не найдена. Используй /adminundo staya_find <название>")
+            await update.message.reply_text(
+                f"{_E_CROSS} Стая «{he(staya_arg)}» не найдена\n"
+                f"Поиск: <code>/adminundo staya_find название</code>", parse_mode=ParseMode.HTML
+            )
             return
 
         if action == "staya_kick":
@@ -22158,7 +22166,7 @@ async def cmd_start(update: Update, ctx: ContextTypes.DEFAULT_TYPE):
                     "<tg-emoji emoji-id='5341735149128159966'>🔥</tg-emoji> Нажми кнопку, чтобы перейти в ивент:",
                     reply_markup=InlineKeyboardMarkup([[
                         btn("🔥 Воронка", callback_data=f"funnel_menu_{ev_f['id']}")
-                    ]]),
+                    ]]), parse_mode=ParseMode.HTML
                 )
                 return
 
@@ -22660,7 +22668,7 @@ async def cmd_rename(update: Update, ctx: ContextTypes.DEFAULT_TYPE):
     user = update.effective_user
     f = await db_get(user.id)
     if not f:
-        await update.message.reply_text("Сначала /start <tg-emoji emoji-id='5341367834935075028'>🐸</tg-emoji>")
+        await update.message.reply_text("Сначала /start <tg-emoji emoji-id='5341367834935075028'>🐸</tg-emoji>", parse_mode=ParseMode.HTML)
         return
     if not ctx.args:
         await update.message.reply_text(
@@ -22684,10 +22692,10 @@ async def cmd_heal(update: Update, ctx: ContextTypes.DEFAULT_TYPE):
     user = update.effective_user
     f = await db_get(user.id)
     if not f:
-        await update.message.reply_text("Сначала напиши /start <tg-emoji emoji-id='5341367834935075028'>🐸</tg-emoji>")
+        await update.message.reply_text("Сначала напиши /start <tg-emoji emoji-id='5341367834935075028'>🐸</tg-emoji>", parse_mode=ParseMode.HTML)
         return
     if not f["alive"]:
-        await update.message.reply_text("<tg-emoji emoji-id='5341573078537248907'>💀</tg-emoji> Лягушка мертва! Используй /revive")
+        await update.message.reply_text("<tg-emoji emoji-id='5341573078537248907'>💀</tg-emoji> Лягушка мертва! Используй /revive", parse_mode=ParseMode.HTML)
         return
     cost = 15
     if f["coins"] < cost:
@@ -22826,6 +22834,16 @@ async def cmd_revive(update: Update, ctx: ContextTypes.DEFAULT_TYPE):  # plog in
 
 
 async def cmd_gift(update: Update, ctx: ContextTypes.DEFAULT_TYPE):
+    # Пересланное сообщение с /gift — чужая команда, выполненная от лица игрока.
+    if (
+        getattr(update.message, "forward_origin", None) is not None
+        or getattr(update.message, "forward_from", None) is not None
+        or getattr(update.message, "forward_date", None) is not None
+    ):
+        await update.message.reply_text(
+            f"{_E_CROSS} Команду нельзя переслать", parse_mode=ParseMode.HTML
+        )
+        return
     if not await group_cmd_guard(update, "gift", ctx):
         return
     user = update.effective_user
@@ -22898,6 +22916,65 @@ async def cmd_gift(update: Update, ctx: ContextTypes.DEFAULT_TYPE):
         return
     # rate_limit переводов отключён вручную
     # _ok_out/_ok_in всегда True
+
+    # ── Заморозка переводов ───────────────────────────────────────────────────
+    # Заморозку ставит либо автоматика ниже, либо админ кнопкой «Продлить».
+    # Проверка работает всегда, даже когда автоматика выключена.
+    _now_gift = time.time()
+    _freeze_key = (user.id, target["user_id"])
+    if _GIFT_FROZEN.get(_freeze_key, 0) > _now_gift:
+        _left = int(_GIFT_FROZEN[_freeze_key] - _now_gift)
+        await update.message.reply_text(
+            f"{_E_BAN} Переводы заморожены\n"
+            f"Осталось: {_left // 60} мин {_left % 60} сек",
+            parse_mode=ParseMode.HTML,
+        )
+        return
+
+    # Всплеск одинаковых сумм от разных отправителей — почерк накрутки:
+    # десятки ботов переводят по N монет. Ключ — только сумма, получатели разные.
+    if GIFT_ANTISPAM:
+        _tracker = [
+            rec for rec in _GIFT_SPAM_TRACKER.get(amount, [])
+            if _now_gift - rec[0] < 60
+        ]
+        _GIFT_SPAM_TRACKER[amount] = _tracker
+        _senders = {sid for _, sid, _ in _tracker} | {user.id}
+        if len(_senders) >= GIFT_ANTISPAM_SENDERS:
+            _until = _now_gift + GIFT_ANTISPAM_FREEZE
+            for _, _sid, _tid in _tracker:
+                _GIFT_FROZEN[(_sid, _tid)] = _until
+            _GIFT_FROZEN[_freeze_key] = _until
+            _review_id = f"gift_spam_{int(_now_gift)}_{amount}"
+            _GIFT_PENDING_REVIEW[_review_id] = {
+                "senders": sorted(_senders),
+                "target_id": target["user_id"],
+                "amount": amount,
+                "freeze_until": _until,
+            }
+            if ADMIN_IDS:
+                try:
+                    await ctx.bot.send_message(
+                        ADMIN_IDS[0],
+                        f"{_E_BAN} <b>Всплеск переводов</b>\n"
+                        f"Сумма: <b>{amount}</b>{_E_COIN}\n"
+                        f"Отправителей за минуту: <b>{len(_senders)}</b>\n"
+                        f"{', '.join(f'<code>{s}</code>' for s in sorted(_senders)[:10])}\n\n"
+                        f"Переводы заморожены на {GIFT_ANTISPAM_FREEZE // 3600} ч.",
+                        parse_mode=ParseMode.HTML,
+                        reply_markup=InlineKeyboardMarkup([[
+                            btn("✅ Разморозить", callback_data=f"gift_unfreeze_{_review_id}"),
+                            btn("🚫 Продлить 24ч", callback_data=f"gift_keepfreeze_{_review_id}"),
+                        ]]),
+                    )
+                except (BadRequest, Forbidden, TimedOut):
+                    pass
+            await update.message.reply_text(
+                f"{_E_BAN} Похоже на накрутку.\nПереводы заморожены.",
+                parse_mode=ParseMode.HTML,
+            )
+            return
+        _tracker.append((_now_gift, user.id, target["user_id"]))
 
     # ── Лок на списание монет — защита от race condition с on_callback ───────
     _gift_lock = _get_user_lock(user.id)
@@ -23027,7 +23104,7 @@ async def cmd_tournament(update: Update, ctx: ContextTypes.DEFAULT_TYPE):
                 await update.message.reply_text("❌ Минимальная ставка: 10🪙")
                 return
             if arg_stake > 5000:
-                await update.message.reply_text("❌ Максимальная ставка: 5000<tg-emoji emoji-id='5341524176039615767'>🪙</tg-emoji>")
+                await update.message.reply_text("❌ Максимальная ставка: 5000<tg-emoji emoji-id='5341524176039615767'>🪙</tg-emoji>", parse_mode=ParseMode.HTML)
                 return
             stake = arg_stake
         except ValueError:
@@ -23620,7 +23697,7 @@ async def cmd_duel(update: Update, ctx: ContextTypes.DEFAULT_TYPE):
         return
     _d_ok, _d_reason = await check_rate_limit(user.id, "duels")
     if not _d_ok:
-        await update.message.reply_text(f"{_E_CROSS} Суточный лимит дуэлей исчерпан.\n{_d_reason}")
+        await update.message.reply_text(f"{_E_CROSS} Суточный лимит дуэлей исчерпан.\n{he(_d_reason)}", parse_mode=ParseMode.HTML)
         return
 
     reply = update.message.reply_to_message
@@ -23719,7 +23796,7 @@ async def cmd_duel(update: Update, ctx: ContextTypes.DEFAULT_TYPE):
         return
     if not target["alive"]:
         t_display = f"@{target['username']}" if target.get("username") else he(target.get("first_name", ""))
-        await update.message.reply_text(f"{_E_SKULL} Лягушка {t_display} умерла!")
+        await update.message.reply_text(f"{_E_SKULL} Лягушка {t_display} умерла!", parse_mode=ParseMode.HTML)
         return
     if f["coins"] < stake:
         await update.message.reply_text(
@@ -24722,7 +24799,7 @@ async def cmd_secretgift(update: Update, ctx: ContextTypes.DEFAULT_TYPE):
     user = update.effective_user
     f = await db_get(user.id)
     if not f:
-        await update.message.reply_text("Сначала /start <tg-emoji emoji-id='5341367834935075028'>🐸</tg-emoji>")
+        await update.message.reply_text("Сначала /start <tg-emoji emoji-id='5341367834935075028'>🐸</tg-emoji>", parse_mode=ParseMode.HTML)
         return
     if f.get("banned", 0):
         return
@@ -24787,7 +24864,7 @@ async def cmd_admingift(update: Update, ctx: ContextTypes.DEFAULT_TYPE):
             parse_mode=ParseMode.HTML,
         )
     else:
-        await update.message.reply_text(f"{_E_CROSS} Ошибка: {err}")
+        await update.message.reply_text(f"{_E_CROSS} Ошибка: {he(err)}", parse_mode=ParseMode.HTML)
 
 
 async def cmd_adminsecretgift(update: Update, ctx: ContextTypes.DEFAULT_TYPE):
@@ -25073,7 +25150,7 @@ async def cmd_adminsubscription(update: Update, ctx: ContextTypes.DEFAULT_TYPE):
         async with db.execute("SELECT * FROM frogs WHERE username=?", (mention,)) as c:
             row = await c.fetchone()
     if not row:
-        await update.message.reply_text(f"{_E_CROSS} @{mention} не найден")
+        await update.message.reply_text(f"{_E_CROSS} @{he(mention)} не найден", parse_mode=ParseMode.HTML)
         return
     target = dict(row)
     tid = target["user_id"]
@@ -25384,7 +25461,7 @@ async def cmd_dm(update: Update, ctx: ContextTypes.DEFAULT_TYPE):
         await ctx.bot.send_message(target_id, text, parse_mode=ParseMode.HTML)
         await update.message.reply_text(f"✅ Сообщение доставлено пользователю {target_id}.")
     except Exception as e:
-        await update.message.reply_text(f"{_E_CROSS} Не удалось отправить сообщение: {e}")
+        await update.message.reply_text(f"{_E_CROSS} Не удалось отправить сообщение: {he(e)}", parse_mode=ParseMode.HTML)
 
 
 async def cmd_broadcast(update: Update, ctx: ContextTypes.DEFAULT_TYPE):
@@ -25466,7 +25543,7 @@ async def cmd_broadcast(update: Update, ctx: ContextTypes.DEFAULT_TYPE):
     await asyncio.gather(*[_send_one(u) for u in users])
     try:
         await status_msg.edit_text(
-            f"✅ Рассылка завершена!{photo_note}\n📨 Доставлено: {sent}\n{_E_CROSS} Не доставлено: {failed}"
+            f"✅ Рассылка завершена!{he(photo_note)}\n📨 Доставлено: {he(sent)}\n{_E_CROSS} Не доставлено: {he(failed)}", parse_mode=ParseMode.HTML
         )
     except (BadRequest, Forbidden, TimedOut):
         pass
@@ -25573,7 +25650,7 @@ async def cmd_broadcast_test(update: Update, ctx: ContextTypes.DEFAULT_TYPE):
             async with db.execute("SELECT * FROM frogs WHERE username=?", (mention,)) as c:
                 row = await c.fetchone()
     if not row:
-        await update.message.reply_text(f"{_E_CROSS} Игрок не найден: {mention}")
+        await update.message.reply_text(f"{_E_CROSS} Игрок не найден: {he(mention)}", parse_mode=ParseMode.HTML)
         return
     target = dict(row)
     try:
@@ -25586,7 +25663,7 @@ async def cmd_broadcast_test(update: Update, ctx: ContextTypes.DEFAULT_TYPE):
             f"✅ Сообщение отправлено игроку @{target.get('username') or mention} (id: {target['user_id']})"
         )
     except Exception as e:
-        await update.message.reply_text(f"{_E_CROSS} Не удалось отправить: {e}")
+        await update.message.reply_text(f"{_E_CROSS} Не удалось отправить: {he(e)}", parse_mode=ParseMode.HTML)
 
 
 async def cmd_admincasino(update: Update, ctx: ContextTypes.DEFAULT_TYPE):
@@ -25683,7 +25760,7 @@ async def cmd_givestreak(update: Update, ctx: ContextTypes.DEFAULT_TYPE) -> None
             ) as c:
                 row = await c.fetchone()
         if not row:
-            await update.message.reply_text(f"{_E_CROSS} Игрок {arg0} не найден.")
+            await update.message.reply_text(f"{_E_CROSS} Игрок {he(arg0)} не найден.", parse_mode=ParseMode.HTML)
             return
         target_uid = row[0]
     else:
@@ -25737,7 +25814,7 @@ async def cmd_givestreak(update: Update, ctx: ContextTypes.DEFAULT_TYPE) -> None
 
     if streak_type not in type_map:
         await update.message.reply_text(
-            f"{_E_CROSS} Неизвестный тип. Доступны: {', '.join(type_map.keys())}"
+            f"{_E_CROSS} Неизвестный тип. Доступны: {he(', '.join(type_map.keys()))}", parse_mode=ParseMode.HTML
         )
         return
 
@@ -25784,13 +25861,13 @@ async def cmd_givecoin(update: Update, ctx: ContextTypes.DEFAULT_TYPE):
         async with db.execute("SELECT user_id FROM frogs WHERE username=?", (mention,)) as c:
             row = await c.fetchone()
     if not row:
-        await update.message.reply_text(f"{_E_CROSS} @{mention} не найден")
+        await update.message.reply_text(f"{_E_CROSS} @{he(mention)} не найден", parse_mode=ParseMode.HTML)
         return
     target_uid = row[0]
     # Читаем полные данные через db_get — уважаем кеш, избегаем затирания
     target = await db_get(target_uid)
     if not target:
-        await update.message.reply_text(f"{_E_CROSS} @{mention} не найден")
+        await update.message.reply_text(f"{_E_CROSS} @{he(mention)} не найден", parse_mode=ParseMode.HTML)
         return
     target["coins"] = max(0, target["coins"] + amount)
     await db_save(target)
@@ -25838,12 +25915,12 @@ async def cmd_givexp(update: Update, ctx: ContextTypes.DEFAULT_TYPE):
         async with db.execute("SELECT user_id FROM frogs WHERE username=?", (mention,)) as c:
             row = await c.fetchone()
     if not row:
-        await update.message.reply_text(f"{_E_CROSS} @{mention} не найден")
+        await update.message.reply_text(f"{_E_CROSS} @{he(mention)} не найден", parse_mode=ParseMode.HTML)
         return
     target_uid = row[0]
     tf = await db_get(target_uid)
     if not tf:
-        await update.message.reply_text(f"{_E_CROSS} @{mention} не найден")
+        await update.message.reply_text(f"{_E_CROSS} @{he(mention)} не найден", parse_mode=ParseMode.HTML)
         return
 
     old_xp  = tf.get("xp", 0)
@@ -25903,7 +25980,7 @@ async def cmd_givecauldron(update: Update, ctx: ContextTypes.DEFAULT_TYPE):
         async with db.execute("SELECT * FROM stayas WHERE id=?", (staya_id,)) as c:
             staya = await c.fetchone()
     if not staya:
-        await update.message.reply_text(f"{_E_CROSS} Стая с id={staya_id} не найдена.")
+        await update.message.reply_text(f"{_E_CROSS} Стая с id={he(staya_id)} не найдена.", parse_mode=ParseMode.HTML)
         return
     staya = dict(staya)
 
@@ -25974,7 +26051,7 @@ async def cmd_adminrename(update: Update, ctx: ContextTypes.DEFAULT_TYPE):
                 async with db.execute("SELECT user_id FROM frogs WHERE username=?", (target,)) as c:
                     row = await c.fetchone()
         if not row:
-            await update.message.reply_text(f"{_E_CROSS} Игрок не найден: {target}")
+            await update.message.reply_text(f"{_E_CROSS} Игрок не найден: {he(target)}", parse_mode=ParseMode.HTML)
             return
         tf = await db_get(row[0])
         if not tf:
@@ -26012,7 +26089,7 @@ async def cmd_adminrename(update: Update, ctx: ContextTypes.DEFAULT_TYPE):
             async with db.execute("SELECT * FROM stayas WHERE id=?", (staya_id_rn,)) as c:
                 staya_rn = await c.fetchone()
         if not staya_rn:
-            await update.message.reply_text(f"{_E_CROSS} Стая с id={staya_id_rn} не найдена.")
+            await update.message.reply_text(f"{_E_CROSS} Стая с id={he(staya_id_rn)} не найдена.", parse_mode=ParseMode.HTML)
             return
         staya_rn   = dict(staya_rn)
         old_name_s = staya_rn["name"]
@@ -26057,7 +26134,7 @@ async def cmd_giveskin(update: Update, ctx: ContextTypes.DEFAULT_TYPE):
         similar = [s for s in SKINS if skin_name.lower() in s.lower()][:5]
         hint = "\n".join(similar) if similar else "Нет похожих"
         await update.message.reply_text(
-            f"{_E_CROSS} Облик '{skin_name}' не найден\nПохожие:\n{hint}"
+            f"{_E_CROSS} Облик '{he(skin_name)}' не найден\nПохожие:\n{he(hint)}", parse_mode=ParseMode.HTML
         )
         return
     async with aiosqlite.connect(DB_PATH) as db:
@@ -26065,7 +26142,7 @@ async def cmd_giveskin(update: Update, ctx: ContextTypes.DEFAULT_TYPE):
         async with db.execute("SELECT * FROM frogs WHERE username=?", (mention,)) as c:
             row = await c.fetchone()
     if not row:
-        await update.message.reply_text(f"{_E_CROSS} @{mention} не найден")
+        await update.message.reply_text(f"{_E_CROSS} @{he(mention)} не найден", parse_mode=ParseMode.HTML)
         return
     target = dict(row)
     await db_add_skin(target["user_id"], skin_name)
@@ -26101,7 +26178,7 @@ async def cmd_removeskin(update: Update, ctx: ContextTypes.DEFAULT_TYPE):
         async with db.execute("SELECT * FROM frogs WHERE username=?", (mention,)) as c:
             row = await c.fetchone()
     if not row:
-        await update.message.reply_text(f"{_E_CROSS} @{mention} не найден")
+        await update.message.reply_text(f"{_E_CROSS} @{he(mention)} не найден", parse_mode=ParseMode.HTML)
         return
     target = dict(row)
     # Проверяем коллекцию из таблицы collections (не устаревшее поле skins)
@@ -26109,8 +26186,8 @@ async def cmd_removeskin(update: Update, ctx: ContextTypes.DEFAULT_TYPE):
     matched_skin = next((s for s in coll if s.lower() == skin_name.lower()), None)
     if not matched_skin:
         await update.message.reply_text(
-            f"{_E_CROSS} У @{mention} нет облика «{skin_name}».\n"
-            f"Всего обликов в коллекции: {len(coll)}."
+            f"{_E_CROSS} У @{he(mention)} нет облика «{he(skin_name)}».\n"
+            f"Всего обликов в коллекции: {he(len(coll))}.", parse_mode=ParseMode.HTML
         )
         return
     await db_remove_skin(target["user_id"], matched_skin)
@@ -26168,7 +26245,7 @@ async def cmd_adminlookup(update: Update, ctx: ContextTypes.DEFAULT_TYPE):
                 ) as c:
                     row = await c.fetchone()
     if not row:
-        await update.message.reply_text(f"{_E_CROSS} Игрок не найден: {query}")
+        await update.message.reply_text(f"{_E_CROSS} Игрок не найден: {he(query)}", parse_mode=ParseMode.HTML)
         return
     target_uid = dict(row)["user_id"]
     await show_player_card(update.message, target_uid, edit=False, back_cb="admin_players_0")
@@ -26224,7 +26301,7 @@ async def cmd_adminplayerlogs(update: Update, ctx: ContextTypes.DEFAULT_TYPE):
                     frow = await c.fetchone()
 
     if not frow:
-        await update.message.reply_text(f"{_E_CROSS} Игрок не найден: {query}")
+        await update.message.reply_text(f"{_E_CROSS} Игрок не найден: {he(query)}", parse_mode=ParseMode.HTML)
         return
 
     frow = dict(frow)
@@ -26503,7 +26580,7 @@ async def cmd_setprice(update: Update, ctx: ContextTypes.DEFAULT_TYPE):
     key = ctx.args[0].lower()
     if key not in ALLOWED_KEYS:
         await update.message.reply_text(
-            f"{_E_CROSS} Неизвестный ключ: {key}\nДоступные: {', '.join(ALLOWED_KEYS.keys())}"
+            f"{_E_CROSS} Неизвестный ключ: {he(key)}\nДоступные: {he(', '.join(ALLOWED_KEYS.keys()))}", parse_mode=ParseMode.HTML
         )
         return
     try:
@@ -26635,7 +26712,7 @@ async def cmd_ref_decline(update: Update, ctx: ContextTypes.DEFAULT_TYPE):
         )
     except (BadRequest, Forbidden, TimedOut):
         pass
-    await update.message.reply_text(f"{_E_CROSS} Заявка #{req_id} отклонена.")
+    await update.message.reply_text(f"{_E_CROSS} Заявка #{he(req_id)} отклонена.", parse_mode=ParseMode.HTML)
 
 
 async def cmd_chatban(update: Update, ctx: ContextTypes.DEFAULT_TYPE):
@@ -26662,7 +26739,7 @@ async def cmd_chatban(update: Update, ctx: ContextTypes.DEFAULT_TYPE):
         async with db.execute("SELECT * FROM frogs WHERE username=?", (mention,)) as c:
             row = await c.fetchone()
     if not row:
-        await msg.reply_text(f"{_E_CROSS} @{mention} не найден в базе игроков")
+        await msg.reply_text(f"{_E_CROSS} @{he(mention)} не найден в базе игроков", parse_mode=ParseMode.HTML)
         return
     target = dict(row)
     uid_target = target["user_id"]
@@ -26715,7 +26792,7 @@ async def cmd_chatunban(update: Update, ctx: ContextTypes.DEFAULT_TYPE):
         async with db.execute("SELECT * FROM frogs WHERE username=?", (mention,)) as c:
             row = await c.fetchone()
     if not row:
-        await msg.reply_text(f"{_E_CROSS} @{mention} не найден в базе игроков")
+        await msg.reply_text(f"{_E_CROSS} @{he(mention)} не найден в базе игроков", parse_mode=ParseMode.HTML)
         return
     target    = dict(row)
     uid_target = target["user_id"]
@@ -26818,7 +26895,7 @@ async def cmd_chatmute(update: Update, ctx: ContextTypes.DEFAULT_TYPE):
                 async with db.execute("SELECT * FROM frogs WHERE username=?", (mention,)) as c:
                     row = await c.fetchone()
         if not row:
-            await msg.reply_text(f"{_E_CROSS} @{mention} не найден в базе игроков")
+            await msg.reply_text(f"{_E_CROSS} @{he(mention)} не найден в базе игроков", parse_mode=ParseMode.HTML)
             return
         target = dict(row)
         uid_target = target["user_id"]
@@ -26875,7 +26952,7 @@ async def cmd_chatunmute(update: Update, ctx: ContextTypes.DEFAULT_TYPE):
         async with db.execute("SELECT * FROM frogs WHERE username=?", (mention,)) as c:
             row = await c.fetchone()
     if not row:
-        await msg.reply_text(f"{_E_CROSS} @{mention} не найден в базе игроков")
+        await msg.reply_text(f"{_E_CROSS} @{he(mention)} не найден в базе игроков", parse_mode=ParseMode.HTML)
         return
     target = dict(row)
     uid_target = target["user_id"]
@@ -26927,7 +27004,7 @@ async def cmd_chatwarn(update: Update, ctx: ContextTypes.DEFAULT_TYPE):
                 async with db.execute("SELECT user_id, first_name FROM frogs WHERE username=?", (mention,)) as c:
                     row = await c.fetchone()
         if not row:
-            await msg.reply_text(f"{_E_CROSS} @{mention} не найден в базе игроков")
+            await msg.reply_text(f"{_E_CROSS} @{he(mention)} не найден в базе игроков", parse_mode=ParseMode.HTML)
             return
         target_user = type("U", (), {"id": row["user_id"], "first_name": row["first_name"], "mention_html": lambda s=None: f"<b>{he(row['first_name'])}</b>"})()
     else:
@@ -27027,7 +27104,7 @@ async def cmd_chatwarnlist(update: Update, ctx: ContextTypes.DEFAULT_TYPE):
             async with db.execute("SELECT user_id, first_name FROM frogs WHERE username=?", (mention,)) as c:
                 row = await c.fetchone()
         if not row:
-            await msg.reply_text(f"{_E_CROSS} @{mention} не найден")
+            await msg.reply_text(f"{_E_CROSS} @{he(mention)} не найден", parse_mode=ParseMode.HTML)
             return
         uid_target = row["user_id"]
         tname = he(row["first_name"])
@@ -27076,7 +27153,7 @@ async def cmd_chatwarnreset(update: Update, ctx: ContextTypes.DEFAULT_TYPE):
             async with db.execute("SELECT user_id, first_name FROM frogs WHERE username=?", (mention,)) as c:
                 row = await c.fetchone()
         if not row:
-            await msg.reply_text(f"{_E_CROSS} @{mention} не найден")
+            await msg.reply_text(f"{_E_CROSS} @{he(mention)} не найден", parse_mode=ParseMode.HTML)
             return
         uid_target = row["user_id"]
         tname = he(row["first_name"])
@@ -27256,7 +27333,7 @@ async def cmd_ban(update: Update, ctx: ContextTypes.DEFAULT_TYPE):
         async with db.execute("SELECT * FROM frogs WHERE username=?", (mention,)) as c:
             row = await c.fetchone()
     if not row:
-        await update.message.reply_text(f"{_E_CROSS} @{mention} не найден")
+        await update.message.reply_text(f"{_E_CROSS} @{he(mention)} не найден", parse_mode=ParseMode.HTML)
         return
     target = dict(row)
     async with aiosqlite.connect(DB_PATH) as db:
@@ -27294,7 +27371,7 @@ async def cmd_unban(update: Update, ctx: ContextTypes.DEFAULT_TYPE):
         async with db.execute("SELECT * FROM frogs WHERE username=?", (mention,)) as c:
             row = await c.fetchone()
     if not row:
-        await update.message.reply_text(f"{_E_CROSS} @{mention} не найден")
+        await update.message.reply_text(f"{_E_CROSS} @{he(mention)} не найден", parse_mode=ParseMode.HTML)
         return
     target = dict(row)
     async with aiosqlite.connect(DB_PATH) as db:
@@ -29198,7 +29275,7 @@ async def cmd_nft_contest_broadcast(update: Update, ctx: ContextTypes.DEFAULT_TY
         await status_msg.edit_text(
             f"✅ Рассылка завершена!\n"
             f"🥚🐛🐸 Лиги: Икринка, Головастик, Лягушонок\n"
-            f"📨 Доставлено: {sent}\n{_E_CROSS} Не доставлено: {failed}"
+            f"📨 Доставлено: {he(sent)}\n{_E_CROSS} Не доставлено: {he(failed)}", parse_mode=ParseMode.HTML
         )
     except (BadRequest, Forbidden, TimedOut):
         pass
@@ -30224,8 +30301,8 @@ async def admin_router(update: Update, ctx: ContextTypes.DEFAULT_TYPE):
             try:
                 await ctx.bot.send_message(
                     row[0],
-                    f"{_E_CROSS} Заявка на KissedFrog #{row[1]} отклонена администратором.\n"
-                    f"Если считаете это ошибкой — напишите /nft с правильной ссылкой.",
+                    f"{_E_CROSS} Заявка на KissedFrog #{he(row[1])} отклонена администратором.\n"
+                    f"Если считаете это ошибкой — напишите /nft с правильной ссылкой.", parse_mode=ParseMode.HTML
                 )
             except (BadRequest, Forbidden, TimedOut):
                 pass
@@ -32675,7 +32752,7 @@ async def admin_router(update: Update, ctx: ContextTypes.DEFAULT_TYPE):
             _os.remove(gz_path)
             await admin_log(uid, "backup")
         except Exception as e:
-            await ctx.bot.send_message(uid, f"{_E_CROSS} Ошибка бекапа: {e}")
+            await ctx.bot.send_message(uid, f"{_E_CROSS} Ошибка бекапа: {he(e)}", parse_mode=ParseMode.HTML)
         return
     # ── ЛОГИ АДМИНИСТРАТОРА ──────────────────────
     if d == "admin_logs_view" or d.startswith("admin_logs_view_"):
@@ -44676,7 +44753,7 @@ async def on_callback(update: Update, ctx: ContextTypes.DEFAULT_TYPE):
                         reply_markup=InlineKeyboardMarkup([[
                             btn("💔 Да, распустить", callback_data="staya_disband"),
                             btn("◀️ Отмена", callback_data="plaza_staya"),
-                        ]])
+                        ]]), parse_mode=ParseMode.HTML
                     )
                 except (BadRequest, Forbidden, TimedOut):
                     pass
@@ -44688,7 +44765,7 @@ async def on_callback(update: Update, ctx: ContextTypes.DEFAULT_TYPE):
                 reply_markup=InlineKeyboardMarkup([[
                     btn("✅ Да, покинуть", callback_data="staya_leave_confirm"),
                     btn("◀️ Отмена", callback_data="plaza_staya"),
-                ]])
+                ]]), parse_mode=ParseMode.HTML
             )
         except (BadRequest, Forbidden, TimedOut):
             pass
@@ -44708,7 +44785,7 @@ async def on_callback(update: Update, ctx: ContextTypes.DEFAULT_TYPE):
         try:
             await q.message.edit_text(
                 f"{_E_DOOR} Ты покинул стаю «{he(staya['name'])}». Удачи на болоте! {_E_LEAF}",
-                reply_markup=InlineKeyboardMarkup([[btn("Площадь", callback_data="plaza")]])
+                reply_markup=InlineKeyboardMarkup([[btn("Площадь", callback_data="plaza")]]), parse_mode=ParseMode.HTML
             )
         except (BadRequest, Forbidden, TimedOut):
             pass
@@ -47923,7 +48000,7 @@ async def on_callback(update: Update, ctx: ContextTypes.DEFAULT_TYPE):
             )
         except Exception as e:
             logger.error("kva_retry_stars_10 invoice error: uid=%s err=%s", uid, e)
-            await q.message.reply_text(f"{_E_CROSS} Ошибка отправки счёта: {e}")
+            await q.message.reply_text(f"{_E_CROSS} Ошибка отправки счёта: {he(e)}", parse_mode=ParseMode.HTML)
         return
 
     if d in ("kva_retry_stars", "kva_retry_coins"):
@@ -47959,7 +48036,7 @@ async def on_callback(update: Update, ctx: ContextTypes.DEFAULT_TYPE):
                 logger.info("kva_retry_stars: uid=%s invoice sent %s stars", uid, NFT_KVA_STARS)
             except Exception as e:
                 logger.error("kva_retry_stars invoice error: uid=%s err=%s", uid, e)
-                await q.message.reply_text(f"{_E_CROSS} Ошибка отправки счёта: {e}")
+                await q.message.reply_text(f"{_E_CROSS} Ошибка отправки счёта: {he(e)}", parse_mode=ParseMode.HTML)
             return
 
         # Ква-бросок для монет: рандомный счётчик, шанс 1/NFT_KVA_TOTAL
@@ -48630,7 +48707,7 @@ async def on_message(update: Update, ctx: ContextTypes.DEFAULT_TYPE):
         if text.isdigit() and int(text) == entry.get("answer"):
             _captcha_pending.pop(user.id, None)
             _action_log.pop(user.id, None)
-            await update.message.reply_text("✅ Отлично! Проверка пройдена. Можешь играть дальше <tg-emoji emoji-id='5341367834935075028'>🐸</tg-emoji>")
+            await update.message.reply_text("✅ Отлично! Проверка пройдена. Можешь играть дальше <tg-emoji emoji-id='5341367834935075028'>🐸</tg-emoji>", parse_mode=ParseMode.HTML)
             if ADMIN_IDS:
                 try:
                     await ctx.bot.send_message(
@@ -48962,14 +49039,14 @@ async def on_message(update: Update, ctx: ContextTypes.DEFAULT_TYPE):
             return
         MAX_WISH = 1_000_000
         if wish_target_input > MAX_WISH:
-            await update.message.reply_text(f"{_E_CROSS} Максимально допустимая сумма: {MAX_WISH:,}🪙")
+            await update.message.reply_text(f"{_E_CROSS} Максимально допустимая сумма: {MAX_WISH:,}🪙", parse_mode=ParseMode.HTML)
             return
         ctx.user_data.pop(_wish_key, None)
         _fw = await db_get(user.id)
         if not _fw:
             return
         if _fw["coins"] < _wish_stake:
-            await update.message.reply_text(f"{_E_CROSS} Не хватает монет! У тебя {_fw['coins']}🪙")
+            await update.message.reply_text(f"{_E_CROSS} Не хватает монет! У тебя {he(_fw['coins'])}🪙", parse_mode=ParseMode.HTML)
             return
         # Расчёт шанса: честный шанс = stake / target (например 50→100: 50%)
         # Фактический шанс с учётом RTP 80%: P_actual = (stake / target) × 0.80
@@ -49069,7 +49146,7 @@ async def on_message(update: Update, ctx: ContextTypes.DEFAULT_TYPE):
                 val = int(raw)
                 mn, mx = _ca.get("min", 0), _ca.get("max", 99999)
                 if not (mn <= val <= mx):
-                    await update.message.reply_text(f"{_E_CROSS} Число должно быть от {mn} до {mx}. Попробуй ещё раз.")
+                    await update.message.reply_text(f"{_E_CROSS} Число должно быть от {he(mn)} до {he(mx)}. Попробуй ещё раз.", parse_mode=ParseMode.HTML)
                     ctx.user_data[_ca_input_key] = _ca  # возвращаем состояние
                     return
                 await save_chat_settings(cid_ca, **{field: val})
@@ -49166,7 +49243,7 @@ async def on_message(update: Update, ctx: ContextTypes.DEFAULT_TYPE):
                 )
                 await update.message.reply_text(f"✅ Сообщение доставлено {fname(tf_am)}.")
             except Exception as _e:
-                await update.message.reply_text(f"{_E_CROSS} Не удалось: {_e}")
+                await update.message.reply_text(f"{_E_CROSS} Не удалось: {he(_e)}", parse_mode=ParseMode.HTML)
         return
 
     # ── Заявка в стаю — ввод текста ──────────────────────────────────────────
@@ -49404,7 +49481,7 @@ async def on_message(update: Update, ctx: ContextTypes.DEFAULT_TYPE):
                 if reply_target_id:
                     await update.message.reply_text("Этот игрок ещё не зарегистрировался в боте 🐸")
                 else:
-                    await update.message.reply_text(f"Игрок @{uname_from_msg} не найден {_E_SEARCH}")
+                    await update.message.reply_text(f"Игрок @{he(uname_from_msg)} не найден {_E_SEARCH}", parse_mode=ParseMode.HTML)
                 return
 
     # ── Ввод произвольной суммы в котёл ─────────────────────────────────────
@@ -49484,7 +49561,7 @@ async def on_message(update: Update, ctx: ContextTypes.DEFAULT_TYPE):
         f_rn = await db_get(user.id)
         RENAME_COST = 800
         if not f_rn or f_rn["coins"] < RENAME_COST:
-            await update.message.reply_text(f"Нужно {RENAME_COST}{_E_COIN} для переименования!")
+            await update.message.reply_text(f"Нужно {he(RENAME_COST)}{_E_COIN} для переименования!", parse_mode=ParseMode.HTML)
             return
         f_rn["coins"] -= RENAME_COST
         await db_save(f_rn)
@@ -49673,7 +49750,7 @@ async def on_message(update: Update, ctx: ContextTypes.DEFAULT_TYPE):
                     if rf:
                         rf["coins"] += stake_hm
                         await db_save(rf)
-                await update.message.reply_text(f"{_E_CROSS} Ошибка публикации: {e}")
+                await update.message.reply_text(f"{_E_CROSS} Ошибка публикации: {he(e)}", parse_mode=ParseMode.HTML)
             return
         else:
             await update.message.reply_text(
@@ -50009,7 +50086,7 @@ async def on_message(update: Update, ctx: ContextTypes.DEFAULT_TYPE):
                     f2["coins"] += cw["stake"]
                     await db_save(f2)
                 await update.message.reply_text(
-                    f"{_E_CROSS} Неверный кубик! Ожидался {expected_emoji}. Ставка возвращена.",
+                    f"{_E_CROSS} Неверный кубик! Ожидался {he(expected_emoji)}. Ставка возвращена.", parse_mode=ParseMode.HTML
                 )
                 return
 
@@ -54055,7 +54132,7 @@ async def cmd_ttt_group(update: Update, ctx: ContextTypes.DEFAULT_TYPE):
         try:
             stake = int(ctx.args[0])
             if stake < 10 or stake > 500:
-                await update.message.reply_text("❌ Ставка должна быть от 10 до 500 <tg-emoji emoji-id='5341524176039615767'>🪙</tg-emoji>")
+                await update.message.reply_text("❌ Ставка должна быть от 10 до 500 <tg-emoji emoji-id='5341524176039615767'>🪙</tg-emoji>", parse_mode=ParseMode.HTML)
                 return
         except ValueError:
             await update.message.reply_text("❌ Укажи число: /ttt 100")
@@ -54117,7 +54194,7 @@ async def cmd_ttt5_group(update: Update, ctx: ContextTypes.DEFAULT_TYPE):
         try:
             stake = int(ctx.args[0])
             if stake < 10 or stake > 1000:
-                await update.message.reply_text("❌ Ставка должна быть от 10 до 1000 <tg-emoji emoji-id='5341524176039615767'>🪙</tg-emoji>")
+                await update.message.reply_text("❌ Ставка должна быть от 10 до 1000 <tg-emoji emoji-id='5341524176039615767'>🪙</tg-emoji>", parse_mode=ParseMode.HTML)
                 return
         except ValueError:
             await update.message.reply_text("❌ Укажи число: /ttt5 100")
@@ -54755,7 +54832,7 @@ async def cmd_giveaway(update: Update, ctx: ContextTypes.DEFAULT_TYPE):
     user = update.effective_user
     f = await db_get(user.id)
     if not f:
-        await update.message.reply_text("Сначала /start <tg-emoji emoji-id='5341367834935075028'>🐸</tg-emoji>")
+        await update.message.reply_text("Сначала /start <tg-emoji emoji-id='5341367834935075028'>🐸</tg-emoji>", parse_mode=ParseMode.HTML)
         return
     if f.get("banned", 0):
         await update.message.reply_text("🚫 Ваш аккаунт заблокирован администрацией.")
@@ -54766,7 +54843,7 @@ async def cmd_giveaway(update: Update, ctx: ContextTypes.DEFAULT_TYPE):
         return
     _gw_ok, _gw_reason = await check_rate_limit(user.id, "giveaway_create")
     if not _gw_ok:
-        await update.message.reply_text(f"{_E_CROSS} Суточный лимит розыгрышей исчерпан.\n{_gw_reason}")
+        await update.message.reply_text(f"{_E_CROSS} Суточный лимит розыгрышей исчерпан.\n{he(_gw_reason)}", parse_mode=ParseMode.HTML)
         return
     if not ctx.args:
         await update.message.reply_text(
@@ -54782,7 +54859,7 @@ async def cmd_giveaway(update: Update, ctx: ContextTypes.DEFAULT_TYPE):
         await update.message.reply_text("❌ Сумма и количество победителей должны быть числами!")
         return
     if total < 10:
-        await update.message.reply_text("❌ Минимальная сумма розыгрыша — 10 <tg-emoji emoji-id='5341524176039615767'>🪙</tg-emoji>")
+        await update.message.reply_text("❌ Минимальная сумма розыгрыша — 10 <tg-emoji emoji-id='5341524176039615767'>🪙</tg-emoji>", parse_mode=ParseMode.HTML)
         return
     if winners_count < 1 or winners_count > 10:
         await update.message.reply_text("❌ Количество победителей: от 1 до 10")
@@ -55278,11 +55355,11 @@ async def cmd_m(update: Update, ctx: ContextTypes.DEFAULT_TYPE):
         async with db.execute("SELECT user_id, frog_name, first_name FROM frogs WHERE username=?", (uname,)) as c:
             row = await c.fetchone()
     if not row:
-        await update.message.reply_text(f"{_E_CROSS} Игрок @{uname} не найден.")
+        await update.message.reply_text(f"{_E_CROSS} Игрок @{he(uname)} не найден.", parse_mode=ParseMode.HTML)
         return
     target_id, tname, tfirst = row
     if target_id == user.id:
-        await update.message.reply_text("Нельзя писать самому себе <tg-emoji emoji-id='5341367834935075028'>🐸</tg-emoji>")
+        await update.message.reply_text("Нельзя писать самому себе <tg-emoji emoji-id='5341367834935075028'>🐸</tg-emoji>", parse_mode=ParseMode.HTML)
         return
     # Только взаимным соседям
     mutual = await friend_get(user.id, target_id)
@@ -55678,8 +55755,8 @@ async def cmd_givesub(update: Update, ctx: ContextTypes.DEFAULT_TYPE):
             target_id = target_id_gs
         except ValueError:
             await update.message.reply_text(
-                f"{_E_CROSS} Игрок @{uname} не найден.\n"
-                f"Убедись что @username правильный или укажи числовой ID."
+                f"{_E_CROSS} Игрок @{he(uname)} не найден.\n"
+                f"Убедись что @username правильный или укажи числовой ID.", parse_mode=ParseMode.HTML
             )
             return
     else:
@@ -56324,7 +56401,7 @@ async def cmd_add_soseda(update: Update, ctx: ContextTypes.DEFAULT_TYPE):
         await db.commit()
     tname_disp = tname or tfirst or uname
     await update.message.reply_text(
-        f"✅ Заявка отправлена {he(tname_disp)}!\nКак только они примут — станете соседями {_E_LEAF}"
+        f"✅ Заявка отправлена {he(tname_disp)}!\nКак только они примут — станете соседями {_E_LEAF}", parse_mode=ParseMode.HTML
     )
     try:
         my_name = f.get("frog_name") or f.get("first_name") or "Кто-то"
@@ -56341,164 +56418,6 @@ async def cmd_add_soseda(update: Update, ctx: ContextTypes.DEFAULT_TYPE):
         )
     except (BadRequest, Forbidden, TimedOut):
         pass
-
-
-async def cmd_gift_friend(update: Update, ctx: ContextTypes.DEFAULT_TYPE):
-    # Защита от абуза: пересланные сообщения с /gift не принимаются
-    if (
-        getattr(update.message, "forward_origin", None) is not None
-        or getattr(update.message, "forward_from", None) is not None
-        or getattr(update.message, "forward_date", None) is not None
-    ):
-        await update.message.reply_text("❌ Пересланные команды не принимаются.")
-        return
-    user = update.effective_user
-    f = await db_get(user.id)
-    if not f:
-        return
-    args = ctx.args
-    if len(args) < 2:
-        await update.message.reply_text("Использование: /gift @username сумма\nМакс. 100🪙 в день другу.")
-        return
-    uname = args[0].lstrip("@")
-    try:
-        amount = int(args[1])
-    except ValueError:
-        await update.message.reply_text("Сумма должна быть числом.")
-        return
-    if amount < 5 or amount > GIFT_COINS_MAX:
-        await update.message.reply_text(f"Сумма от 5 до {GIFT_COINS_MAX}🪙.")
-        return
-
-    async with aiosqlite.connect(DB_PATH) as db:
-        async with db.execute("SELECT user_id, frog_name, first_name FROM frogs WHERE username=?", (uname,)) as c:
-            row = await c.fetchone()
-    if not row:
-        await update.message.reply_text("Лягушка не найдена.")
-        return
-    target_id, tname, tfirst = row
-    fr = await friend_get(user.id, target_id)
-    if not fr or fr.get("pending"):
-        await update.message.reply_text("Можно дарить только соседям. Сначала подружитесь.")
-        return
-
-    # Кулдаун 24 часа на одного получателя
-    now = time.time()
-    if now - f.get("last_gift_sent", 0) < 86400:
-        left = int((86400 - (now - f["last_gift_sent"])) / 3600)
-        await update.message.reply_text(f"⏳ Следующий подарок можно отправить через {left}ч.")
-        return
-    if f["coins"] < amount:
-        await update.message.reply_text(f"Недостаточно монет. У тебя {f['coins']}🪙.")
-        return
-
-    tax = max(1, int(amount * GIFT_COINS_TAX))
-    actual = amount - tax
-
-    # ── Антиспам: >5 разных отправителей одной суммы за минуту → заморозка ────
-    _now_gift = time.time()
-    _freeze_key = (user.id, target_id)
-    # Проверяем персональную заморозку отправителя
-    if _GIFT_FROZEN.get(_freeze_key, 0) > _now_gift:
-        _left_freeze = int(_GIFT_FROZEN[_freeze_key] - _now_gift)
-        await update.message.reply_text(
-            f"{_E_BAN} Переводы временно заморожены (решение администратора).\n"
-            f"Ожидание: {_left_freeze // 60} мин {_left_freeze % 60} сек."
-        )
-        return
-    # Трекаем переводы одинаковой суммы от разных отправителей (ключ — только сумма)
-    # Это ловит паттерн "30 ботов по N монет разным получателям"
-    _tracker_key = amount  # ключ только по сумме, не по получателю
-    _tracker = _GIFT_SPAM_TRACKER.setdefault(_tracker_key, [])
-    # Чистим записи старше минуты
-    _GIFT_SPAM_TRACKER[_tracker_key] = [
-        (ts, sid, tid) for ts, sid, tid in _tracker if _now_gift - ts < 60
-    ]
-    _tracker = _GIFT_SPAM_TRACKER[_tracker_key]
-    _unique_senders = len({sid for _, sid, _ in _tracker})
-    # Антиспам-заморозка подарков отключена вручную
-    if False and _unique_senders >= 5:
-        # Замораживаем текущего отправителя
-        _GIFT_FROZEN[_freeze_key] = _now_gift + 3600
-        # Замораживаем всех замеченных
-        for _, _sid, _tid in _tracker:
-            _GIFT_FROZEN[(_sid, _tid)] = _now_gift + 3600
-        _review_id = f"gift_spam_{int(_now_gift)}_{amount}"
-        _GIFT_PENDING_REVIEW[_review_id] = {
-            "senders": list({sid for _, sid, _ in _tracker}) + [user.id],
-            "target_id": target_id,
-            "amount": amount,
-            "freeze_until": _now_gift + 3600,
-        }
-        if ADMIN_IDS:
-            try:
-                _all_senders = list({sid for _, sid, _ in _tracker} | {user.id})
-                await ctx.bot.send_message(
-                    ADMIN_IDS[0],
-                    f"🚨 <b>Спам переводов!</b>\n\n"
-                    f"Сумма: <b>{amount}{_E_COIN}</b>\n"
-                    f"Уникальных отправителей: <b>{len(_all_senders)}</b> за минуту\n"
-                    f"IDs: {', '.join(f'<code>{s}</code>' for s in _all_senders[:10])}\n\n"
-                    f"Переводы заморожены на 1 час.",
-                    parse_mode=ParseMode.HTML,
-                    reply_markup=InlineKeyboardMarkup([[
-                        btn("✅ Разморозить", callback_data=f"gift_unfreeze_{_review_id}"),
-                        btn("🚫 Продлить 24ч", callback_data=f"gift_keepfreeze_{_review_id}"),
-                    ]])
-                )
-            except (BadRequest, Forbidden, TimedOut):
-                pass
-        await update.message.reply_text("🚫 Подозрительная активность. Переводы временно заморожены.")
-        return
-    # Добавляем в трекер только если прошли проверку
-    _GIFT_SPAM_TRACKER[_tracker_key].append((_now_gift, user.id, target_id))
-    f["coins"] -= amount
-    f["last_gift_sent"] = now
-    f["coins_spent"] = f.get("coins_spent", 0) + amount
-    await db_save(f)
-    asyncio.create_task(plog(user.id, "gift_send", f"to={target_id} сумма={amount} получено={actual}", coins_delta=-amount))
-
-    tf = await db_get(target_id)
-    if tf:
-        tf["coins"] += actual
-        await db_save(tf)
-        asyncio.create_task(plog(target_id, "gift_recv", f"from={user.id} получено={actual}", coins_delta=actual))
-
-    my_name = f.get("frog_name") or f.get("first_name") or "Сосед"
-    tname_disp = tname or tfirst or uname
-    await update.message.reply_text(
-        f"{_E_GIFT} Отправлено <b>{actual}{_E_COIN}</b> лягушке {he(tname_disp)}\n"
-        f"<i>(болотная пошлина {tax}{_E_COIN})</i>",
-        parse_mode=ParseMode.HTML,
-    )
-    try:
-        await ctx.bot.send_message(
-            target_id,
-            f"{_E_GIFT} <b>{he(my_name)}</b> прислал тебе <b>{actual}{_E_COIN}</b>!\n"
-            f"<i>Болотные соседи заботятся друг о друге {_E_LEAF}</i>",
-            parse_mode=ParseMode.HTML,
-        )
-    except (BadRequest, Forbidden, TimedOut):
-        pass
-    # ── Уведомление администратору о переводе ──────────────────────────
-    if ADMIN_CHAT_ID:
-        try:
-            _sender_uname = f"@{f.get('username')}" if f.get("username") else f"ID:{user.id}"
-            _recv_uname   = f"@{uname}" if uname else f"ID:{target_id}"
-            await ctx.bot.send_message(
-                ADMIN_CHAT_ID,
-                f"💸 <b>Перевод /gift</b>\n"
-                f"От: <b>{he(my_name)}</b> ({_sender_uname})\n"
-                f"Кому: <b>{he(tname_disp)}</b> ({_recv_uname})\n"
-                f"Сумма: <b>{amount}{_E_COIN}</b> (получено {actual}, пошлина {tax})\n"
-                f"🕐 {datetime.now(timezone.utc).strftime('%d.%m.%Y %H:%M')} UTC",
-                parse_mode=ParseMode.HTML,
-            )
-        except (BadRequest, Forbidden, TimedOut):
-            pass
-    # XP дружбе
-    await friend_add_xp(user.id, target_id, 5)
-    await friend_add_xp(target_id, user.id, 3)
 
 
 async def cmd_fish(update: Update, ctx: ContextTypes.DEFAULT_TYPE):
@@ -56661,7 +56580,7 @@ async def cmd_pohod(update: Update, ctx: ContextTypes.DEFAULT_TYPE):
         return
     if f.get("adventure_locked_until", 0) > time.time():
         left = int((f["adventure_locked_until"] - time.time()) / 60)
-        await update.message.reply_text(f"{_E_SWORDS} Лягушка уже в походе. До конца: {left} мин.")
+        await update.message.reply_text(f"{_E_SWORDS} Лягушка уже в походе. До конца: {he(left)} мин.", parse_mode=ParseMode.HTML)
         return
     args = ctx.args
     if not args:
@@ -57013,7 +56932,7 @@ async def cmd_broadcast_nft(update: Update, ctx: ContextTypes.DEFAULT_TYPE):
     try:
         await status_msg.edit_text(
             f"✅ Рассылка NFT-холдерам завершена!\n"
-            f"📨 Доставлено: {sent}\n{_E_CROSS} Не доставлено: {failed}"
+            f"📨 Доставлено: {he(sent)}\n{_E_CROSS} Не доставлено: {he(failed)}", parse_mode=ParseMode.HTML
         )
     except (BadRequest, Forbidden, TimedOut):
         pass
@@ -57448,8 +57367,8 @@ async def cmd_checkers(update: Update, ctx: ContextTypes.DEFAULT_TYPE):
         # В личке — только vs бот
         user = update.effective_user
         f = await db_get(user.id)
-        if not f: await update.message.reply_text("Сначала /start <tg-emoji emoji-id='5341367834935075028'>🐸</tg-emoji>"); return
-        if not f.get("alive", 1): await update.message.reply_text("<tg-emoji emoji-id='5341573078537248907'>💀</tg-emoji> Лягушка мертва! /revive"); return
+        if not f: await update.message.reply_text("Сначала /start <tg-emoji emoji-id='5341367834935075028'>🐸</tg-emoji>", parse_mode=ParseMode.HTML); return
+        if not f.get("alive", 1): await update.message.reply_text("<tg-emoji emoji-id='5341573078537248907'>💀</tg-emoji> Лягушка мертва! /revive", parse_mode=ParseMode.HTML); return
         kb = InlineKeyboardMarkup([
             [btn(t("chk_play_black", f), callback_data="ck_side|black", style="primary"),
              btn(t("chk_play_white", f), callback_data="ck_side|white", style="primary")],
@@ -57464,8 +57383,8 @@ async def cmd_checkers(update: Update, ctx: ContextTypes.DEFAULT_TYPE):
     # В группе — показываем меню режима
     user = update.effective_user
     f = await db_get(user.id)
-    if not f: await update.message.reply_text("Сначала /start <tg-emoji emoji-id='5341367834935075028'>🐸</tg-emoji>"); return
-    if not f.get("alive", 1): await update.message.reply_text("<tg-emoji emoji-id='5341573078537248907'>💀</tg-emoji> Лягушка мертва! /revive"); return
+    if not f: await update.message.reply_text("Сначала /start <tg-emoji emoji-id='5341367834935075028'>🐸</tg-emoji>", parse_mode=ParseMode.HTML); return
+    if not f.get("alive", 1): await update.message.reply_text("<tg-emoji emoji-id='5341573078537248907'>💀</tg-emoji> Лягушка мертва! /revive", parse_mode=ParseMode.HTML); return
 
     kb = InlineKeyboardMarkup([
         [btn(t("btn_chk_solo", f), callback_data="ck_mode|bot", style="primary"),
@@ -67808,7 +67727,7 @@ async def cmd_m_new(update: Update, ctx: ContextTypes.DEFAULT_TYPE):
         ) as c:
             row = await c.fetchone()
     if not row:
-        await update.message.reply_text(f"{_E_CROSS} Игрок @{uname} не найден.")
+        await update.message.reply_text(f"{_E_CROSS} Игрок @{he(uname)} не найден.", parse_mode=ParseMode.HTML)
         return
     target_id, tname, tfirst = row
     if target_id == user.id:
@@ -68151,14 +68070,12 @@ def main():
     app.add_handler(CommandHandler("staya",        cmd_staya))
     app.add_handler(CommandHandler("sosedi",       cmd_sosedi))
     app.add_handler(CommandHandler("add_soseda",   cmd_add_soseda))
-    app.add_handler(CommandHandler("gift",         cmd_gift_friend))
     app.add_handler(CommandHandler("fish",         cmd_fish))
     app.add_handler(CommandHandler("letopis",      cmd_letopis))
     app.add_handler(CommandHandler("pohod",        cmd_pohod))
     app.add_handler(CommandHandler("expedition",   cmd_expedition))
     app.add_handler(CommandHandler("exp",          cmd_expedition))
     app.add_handler(CommandHandler("bond",         cmd_bond))
-    # (дубли gift/fish/letopis убраны)
     app.add_handler(CommandHandler("activate_bonus", cmd_activate_bonus))
     app.add_handler(CommandHandler("deactivate_bonus", cmd_deactivate_bonus))
     app.add_handler(CommandHandler("subscribe",          cmd_subscribe))
@@ -68215,7 +68132,6 @@ def main():
         app.add_handler(CallbackQueryHandler(_router, pattern=_pattern))
     app.add_handler(CallbackQueryHandler(on_callback))
     app.add_handler(PreCheckoutQueryHandler(pre_checkout))
-    app.add_handler(CommandHandler("nft_list", cmd_nft_list))
     app.add_handler(MessageHandler(filters.SUCCESSFUL_PAYMENT, successful_payment))
 
     # ── Медиа и текст в чат стычки (/s с медиа) ─────────────────────────────
