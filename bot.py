@@ -27318,25 +27318,6 @@ async def cmd_casino(update: Update, ctx: ContextTypes.DEFAULT_TYPE):
             parse_mode=ParseMode.HTML,
         )
         return
-    CASINO = {
-        "dice": {"emoji": "🎲", "name": "Кубик", "desc": "5: ×2 · 6: ×3.4"},
-        "dart": {"emoji": "🎯", "name": "Дартс", "desc": "5: ×2 · 6: ×3.4"},
-        "basketball": {
-            "emoji": "🏀",
-            "name": "Баскетбол",
-            "desc": "5: ×2.4 · 6: ×3",
-        },
-        "slots": {
-            "emoji": "🎰",
-            "name": "Слоты",
-            "desc": "Джекпот ×8 · Тройка ×3 · Пара ×2",
-        },
-        "double": {
-            "emoji": "🎲",
-            "name": "Double or Nothing",
-            "desc": "Удваивай банк до 10 раз — или потеряй всё!",
-        },
-    }
     jp = await jackpot_get()
     kb = InlineKeyboardMarkup(
         [
@@ -29940,17 +29921,15 @@ async def build_feed_kb(uid: int, f: dict) -> InlineKeyboardMarkup:
 # Все ветки здесь самодостаточны и заканчиваются return, так что порядок между
 # ними значения не имеет.
 async def admin_router(update: Update, ctx: ContextTypes.DEFAULT_TYPE):
-    q = update.callback_query
-    uid = q.from_user.id
-    d = q.data
-
-    # Права проверяются внутри каждой ветки: часть экранов (cs_, ca_) доступна
-    # администраторам чата, а не только владельцам бота.
-    f = await db_get(uid)
-    if not f:
-        await q.answer("Сначала напиши /start", show_alert=True)
+    # Через того же стража, что и остальные роутеры: бан, лок и проверка
+    # владельца сообщения должны работать и здесь.
+    _g = await cb_guard(update, ctx)
+    if _g is None:
         return
-    f = decay(f)
+    q, uid, d, f = _g
+
+    # Права на конкретное действие проверяются внутри каждой ветки: часть
+    # экранов (cs_, ca_) доступна администраторам чата, а не только владельцу бота.
 
     # ── admin_msg — написать игроку из adminlookup ──────────────────────────
     if d.startswith("admin_msg_"):
@@ -32674,7 +32653,38 @@ async def admin_router(update: Update, ctx: ContextTypes.DEFAULT_TYPE):
     await on_callback(update, ctx)
 
 
-async def on_callback(update: Update, ctx: ContextTypes.DEFAULT_TYPE):
+# ── Общие константы игровых экранов ──────────────────────────────────────────
+# Раньше CASINO объявлялась дважды внутри функций, а MARKET_COMMISSION — внутри
+# on_callback. После выноса роутеров обе оказались недоступны, да и дублировать
+# один и тот же словарь смысла не было.
+CASINO = {
+    "dice":       {"emoji": "🎲", "name": "Кубик",  "desc": "5: ×2 · 6: ×3.4"},
+    "dart":       {"emoji": "🎯", "name": "Дартс",  "desc": "5: ×2 · 6: ×3.4"},
+    "basketball": {"emoji": "🏀", "name": "Баскетбол", "desc": "5: ×2.4 · 6: ×3"},
+    "slots":      {"emoji": "🎰", "name": "Слоты",
+                   "desc": "Джекпот ×8 · Тройка ×3 · Пара ×2"},
+    "double":     {"emoji": "🎲", "name": "Double or Nothing",
+                   "desc": "Удваивай банк до 10 раз — или потеряй всё"},
+}
+
+MARKET_COMMISSION = 0.10   # комиссия рынка с продавца
+
+
+# ══════════════════════════════════════════════════════════════════════════════
+# 🛡  ОБЩИЙ СТРАЖ КОЛБЭКОВ
+# ══════════════════════════════════════════════════════════════════════════════
+# Единственное место, где живут проверки, обязательные для ЛЮБОГО нажатия:
+# владелец сообщения, наличие лягушки, лок на денежные операции, бан
+# аккаунта, бан в чате, минимальный уровень и запреты чата на казино и дуэли.
+#
+# Роутеры вызывают стража первым делом и не повторяют эти проверки у себя —
+# иначе любой новый роутер стал бы дырой в обход бана.
+#
+# Возвращает (q, uid, d, f) либо None, если нажатие уже обработано.
+async def cb_guard(update: Update, ctx: ContextTypes.DEFAULT_TYPE):
+    q = update.callback_query
+    uid = q.from_user.id
+    d = q.data
     q = update.callback_query
     uid = q.from_user.id
     d = q.data
@@ -32863,8 +32873,7 @@ async def on_callback(update: Update, ctx: ContextTypes.DEFAULT_TYPE):
                     "Это не твоё меню! Напиши /frog чтобы открыть своё.",
                     show_alert=True,
                 )
-                return
-
+                return None
     if d and d.startswith("exp_"):
         logger.debug("[exp] is_public=%s is_admin=%s прошли проверку владельца", is_public, is_admin_action)
 
@@ -32873,7 +32882,7 @@ async def on_callback(update: Update, ctx: ContextTypes.DEFAULT_TYPE):
         if d and d.startswith("exp_"):
             logger.debug("[exp] db_get вернул None для uid=%s — нет лягушки", uid)
         await q.answer("Сначала напиши /start", show_alert=True)
-        return
+        return None
     f = decay(f)
 
     if d and d.startswith("exp_"):
@@ -32910,7 +32919,7 @@ async def on_callback(update: Update, ctx: ContextTypes.DEFAULT_TYPE):
         # Правильный подход: проверить locked() и взять лок напрямую.
         if _user_lock.locked():
             await q.answer("⏳ Подожди, предыдущее действие ещё обрабатывается...", show_alert=False)
-            return
+            return None
         # Лок свободен — берём его. При свободном локе acquire() возвращается
         # немедленно, без переключения контекста asyncio, поэтому между
         # проверкой locked() и acquire() другая корутина вставиться не может.
@@ -32971,14 +32980,13 @@ async def on_callback(update: Update, ctx: ContextTypes.DEFAULT_TYPE):
     # ── ПРОВЕРКА БАНА ──────────────────────────────
     if f.get("banned", 0) and not is_admin_action:
         await q.answer("🚫 Вы заблокированы администрацией.", show_alert=True)
-        return
-
+        return None
     # ── ПРОВЕРКА ЛОКАЛЬНОГО БАН/ОГРАНИЧЕНИЙ ЧАТА ───
     if q.message and q.message.chat.type in ("group", "supergroup") and not is_admin_action:
         _gcid = q.message.chat.id
         if await is_chat_banned(_gcid, uid):
             await q.answer("🚫 Вы заблокированы в этом чате.", show_alert=True)
-            return
+            return None
         # Проверка уровня
         _cs_check = await get_chat_settings(_gcid)
         _min_lvl = _cs_check.get("min_level_to_play", 1)
@@ -32986,19 +32994,4532 @@ async def on_callback(update: Update, ctx: ContextTypes.DEFAULT_TYPE):
             _game_actions = ("casino", "duel", "ckj|", "ckm|", "cks|", "rps_", "bsj|", "ttt_", "bs_")
             if any(d.startswith(p) for p in _game_actions):
                 await q.answer((f"🔒 Нужен {_min_lvl} уровень для игр в этом чате.")[:200], show_alert=True)
-                return
+                return None
         # Проверка разрешений: казино
         if not _cs_check.get("allow_casino", 1):
             if d.startswith("casino") or d.startswith("guess_") or d.startswith("sapper_"):
                 await q.answer("🚫 Казино отключено администратором чата.", show_alert=True)
-                return
+                return None
         # Проверка разрешений: дуэли
         if not _cs_check.get("allow_duels", 1):
             if any(d.startswith(p) for p in ("duel_", "battle_", "ckj|", "rps_join", "bsj|")):
                 await q.answer("🚫 Дуэли отключены администратором чата.", show_alert=True)
+                return None
+    return q, uid, d, f
+
+
+# ══════════════════════════════════════════════════════════════════════════════
+# 🎰  РОУТЕР ГАЧИ
+# ══════════════════════════════════════════════════════════════════════════════
+# Вынесено из on_callback. Регистрируется с pattern='^gacha', поэтому
+# нажатие попадает сразу сюда, минуя чужие условия.
+async def gacha_router(update: Update, ctx: ContextTypes.DEFAULT_TYPE):
+    _g = await cb_guard(update, ctx)
+    if _g is None:
+        return
+    q, uid, d, f = _g
+
+    # ── ГАЧА ───────────────────────────────────────
+    if d == "gacha":
+        await q.answer()
+        cost = 50
+        cost5 = 250   # x5 без скидки
+        cost10 = 500  # x10 без скидки
+        inv = await inv_get(uid)
+        ticket_count = inv.get("gacha_ticket", 0)
+        kb_rows = []
+        if f["coins"] >= cost:
+            kb_rows.append(
+                [coin_btn(f"✅ ×1 за {cost}🪙", "gacha_confirm")]
+            )
+        if f["coins"] >= cost5:
+            kb_rows.append(
+                [coin_btn(f"✨ ×5 за {cost5}🪙", "gacha_confirm_5")]
+            )
+        if f["coins"] >= cost10:
+            kb_rows.append(
+                [coin_btn(f"💫 ×10 за {cost10}🪙", "gacha_confirm_10")]
+            )
+        # Крутить на все деньги
+        max_spins = f["coins"] // cost
+        if max_spins >= 1:
+            kb_rows.append(
+                [coin_btn(f"🌀 Всё на кон{SEP}×{max_spins} за {max_spins*cost}🪙",
+                          f"gacha_confirm_all_{max_spins}")]
+            )
+        if ticket_count > 0:
+            kb_rows.append(
+                [
+                    btn(
+                        f"🎫 Использовать билет (×{ticket_count})",
+                        callback_data="gacha_use_ticket",
+                    )
+                ]
+            )
+        else:
+            kb_rows.append(
+                [btn("🎫 Купить билеты", callback_data="stars_menu", style="primary")]
+            )
+        kb_rows.append([btn("❌ Отмена", callback_data="refresh", style="danger")])
+        kb = InlineKeyboardMarkup(kb_rows)
+
+        boost_mult_gacha = await boost_get_mult()
+        legendary_mult = boost_mult_gacha.get("legendary", 1.0) if boost_mult_gacha else 1.0
+        mythic_mult = boost_mult_gacha.get("mythic", 1.0) if boost_mult_gacha else 1.0
+        legendary_chance = 3.0 * legendary_mult
+        mythic_chance = 0.05 * mythic_mult
+        # Редкости — двумя строками вместо семи: шансы сравниваются взглядом.
+        _bm = lambda on: " ✨" if on else ""
+        chance_lines = (
+            f"⚫ 0.005%{SEP}🔴 {mythic_chance:.2f}%{_bm(mythic_mult > 1)}"
+            f"{SEP}🟡 {legendary_chance:.1f}%{_bm(legendary_mult > 1)}\n"
+            f"🟣 6%{SEP}🔵 15%{SEP}🟢 25%{SEP}⚪ 50%"
+        )
+        not_enough = ("" if f["coins"] >= cost
+                      else f"Не хватает {cost - f['coins']}{coin_emoji()}")
+        try:
+            await q.message.edit_text(
+                ui_card(
+                    ui_title("🎰", "Гача"),
+                    # Билеты отдельной строкой: с ними третья колонка уводит
+                    # строку за 21W и её рвёт переносом (tools/msgwidth.py).
+                    ui_line(f"крутка {ui_money(cost)}",
+                            f"баланс {ui_money(f['coins'])}")
+                    + (f"\n{_E_COSMETIC} {ui_plural(ticket_count, 'билет', 'билета', 'билетов')}"
+                       if ticket_count else ""),
+                    chance_lines,
+                    hint=not_enough,
+                ),
+                parse_mode=ParseMode.HTML,
+                reply_markup=kb,
+            )
+        except Exception:
+            pass
+        return
+    if d == "gacha_confirm":
+        cost = 50
+        if f["coins"] < cost:
+            await q.answer((f"Нужно {cost} 🪙. Зарабатывай через /daily и квесты.")[:200], show_alert=True)
+            return
+        try:
+            await q.message.edit_text("🎰 <b>Крутим гачу...</b>\n\n✨ · ✨ · ✨", parse_mode=ParseMode.HTML)
+        except Exception:
+            pass
+        await asyncio.sleep(1.5)
+        f["coins"] -= cost
+        f["coins_spent"] = f.get("coins_spent", 0) + cost
+        skin, pity_triggered = await roll_pity(f)
+        coll = await db_coll(uid)
+        is_new = skin not in coll
+        await db_add_skin(uid, skin)
+        await log_gacha_pull(uid, skin, cost=50, source="coins")
+        coll_qty = await db_coll_qty(uid)
+        qty = coll_qty.get(skin, 1)
+        add_xp(f, 20)
+        f["total_gacha"] += 1
+        rewards = await levelup(f, ctx.bot)
+        await db_save(f)
+        await quest_update(uid, "gacha")
+        await legend_track(uid, "gacha", bot=ctx.bot)
+        await ach_check(f, ctx.bot)
+        # Скин-билеты конкурса
+        _skin_tickets_earned = await _award_skin_contest_tickets(uid)
+        s = SKINS[skin]
+        use_st = bool(f.get("use_static", 0))
+
+        # ── Финальный результат ─────────────────────────────────────────
+        new_tag = ""
+        if is_new:
+            new_tag = " 🆕 <b>Новый!</b>"
+            if _skin_tickets_earned > 0:
+                new_tag += f" 🎟+{_skin_tickets_earned}"
+        elif qty > 1:
+            new_tag = f" (×{qty} в коллекции)"
+
+        if s["rarity"] in ("mythic", "legendary", "secret"):
+            rarity_prefix = {"secret": "⚫", "mythic": "🔴", "legendary": "🟡"}.get(s["rarity"], "🟡")
+            dup_tag = " (дубликат)" if not is_new else ""
+            rarity_label = {"secret": "🌑 СЕКРЕТНЫЙ", "mythic": "✨ МИФИЧЕСКИЙ", "legendary": "👑 ЛЕГЕНДАРНЫЙ"}.get(s["rarity"], "ЛЕГЕНДАРНЫЙ")
+            await announce(
+                ctx.bot,
+                f"{rarity_prefix} <b>{rarity_label} ДРОП!</b>{dup_tag}\n"
+                f"<b>{_html.escape(q.from_user.first_name)}</b> получил в гаче:\n"
+                f"{R_ICON[s['rarity']]} <b>{_html.escape(skin)}</b> {pemoji(skin)} 🍀",
+                delete_after=60,
+            )
+        pity_line = f"\n🎯 Питти: <b>{f.get('gacha_pity', 0)}/{PITY_THRESHOLD}</b>" if not pity_triggered else "\n🌟 <b>Питти сработал!</b> Гарантированная легенда!"
+        text = (
+            f"{_E_CASINO} <b>Результат гачи!</b>{new_tag}\n\n"
+            f"{R_ICON[s['rarity']]} {display_skin(skin, use_st)}\n"
+            f"Редкость: <b>{R_NAME[s['rarity']]}</b>\n"
+            f"Осталось: {f['coins']}{coin_emoji()} · {_E_XP} +20 XP"
+            f"{pity_line}"
+        )
+        for lvl, rskin in rewards:
+            text += f"\n🎉 <b>Уровень {lvl}!</b> Облик: {display_skin(rskin, use_st)}"
+        kb = InlineKeyboardMarkup(
+            [
+                [btn(f"✅ Надеть {skin}", callback_data=f"equip_{skin}", style="success")],
+                [
+                    btn("🎰 Ещё (50🪙)", callback_data="gacha", style="primary"),
+                    btn("◀️ Назад", callback_data="gacha"),
+                ],
+                [btn("⭐ Пополнить монеты", callback_data="buy_stars_quick")],
+            ]
+        )
+        try:
+            await q.message.edit_text(
+                text, parse_mode=ParseMode.HTML, reply_markup=kb, link_preview_options=LinkPreviewOptions(is_disabled=True),
+            )
+        except Exception as e:
+            print(f"⚠️ gacha edit error: {e}")
+            try:
+                await q.message.reply_text(
+                    text, parse_mode=ParseMode.HTML, reply_markup=kb, link_preview_options=LinkPreviewOptions(is_disabled=True),
+                )
+            except Exception:
+                pass
+        return
+    # ── ИСПОЛЬЗОВАТЬ ГАЧА-БИЛЕТ ─────────────────────
+    if d in ("gacha_confirm_5", "gacha_confirm_10"):
+        count = 5 if d == "gacha_confirm_5" else 10
+        cost_per = 50
+        total_cost = cost_per * count
+        if f["coins"] < total_cost:
+            await q.answer((f"Нужно {total_cost} 🪙. Недостаточно монет.")[:200], show_alert=True)
+            return
+        try:
+            dots = "✨ · " * count
+            await q.message.edit_text(f"{_E_CASINO} <b>Крутим ×{count}...</b>\n\n{dots.strip()}", parse_mode=ParseMode.HTML)
+        except Exception:
+            pass
+        await asyncio.sleep(2)
+        f["coins"] -= total_cost
+        f["coins_spent"] = f.get("coins_spent", 0) + total_cost
+        results = []
+        coll_before = set(await db_coll(uid))
+        pity_count = 0
+        for _ in range(count):
+            skin_i, pt = await roll_pity(f)
+            if pt:
+                pity_count += 1
+            await db_add_skin(uid, skin_i)
+            await log_gacha_pull(uid, skin_i, cost=50, source="coins")
+            results.append(skin_i)
+            add_xp(f, 20)
+            f["total_gacha"] += 1
+        rewards = await levelup(f, ctx.bot)
+        await db_save(f)
+        for _ in range(count):
+            await quest_update(uid, "gacha")
+        await legend_track(uid, "gacha", amount=count, bot=ctx.bot)  # ИСПРАВЛЕНО: было amount=1
+        await ach_check(f, ctx.bot)
+        # Скин-билеты конкурса: считаем сколько новых уникальных скинов
+        # len(set(...) - coll_before) — дедупликация внутри одного пулла,
+        # чтобы один и тот же новый скин не засчитывался дважды.
+        _skin_tickets_multi = await _award_skin_contest_tickets(uid)
+        use_st = bool(f.get("use_static", 0))
+        coll_qty = await db_coll_qty(uid)
+
+        # ── Анонсы редких скинов ────────────────────────────────────────
+        for skin_a in results:
+            s_a = SKINS[skin_a]
+            if s_a["rarity"] in ("mythic", "legendary", "secret"):
+                rarity_prefix = {"secret": "⚫", "mythic": "🔴", "legendary": "🟡"}.get(s_a["rarity"], "🟡")
+                dup_tag = " (дубликат)" if skin_a in coll_before else ""
+                rarity_label = {"secret": "🌑 СЕКРЕТНЫЙ", "mythic": "✨ МИФИЧЕСКИЙ", "legendary": "👑 ЛЕГЕНДАРНЫЙ"}.get(s_a["rarity"], "ЛЕГЕНДАРНЫЙ")
+                await announce(
+                    ctx.bot,
+                    f"{rarity_prefix} <b>{rarity_label} ДРОП (×{count})!</b>{dup_tag}\n"
+                    f"<b>{_html.escape(q.from_user.first_name)}</b> получил в гаче:\n"
+                    f"{R_ICON[s_a['rarity']]} <b>{_html.escape(skin_a)}</b> {pemoji(skin_a)} 🍀",
+                    delete_after=60,
+                )
+                coll_before.add(skin_a)
+
+        # ── Итоговое сообщение ──────────────────────────────────────────
+        from collections import Counter
+        result_counts = Counter(results)
+        lines = [f"{_E_CASINO} <b>Результат гачи ×{count}!</b>\n"]
+        for skin_r, cnt in sorted(result_counts.items(), key=lambda x: SKINS[x[0]]["chance"]):
+            s_r = SKINS[skin_r]
+            qty_total = coll_qty.get(skin_r, cnt)
+            cnt_tag = f" ×{cnt}" if cnt > 1 else ""
+            new_tag_r = " 🆕" if skin_r not in (set(coll_before) - set(results)) and qty_total <= cnt else ""
+            lines.append(f"{R_ICON[s_r['rarity']]} {display_skin(skin_r, use_st)}{cnt_tag}{new_tag_r}")
+        lines.append(f"\nПотрачено: <b>{total_cost}{coin_emoji()}</b> · Осталось: <b>{f['coins']}{coin_emoji()}</b>")
+        lines.append(f"{_E_XP} +{count * 20} XP")
+        pity_now = f.get('gacha_pity', 0)
+        pity_suffix = f"🌟 ×{pity_count} питти!" if pity_count else f"🎯 Питти: {pity_now}/{PITY_THRESHOLD}"
+        lines.append(pity_suffix)
+        if _skin_tickets_multi > 0:
+            lines.append(f"🎟 <b>+{_skin_tickets_multi} билет{'а' if _skin_tickets_multi > 1 else ''} конкурса!</b>")
+        for lvl, rskin in rewards:
+            lines.append(f"\n🎉 <b>Уровень {lvl}!</b> Облик: {display_skin(rskin, use_st)}")
+
+        kb = InlineKeyboardMarkup(
+            [
+                [coin_btn(f"🎰 Ещё ×{count} ({total_cost}🪙)", d)],
+                [coin_btn("🎰 ×1 (50🪙)", "gacha_confirm"),
+                 btn("◀️ Назад", callback_data="refresh")],
+                [btn("⭐ Пополнить монеты", callback_data="buy_stars_quick")],
+            ]
+        )
+        try:
+            await q.message.edit_text(
+                "\n".join(lines), parse_mode=ParseMode.HTML, reply_markup=kb, link_preview_options=LinkPreviewOptions(is_disabled=True),
+            )
+        except Exception as e:
+            print(f"⚠️ gacha multi edit error: {e}")
+        return
+    if d.startswith("gacha_confirm_all_"):
+        try:
+            count = int(d.removeprefix("gacha_confirm_all_"))
+        except ValueError:
+            await q.answer(); return
+        cost_per = 50
+        count = max(1, min(count, f["coins"] // cost_per))
+        total_cost = cost_per * count
+        if f["coins"] < total_cost:
+            await q.answer("Недостаточно монет", show_alert=True); return
+
+        try:
+            await q.message.edit_text(
+                f"🌀 <b>Крутим на всё ({count:,} раз)...</b>\n\n"
+                f"<i>Идёт расчёт, это займёт несколько секунд...</i>",
+                parse_mode=ParseMode.HTML)
+        except Exception:
+            pass
+
+        # ── Всё считаем в памяти, затем ONE батч в БД ─────────────────────
+        coll_before = set(await db_coll(uid))
+        results: list[str] = []
+        f["coins"] -= total_cost
+        f["coins_spent"] = f.get("coins_spent", 0) + total_cost
+
+        for _ in range(count):
+            # roll_pity обновляет только f["gacha_pity"] и f["total_gacha"] в памяти
+            skin_i, _ = await roll_pity(f)
+            results.append(skin_i)
+            add_xp(f, 20)
+            f["total_gacha"] += 1
+
+        # ── Одна транзакция для всех коллекций ────────────────────────────
+        await db_add_skins_batch(uid, results)
+
+        # ── Одна транзакция для всех логов ────────────────────────────────
+        await log_gacha_pulls_batch(uid, results, cost=50, source="coins")
+
+        # ── Квесты: один вызов с amount=count вместо N вызовов ────────────
+        await quest_update(uid, "gacha", amount=count)
+
+        # ── Сохраняем f (монеты, XP, pity) ────────────────────────────────
+        rewards = await levelup(f, ctx.bot)
+        await db_save(f)
+        await legend_track(uid, "gacha", amount=count, bot=ctx.bot)
+        await ach_check(f, ctx.bot)
+
+        # ── Анонсы редких дропов ──────────────────────────────────────────
+        from collections import Counter
+        for skin_a in results:
+            s_a = SKINS[skin_a]
+            if s_a["rarity"] in ("mythic", "legendary", "secret"):
+                rp = {"secret": "⚫", "mythic": "🔴", "legendary": "🟡"}.get(s_a["rarity"], "🟡")
+                rl = {"secret": "🌑 СЕКРЕТНЫЙ", "mythic": "✨ МИФИЧЕСКИЙ",
+                      "legendary": "👑 ЛЕГЕНДАРНЫЙ"}.get(s_a["rarity"], "ЛЕГЕНДАРНЫЙ")
+                dup = " (дубликат)" if skin_a in coll_before else " 🆕"
+                await announce(ctx.bot,
+                    f"{rp} <b>{rl} ДРОП!</b>{dup}\n"
+                    f"<b>{_html.escape(q.from_user.first_name)}</b> ×{count}: "
+                    f"{R_ICON[s_a['rarity']]} <b>{_html.escape(skin_a)}</b> {pemoji(skin_a)} 🌀",
+                    delete_after=60)
+                coll_before.add(skin_a)
+
+        # ── Итоговое сообщение ────────────────────────────────────────────
+        rc = Counter(results)
+        use_st = bool(f.get("use_static", 0))
+
+        # Группируем по редкости для компактности
+        by_rarity: dict[str, list] = {}
+        rarity_order = ["secret", "mythic", "legendary", "epic", "rare", "uncommon", "common"]
+        for skin_r, cnt in rc.items():
+            rar = SKINS[skin_r]["rarity"]
+            by_rarity.setdefault(rar, []).append((skin_r, cnt))
+
+        lines = [f"🌀 <b>Всё на кон</b>{SEP}{count:,} круток\n"]
+        for rar in rarity_order:
+            if rar not in by_rarity:
+                continue
+            for skin_r, cnt in sorted(by_rarity[rar], key=lambda x: -x[1]):
+                cnt_tag = f" ×{cnt}" if cnt > 1 else ""
+                lines.append(f"{R_ICON[rar]} {display_skin(skin_r, use_st)}{cnt_tag}")
+            if len(lines) > 25:  # не спамить если много обликов
+                remaining_count = sum(c for _, c in [(s,c) for r in rarity_order[rarity_order.index(rar)+1:] for s,c in by_rarity.get(r, [])])
+                if remaining_count:
+                    lines.append(f"<i>...и ещё {remaining_count} обычных</i>")
+                break
+
+        pity_now = f.get("gacha_pity", 0)
+        lines.append(f"\nПотрачено: <b>{total_cost:,}{coin_emoji()}</b> Осталось: <b>{f['coins']:,}{coin_emoji()}</b>")
+        lines.append(f"{_E_XP} +{count*20:,} XP 🎯 Питти: {pity_now}/{PITY_THRESHOLD}")
+        for lvl, rskin in rewards:
+            lines.append(f"🎉 <b>Уровень {lvl}!</b> {display_skin(rskin, use_st)}")
+
+        kb = InlineKeyboardMarkup([
+            [btn("◀️ Главное меню", callback_data="refresh")],
+            [btn("⭐ Пополнить монеты", callback_data="buy_stars_quick")],
+        ])
+        try:
+            await q.message.edit_text("\n".join(lines), parse_mode=ParseMode.HTML, reply_markup=kb,
+                                      link_preview_options=LinkPreviewOptions(is_disabled=True))
+        except Exception:
+            pass
+        await q.answer(f"🌀 {count:,} круток — готово")
+        return
+    if d == "gacha_use_ticket":
+        ticket_count = inv.get("gacha_ticket", 0)
+        if ticket_count <= 0:
+            await q.answer("У тебя нет гача-билетов. Купи в магазине Stars.", show_alert=True)
+            return
+        try:
+            await q.message.edit_text("🎰 <b>Используем билет...</b>\n\n<tg-emoji emoji-id='5341688243790323773'>🎟</tg-emoji> · ✨ · <tg-emoji emoji-id='5341688243790323773'>🎟</tg-emoji>", parse_mode=ParseMode.HTML)
+        except Exception:
+            pass
+        await asyncio.sleep(1.5)
+        await inv_add(uid, "gacha_ticket", -1)
+        skin, pity_triggered_t = await roll_pity(f)
+        coll = await db_coll(uid)
+        is_new = skin not in coll
+        await db_add_skin(uid, skin)
+        await log_gacha_pull(uid, skin, cost=0, source="ticket")
+        coll_qty = await db_coll_qty(uid)
+        qty = coll_qty.get(skin, 1)
+        add_xp(f, 20)
+        f["total_gacha"] += 1
+        rewards = await levelup(f, ctx.bot)
+        await db_save(f)
+        await quest_update(uid, "gacha")
+        await legend_track(uid, "gacha", bot=ctx.bot)
+        await ach_check(f, ctx.bot)
+        # Скин-билеты конкурса
+        _skin_tickets_t = await _award_skin_contest_tickets(uid)
+        s = SKINS[skin]
+        use_st = bool(f.get("use_static", 0))
+
+        # Анонс и результат
+        new_tag = ""
+        if is_new:
+            new_tag = " 🆕 <b>Новый!</b>"
+            if _skin_tickets_t > 0:
+                new_tag += f" 🎟+{_skin_tickets_t}"
+        elif qty > 1:
+            new_tag = f" (×{qty} в коллекции)"
+            rarity_prefix = {"secret": "⚫", "mythic": "🔴", "legendary": "🟡"}.get(s["rarity"], "🟡")
+            dup_tag = " (дубликат)" if not is_new else ""
+            rarity_label = {"secret": "🌑 СЕКРЕТНЫЙ", "mythic": "✨ МИФИЧЕСКИЙ", "legendary": "👑 ЛЕГЕНДАРНЫЙ"}.get(s["rarity"], "ЛЕГЕНДАРНЫЙ")
+            await announce(
+                ctx.bot,
+                f"{rarity_prefix} <b>{rarity_label} ДРОП!</b>{dup_tag}\n"
+                f"<b>{_html.escape(q.from_user.first_name)}</b> получил в гаче (по билету):\n"
+                f"{R_ICON[s['rarity']]} <b>{_html.escape(skin)}</b> {pemoji(skin)} 🍀",
+                delete_after=60,
+            )
+        new_ticket_count = (await inv_get(uid)).get("gacha_ticket", 0)
+        text = (
+            f"{_E_CASINO} <b>Результат (билет)!</b>{new_tag}\n\n"
+            f"{R_ICON[s['rarity']]} {display_skin(skin, use_st)}\n"
+            f"Редкость: <b>{R_NAME[s['rarity']]}</b>\n"
+            f"{_E_COSMETIC} Осталось билетов: {new_ticket_count} · {_E_XP} +20 XP"
+        )
+        for lvl, rskin in rewards:
+            text += f"\n🎉 <b>Уровень {lvl}!</b> Облик: {display_skin(rskin, use_st)}"
+        kb_rows = [
+            [btn(f"✅ Надеть {skin}", callback_data=f"equip_{skin}", style="success")],
+        ]
+        if new_ticket_count > 0:
+            kb_rows.append(
+                [
+                    btn(
+                        "🎫 Ещё (билет)", callback_data="gacha_use_ticket"
+                    )
+                ]
+            )
+        kb_rows.append(
+            [
+                btn("🎰 Ещё (50🪙)", callback_data="gacha", style="primary"),
+                btn("◀️ Назад", callback_data="refresh"),
+            ]
+        )
+        try:
+            await q.message.edit_text(
+                text,
+                parse_mode=ParseMode.HTML,
+                reply_markup=InlineKeyboardMarkup(kb_rows),
+                link_preview_options=LinkPreviewOptions(is_disabled=True),
+            )
+        except Exception:
+            pass
+        return
+    # Ветка не нашлась — отдаём общему обработчику.
+    await on_callback(update, ctx)
+
+
+# ══════════════════════════════════════════════════════════════════════════════
+# 🪸  РОУТЕР NFT
+# ══════════════════════════════════════════════════════════════════════════════
+# Вынесено из on_callback. Регистрируется с pattern='^nft_', поэтому
+# нажатие попадает сразу сюда, минуя чужие условия.
+async def nft_router(update: Update, ctx: ContextTypes.DEFAULT_TYPE):
+    _g = await cb_guard(update, ctx)
+    if _g is None:
+        return
+    q, uid, d, f = _g
+
+    # ── NFT-КОНКУРС ПО ЛИГАМ ────────────────────────────────────────────────
+    if d == "nft_contest_menu":
+        await q.answer()
+        text, kb = await _nft_contest_menu_text(uid)
+        try:
+            await q.message.edit_text(text, parse_mode=ParseMode.HTML, reply_markup=kb)
+        except Exception:
+            pass
+        return
+    # ── 🐸 NFT МАГАЗИН ────────────────────────────────────────────────────────
+    # Формат: nft_shop_{page}_{filter}
+    # Каждая кнопка = один лот: [premium_emoji_облика] Название  R_ICON  Цена⭐
+    # При нажатии → ссылка на t.me/nft/KissedFrog-XXXX
+    if d.startswith("nft_shop_"):
+        await q.answer()
+        parts = d.removeprefix("nft_shop_").split("_", 1)
+        try:
+            page = int(parts[0])
+        except ValueError:
+            page = 0
+        flt = parts[1] if len(parts) > 1 else "all"
+
+        # permille → rarity key для R_ICON
+        def _nft_rarity(permille: int) -> str:
+            if permille <= 5:  return "legendary"
+            if permille <= 10: return "epic"
+            if permille <= 20: return "rare"
+            if permille <= 30: return "uncommon"
+            return "common"
+
+        # Фильтрация
+        catalog = NFT_CATALOG
+        if flt == "cheap":
+            catalog = [x for x in catalog if x["stars"] < 10_000]
+        elif flt == "mid":
+            catalog = [x for x in catalog if 10_000 <= x["stars"] < 50_000]
+        elif flt == "rare":
+            catalog = [x for x in catalog if x["stars"] >= 50_000]
+        elif flt == "legendary":
+            catalog = [x for x in catalog if x["rarity"] <= 5]
+        elif flt == "epic":
+            catalog = [x for x in catalog if x["rarity"] <= 10]
+
+        total = len(catalog)
+        total_pages = max(1, (total + NFT_PAGE_SIZE - 1) // NFT_PAGE_SIZE)
+        page = max(0, min(page, total_pages - 1))
+        slice_items = catalog[page * NFT_PAGE_SIZE: (page + 1) * NFT_PAGE_SIZE]
+
+        flt_labels = {
+            "all":       "все",
+            "cheap":     "< 10K⭐",
+            "mid":       "10–50K⭐",
+            "rare":      "50K+⭐",
+            "legendary": "🟡 легендарные",
+            "epic":      "🟣 эпические",
+        }
+        header = (
+            f"🐸 <b>NFT KissedFrog</b> · {flt_labels.get(flt, flt)}\n"
+            f"<i>Стр. {page+1}/{total_pages} · {total} лотов</i>"
+        )
+
+        buttons = []
+        for item in slice_items:
+            rarity_key = _nft_rarity(item["rarity"])
+            rarity_icon = R_ICON.get(rarity_key, "⚪")
+            stars_fmt = f"{item['stars']:,}".replace(",", "\u202f")  # narrow no-break space
+            label = f"{item['model']} {rarity_icon} {stars_fmt}{_E_STARS}"
+            buttons.append([btn(
+                label,
+                url=item["url"],
+                icon_id=str(item["model_doc"]),
+            )])
+
+        # Навигация
+        nav = []
+        if page > 0:
+            nav.append(btn("◀️", callback_data=f"nft_shop_{page-1}_{flt}"))
+        nav.append(btn(f"{page+1} / {total_pages}", callback_data="noop"))
+        if page < total_pages - 1:
+            nav.append(btn("▶️", callback_data=f"nft_shop_{page+1}_{flt}"))
+        buttons.append(nav)
+
+        # Фильтры
+        buttons.append([
+            btn("Все",     callback_data="nft_shop_0_all"),
+            btn("< 10K⭐", callback_data="nft_shop_0_cheap"),
+            btn("10–50K⭐",callback_data="nft_shop_0_mid"),
+        ])
+        buttons.append([
+            btn("50K+⭐",  callback_data="nft_shop_0_rare"),
+            btn("🟡",      callback_data="nft_shop_0_legendary"),
+            btn("🟣",      callback_data="nft_shop_0_epic"),
+        ])
+        buttons.append([
+            btn("💎 Купить Stars и TON за рубли", url="https://t.me/FrogsStar_bot"),
+        ])
+        buttons.append([btn("◀️ Магазин", callback_data="menu_shop")])
+
+        try:
+            await q.message.edit_text(
+                header,
+                parse_mode=ParseMode.HTML,
+                reply_markup=InlineKeyboardMarkup(buttons),
+                link_preview_options=LinkPreviewOptions(is_disabled=True),
+            )
+        except Exception:
+            pass
+        return
+    if d == "nft_menu":
+        await q.answer()
+        async with aiosqlite.connect(DB_PATH) as db:
+            db.row_factory = aiosqlite.Row
+            async with db.execute(
+                "SELECT * FROM nft_frogs WHERE user_id=?", (uid,)
+            ) as c:
+                nfts = [dict(r) for r in await c.fetchall()]
+        if nfts:
+            lines = ["🪸 <b>Мои KissedFrog NFT</b>\n"]
+            kb_rows = []
+            for n in nfts:
+                v = "✅" if n["verified"] else "⏳"
+                model = n.get("model_name") or ""
+                nft_url = (
+                    n.get("nft_url") or f"https://t.me/nft/KissedFrog-{n['nft_number']}"
+                )
+                # NFT облик с фоном — ссылка открывает нативный preview Telegram
+                if model and model in SKINS:
+                    lines.append(
+                        f'{v} <a href="{nft_url}">KissedFrog #{n["nft_number"]} — {model} {pemoji(model)}</a>'
+                    )
+                else:
+                    lines.append(
+                        f'{v} <a href="{nft_url}">KissedFrog #{n["nft_number"]}</a>'
+                    )
+                if n["verified"] and model and model in SKINS:
+                    kb_rows.append(
+                        [
+                            btn(
+                                f"👗 Надеть {model}", callback_data=f"equip_{model}"
+                            )
+                        ]
+                    )
+            lines.append("\n<i>Добавить ещё: /nft ссылка</i>")
+            text = "\n".join(lines)
+            kb_rows.append([btn("◀️ Назад", callback_data="menu_more")])
+            kb = InlineKeyboardMarkup(kb_rows)
+        else:
+            text = (
+                "🪸 <b>KissedFrog NFT</b>\n\n"
+                "Пока ни одной. Есть жаба из коллекции — добавь ссылкой:\n"
+                "<code>/nft https://t.me/nft/KissedFrog-XXXX</code>"
+            )
+            kb = InlineKeyboardMarkup(
+                [[btn("◀️ Назад", callback_data="menu_more")]]
+            )
+        try:
+            await q.message.edit_text(
+                text,
+                parse_mode=ParseMode.HTML,
+                reply_markup=kb,
+                link_preview_options=LinkPreviewOptions(),
+            )
+        except Exception:
+            pass
+        return
+    # Пагинация списка заявок
+    if d.startswith("nft_list_page_"):
+        page = int(d.split("_")[-1])
+        await show_nft_list(q, ctx, page, edit=True)
+        await q.answer()
+        return
+    # ── ADMIN: НФТ ПЕРЕПРОВЕРКА — оставить или забрать скин ────────────
+    if d.startswith("nft_recheck_keep_"):
+        if uid not in ADMIN_IDS:
+            await q.answer("⛔", show_alert=True); return
+        try:
+            nft_id = int(d[len("nft_recheck_keep_"):])
+        except ValueError:
+            await q.answer(); return
+        async with aiosqlite.connect(DB_PATH) as db:
+            await db.execute(
+                "UPDATE nft_frogs SET profile_hidden=0, pending_review=0 WHERE id=?",
+                (nft_id,)
+            )
+            await db.commit()
+        await q.answer("✅ НФТ оставлен, владелец сохраняет бонусы.", show_alert=True)
+        try:
+            await q.message.edit_reply_markup(reply_markup=None)
+        except Exception:
+            pass
+        return
+    if d.startswith("nft_recheck_revoke_"):
+        if uid not in ADMIN_IDS:
+            await q.answer("⛔", show_alert=True); return
+        try:
+            parts_rcv = d[len("nft_recheck_revoke_"):].split("_", 1)
+            nft_id_rcv = int(parts_rcv[0])
+            target_uid_rcv = int(parts_rcv[1])
+        except (ValueError, IndexError):
+            await q.answer("Ошибка", show_alert=True); return
+        # Узнаём model_name у этого нфт
+        async with aiosqlite.connect(DB_PATH) as db:
+            db.row_factory = aiosqlite.Row
+            async with db.execute("SELECT model_name FROM nft_frogs WHERE id=?", (nft_id_rcv,)) as _c:
+                _nft_row = await _c.fetchone()
+            # Помечаем как не верифицированный и скрытый
+            await db.execute(
+                "UPDATE nft_frogs SET verified=0, profile_hidden=1, pending_review=0 WHERE id=?",
+                (nft_id_rcv,)
+            )
+            await db.commit()
+        # Если есть model_name — убираем соответствующий облик из коллекции
+        if _nft_row and _nft_row["model_name"]:
+            skin_to_remove = _nft_row["model_name"]
+            async with aiosqlite.connect(DB_PATH) as db:
+                await db.execute(
+                    "DELETE FROM collections WHERE user_id=? AND skin=?",
+                    (target_uid_rcv, skin_to_remove)
+                )
+                await db.commit()
+            _user_cache.invalidate(target_uid_rcv)
+            p_rcv = await db_get(target_uid_rcv)
+            if p_rcv and p_rcv.get("skin") == skin_to_remove:
+                p_rcv["skin"] = "Brownie"
+                await db_save(p_rcv)
+            try:
+                await ctx.bot.send_message(
+                    target_uid_rcv,
+                    f"⚠️ <b>Ваш НФТ не прошёл проверку.</b>\n\n"
+                    f"Профиль в see.tg скрыт — подтвердить владение невозможно.\n"
+                    f"Облик <b>{he(skin_to_remove)}</b> был изъят из коллекции.\n\n"
+                    f"Если это ошибка — напишите администратору.",
+                    parse_mode=ParseMode.HTML,
+                )
+            except Exception:
+                pass
+            await q.answer((f"✅ Облик {skin_to_remove} изъят, НФТ деверифицирован.")[:200], show_alert=True)
+        else:
+            await q.answer("✅ НФТ деверифицирован (облик не найден).", show_alert=True)
+        try:
+            await q.message.edit_reply_markup(reply_markup=None)
+        except Exception:
+            pass
+        return
+    # Ветка не нашлась — отдаём общему обработчику.
+    await on_callback(update, ctx)
+
+
+# ══════════════════════════════════════════════════════════════════════════════
+# 🃏  РОУТЕР КАЗИНО
+# ══════════════════════════════════════════════════════════════════════════════
+# Вынесено из on_callback. Регистрируется с pattern='^(casino|jackpot|menu_jackpot)', поэтому
+# нажатие попадает сразу сюда, минуя чужие условия.
+async def casino_router(update: Update, ctx: ContextTypes.DEFAULT_TYPE):
+    _g = await cb_guard(update, ctx)
+    if _g is None:
+        return
+    q, uid, d, f = _g
+
+    if d == "casino_menu":
+        await q.answer()
+        # Глобальное отключение казино
+        if await db_setting("casino_disabled") == "1":
+            try:
+                await q.message.edit_text(
+                    "🎰 <b>Казино временно недоступно.</b>\n"
+                    "<i>Ведётся техническое обслуживание. Попробуй позже.</i>",
+                    parse_mode=ParseMode.HTML,
+                    reply_markup=InlineKeyboardMarkup([[
+                        btn("◀️ Назад", callback_data="menu_games")
+                    ]]),
+                )
+            except Exception:
+                pass
+            return
+        kb = InlineKeyboardMarkup(
+            [
+                [
+                    btn(
+                        f"{v['emoji']} {v['name']}",
+                        callback_data=f"casino_pick_{k}",
+                    )
+                ]
+                for k, v in CASINO.items()
+            ]
+            + [
+                [btn("🎯 Режим желания", callback_data="casino_wish_menu")],
+                [
+                    btn(
+                        "🎰 Джекпот", callback_data="menu_jackpot"
+                    )
+                ],
+                [btn("◀️ Назад", callback_data="menu_games")],
+            ]
+        )
+        jp = await jackpot_get()
+        try:
+            await q.message.edit_text(
+                ui_card(ui_title("🎰", "Казино"),
+                        ui_line(ui_money(f["coins"]), f"джекпот {jp:,}{coin_emoji()}")),
+                parse_mode=ParseMode.HTML,
+                reply_markup=kb,
+            )
+        except Exception:
+            pass
+        return
+    if d.startswith("casino_pick_"):
+        gtype = d[12:]
+        if gtype not in CASINO:
+            await q.answer("Неизвестная игра", show_alert=True)
+            return
+        g = CASINO[gtype]
+        if gtype == "double":
+            # Double or Nothing: свой набор ставок
+            stakes = [10, 25, 50, 100, 250, 500]
+            kb_rows = [
+                [coin_btn(f"{s}🪙", f"casino_bet_double_{s}") for s in stakes[:3]],
+                [coin_btn(f"{s}🪙", f"casino_bet_double_{s}") for s in stakes[3:]],
+                [btn("◀️ Назад", callback_data="casino_menu")],
+            ]
+            kb = InlineKeyboardMarkup(kb_rows)
+            extra_info = (
+                "\n\n🎲 <b>Как играть:</b> ставка списывается сразу. После каждого раунда "
+                "можно <b>забрать банк</b> или <b>рискнуть</b> и удвоить. "
+                "Шанс 50/50. Максимум 10 удвоений = ×1024!"
+            )
+            try:
+                await q.message.edit_text(
+                    f"{g['emoji']} <b>{g['name']}</b> — {g['desc']}\n\nУ тебя: {f['coins']}{coin_emoji()}\nВыбери начальную ставку:{extra_info}",
+                    parse_mode=ParseMode.HTML,
+                    reply_markup=kb,
+                )
+            except Exception:
+                pass
+            return
+        if gtype == "slots":
+            stakes = [10, 25, 50, 100, 250, 500]
+        else:
+            stakes = [10, 25, 50, 100, 250]
+        kb_rows = [
+            [coin_btn(f"{s}🪙", f"casino_bet_{gtype}_{s}") for s in stakes[:3]],
+            [coin_btn(f"{s}🪙", f"casino_bet_{gtype}_{s}") for s in stakes[3:]],
+        ]
+        if gtype == "slots":
+            kb_rows.append([
+                btn("5️⃣×50🪙 (5 круток)", callback_data=f"casino_slots5_{50}"),
+                btn("5️⃣×100🪙 (5 круток)", callback_data=f"casino_slots5_{100}"),
+            ])
+        if gtype not in ("slots",):
+            # Режим «Брошу сам» доступен только в личных чатах
+            _is_private_chat = not (q.message and q.message.chat.type in ("group", "supergroup"))
+            if _is_private_chat:
+                kb_rows.insert(-1, [
+                    btn(
+                        f"🎲 Брошу сам — выбери ставку",
+                        callback_data=f"casino_selfpick_{gtype}",
+                    )
+                ])
+        kb_rows.append([btn("◀️ Назад", callback_data="casino_menu")])
+        kb = InlineKeyboardMarkup(kb_rows)
+        if gtype == "slots":
+            jp = await jackpot_get()
+            extra = (
+                "\n\n<b>📋 Таблица выплат:</b>\n"
+                "7️⃣ 7️⃣ 7️⃣ → <b>×10</b> + Джекпот-банк 🎉\n"
+                "BAR BAR BAR → <b>×6</b> 🔥\n"
+                "🍇 🍇 🍇 → <b>×4</b>\n"
+                "🍋 🍋 🍋 → <b>×3</b>\n"
+                "Два 7️⃣ → <b>×4</b> ✨\n\n"
+                f"💰 Джекпот-банк сейчас: <b>{jp:,}{_E_COIN}</b>"
+            )
+        else:
+            extra = ""
+        try:
+            await q.message.edit_text(
+                f"{g['emoji']} <b>{g['name']}</b> — {g['desc']}\n\nУ тебя: {f['coins']}{coin_emoji()}\nВыбери ставку:{extra}",
+                parse_mode=ParseMode.HTML,
+                reply_markup=kb,
+            )
+        except Exception:
+            pass
+        return
+    # ── Режим "Брошу сам": показываем кнопки выбора ставки ──────────────────
+    if d.startswith("casino_selfpick_"):
+        gtype = d[16:]
+        if gtype not in CASINO or gtype in ("slots", "double"):
+            await q.answer("Для этой игры режим недоступен.", show_alert=True)
+            return
+        g = CASINO[gtype]
+        stakes = [10, 25, 50, 100, 250]
+        kb_rows = [
+            [coin_btn(f"{s}🪙", f"casino_self_{gtype}_{s}") for s in stakes[:3]],
+            [coin_btn(f"{s}🪙", f"casino_self_{gtype}_{s}") for s in stakes[3:]],
+            [btn("◀️ Назад", callback_data=f"casino_pick_{gtype}")],
+        ]
+        try:
+            await q.message.edit_text(
+                f"{g['emoji']} <b>{g['name']} — режим «Брошу сам»</b>\n\n"
+                f"Монеты спишутся сразу. После выбора ставки — брось {g['emoji']} в чат.\n\n"
+                f"У тебя: {f['coins']}{coin_emoji()}\nВыбери ставку:",
+                parse_mode=ParseMode.HTML,
+                reply_markup=InlineKeyboardMarkup(kb_rows),
+            )
+        except Exception:
+            pass
+        return
+    # ── Режим "Брошу сам": списание монет и ожидание броска ─────────────────
+    if d.startswith("casino_self_"):
+        parts = d[12:].rsplit("_", 1)
+        gtype, stake = parts[0], int(parts[1])
+        if gtype not in CASINO or gtype in ("slots", "double"):
+            await q.answer("Для этой игры режим недоступен.", show_alert=True)
+            return
+        now = time.time()
+        if now - f.get("last_casino", 0) < 5:
+            await q.answer("⏳ Подожди секунду перед следующей игрой.", show_alert=True)
+            return
+        if f["coins"] < stake:
+            await q.answer((f"Нужно {stake}{coin_plain()}")[:200], show_alert=True)
+            return
+        # Проверяем, нет ли уже активного ожидания
+        if f"casino_wait_{uid}" in ctx.user_data:
+            await q.answer("У тебя уже есть незавершённая игра — брось кубик", show_alert=True)
+            return
+        f["coins"] -= stake
+        f["coins_spent"] = f.get("coins_spent", 0) + stake
+        f["last_casino"] = now
+        f["total_casino"] = f.get("total_casino", 0) + 1
+        await db_save(f)
+        # Сохраняем состояние ожидания
+        ctx.user_data[f"casino_wait_{uid}"] = {
+            "game": gtype,
+            "stake": stake,
+            "chat_id": q.message.chat.id,
+            "expires": now + 120,  # 2 минуты на бросок
+        }
+        g = CASINO[gtype]
+        await q.answer()
+        try:
+            await q.message.edit_text(
+                f"{g['emoji']} <b>{g['name']} — твой ход!</b>\n\n"
+                f"Ставка: <b>{stake}{coin_emoji()}</b> списана.\n\n"
+                f"🎲 Брось <b>{g['emoji']}</b> в этот чат — и бот посчитает результат!\n\n"
+                f"<i>⏳ Есть 2 минуты, иначе ставка вернётся автоматически.</i>",
+                parse_mode=ParseMode.HTML,
+                reply_markup=InlineKeyboardMarkup([
+                    [btn("❌ Отменить (вернуть монеты)", callback_data=f"casino_self_cancel_{uid}", style="danger")],
+                ]),
+            )
+        except Exception:
+            pass
+        return
+    if d.startswith("casino_self_cancel_"):
+        target_uid = int(d.split("_")[-1])
+        if target_uid != uid:
+            await q.answer("Это не твоя игра", show_alert=True)
+            return
+        cw = ctx.user_data.pop(f"casino_wait_{uid}", None)
+        if not cw:
+            await q.answer("Нет активной игры.", show_alert=True)
+            return
+        f2 = await db_get(uid)
+        if f2:
+            f2["coins"] += cw["stake"]
+            f2["total_casino"] = max(0, f2.get("total_casino", 0) - 1)
+            await db_save(f2)
+        await q.answer((f"❌ Игра отменена. {cw['stake']}{coin_plain()} возвращены.")[:200], show_alert=True)
+        try:
+            await q.message.edit_text(
+                f"{_E_CROSS} <b>Игра отменена.</b> {cw['stake']}{coin_emoji()} возвращены.\n"
+                f"💼 Баланс: {f2['coins'] if f2 else '?'}{coin_emoji()}",
+                parse_mode=ParseMode.HTML,
+                reply_markup=InlineKeyboardMarkup([
+                    [btn("🎰 Казино", callback_data="casino_menu")],
+                ]),
+            )
+        except Exception:
+            pass
+        return
+    if d == "casino_wish_menu":
+        await q.answer()
+        stakes_wish = [10, 25, 50, 100, 250, 500]
+        stake_rows = [
+            [coin_btn(f"{s}🪙", f"casino_wish_bet_{s}") for s in stakes_wish[:3]],
+            [coin_btn(f"{s}🪙", f"casino_wish_bet_{s}") for s in stakes_wish[3:]],
+        ]
+        stake_rows.append([btn("◀️ Назад", callback_data="casino_menu")])
+        try:
+            await q.message.edit_text(
+                f"🎯 <b>Режим желания</b>\n\n"
+                f"Ты ставишь монеты и сам выбираешь сумму выигрыша.\n"
+                f"Бот рассчитает твой шанс и запустит испытание!\n\n"
+                f"💼 Твой баланс: <b>{f['coins']}{coin_emoji()}</b>\n\n"
+                f"",
+                parse_mode=ParseMode.HTML,
+                reply_markup=InlineKeyboardMarkup(stake_rows),
+            )
+        except Exception:
+            pass
+        return
+    if d.startswith("casino_wish_bet_"):
+        try:
+            wish_stake = int(d[len("casino_wish_bet_"):])
+        except ValueError:
+            await q.answer("Ошибка", show_alert=True)
+            return
+        if f["coins"] < wish_stake:
+            await q.answer((f"❌ Не хватает монет. У тебя {f['coins']}🪙")[:200], show_alert=True)
+            return
+        # Запоминаем ставку и просим ввести желаемую сумму текстом
+        ctx.user_data[f"casino_wish_input_{uid}"] = {
+            "stake": wish_stake,
+            "msg_id": q.message.message_id,
+            "chat_id": q.message.chat.id,
+        }
+        await q.answer()
+        try:
+            await q.message.edit_text(
+                f"🎯 <b>Режим желания</b> · Ставка: <b>{wish_stake}{coin_emoji()}</b>\n\n"
+                f"Напиши сколько хочешь <b>получить</b> при победе (включая ставку).\n"
+                f"Например: <code>{wish_stake * 2}</code> → получишь {wish_stake * 2}{_E_COIN}, прибыль +{wish_stake}{_E_COIN}, шанс 50%\n"
+                f"Чем больше сумма — тем меньше шанс. Честный шанс = ставка ÷ желаемая сумма.\n\n"
+                f"💼 Баланс: <b>{f['coins']}{coin_emoji()}</b>",
+                parse_mode=ParseMode.HTML,
+                reply_markup=InlineKeyboardMarkup([
+                    [btn("❌ Отмена", callback_data="casino_wish_menu")],
+                ]),
+            )
+        except Exception:
+            pass
+        return
+    if d.startswith("casino_wish_play_"):
+        parts_wp = d[len("casino_wish_play_"):].split("_")
+        if len(parts_wp) != 2:
+            await q.answer("Ошибка", show_alert=True)
+            return
+        try:
+            wish_stake_p = int(parts_wp[0])
+            wish_target_p = int(parts_wp[1])
+        except ValueError:
+            await q.answer("Ошибка", show_alert=True)
+            return
+        now_wp = time.time()
+        if now_wp - f.get("last_casino", 0) < 5:
+            await q.answer("⏳ Подожди немного", show_alert=True)
+            return
+        if f["coins"] < wish_stake_p:
+            await q.answer((f"❌ Недостаточно монет. У тебя {f['coins']}🪙")[:200], show_alert=True)
+            return
+        # wish_target_p — это ИТОГОВЫЙ возврат при победе
+        # Честный шанс: stake / target. Фактический: × 0.80 (RTP 80%)
+        displayed_pct = wish_stake_p / wish_target_p * 100
+        actual_chance = (wish_stake_p / wish_target_p) * 0.80
+        profit_wp = wish_target_p - wish_stake_p
+        # Списываем ставку
+        f["coins"] -= wish_stake_p
+        f["coins_spent"] = f.get("coins_spent", 0) + wish_stake_p
+        f["last_casino"] = now_wp
+        f["total_casino"] = f.get("total_casino", 0) + 1
+        won_wp = random.random() < actual_chance
+        if won_wp:
+            f["coins"] += wish_target_p  # получаем target (ставка + прибыль)
+            f["total_casino_wins"] = f.get("total_casino_wins", 0) + 1
+            f["casino_win_streak"] = f.get("casino_win_streak", 0) + 1
+        else:
+            f["casino_win_streak"] = 0
+            # Проигрыш — пополняем банк джекпота
+            _wish_tax = max(1, wish_stake_p // 10)
+            asyncio.create_task(jackpot_add(_wish_tax))
+        await db_save(f)
+        asyncio.create_task(log_game(
+            uid, "casino_wish", wish_stake_p,
+            wish_target_p if won_wp else 0,
+            "win" if won_wp else "loss",
+            {"target": wish_target_p, "profit": profit_wp, "displayed_pct": round(displayed_pct, 1)},
+        ))
+        asyncio.create_task(update_trial_progress(uid, "casino", bot=ctx.bot))
+        await quest_update(uid, "casino")
+        await legend_track(uid, "casino", bot=ctx.bot)
+        if won_wp:
+            await quest_update(uid, "casino_win")
+            asyncio.create_task(update_trial_progress(uid, "casino_win", bot=ctx.bot))
+        await q.answer()
+        if won_wp:
+            result_text = (
+                f"✨ <b>Победа!</b>\n\n"
+                f"Ставка: <b>{wish_stake_p}{coin_emoji()}</b>\n"
+                f"Получено: <b>{wish_target_p}{coin_emoji()}</b> (прибыль: +{profit_wp}{coin_emoji()})\n"
+                f"Шанс был: <b>{displayed_pct:.1f}%</b>\n\n"
+                f"💼 Баланс: <b>{f['coins']}{coin_emoji()}</b>"
+            )
+        else:
+            result_text = (
+                f"💸 <b>Не повезло!</b>\n\n"
+                f"Ставка: <b>{wish_stake_p}{coin_emoji()}</b> — потеряна\n"
+                f"Хотел получить: <b>{wish_target_p}{coin_emoji()}</b>\n"
+                f"Шанс был: <b>{displayed_pct:.1f}%</b>\n\n"
+                f"💼 Баланс: <b>{f['coins']}{coin_emoji()}</b>"
+            )
+        try:
+            await q.message.edit_text(
+                result_text,
+                parse_mode=ParseMode.HTML,
+                reply_markup=InlineKeyboardMarkup([
+                    [coin_btn(f"🔄 Ещё раз ({wish_stake_p}🪙)", f"casino_wish_bet_{wish_stake_p}")],
+                    [btn("🎯 Изменить ставку", callback_data="casino_wish_menu")],
+                    [btn("◀️ Казино", callback_data="casino_menu")],
+                ]),
+            )
+        except Exception:
+            pass
+        return
+    if d.startswith("casino_slots5_"):
+        stake = int(d[14:])
+        total_cost = stake * 5
+        now = time.time()
+        if now - f.get("last_casino", 0) < 5:
+            await q.answer("⏳ Подожди секунду перед следующей игрой.", show_alert=True)
+            return
+        if f["coins"] < total_cost:
+            await q.answer((f"Нужно {total_cost}{coin_plain()} для 5 круток")[:200], show_alert=True)
+            return
+        f["coins"] -= total_cost
+        f["coins_spent"] = f.get("coins_spent", 0) + total_cost
+        f["last_casino"] = now
+        f["total_casino"] = f.get("total_casino", 0) + 5
+        await db_save(f)
+        await q.answer()  # ← подтверждаем сразу, дальше длинная анимация
+        # Запускаем 5 круток подряд
+        spin_results = []
+        total_winnings = 0
+        jackpot_won_total = 0
+        wins_count = 0
+        for spin_i in range(5):
+            dice_msg = await ctx.bot.send_dice(chat_id=q.message.chat.id, emoji="🎰")
+            val = dice_msg.dice.value
+            await asyncio.sleep(3)
+            asyncio.create_task(_delete_casino_dice(
+                ctx.bot, q.message.chat.id, dice_msg.message_id, q.message.chat.type
+            ))
+            comb = get_slot_symbols(val)
+            winnings, desc = slot_evaluate(val, stake)
+            if val == 64:
+                jp_amount = await jackpot_claim()
+                if jp_amount > 0:
+                    total_winnings += jp_amount
+                    jackpot_won_total += jp_amount
+                    await ach_grant(uid, "casino_jackpot", ctx.bot)
+            elif winnings == 0:
+                tax = max(1, stake // 10)
+                await jackpot_add(tax)
+            total_winnings += winnings
+            if winnings > 0:
+                wins_count += 1
+                f["total_casino_wins"] = f.get("total_casino_wins", 0) + 1
+                f["casino_win_streak"] = f.get("casino_win_streak", 0) + 1
+            else:
+                f["casino_win_streak"] = 0
+            spin_results.append(f"Крутка {spin_i+1}: {desc}")
+        f2 = await db_get(uid)
+        if f2:
+            f = f2
+            # total_cost уже списан до игры — здесь только зачисляем выигрыш
+            f["coins"] += total_winnings
+        else:
+            f["coins"] += total_winnings
+        rewards = await levelup(f, ctx.bot)
+        await db_save(f)
+        await ach_check(f, ctx.bot)
+        net = total_winnings - total_cost
+        # Логируем результат 5 круток
+        asyncio.create_task(log_game(
+            uid, "casino", total_cost, total_winnings,
+            "win" if total_winnings >= total_cost else "loss",
+            {"game": "slots5", "stake_per_spin": stake, "wins": wins_count, "net": net, "jackpot": jackpot_won_total},
+        ))
+        asyncio.create_task(update_trial_progress(uid, "casino", amount=5, bot=ctx.bot))
+        await legend_track(uid, "casino", amount=5, bot=ctx.bot)  # ИСПРАВЛЕНО: legend_track отсутствовал в slots5
+        if wins_count > 0:
+            asyncio.create_task(update_trial_progress(uid, "casino_win", amount=wins_count, bot=ctx.bot))
+        # Анонс крупного выигрыша slots5
+        if total_winnings > BIG_WIN_THRESHOLD:
+            s5_name = he(q.from_user.first_name)
+            asyncio.create_task(maybe_big_win_announce(
+                ctx.bot, s5_name, total_winnings, "Казино 5×Слотов",
+                stake=total_cost, source_chat_id=f.get("source_chat_id", 0),
+            ))
+        jp_line = f"\n{_E_CASINO} <b>+{jackpot_won_total:,}{coin_emoji()} из банка казино!</b>" if jackpot_won_total > 0 else ""
+        result = (
+            f"{_E_CASINO} <b>5 круток — ставка {stake}{coin_emoji()} × 5 = {total_cost}{coin_emoji()}</b>\n\n"
+            + "\n".join(spin_results)
+            + f"\n\n{_E_CHART} Выиграно: <b>{total_winnings}{coin_emoji()}</b> ({wins_count}/5 побед)"
+            + f"\n{'✅' if net >= 0 else '💸'} Чистый профит: <b>{'+' if net >= 0 else ''}{net}{coin_emoji()}</b>"
+            + jp_line
+            + f"\n💼 Баланс: {f['coins']}{coin_emoji()}"
+        )
+        kb = InlineKeyboardMarkup([
+            [coin_btn(f"↩️ Ещё 5×{stake}🪙", f"casino_slots5_{stake}")],
+            [btn("🎰 Другая игра", callback_data="casino_menu"),
+             btn("◀️ Назад", callback_data="refresh")],
+        ])
+        try:
+            await q.message.edit_text(result, parse_mode=ParseMode.HTML, reply_markup=kb)
+        except Exception:
+            pass
+        return
+    # ── DOUBLE OR NOTHING ─────────────────────────────────────────────────────
+    if d.startswith("casino_bet_double_"):
+        stake = int(d.split("_")[-1])
+        now = time.time()
+        if now - f.get("last_casino", 0) < 5:
+            await q.answer("⏳ Подожди секунду перед следующей игрой.", show_alert=True)
+            return
+
+        # ── Защита от двойного списания: если игра уже идёт — показываем её ──
+        existing_state = ctx.user_data.get(f"double_{uid}")
+        if existing_state:
+            cur_bank = existing_state["bank"]
+            cur_round = existing_state["round"]
+            rounds_left = existing_state["max_rounds"] - cur_round + 1
+            kb_d = InlineKeyboardMarkup([
+                [
+                    coin_btn(f"✅ Забрать {cur_bank}🪙", f"double_take_{uid}"),
+                    btn(t("btn_casino_risk", f), callback_data=f"double_risk_{uid}"),
+                ]
+            ])
+            try:
+                await q.message.edit_text(
+                    f"🎲 <b>Double or Nothing — раунд {cur_round}</b>\n\n"
+                    f"⚠️ У тебя уже идёт игра!\n"
+                    f"💰 Текущий банк: <b>{cur_bank}{coin_emoji()}</b>\n"
+                    f"📈 Раундов до максимума: {rounds_left}\n\n"
+                    f"Забрать банк или рискнуть и удвоить его?",
+                    parse_mode=ParseMode.HTML,
+                    reply_markup=kb_d,
+                )
+            except Exception:
+                await q.answer((f"⚠️ Игра уже идёт. Банк: {cur_bank}{coin_plain()}")[:200], show_alert=True)
+            return
+
+        if f["coins"] < stake:
+            await q.answer((f"Нужно {stake}{coin_plain()}")[:200], show_alert=True)
+            return
+        f["coins"] -= stake
+        f["coins_spent"] = f.get("coins_spent", 0) + stake
+        f["last_casino"] = now
+        f["total_casino"] = f.get("total_casino", 0) + 1
+        await db_save(f)
+        # Сохраняем состояние игры
+        ctx.user_data[f"double_{uid}"] = {
+            "stake": stake,
+            "bank": stake,
+            "round": 1,
+            "max_rounds": 10,
+            "chat_id": q.message.chat.id,
+        }
+        await q.answer()
+        # Показываем первый раунд
+        kb_d = InlineKeyboardMarkup([
+            [
+                coin_btn(f"✅ Забрать {stake}🪙", f"double_take_{uid}"),
+                btn(t("btn_casino_risk", f), callback_data=f"double_risk_{uid}"),
+            ]
+        ])
+        edited = False
+        try:
+            await q.message.edit_text(
+                f"🎲 <b>Double or Nothing — раунд 1</b>\n\n"
+                f"💰 Текущий банк: <b>{stake}{coin_emoji()}</b>\n"
+                f"📈 Раундов до максимума: 10\n\n"
+                f"Забрать банк или рискнуть и удвоить его?",
+                parse_mode=ParseMode.HTML,
+                reply_markup=kb_d,
+            )
+            edited = True
+        except Exception:
+            pass
+        # Если edit_text не сработал — отправляем новое сообщение
+        if not edited:
+            try:
+                await ctx.bot.send_message(
+                    chat_id=q.message.chat.id,
+                    text=(
+                        f"🎲 <b>Double or Nothing — раунд 1</b>\n\n"
+                        f"💰 Текущий банк: <b>{stake}{coin_emoji()}</b>\n"
+                        f"📈 Раундов до максимума: 10\n\n"
+                        f"Забрать банк или рискнуть и удвоить его?"
+                    ),
+                    parse_mode=ParseMode.HTML,
+                    reply_markup=kb_d,
+                )
+            except Exception:
+                pass
+        return
+    if d.startswith("casino_bet_"):
+        parts = d[11:].rsplit("_", 1)
+        gtype, stake = parts[0], int(parts[1])
+        if gtype == "double":
+            # Handled above by casino_bet_double_ block
+            return
+        if gtype not in CASINO:
+            await q.answer("Ошибка", show_alert=True)
+            return
+        now = time.time()
+        if now - f.get("last_casino", 0) < 5:
+            await q.answer("⏳ Подожди секунду перед следующей игрой.", show_alert=True)
+            return
+        if f["coins"] < stake:
+            await q.answer((f"Нужно {stake}{coin_plain()}")[:200], show_alert=True)
+            return
+        f["coins"] -= stake
+        f["coins_spent"] = f.get("coins_spent", 0) + stake
+        f["last_casino"] = now
+        f["total_casino"] = f.get("total_casino", 0) + 1
+        await db_save(f)
+        await quest_update(uid, "casino")
+        await legend_track(uid, "casino", bot=ctx.bot)
+        asyncio.create_task(update_trial_progress(uid, "casino", bot=ctx.bot))
+        await q.answer()  # ← подтверждаем до отправки кубика и sleep(3)
+        try:
+            dice_msg = await ctx.bot.send_dice(
+                chat_id=q.message.chat.id, emoji=CASINO[gtype]["emoji"]
+            )
+        except Exception as e:
+            # Возвращаем монеты при ошибке отправки кубика
+            f["coins"] += stake
+            f["coins_spent"] = f.get("coins_spent", 0) - stake
+            f["total_casino"] = f.get("total_casino", 0) - 1
+            await db_save(f)
+            await q.message.reply_text("❌ Ошибка при запуске игры. Монеты возвращены.")
+            return
+        val = dice_msg.dice.value
+        await asyncio.sleep(3)  # Ждём анимацию кубика
+        asyncio.create_task(_delete_casino_dice(
+            ctx.bot, q.message.chat.id, dice_msg.message_id, q.message.chat.type
+        ))
+        def casino_result(gtype, val, stake):
+            if gtype == "dice":
+                # 🎲 1-6: 5→×2, 6→×3.7  EV=(2+3.7)/6=0.95
+                if val == 6:
+                    return int(stake * 3.7), "🎲 <b>6</b> — УДАЧА! ×3.7!"
+                elif val == 5:
+                    return stake * 2, "🎲 <b>5</b> — выигрыш ×2!"
+                else:
+                    return 0, f"🎲 <b>{val}</b> — проигрыш"
+            elif gtype == "dart":
+                # 🎯 1-6: 6=bullseye ×3.7, 5=почти ×2  EV=(2+3.7)/6=0.95
+                if val == 6:
+                    return int(stake * 3.7), "🎯 <b>6</b> — В ЯБЛОЧКО! ×3.7!"
+                elif val == 5:
+                    return stake * 2, "🎯 <b>5</b> — почти в цель! ×2"
+                else:
+                    return 0, f"🎯 <b>{val}</b> — мимо"
+            elif gtype == "basketball":
+                # 🏀 ДИАПАЗОН 1-5 (не 1-6!)
+                # 5=slam dunk ×2.75, 4=попадание ×2  EV=(2+2.75)/5=0.95
+                if val == 5:
+                    return int(stake * 2.75), "🏀 <b>5</b> — SLAM DUNK! ×2.75! 🔥"
+                elif val == 4:
+                    return stake * 2, "🏀 <b>4</b> — Попадание! ×2! 🎯"
+                else:
+                    return 0, f"🏀 <b>{val}</b> — мимо корзины"
+            elif gtype == "slots":
+                # Единая таблица выплат — см. slot_evaluate()
+                winnings, desc_slot = slot_evaluate(val, stake)
+                return winnings, desc_slot
+            return 0, "?"
+
+        winnings, desc = casino_result(gtype, val, stake)
+        f2 = await db_get(uid)  # Свежие данные
+        if f2:
+            f = f2
+
+        # ── ДЖЕКПОТ-БАНК: накопление 10% с проигрышей ──────────
+        jackpot_won_amount = 0
+        if winnings == 0:
+            tax = max(1, stake // 10)
+            await jackpot_add(tax)
+
+        if winnings > 0:
+            f["coins"] += winnings
+            f["total_casino_wins"] = f.get("total_casino_wins", 0) + 1
+            f["casino_win_streak"] = f.get("casino_win_streak", 0) + 1
+            await quest_update(uid, "casino_win")
+            asyncio.create_task(update_trial_progress(uid, "casino_win", bot=ctx.bot))
+            if gtype == "slots" and val == 64:
+                # ── ВЫПЛАТА ДЖЕКПОТ-БАНКА ──────────────────
+                jackpot_won_amount = await jackpot_claim()
+                if jackpot_won_amount > 0:
+                    f["coins"] += jackpot_won_amount
+                    # Объявляем в общий чат
+                    jackpot_winner_name = (
+                        f"@{q.from_user.username}"
+                        if q.from_user.username
+                        else he(q.from_user.first_name)
+                    )
+                    jackpot_msg = (
+                        f"🎉💥 <b>Джекпот В слотах!</b> 💥🎉\n\n"
+                        f"Игрок {jackpot_winner_name} выбил {_E_CASINO} 64 и забирает весь банк казино!\n"
+                        f"🎯 Ставка была: <b>{stake}{coin_emoji()}</b>\n"
+                        f"💰 Джекпот: <b>{jackpot_won_amount:,}{coin_emoji()}</b>\n"
+                        f"📈 Чистый профит: <b>+{jackpot_won_amount + winnings - stake:,}{coin_emoji()}</b>\n\n"
+                        f"Поздравляем! 🐸🎊"
+                    )
+                    if jackpot_won_amount > 500:
+                        await announce(ctx.bot, jackpot_msg, delete_after=180)
+                    # Уведомляем в адмчат через admin_notify
+                    await admin_notify(
+                        ctx.bot,
+                        f"{_E_CASINO} Джекпот сорван! {jackpot_winner_name} забрал <b>{jackpot_won_amount:,}{coin_emoji()}</b> (ставка: {stake}🪙)",
+                        "🎰",
+                    )
+            if f.get("casino_win_streak", 0) >= 5:
+                await ach_grant(uid, "casino_win_5", ctx.bot)
+        else:
+            f["casino_win_streak"] = 0
+        rewards = await levelup(f, ctx.bot)
+        await db_save(f)
+        await ach_check(f, ctx.bot)
+        # ── Анонс крупного выигрыша (без джекпота — он анонсируется отдельно) ──
+        if winnings > BIG_WIN_THRESHOLD and not jackpot_won_amount:
+            w_name = he(q.from_user.first_name)
+            g_label = CASINO[gtype].get("name", gtype) if gtype in CASINO else gtype
+            asyncio.create_task(maybe_big_win_announce(
+                ctx.bot, w_name, winnings, f"Казино ({g_label})",
+                stake=stake, source_chat_id=f.get("source_chat_id", 0),
+            ))
+        g = CASINO[gtype]
+        net = winnings - stake  # net profit (could be negative)
+        # Логируем результат игры
+        asyncio.create_task(log_game(
+            uid, "casino", stake, winnings,
+            "win" if winnings > 0 else "loss",
+            {"game": gtype, "dice_value": val, "net": net, "jackpot": jackpot_won_amount},
+        ))
+        jackpot_line = (
+            f"\n{_E_CASINO} <b>+{jackpot_won_amount:,}{coin_emoji()} из банка казино!</b>"
+            if jackpot_won_amount > 0
+            else ""
+        )
+        if winnings > 0:
+            result_line = f"<b>Выигрыш! Получено: {winnings}{coin_emoji()}</b> (чистый профит: +{net}{coin_emoji()}){jackpot_line}"
+        else:
+            result_line = f"💸 <b>Проигрыш. Потеряно: {stake}{coin_emoji()}</b>"
+        result = (
+            f"{g['emoji']} <b>{g['name']}</b>\n\n"
+            f"Ставка: {stake}{coin_emoji()}\n{desc}\n\n"
+            + result_line
+            + f"\n💼 Баланс: {f['coins']}{coin_emoji()}"
+        )
+        kb = InlineKeyboardMarkup(
+            [
+                [
+                    coin_btn(
+                        f"↩️ Ещё ({stake}🪙)",
+                        f"casino_bet_{gtype}_{stake}",
+                    ),
+                    btn(t("btn_casino_auto", f), callback_data=f"casino_auto_{gtype}_{stake}"),
+                ],
+                [
+                    btn("🎰 Другая игра", callback_data="casino_menu"),
+                    btn("◀️ Назад", callback_data="refresh"),
+                ],
+                [btn("⭐ Пополнить монеты", callback_data="buy_stars_quick")],
+            ]
+        )
+        try:
+            await q.message.edit_text(
+                result, parse_mode=ParseMode.HTML, reply_markup=kb
+            )
+        except Exception:
+            pass
+        return
+    # ── КАЗИНО: АВТО-РЕЖИМ (непрерывный цикл) ─────────────────────
+    if d.startswith("casino_auto_") and not d.startswith("casino_auto_stop_"):
+        parts_auto = d[12:].rsplit("_", 1)
+        if len(parts_auto) != 2:
+            await q.answer("Неверный формат.", show_alert=True)
+            return
+        gtype_a, stake_a = parts_auto[0], int(parts_auto[1])
+        if gtype_a not in CASINO or gtype_a == "double":
+            await q.answer("Авто-режим недоступен для этой игры.", show_alert=True)
+            return
+
+        auto_key = f"casino_auto_{uid}"
+
+        # Если авто уже запущен — игнорируем
+        if ctx.user_data.get(auto_key, {}).get("running"):
+            await q.answer("🔁 Авто-режим уже запущен", show_alert=True)
+            return
+
+        if f["coins"] < stake_a:
+            await q.answer((f"❌ Недостаточно монет. Нужно {stake_a}🪙")[:200], show_alert=True)
+            return
+
+        ctx.user_data[auto_key] = {"running": True, "gtype": gtype_a, "stake": stake_a, "count": 0}
+        await q.answer()
+
+        asyncio.create_task(_casino_auto_loop(
+            uid, gtype_a, stake_a,
+            q.message.chat.id, q.message.message_id,
+            ctx.bot, ctx.user_data, ctx,
+            chat_type=q.message.chat.type,
+        ))
+        return
+    if d.startswith("casino_auto_stop_"):
+        target_uid = int(d[17:])
+        if target_uid != uid:
+            await q.answer("Это не твоя игра", show_alert=True)
+            return
+        auto_key = f"casino_auto_{uid}"
+        state = ctx.user_data.pop(auto_key, None)
+        if state:
+            # Сбрасываем флаг — фоновая задача остановится после текущей анимации
+            state["running"] = False
+        await q.answer("⏹ Авто-режим останавливается...", show_alert=False)
+        try:
+            await q.message.edit_text(
+                f"⏹ <b>Авто-режим остановлен.</b>\n💼 Баланс: {f['coins']}{_E_COIN}",
+                parse_mode=ParseMode.HTML,
+                reply_markup=InlineKeyboardMarkup([[
+                    btn("🎰 Казино", callback_data="casino_menu"),
+                    coin_btn(f"🔁 Авто снова ({state['stake'] if state else '?'}🪙)",
+                             f"casino_auto_{state['gtype']}_{state['stake']}" if state else "casino_menu"),
+                ]]),
+            )
+        except Exception:
+            pass
+        return
+    # Ветка не нашлась — отдаём общему обработчику.
+    await on_callback(update, ctx)
+
+
+# ══════════════════════════════════════════════════════════════════════════════
+# ⚔️  РОУТЕР ДУЭЛЕЙ
+# ══════════════════════════════════════════════════════════════════════════════
+# Вынесено из on_callback. Регистрируется с pattern='^(duel|battle_|tournament)', поэтому
+# нажатие попадает сразу сюда, минуя чужие условия.
+async def duel_router(update: Update, ctx: ContextTypes.DEFAULT_TYPE):
+    _g = await cb_guard(update, ctx)
+    if _g is None:
+        return
+    q, uid, d, f = _g
+
+    if d.startswith("duel_accept_"):
+        duel_id = int(d[12:])
+        async with aiosqlite.connect(DB_PATH) as db:
+            db.row_factory = aiosqlite.Row
+            async with db.execute("SELECT * FROM duels WHERE id=?", (duel_id,)) as c:
+                duel = await c.fetchone()
+        if not duel:
+            await q.answer("Дуэль не найдена", show_alert=True)
+            return
+        duel = dict(duel)
+        if duel["status"] != "pending":
+            await q.answer("Дуэль уже завершена", show_alert=True)
+            return
+        if uid != duel["target_id"]:
+            await q.answer("Это не твоя дуэль", show_alert=True)
+            return
+        challenger = await db_get(duel["challenger_id"])
+        if not challenger:
+            await q.answer("Вызывающий не найден", show_alert=True)
+            return
+        if challenger["coins"] < duel["stake"] or f["coins"] < duel["stake"]:
+            await q.answer("Недостаточно КваКоинов", show_alert=True)
+            async with aiosqlite.connect(DB_PATH) as db:
+                await db.execute(
+                    "UPDATE duels SET status='cancelled' WHERE id=?", (duel_id,)
+                )
+                await db.commit()
+            return
+
+        # Атомично переводим статус в in_progress ДО анимации — защита от двойного Accept
+        async with aiosqlite.connect(DB_PATH) as db:
+            cur = await db.execute(
+                "UPDATE duels SET status='in_progress' WHERE id=? AND status='pending'",
+                (duel_id,),
+            )
+            await db.commit()
+            if cur.rowcount == 0:
+                await q.answer("Дуэль уже принята", show_alert=True)
                 return
 
+        # Бонус от редкости облика (мифический +3, легендарный +2, эпический +1, редкий +0)
+        RARITY_BONUS = {
+            "mythic": 0,
+            "legendary": 0,
+            "epic": 0,
+            "rare": 0,
+            "uncommon": 0,
+            "common": 0,
+        }
+        c_skin_rarity = SKINS.get(challenger.get("skin", "Brownie"), {}).get(
+            "rarity", "common"
+        )
+        t_skin_rarity = SKINS.get(f.get("skin", "Brownie"), {}).get("rarity", "common")
+        c_bonus = RARITY_BONUS.get(c_skin_rarity, 0)
+        t_bonus = RARITY_BONUS.get(t_skin_rarity, 0)
 
+        # Анимированный бросок: сначала вызывающий
+        c_name = he(
+            challenger.get("frog_name") or f"Лягушка {challenger['first_name']}"
+        )
+        t_name = he(f.get("frog_name") or f"Лягушка {f['first_name']}")
+
+        # Определяем: дуэль в ЛС или в группе?
+        is_private_duel = q.message.chat.type == "private"
+        is_group_duel = q.message.chat.type in ("group", "supergroup")
+        # Если дуэль в ЛС, нужно дублировать прогресс в чат с challanger
+        mirror_duel_msg = None
+
+        try:
+            await q.message.edit_text(
+                f"{_E_SWORDS} <b>Дуэль начинается!</b>\n\n" f"🎲 {c_name} бросает кубик...",
+                parse_mode=ParseMode.HTML,
+            )
+        except (BadRequest, Forbidden):
+            pass
+        await q.answer()  # ← подтверждаем до длинной анимации (sleep 3.5 × 2)
+
+        # Зеркальное сообщение для challenger если дуэль в ЛС
+        if is_private_duel and duel["challenger_id"] != uid:
+            try:
+                mirror_duel_msg = await ctx.bot.send_message(
+                    duel["challenger_id"],
+                    f"{_E_SWORDS} <b>Дуэль начинается!</b>\n\n🎲 {c_name} бросает кубик...",
+                    parse_mode=ParseMode.HTML,
+                )
+            except Exception:
+                pass
+
+        dice_c = await ctx.bot.send_dice(chat_id=q.message.chat.id, emoji="🎲")
+        if is_group_duel:
+            asyncio.create_task(
+                schedule_delete(ctx.bot, q.message.chat.id, dice_c.message_id)
+            )
+        roll_c = dice_c.dice.value + c_bonus
+        # Пересылаем кубик challenger'у (не отправляем новый — иначе значение будет другим!)
+        if is_private_duel and duel["challenger_id"] != uid:
+            try:
+                await ctx.bot.forward_message(
+                    chat_id=duel["challenger_id"],
+                    from_chat_id=q.message.chat.id,
+                    message_id=dice_c.message_id,
+                )
+            except Exception:
+                pass
+        await asyncio.sleep(3.5)
+
+        # Затем цель
+        step2_text = (
+            f"✅ {c_name}: <b>{dice_c.dice.value}</b>"
+            + (f" = <b>{roll_c}</b>" if c_bonus else "")
+            + f"\n\n🎲 {t_name} бросает кубик..."
+        )
+        try:
+            step2_msg = await ctx.bot.send_message(
+                q.message.chat.id,
+                step2_text,
+                parse_mode=ParseMode.HTML,
+            )
+            if is_group_duel:
+                asyncio.create_task(
+                    schedule_delete(ctx.bot, q.message.chat.id, step2_msg.message_id)
+                )
+        except Exception:
+            pass
+        if is_private_duel and duel["challenger_id"] != uid:
+            try:
+                await ctx.bot.send_message(
+                    duel["challenger_id"],
+                    step2_text,
+                    parse_mode=ParseMode.HTML,
+                )
+            except Exception:
+                pass
+
+        dice_t = await ctx.bot.send_dice(chat_id=q.message.chat.id, emoji="🎲")
+        if is_group_duel:
+            asyncio.create_task(
+                schedule_delete(ctx.bot, q.message.chat.id, dice_t.message_id)
+            )
+        roll_t = dice_t.dice.value + t_bonus
+        # Пересылаем кубик цели challenger'у
+        if is_private_duel and duel["challenger_id"] != uid:
+            try:
+                await ctx.bot.forward_message(
+                    chat_id=duel["challenger_id"],
+                    from_chat_id=q.message.chat.id,
+                    message_id=dice_t.message_id,
+                )
+            except Exception:
+                pass
+        await asyncio.sleep(3.5)
+
+        if roll_c > roll_t:
+            winner, loser = challenger, f
+            w_roll, l_roll = roll_c, roll_t
+        elif roll_t > roll_c:
+            winner, loser = f, challenger
+            w_roll, l_roll = roll_t, roll_c
+        else:
+            # Ничья
+            async with aiosqlite.connect(DB_PATH) as db:
+                await db.execute(
+                    "UPDATE duels SET status='draw' WHERE id=?", (duel_id,)
+                )
+                await db.commit()
+            try:
+                await q.message.edit_text(
+                    f"🤝 <b>Ничья!</b>\n\nОба выбросили {roll_c}!\nСтавки возвращены.",
+                    parse_mode=ParseMode.HTML,
+                )
+                if is_group_duel:
+                    asyncio.create_task(schedule_delete(ctx.bot, q.message.chat.id, q.message.message_id))
+            except (BadRequest, Forbidden):
+                pass
+            return
+        winner["coins"] += duel["stake"]
+        loser["coins"] -= duel["stake"]
+        # Налог чата — применяем к выигрышу победителя
+        _duel_chat_id = q.message.chat.id if q.message and q.message.chat.type in ("group", "supergroup") else 0
+        if _duel_chat_id:
+            _tax_deduct = duel["stake"] - await apply_chat_tax(_duel_chat_id, winner["user_id"], duel["stake"], ctx)
+            winner["coins"] -= _tax_deduct
+            asyncio.create_task(log_chat_activity(_duel_chat_id, winner["user_id"],
+                winner.get("username", ""), "дуэль победа", duel["stake"] - _tax_deduct))
+        winner["total_duel_wins"] = winner.get("total_duel_wins", 0) + 1
+        winner["total_duels"] = winner.get("total_duels", 0) + 1
+        loser["total_duels"] = loser.get("total_duels", 0) + 1
+        loser["coins_spent"] = loser.get("coins_spent", 0) + duel["stake"]
+        # Дуэль даёт +0.5 exp ко всем боевым статам (независимо от исхода)
+        add_stat_exp(winner, atk=0.5, def_=0.5, hp=0.5)
+        add_stat_exp(loser, atk=0.5, def_=0.5, hp=0.5)
+        await db_save(winner)
+        await db_save(loser)
+        # player action log
+        asyncio.create_task(plog(
+            winner["user_id"], "duel_win",
+            f"vs uid={loser['user_id']} бросок={w_roll}>{l_roll} ставка={duel['stake']}",
+            coins_delta=duel["stake"],
+        ))
+        asyncio.create_task(plog(
+            loser["user_id"], "duel_lose",
+            f"vs uid={winner['user_id']} бросок={l_roll}<{w_roll} ставка={duel['stake']}",
+            coins_delta=-duel["stake"],
+        ))
+        async with aiosqlite.connect(DB_PATH) as db:
+            await db.execute(
+                "UPDATE duels SET status='finished' WHERE id=?", (duel_id,)
+            )
+            await db.commit()
+        # Квесты: участие в дуэли и победа
+        await quest_update(winner["user_id"], "duels")
+        await quest_update(winner["user_id"], "duel_wins")
+        await quest_update(loser["user_id"], "duels")
+        asyncio.create_task(update_trial_progress(winner["user_id"], "duels", bot=ctx.bot))
+        asyncio.create_task(update_trial_progress(winner["user_id"], "duel_wins", bot=ctx.bot))
+        asyncio.create_task(update_trial_progress(loser["user_id"], "duels", bot=ctx.bot))
+        # Проверяем реферальные этапы для победителя дуэли
+        await check_referral_stages(winner, ctx.bot)
+        await check_referral_stages(loser, ctx.bot)
+        # Логируем результат дуэли
+        asyncio.create_task(log_game(
+            winner["user_id"], "duel", duel["stake"], duel["stake"] * 2,
+            "win", {"opponent": loser["user_id"], "roll_winner": w_roll, "roll_loser": l_roll},
+        ))
+        asyncio.create_task(log_game(
+            loser["user_id"], "duel", duel["stake"], 0,
+            "loss", {"opponent": winner["user_id"], "roll_winner": w_roll, "roll_loser": l_roll},
+        ))
+        # ── Проверка подозрительного винрейта (сливные аккаунты) ─────────────
+        # check_duel_suspicious отключён вручную
+        # asyncio.create_task(check_duel_suspicious(loser["user_id"]))
+        # asyncio.create_task(check_duel_suspicious(winner["user_id"]))
+        w_name = he(winner.get("frog_name") or f"Лягушка {winner['first_name']}")
+        l_name = he(loser.get("frog_name") or f"Лягушка {loser['first_name']}")
+        result = (
+            f"{_E_SWORDS} <b>Дуэль завершена!</b>\n\n"
+            f"🎲 {w_name}: <b>{w_roll}</b>\n"
+            f"🎲 {l_name}: <b>{l_roll}</b>\n\n"
+            f"{_E_TROPHY} <b>{w_name}</b> победила!\n"
+            f"+{duel['stake']}{coin_emoji()} победителю"
+        )
+        try:
+            await q.message.edit_text(result, parse_mode=ParseMode.HTML)
+            if is_group_duel:
+                asyncio.create_task(schedule_delete(ctx.bot, q.message.chat.id, q.message.message_id))
+        except (BadRequest, Forbidden):
+            pass
+        # Уведомляем challenger (всегда — в группе это нужно, в ЛС тоже нужно)
+        try:
+            await ctx.bot.send_message(
+                duel["challenger_id"], result, parse_mode=ParseMode.HTML
+            )
+        except Exception:
+            pass
+        # ── Анонс крупного выигрыша в дуэли ──────────
+        duel_prize = duel["stake"] * 2
+        if duel_prize > BIG_WIN_THRESHOLD:
+            asyncio.create_task(maybe_big_win_announce(
+                ctx.bot,
+                w_name,
+                duel_prize,
+                "Дуэль ⚔️",
+                stake=duel["stake"],
+                source_chat_id=winner.get("source_chat_id", 0),
+            ))
+        return
+    # ── ДУЭЛЬ: ОТКЛОНИТЬ ───────────────────────────
+    if d.startswith("duel_decline_"):
+        await q.answer()
+        duel_id = int(d[13:])
+        async with aiosqlite.connect(DB_PATH) as db:
+            await db.execute(
+                "UPDATE duels SET status='declined' WHERE id=?", (duel_id,)
+            )
+            await db.commit()
+        try:
+            await q.message.edit_text("❌ Дуэль отклонена.", parse_mode=ParseMode.HTML)
+            if q.message.chat.type in ("group", "supergroup"):
+                asyncio.create_task(schedule_delete(ctx.bot, q.message.chat.id, q.message.message_id))
+        except Exception:
+            pass
+        return
+    # ── БАТЛ: ПРИНЯТЬ ──────────────────────────────────
+    if d.startswith("battle_accept_"):
+        battle_id = int(d[14:])
+        async with aiosqlite.connect(DB_PATH) as db:
+            db.row_factory = aiosqlite.Row
+            async with db.execute(
+                "SELECT * FROM battles WHERE id=?", (battle_id,)
+            ) as c:
+                battle = await c.fetchone()
+        if not battle:
+            await q.answer("Бой не найден", show_alert=True)
+            return
+        battle = dict(battle)
+        if battle["status"] != "pending":
+            await q.answer("Бой уже завершён", show_alert=True)
+            return
+        if uid != battle["target_id"]:
+            await q.answer("Это не твой бой", show_alert=True)
+            return
+
+        challenger = await db_get(battle["challenger_id"])
+        target_f = await db_get(battle["target_id"])
+        if not challenger or not target_f:
+            await q.answer("Участник не найден", show_alert=True)
+            return
+
+        stake = battle["stake"]
+        if stake > 0 and (challenger["coins"] < stake or target_f["coins"] < stake):
+            await q.answer("Недостаточно КваКоинов для ставки", show_alert=True)
+            async with aiosqlite.connect(DB_PATH) as db:
+                await db.execute(
+                    "UPDATE battles SET status='cancelled' WHERE id=?", (battle_id,)
+                )
+                await db.commit()
+            return
+
+        # Атомично переводим статус в in_progress ДО анимации — защита от двойного Accept
+        async with aiosqlite.connect(DB_PATH) as db:
+            cur = await db.execute(
+                "UPDATE battles SET status='in_progress' WHERE id=? AND status='pending'",
+                (battle_id,),
+            )
+            await db.commit()
+            if cur.rowcount == 0:
+                await q.answer("Бой уже принят", show_alert=True)
+                return
+
+        c_name = challenger.get("frog_name") or f"Лягушка {challenger['first_name']}"
+        t_name = target_f.get("frog_name") or f"Лягушка {target_f['first_name']}"
+        c_power = round(challenger.get("power") or 0, 1)
+        t_power = round(target_f.get("power") or 0, 1)
+        c_user = challenger.get("username") or challenger["first_name"]
+        t_user = target_f.get("username") or target_f["first_name"]
+        stake_txt = f"Ставка: <b>{stake}{coin_emoji()}</b>\n" if stake else ""
+
+        # Базовая вероятность победы challenger'а
+        total_pow = (c_power + t_power) or 1
+        base_p = c_power / total_pow
+
+        BAR_LEN = 14  # длина шкалы
+
+        def _bar_line(prob_a: float) -> str:
+            """Имена над шкалой, проценты + бар в code-блоке.
+            @A ⚡5.4     ⚡17.1 @B
+            19% [██████░░░░░░░░] 81%
+            """
+            filled = max(0, min(BAR_LEN, round(prob_a * BAR_LEN)))
+            bar = "█" * filled + "░" * (BAR_LEN - filled)
+            pct_a = int(prob_a * 100)
+            pct_b = 100 - pct_a
+            # Строки имён — слева A, справа B, выровненные через пробелы
+            a_label = f"@{he(c_user)} ⚡{c_power}"
+            b_label = f"⚡{t_power} @{he(t_user)}"
+            bar_str = f"{pct_a}% [{bar}] {pct_b}%"
+            # Выравниваем имена по ширине строки шкалы
+            total_w = max(len(bar_str), len(a_label) + len(b_label) + 2)
+            gap = total_w - len(a_label) - len(b_label)
+            names_row = a_label + " " * max(1, gap) + b_label
+            return f"<code>{names_row}\n{bar_str}</code>"
+
+        def _battle_msg(
+            prob_a: float, title: str, body: str = "", footer: str = ""
+        ) -> str:
+            lines = [
+                f"{_E_SWORDS} <b>Батл!</b> {stake_txt}",
+                f"🐸 <b>{he(c_name)}</b> vs <b>{he(t_name)}</b> 🐸",
+                _bar_line(prob_a),
+            ]
+            if title:
+                lines.append(f"\n{title}")
+            if body:
+                lines.append(body)
+            if footer:
+                lines.append(f"\n{footer}")
+            return "\n".join(lines)
+
+        is_private = q.message.chat.type == "private"
+        main_chat = q.message.chat.id
+        challenger_id = battle["challenger_id"]
+        target_id = battle["target_id"]
+
+        # ── Шаг 1: Показываем начальные шансы ──
+        try:
+            await q.message.edit_text(
+                _battle_msg(
+                    base_p,
+                    f"{_E_CHART} <b>Начальные шансы по Power</b>",
+                    f"<i>@{he(c_user)} имеет {int(base_p*100)}% — смотри на шкалу!\nСейчас бросаем кубики...</i>",
+                ),
+                parse_mode=ParseMode.HTML,
+            )
+        except (BadRequest, Forbidden):
+            pass
+        await q.answer()  # ← подтверждаем до длинной анимации батла (sleep 2.5 + 0.5 + 4 + ...)
+
+        # Зеркало для ЛС
+        mirror_msg_id = None
+        mirror_chat_id = None
+        if is_private:
+            mirror_chat_id = challenger_id
+            try:
+                m = await ctx.bot.send_message(
+                    mirror_chat_id,
+                    _battle_msg(
+                        base_p,
+                        f"{_E_CHART} <b>Начальные шансы по Power</b>",
+                        f"<i>@{he(c_user)} имеет {int(base_p*100)}% — смотри на шкалу!\nСейчас бросаем кубики...</i>",
+                    ),
+                    parse_mode=ParseMode.HTML,
+                )
+                mirror_msg_id = m.message_id
+            except Exception:
+                pass
+
+        async def edit_both(text: str, kb=None):
+            kwargs = {"parse_mode": ParseMode.HTML}
+            if kb:
+                kwargs["reply_markup"] = kb
+            try:
+                await q.message.edit_text(text, **kwargs)
+            except Exception:
+                pass
+            if mirror_msg_id and mirror_chat_id:
+                try:
+                    await ctx.bot.edit_message_text(
+                        text=text,
+                        chat_id=mirror_chat_id,
+                        message_id=mirror_msg_id,
+                        **kwargs,
+                    )
+                except Exception:
+                    pass
+
+        await asyncio.sleep(2.5)
+
+        # ── Шаг 2: Кубик challenger'а ──
+        await edit_both(
+            _battle_msg(
+                base_p,
+                f"🎲 <b>Кидаем кубик @{he(c_user)}...</b>",
+            )
+        )
+        await asyncio.sleep(0.5)
+        dice_msg_c = await ctx.bot.send_dice(main_chat, "🎲")
+        await asyncio.sleep(4)
+        dice_val_c = dice_msg_c.dice.value
+
+        # Описание результата кубика
+        dice_c_emoji = (
+            "😱 Невезуха!"
+            if dice_val_c <= 2
+            else "😐 Средне." if dice_val_c <= 4 else "🔥 Отлично!"
+        )
+        prob_after_c = max(
+            0.0, min(1.0, base_p + (dice_val_c - 3.5) * BATTLE_DICE_INFLUENCE)
+        )
+        delta_c = int(prob_after_c * 100) - int(base_p * 100)
+        delta_c_str = f"+{delta_c}%" if delta_c > 0 else f"{delta_c}%"
+
+        await edit_both(
+            _battle_msg(
+                prob_after_c,
+                f"🎲 @{he(c_user)} выбросил <b>{dice_val_c}</b> — {dice_c_emoji}",
+                f"<i>Шансы сдвинулись: {delta_c_str} для @{he(c_user)}\nТеперь бросает @{he(t_user)}...</i>",
+            )
+        )
+        await asyncio.sleep(2.5)
+
+        # ── Шаг 3: Кубик target'а ──
+        await edit_both(
+            _battle_msg(
+                prob_after_c,
+                f"🎲 <b>Кидаем кубик @{he(t_user)}...</b>",
+            )
+        )
+        await asyncio.sleep(0.5)
+        dice_msg_t = await ctx.bot.send_dice(main_chat, "🎲")
+        await asyncio.sleep(4)
+        dice_val_t = dice_msg_t.dice.value
+
+        dice_t_emoji = (
+            "😱 Невезуха!"
+            if dice_val_t <= 2
+            else "😐 Средне." if dice_val_t <= 4 else "🔥 Отлично!"
+        )
+
+        # ── Шаг 4: Финальный расчёт ──
+        winner_code, base_p2, final_p, r = determine_battle_winner(
+            c_power, t_power, dice_val_c, dice_val_t
+        )
+        delta_t = int(prob_after_c * 100) - int(final_p * 100)
+        delta_t_str = f"+{delta_t}%" if delta_t > 0 else f"{delta_t}%"
+
+        await edit_both(
+            _battle_msg(
+                final_p,
+                f"🎲 @{he(t_user)} выбросил <b>{dice_val_t}</b> — {dice_t_emoji}",
+                f"<i>Шансы сдвинулись: {delta_t_str} для @{he(t_user)}\nОпределяем победителя...</i>",
+            )
+        )
+        await asyncio.sleep(2)
+
+        if winner_code == 1:
+            winner_f, loser_f = challenger, target_f
+        elif winner_code == 2:
+            winner_f, loser_f = target_f, challenger
+        else:
+            winner_f, loser_f = (
+                (challenger, target_f)
+                if random.random() < 0.5
+                else (target_f, challenger)
+            )
+
+        winner_id = winner_f["user_id"]
+        loser_id = loser_f["user_id"]
+        w_name = winner_f.get("frog_name") or f"Лягушка {winner_f['first_name']}"
+        w_user = winner_f.get("username") or winner_f["first_name"]
+        l_user = loser_f.get("username") or loser_f["first_name"]
+
+        # Начисляем Power
+        add_power(challenger, 0.1)  # участие
+        add_power(target_f, 0.1)  # участие
+        add_power(winner_f, 0.2)  # победа
+
+        # КваКоины
+        if stake > 0:
+            winner_f["coins"] += stake
+            loser_f["coins"] = max(0, loser_f["coins"] - stake)
+            loser_f["coins_spent"] = loser_f.get("coins_spent", 0) + stake
+
+        winner_f["total_battle_wins"] = winner_f.get("total_battle_wins", 0) + 1
+        winner_f["total_battles"] = winner_f.get("total_battles", 0) + 1
+        loser_f["total_battles"] = loser_f.get("total_battles", 0) + 1
+        now_t = time.time()
+        winner_f["last_battle"] = now_t
+        loser_f["last_battle"] = now_t
+
+        await db_save(winner_f)
+        await db_save(loser_f)
+
+        async with aiosqlite.connect(DB_PATH) as db:
+            await db.execute(
+                "UPDATE battles SET status='finished',winner_id=? WHERE id=?",
+                (winner_id, battle_id),
+            )
+            await db.commit()
+
+        stake_result = (
+            f"\n<b>+{stake}{coin_emoji()}</b> достаётся @{he(w_user)}!"
+            if stake > 0
+            else ""
+        )
+        w_final_power = round(winner_f.get("power") or 0, 1)
+        l_final_power = round(loser_f.get("power") or 0, 1)
+
+        # ── Шаг 5: Результат ──
+        result_text = (
+            f"{_E_TROPHY} <b>ПОБЕДИТЕЛЬ — @{he(w_user)}!</b>\n"
+            f"{stake_txt}"
+            f"\n"
+            f"🐸 <b>{he(c_name)}</b> vs <b>{he(t_name)}</b> 🐸\n"
+            f"{_bar_line(final_p)}\n"
+            f"\n"
+            f"🎲 @{he(c_user)}: <b>{dice_val_c}</b> · 🎲 @{he(t_user)}: <b>{dice_val_t}</b>\n"
+            f"{_E_CHART} Итоговые шансы: @{he(c_user)} {int(final_p*100)}% / @{he(t_user)} {100-int(final_p*100)}%"
+            f"{stake_result}\n"
+            f"\n"
+            f"⚡ @{he(w_user)} +0.3 → {w_final_power}\n⚡ @{he(l_user)} +0.1 → {l_final_power}"
+        )
+        kb_result = InlineKeyboardMarkup(
+            [[btn(t("btn_my_frog", f), callback_data="refresh")]]
+        )
+        await edit_both(result_text, kb=kb_result)
+        # Логируем результат батла
+        asyncio.create_task(log_game(
+            winner_id, "battle", stake, stake * 2 if stake > 0 else 0,
+            "win", {"opponent": loser_id, "dice_c": dice_val_c, "dice_t": dice_val_t, "power": float(final_p)},
+        ))
+        asyncio.create_task(log_game(
+            loser_id, "battle", stake, 0,
+            "loss", {"opponent": winner_id, "dice_c": dice_val_c, "dice_t": dice_val_t, "power": float(final_p)},
+        ))
+
+        if not is_private:
+            try:
+                await ctx.bot.send_message(
+                    winner_id,
+                    f"{_E_TROPHY} Ты <b>победил</b> в батле!{stake_result}\n{_E_BOLT} +0.3 Power → {w_final_power}",
+                    parse_mode=ParseMode.HTML,
+                )
+            except Exception:
+                pass
+            try:
+                await ctx.bot.send_message(
+                    loser_id,
+                    f"{_E_SKULL} Ты <b>проиграл</b> батл против <b>{he(w_name)}</b>.\n{_E_BOLT} +0.1 Power → {l_final_power}",
+                    parse_mode=ParseMode.HTML,
+                )
+            except Exception:
+                pass
+        return
+    # ── БАТЛ: ОТКАЗАТЬСЯ ───────────────────────────────
+    if d.startswith("battle_decline_"):
+        await q.answer()
+        battle_id = int(d[15:])
+        async with aiosqlite.connect(DB_PATH) as db:
+            async with db.execute(
+                "SELECT challenger_id FROM battles WHERE id=?", (battle_id,)
+            ) as c:
+                row = await c.fetchone()
+            await db.execute(
+                "UPDATE battles SET status='declined' WHERE id=?", (battle_id,)
+            )
+            await db.commit()
+        try:
+            await q.message.edit_text(
+                "❌ Вызов на бой отклонён.", parse_mode=ParseMode.HTML
+            )
+        except Exception:
+            pass
+        return
+    # ── ТУРНИР: СОЗДАТЬ ────────────────────────────
+    if d == "tournament_create":
+        if not f["alive"]:
+            await q.answer("💀 Используй /revive", show_alert=True)
+            return
+        # Показываем выбор ставки
+        stakes = [25, 50, 100, 200, 500]
+        kb_rows = []
+        for s_val in stakes:
+            label = f"Ставка {s_val}{coin_plain()}" + (
+                " ✅" if f["coins"] >= s_val else " ❌"
+            )
+            kb_rows.append(
+                [btn(label, callback_data=f"tournament_stake_{s_val}")]
+            )
+        kb_rows.append([btn("◀️ Назад", callback_data="menu_games")])
+        try:
+            await q.message.edit_text(
+                f"{_E_TROPHY} <b>Создать турнир</b>\n\n"
+                f"У тебя: {f['coins']}{coin_emoji()}\n\n"
+                f"Выбери ставку для входа (с каждого участника):",
+                parse_mode=ParseMode.HTML,
+                reply_markup=InlineKeyboardMarkup(kb_rows),
+            )
+        except Exception:
+            pass
+        return
+    if d.startswith("tournament_stake_"):
+        stake = int(d[17:])
+        if not f["alive"]:
+            await q.answer("💀 Используй /revive", show_alert=True)
+            return
+        if f["coins"] < stake:
+            await q.answer((f"Нужно {stake}{coin_plain()} для участия")[:200], show_alert=True)
+            return
+        now = time.time()
+        # Создаём турнир в БД
+        async with aiosqlite.connect(DB_PATH) as db:
+            await db.execute(
+                "INSERT INTO tournaments(creator_id,stake,status,created_at,chat_id,participants) "
+                "VALUES(?,?,?,?,?,?)",
+                (uid, stake, "waiting", now, q.message.chat.id, json.dumps([uid])),
+            )
+            await db.commit()
+            async with db.execute("SELECT last_insert_rowid()") as c:
+                tid = (await c.fetchone())[0]
+        kb = InlineKeyboardMarkup(
+            [
+                [
+                    btn(
+                        "⚔️ Вступить в турнир!", callback_data=f"tournament_join_{tid}", style="success"
+                    ),
+                    btn(
+                        "🚀 Начать (3+ чел)", callback_data=f"tournament_start_{tid}", style="primary"
+                    ),
+                ]
+            ]
+        )
+        await q.message.edit_text(
+            f"{_E_TROPHY} <b>Турнир открыт!</b>\n\n"
+            f"Создатель: <b>{he(q.from_user.first_name)}</b>\n"
+            f"Ставка: <b>{stake}{coin_emoji()}</b>\n"
+            f"Участников: <b>1</b>\n\n"
+            f"<i>Нужно минимум 3 участника.</i>",
+            parse_mode=ParseMode.HTML,
+            reply_markup=kb,
+        )
+        return
+    if d.startswith("tournament_join_"):
+        tid = int(d[16:])
+        if not f["alive"]:
+            await q.answer("💀 Используй /revive", show_alert=True)
+            return
+        async with aiosqlite.connect(DB_PATH) as db:
+            db.row_factory = aiosqlite.Row
+            async with db.execute("SELECT * FROM tournaments WHERE id=?", (tid,)) as c:
+                tourn = await c.fetchone()
+        if not tourn:
+            await q.answer("Турнир не найден", show_alert=True)
+            return
+        tourn = dict(tourn)
+        if tourn["status"] != "waiting":
+            await q.answer("Турнир уже начался или завершён", show_alert=True)
+            return
+        parts = json.loads(tourn["participants"] or "[]")
+        if uid in parts:
+            await q.answer("Ты уже в турнире", show_alert=True)
+            return
+        stake = tourn["stake"]
+        if f["coins"] < stake:
+            await q.answer((f"Нужно {stake}{coin_plain()} для участия")[:200], show_alert=True)
+            return
+        # Списываем ставку СРАЗУ при вступлении, иначе игрок может потратить монеты до старта
+        f["coins"] -= stake
+        f["coins_spent"] = f.get("coins_spent", 0) + stake
+        await db_save(f)
+        parts.append(uid)
+        async with aiosqlite.connect(DB_PATH) as db:
+            await db.execute(
+                "UPDATE tournaments SET participants=? WHERE id=?",
+                (json.dumps(parts), tid),
+            )
+            await db.commit()
+        # Получаем имена участников
+        names = []
+        for p_uid in parts:
+            pf = await db_get(p_uid)
+            names.append(fname(pf) if pf else f"ID:{p_uid}")
+        kb = InlineKeyboardMarkup(
+            [
+                [
+                    btn(
+                        "⚔️ Вступить в турнир!", callback_data=f"tournament_join_{tid}", style="success"
+                    ),
+                    btn(
+                        "🚀 Начать (3+ чел)", callback_data=f"tournament_start_{tid}", style="primary"
+                    ),
+                ]
+            ]
+        )
+        try:
+            await q.message.edit_text(
+                f"{_E_TROPHY} <b>Турнир #{tid}</b>\n\n"
+                f"Ставка: <b>{stake}{coin_emoji()}</b>\n"
+                f"Участников: <b>{len(parts)}</b>\n\n"
+                + "\n".join(f"• {he(n)}" for n in names)
+                + f"\n\n<i>Нужно минимум 3 участника.</i>",
+                parse_mode=ParseMode.HTML,
+                reply_markup=kb,
+            )
+        except (BadRequest, Forbidden):
+            pass
+        await q.answer(f"✅ {q.from_user.first_name} вступил в турнир")
+        return
+    if d.startswith("tournament_start_"):
+        tid = int(d[17:])
+        async with aiosqlite.connect(DB_PATH) as db:
+            db.row_factory = aiosqlite.Row
+            async with db.execute("SELECT * FROM tournaments WHERE id=?", (tid,)) as c:
+                tourn = await c.fetchone()
+        if not tourn:
+            await q.answer("Турнир не найден", show_alert=True)
+            return
+        tourn = dict(tourn)
+        if tourn["creator_id"] != uid:
+            await q.answer("Только создатель может начать", show_alert=True)
+            return
+        if tourn["status"] != "waiting":
+            await q.answer("Турнир уже начался", show_alert=True)
+            return
+        parts = json.loads(tourn["participants"] or "[]")
+        if len(parts) < 3:
+            await q.answer(
+                f"Нужно минимум 3 участника! Сейчас: {len(parts)}", show_alert=True
+            )
+            return
+        # Монеты уже списаны при вступлении — здесь только проверяем что участники живы
+        stake = tourn["stake"]
+        valid_parts = list(parts)  # все вступившие уже заплатили
+        if len(valid_parts) < 2:
+            await q.answer("Недостаточно участников", show_alert=True)
+            return
+        # Турнир — каждый бросает кубик, побеждает с наибольшим числом
+        async with aiosqlite.connect(DB_PATH) as db:
+            await db.execute(
+                "UPDATE tournaments SET status='running',participants=? WHERE id=?",
+                (json.dumps(valid_parts), tid),
+            )
+            await db.commit()
+        try:
+            await q.message.edit_text(
+                f"{_E_TROPHY} <b>Турнир #{tid} начался!</b>\n\n"
+                f"Участников: {len(valid_parts)}\n"
+                f"Ставка каждого: {stake}{coin_emoji()}\n"
+                f"Приз: {stake * len(valid_parts)}{coin_emoji()}\n\n"
+                f"<i>Бросаем кубики...</i>",
+                parse_mode=ParseMode.HTML,
+            )
+        except (BadRequest, Forbidden):
+            pass
+        await q.answer()  # ← подтверждаем до серии кубиков (sleep 3.5 × N участников)
+        # Бросаем кубики последовательно
+        results = {}
+        RARITY_BONUS = {
+            "mythic": 0,
+            "legendary": 0,
+            "epic": 0,
+            "rare": 0,
+            "uncommon": 0,
+            "common": 0,
+        }
+        for p_uid in valid_parts:
+            pf = await db_get(p_uid)
+            skin_r = (
+                SKINS.get(pf.get("skin", "Brownie"), {}).get("rarity", "common")
+                if pf
+                else "common"
+            )
+            bonus = RARITY_BONUS.get(skin_r, 0)
+            try:
+                dice_msg = await ctx.bot.send_dice(
+                    chat_id=q.message.chat.id, emoji="🎲"
+                )
+                roll_val = dice_msg.dice.value + bonus
+                results[p_uid] = (roll_val, fname(pf) if pf else f"ID:{p_uid}", bonus)
+                asyncio.create_task(_delete_casino_dice(
+                    ctx.bot, q.message.chat.id, dice_msg.message_id, q.message.chat.type
+                ))
+                await asyncio.sleep(3.5)
+            except Exception:
+                results[p_uid] = (
+                    random.randint(1, 6),
+                    fname(pf) if pf else f"ID:{p_uid}",
+                    0,
+                )
+        # Определяем победителя (или победителей при ничьей)
+        prize = stake * len(valid_parts)
+        max_roll = max(results[p][0] for p in results)
+        tied_uids = [p for p in results if results[p][0] == max_roll]
+
+        sorted_results = sorted(results.items(), key=lambda x: x[1][0], reverse=True)
+        medals = ["🥇", "🥈", "🥉"] + ["🔹"] * 10
+        lines = [f"{_E_TROPHY} <b>Результаты турнира #{tid}!</b>\n"]
+        for i, (p_uid, (roll_val, name, bonus)) in enumerate(sorted_results):
+            bonus_s = f" +{bonus}🎨" if bonus else ""
+            lines.append(f"{medals[i]} {he(name)}: <b>{roll_val}</b>{bonus_s}")
+
+        if len(tied_uids) > 1:
+            # НИЧЬЯ — предлагаем выбор: разделить или переброс
+            tied_names = " vs ".join(he(results[p][1]) for p in tied_uids)
+            lines.append(f"\n⚖️ <b>Ничья!</b> {tied_names} выбросили <b>{max_roll}</b>!")
+            lines.append("Решайте: разделить приз или переброс?")
+            # Сохраняем данные ничьей в bot_data для переброса
+            ctx.bot_data[f"tie_{tid}"] = {
+                "tied_uids": tied_uids,
+                "prize": prize,
+                "stake": stake,
+                "results": {str(p): list(v) for p, v in results.items()},
+            }
+            tie_kb = InlineKeyboardMarkup([
+                [
+                    btn("🤝 Разделить приз", callback_data=f"tournament_tie_split_{tid}"),
+                    btn("🎲 Переброс", callback_data=f"tournament_tie_reroll_{tid}"),
+                ]
+            ])
+            try:
+                await ctx.bot.send_message(
+                    q.message.chat.id,
+                    "\n".join(lines),
+                    parse_mode=ParseMode.HTML,
+                    reply_markup=tie_kb,
+                )
+            except Exception:
+                pass
+            # Отмечаем турнир как tie-pending
+            async with aiosqlite.connect(DB_PATH) as db:
+                await db.execute(
+                    "UPDATE tournaments SET status='tie_pending' WHERE id=?", (tid,)
+                )
+                await db.commit()
+        else:
+            # Один победитель
+            winner_uid = tied_uids[0]
+            wf = await db_get(winner_uid)
+            if wf:
+                wf["coins"] += prize
+                wf["total_duel_wins"] = wf.get("total_duel_wins", 0) + 1
+                await db_save(wf)
+            async with aiosqlite.connect(DB_PATH) as db:
+                await db.execute(
+                    "UPDATE tournaments SET status='finished',winner_id=? WHERE id=?",
+                    (winner_uid, tid),
+                )
+                await db.commit()
+            # Логируем результаты турнира
+            rolls_log = {str(p): results[p][0] for p in results}
+            for p_uid in valid_parts:
+                is_winner = (p_uid == winner_uid)
+                asyncio.create_task(log_game(
+                    p_uid, "tournament", stake,
+                    prize if is_winner else 0,
+                    "win" if is_winner else "loss",
+                    {"tid": tid, "rolls": rolls_log, "participants": len(valid_parts)},
+                ))
+            w_name = results[winner_uid][1]
+            lines.append(
+                f"\n🎉 <b>{he(w_name)}</b> победил и получил <b>{prize}{coin_emoji()}</b>!"
+            )
+            try:
+                await ctx.bot.send_message(
+                    q.message.chat.id,
+                    "\n".join(lines),
+                    parse_mode=ParseMode.HTML,
+                )
+            except Exception:
+                pass
+            # Уведомляем победителя
+            try:
+                await ctx.bot.send_message(
+                    winner_uid,
+                    f"{_E_TROPHY} <b>Ты победил в турнире!</b>\n+{prize}{coin_emoji()}",
+                    parse_mode=ParseMode.HTML,
+                )
+            except Exception:
+                pass
+        return
+    # ── ТУРНИР: РАЗДЕЛИТЬ ПРИЗ ─────────────────────
+    if d.startswith("tournament_tie_split_"):
+        tid = int(d[21:])
+        tie_data = ctx.bot_data.get(f"tie_{tid}")
+        if not tie_data:
+            await q.answer("Данные ничьей не найдены", show_alert=True)
+            return
+        tied_uids = tie_data["tied_uids"]
+        prize = tie_data["prize"]
+        share = prize // len(tied_uids)
+        leftover = prize - share * len(tied_uids)
+        names = []
+        for p_uid in tied_uids:
+            pf = await db_get(p_uid)
+            if pf:
+                pf["coins"] += share
+                await db_save(pf)
+                names.append(fname(pf))
+        async with aiosqlite.connect(DB_PATH) as db:
+            await db.execute(
+                "UPDATE tournaments SET status='finished' WHERE id=?", (tid,)
+            )
+            await db.commit()
+        ctx.bot_data.pop(f"tie_{tid}", None)
+        # Логируем ничью
+        for p_uid in tied_uids:
+            asyncio.create_task(log_game(
+                p_uid, "tournament", stake, share, "draw",
+                {"tid": tid, "split": True, "winners_count": len(tied_uids)},
+            ))
+        split_msg = (
+            f"🤝 <b>Приз поделён поровну!</b>\n"
+            f"Каждый получил <b>{share}{coin_emoji()}</b>: "
+            + ", ".join(he(n) for n in names)
+            + (f"\n<i>(+{leftover}{coin_emoji()} не делится — остались в банке)</i>" if leftover else "")
+        )
+        try:
+            await q.message.edit_text(split_msg, parse_mode=ParseMode.HTML)
+        except Exception:
+            pass
+        return
+    # ── ТУРНИР: ПЕРЕБРОС ─────────────────────────
+    if d.startswith("tournament_tie_reroll_"):
+        tid = int(d[22:])
+        tie_data = ctx.bot_data.get(f"tie_{tid}")
+        if not tie_data:
+            await q.answer("Данные ничьей не найдены", show_alert=True)
+            return
+        tied_uids = tie_data["tied_uids"]
+        prize = tie_data["prize"]
+        # Переброс только среди участников ничьей
+        reroll_results = {}
+        for p_uid in tied_uids:
+            pf = await db_get(p_uid)
+            try:
+                dice_msg = await ctx.bot.send_dice(chat_id=q.message.chat.id, emoji="🎲")
+                roll_val = dice_msg.dice.value
+                reroll_results[p_uid] = (roll_val, fname(pf) if pf else f"ID:{p_uid}")
+                asyncio.create_task(_delete_casino_dice(
+                    ctx.bot, q.message.chat.id, dice_msg.message_id, q.message.chat.type
+                ))
+                await asyncio.sleep(3.5)
+            except Exception:
+                reroll_results[p_uid] = (random.randint(1, 6), fname(pf) if pf else f"ID:{p_uid}")
+        max_reroll = max(reroll_results[p][0] for p in reroll_results)
+        reroll_winners = [p for p in reroll_results if reroll_results[p][0] == max_reroll]
+        lines = [f"🎲 <b>Переброс турнира #{tid}!</b>\n"]
+        sorted_rr = sorted(reroll_results.items(), key=lambda x: x[1][0], reverse=True)
+        medals = ["🥇", "🥈", "🥉"] + ["🔹"] * 10
+        for i, (p_uid, (rv, rname)) in enumerate(sorted_rr):
+            lines.append(f"{medals[i]} {he(rname)}: <b>{rv}</b>")
+        ctx.bot_data.pop(f"tie_{tid}", None)
+        if len(reroll_winners) > 1:
+            # Ничья снова — делим автоматически
+            share = prize // len(reroll_winners)
+            for p_uid in reroll_winners:
+                pf = await db_get(p_uid)
+                if pf:
+                    pf["coins"] += share
+                    await db_save(pf)
+            tied_names = ", ".join(he(reroll_results[p][1]) for p in reroll_winners)
+            lines.append(f"\n⚖️ <b>Снова ничья!</b> Приз поделён ({share}{coin_emoji()} каждому): {tied_names}")
+        else:
+            final_winner = reroll_winners[0]
+            wf = await db_get(final_winner)
+            if wf:
+                wf["coins"] += prize
+                wf["total_duel_wins"] = wf.get("total_duel_wins", 0) + 1
+                await db_save(wf)
+            w_name = reroll_results[final_winner][1]
+            lines.append(f"\n🎉 <b>{he(w_name)}</b> победил в перебросе и получил <b>{prize}{coin_emoji()}</b>!")
+        async with aiosqlite.connect(DB_PATH) as db:
+            await db.execute(
+                "UPDATE tournaments SET status='finished' WHERE id=?", (tid,)
+            )
+            await db.commit()
+        try:
+            await ctx.bot.send_message(
+                q.message.chat.id, "\n".join(lines), parse_mode=ParseMode.HTML
+            )
+        except Exception:
+            pass
+        return
+    # ── ПОИСК ИГРОКА ДЛЯ ДУЭЛИ ────────────────────
+    if d == "duel_search":
+        rows = await db_top(20)
+        alive_others = [r for r in rows if r["user_id"] != uid and r["alive"]][:10]
+        if not alive_others:
+            await q.answer("Нет других игроков", show_alert=True)
+            return
+        kb_rows = []
+        for r in alive_others:
+            name = r["frog_name"] if r["frog_name"] else f"Лягушка {r['first_name']}"
+            s = SKINS.get(r["skin"], SKINS["Brownie"])
+            label = f"{R_ICON[s['rarity']]} {name} — ур.{r['level']}"
+            kb_rows.append(
+                [
+                    btn(
+                        label, callback_data=f"duel_pick_opp_{r['user_id']}"
+                    )
+                ]
+            )
+        kb_rows.append([btn("◀️ Назад", callback_data="menu_games")])
+        try:
+            await q.message.edit_text(
+                f"{_E_SWORDS} <b>Дуэль — выбери соперника</b> {f['coins']}{coin_emoji()}\n\n"
+                f"<i>(топ-10 активных игроков)</i>",
+                parse_mode=ParseMode.HTML,
+                reply_markup=InlineKeyboardMarkup(kb_rows),
+            )
+        except Exception:
+            pass
+        return
+    # ── ДУЭЛЬ: ВЫБОР СТАВКИ ────────────────────────
+    if d.startswith("duel_pick_opp_"):
+        target_uid_d = int(d[14:])
+        target_d = await db_get(target_uid_d)
+        if not target_d:
+            await q.answer("Игрок не найден", show_alert=True)
+            return
+        if not target_d["alive"]:
+            await q.answer("Лягушка соперника мертва", show_alert=True)
+            return
+        s_t = SKINS.get(target_d["skin"], SKINS["Brownie"])
+        stakes = [10, 25, 50, 100, 250, 500]
+        kb_rows = [
+            [
+                btn(
+                    f"🪙 {s}", callback_data=f"duel_challenge_uid_{target_uid_d}_{s}"
+                )
+                for s in stakes[:3]
+            ],
+            [
+                btn(
+                    f"🪙 {s}", callback_data=f"duel_challenge_uid_{target_uid_d}_{s}"
+                )
+                for s in stakes[3:]
+            ],
+            [btn("◀️ Назад", callback_data="duel_search")],
+        ]
+        t_name = target_d.get("frog_name") or f"Лягушка {target_d['first_name']}"
+        try:
+            await q.message.edit_text(
+                f"{_E_SWORDS} <b>Дуэль vs {he(t_name)}</b>\n"
+                f"Облик: {R_ICON[s_t['rarity']]} {he(target_d['skin'])}\n\n"
+                f"У тебя: {f['coins']}{coin_emoji()}\n"
+                f"",
+                parse_mode=ParseMode.HTML,
+                reply_markup=InlineKeyboardMarkup(kb_rows),
+            )
+        except Exception:
+            pass
+        return
+    # ── ДУЭЛЬ: ВЫЗОВ ЧЕРЕЗ МЕНЮ ────────────────────
+    if d.startswith("duel_challenge_uid_"):
+        # формат: duel_challenge_uid_<target_uid>_<stake>
+        parts_d = d.split("_")
+        target_uid_d = int(parts_d[3])
+        try:
+            stake_d = int(parts_d[4]) if len(parts_d) > 4 else 50
+        except (ValueError, IndexError):
+            stake_d = 50
+        if target_uid_d == uid:
+            await q.answer("Нельзя вызвать себя", show_alert=True)
+            return
+        if not f["alive"] and not f.get("trial_active", 0):
+            await q.answer("💀 Используй /revive", show_alert=True)
+            return
+        if f["coins"] < stake_d:
+            await q.answer(
+                f"Нужно {stake_d} 🪙 для ставки!", show_alert=True
+            )
+            return
+        target_d = await db_get(target_uid_d)
+        if not target_d:
+            await q.answer("Игрок не найден", show_alert=True)
+            return
+        if not target_d["alive"]:
+            await q.answer("Лягушка соперника мертва", show_alert=True)
+            return
+        now_d = time.time()
+        async with aiosqlite.connect(DB_PATH) as db:
+            await db.execute(
+                "INSERT INTO duels(challenger_id,target_id,stake,status,chat_id,created_at) VALUES(?,?,?,?,?,?)",
+                (uid, target_uid_d, stake_d, "pending", q.message.chat.id, now_d),
+            )
+            await db.commit()
+            async with db.execute("SELECT last_insert_rowid()") as c_r:
+                duel_id_d = (await c_r.fetchone())[0]
+        use_st_d = bool(f.get("use_static", 0))
+        use_st_td = bool(target_d.get("use_static", 0))
+        kb_d = InlineKeyboardMarkup(
+            [
+                [
+                    btn(
+                        "⚔️ Принять!", callback_data=f"duel_accept_{duel_id_d}"
+                    ),
+                    btn(
+                        "❌ Отклонить", callback_data=f"duel_decline_{duel_id_d}"
+                    ),
+                ]
+            ]
+        )
+        challenge_d = (
+            f"{_E_SWORDS} <b>{he(q.from_user.first_name)}</b> вызывает "
+            f"<b>{he(target_d.get('first_name', '?'))}</b> на дуэль!\n\n"
+            f"Ставка: <b>{stake_d}{coin_emoji()}</b>\n"
+            f"{display_skin(f['skin'], use_st_d)} vs {display_skin(target_d['skin'], use_st_td)}\n\n"
+            f"Принимаешь вызов?"
+        )
+        try:
+            await q.message.edit_text(
+                challenge_d,
+                parse_mode=ParseMode.HTML,
+                reply_markup=kb_d,
+                link_preview_options=LinkPreviewOptions(),
+            )
+        except Exception:
+            pass
+        try:
+            await ctx.bot.send_message(
+                target_uid_d,
+                f"{_E_SWORDS} <b>{he(q.from_user.first_name)}</b> вызывает тебя на дуэль!\n"
+                f"Ставка: <b>{stake_d}{coin_emoji()}</b>\n\n<i>Прими вызов в чате или нажми кнопку:</i>",
+                parse_mode=ParseMode.HTML,
+                reply_markup=kb_d,
+            )
+        except Exception:
+            pass
+        ctx.job_queue.run_once(
+            lambda c: asyncio.create_task(_expire_duel(duel_id_d)),
+            when=300,
+            name=f"duel_{duel_id_d}",
+        )
+        return
+    if d == "battle_search":
+        if not f["alive"]:
+            await q.answer("💀 Используй /revive", show_alert=True)
+            return
+        now = time.time()
+        cd = 5  # КД батла: 5 секунд
+        if now - f.get("last_battle", 0) < cd:
+            left = int(cd - (now - f.get("last_battle", 0)))
+            await q.answer(
+                f"⏳ Подожди ещё {left} сек перед следующим батлом",
+                show_alert=True,
+            )
+            return
+        rows = await db_top(20)
+        alive_others = [r for r in rows if r["user_id"] != uid and r["alive"]][:10]
+        if not alive_others:
+            await q.answer("Нет других игроков", show_alert=True)
+            return
+        my_power_s = round(f.get("power") or 0, 1)
+        kb_rows = []
+        for r in alive_others:
+            r_full = await db_get(r["user_id"])
+            if not r_full:
+                continue
+            r_power = round(r_full.get("power") or 0, 1)
+            name = r_full.get("frog_name") or f"Лягушка {r_full['first_name']}"
+            s = SKINS.get(r_full["skin"], SKINS["Brownie"])
+            label = f"{R_ICON[s['rarity']]} {name} — ⚡{r_power}"
+            kb_rows.append(
+                [
+                    btn(
+                        label,
+                        callback_data=f"battle_challenge_uid_{r_full['user_id']}_0",
+                    )
+                ]
+            )
+        kb_rows.append([btn("◀️ Назад", callback_data="menu_games")])
+        try:
+            await q.message.edit_text(
+                f"🥊 <b>Батл (кубики + Power)</b>\n\n"
+                f"Твой Power: {_E_BOLT}{my_power_s}\n\n"
+                f"Выбери соперника для батла:\n"
+                f"<i>(топ-10 активных игроков)</i>\n\n"
+                f"<i>Или напиши</i> <code>/battle @username [ставка]</code>",
+                parse_mode=ParseMode.HTML,
+                reply_markup=InlineKeyboardMarkup(kb_rows),
+            )
+        except Exception:
+            pass
+        return
+    if d.startswith("battle_challenge_uid_"):
+        # формат: battle_challenge_uid_<uid>_<stake>
+        parts_d = d.split("_")
+        target_uid = int(parts_d[3])
+        stake = int(parts_d[4]) if len(parts_d) > 4 else 0
+        if target_uid == uid:
+            await q.answer("Нельзя вызвать себя", show_alert=True)
+            return
+        if stake > 0 and f["coins"] < stake:
+            await q.answer((f"Нужно {stake}{coin_plain()}")[:200], show_alert=True)
+            return
+        target = await db_get(target_uid)
+        if not target:
+            await q.answer("Игрок не найден", show_alert=True)
+            return
+        if not target["alive"]:
+            await q.answer("Лягушка соперника мертва", show_alert=True)
+            return
+        now = time.time()
+        cd = 5  # КД батла: 5 секунд
+        if now - f.get("last_battle", 0) < cd:
+            left = int(cd - (now - f.get("last_battle", 0)))
+            await q.answer((f"⏳ Подожди ещё {left} сек")[:200], show_alert=True)
+            return
+        async with aiosqlite.connect(DB_PATH) as db:
+            await db.execute(
+                "INSERT INTO battles(challenger_id,target_id,stake,status,chat_id,created_at) VALUES(?,?,?,?,?,?)",
+                (uid, target_uid, stake, "pending", q.message.chat.id, now),
+            )
+            await db.commit()
+            async with db.execute("SELECT last_insert_rowid()") as c:
+                battle_id = (await c.fetchone())[0]
+
+        regen_hp(f)
+        regen_hp(target)
+        c_power_d = round(f.get("power") or 0, 1)
+        t_power_d = round(target.get("power") or 0, 1)
+        c_name = fname(f)
+        t_name = fname(target)
+        stake_txt = (
+            f"\nСтавка (опционально): <b>{stake}{coin_emoji()}</b>" if stake else ""
+        )
+
+        kb = InlineKeyboardMarkup(
+            [
+                [
+                    btn(
+                        "⚔️ Принять батл!", callback_data=f"battle_accept_{battle_id}"
+                    ),
+                    btn(
+                        "❌ Отказаться", callback_data=f"battle_decline_{battle_id}"
+                    ),
+                ]
+            ]
+        )
+        msg_text = (
+            f"{_E_SWORDS} <b>Батл: {he(q.from_user.first_name)} вызывает {he(target['first_name'])}!</b>{stake_txt}\n\n"
+            f"<tg-emoji emoji-id='5341367834935075028'>🐸</tg-emoji> {he(c_name)} — ⚡{c_power_d} Power\n"
+            f"<tg-emoji emoji-id='5341367834935075028'>🐸</tg-emoji> {he(t_name)} — ⚡{t_power_d} Power\n\n"
+            f"@{he(target.get('username') or target['first_name'])}, принимаешь вызов?"
+        )
+        try:
+            await q.message.edit_text(
+                msg_text,
+                parse_mode=ParseMode.HTML,
+                reply_markup=kb,
+                link_preview_options=LinkPreviewOptions(),
+            )
+        except (BadRequest, Forbidden):
+            pass
+        # Уведомляем цель в ЛС
+        try:
+            await ctx.bot.send_message(
+                target_uid,
+                f"{_E_SWORDS} <b>Батл: {he(q.from_user.first_name)} вызывает {he(target['first_name'])}!</b>{stake_txt}\n\n"
+                f"<tg-emoji emoji-id='5341367834935075028'>🐸</tg-emoji> {he(c_name)} — ⚡{c_power_d} Power\n"
+                f"<tg-emoji emoji-id='5341367834935075028'>🐸</tg-emoji> {he(t_name)} — ⚡{t_power_d} Power\n\n"
+                f"<i>Прими вызов в чате или нажми кнопку:</i>",
+                parse_mode=ParseMode.HTML,
+                reply_markup=kb,
+            )
+        except Exception:
+            pass
+        ctx.job_queue.run_once(
+            lambda c: asyncio.create_task(_expire_battle(battle_id)),
+            when=300,
+            name=f"battle_{battle_id}",
+        )
+        return
+    # ── ПОИСК ИГРОКА ДЛЯ БАТЛА ────────────────────
+    if d == "battle_search":
+        if not f["alive"]:
+            await q.answer("💀 Используй /revive", show_alert=True)
+            return
+        # КД батла
+        now = time.time()
+        cd = 5  # КД батла: 5 секунд
+        if now - f.get("last_battle", 0) < cd:
+            left = int(cd - (now - f.get("last_battle", 0)))
+            await q.answer(
+                f"⏳ До следующего батла: {left} сек",
+                show_alert=True,
+            )
+            return
+
+        my_power = round(f.get("power") or 0, 1)
+
+        rows = await db_top(20)
+        alive_others = [r for r in rows if r["user_id"] != uid and r["alive"]][:10]
+        if not alive_others:
+            await q.answer("Нет других игроков", show_alert=True)
+            return
+
+        kb_rows = []
+        for r in alive_others:
+            r_power = round(r.get("power") or 0, 1)
+            name = r["frog_name"] if r["frog_name"] else f"Лягушка {r['first_name']}"
+            s = SKINS.get(r["skin"], SKINS["Brownie"])
+            label = f"{R_ICON[s['rarity']]} {name} — ⚡{r_power}"
+            kb_rows.append(
+                [
+                    btn(
+                        label, callback_data=f"battle_challenge_uid_{r['user_id']}_0"
+                    )
+                ]
+            )
+        kb_rows.append([btn("◀️ Назад", callback_data="menu_games")])
+
+        try:
+            await q.message.edit_text(
+                f"🥊 <b>Батл (кубики + Power)</b> {f['coins']}{coin_emoji()}\n\n"
+                f"Твой Power: {_E_BOLT}{my_power}\n\n"
+                f"Выбери соперника:\n<i>(топ-10 активных игроков)</i>",
+                parse_mode=ParseMode.HTML,
+                reply_markup=InlineKeyboardMarkup(kb_rows),
+            )
+        except Exception:
+            pass
+        return
+    if d.startswith("battle_challenge_uid_"):
+        # формат: battle_challenge_uid_<uid>_<stake>
+        parts_b = d.split("_")
+        target_uid_b = int(parts_b[3])
+        stake_b = int(parts_b[4]) if len(parts_b) > 4 else 0
+        if target_uid_b == uid:
+            await q.answer("Нельзя вызвать себя", show_alert=True)
+            return
+        if stake_b > 0 and f["coins"] < stake_b:
+            await q.answer((f"Нужно {stake_b}{coin_plain()}")[:200], show_alert=True)
+            return
+
+        now = time.time()
+        cd = 5  # КД батла: 5 секунд
+        if now - f.get("last_battle", 0) < cd:
+            left = int(cd - (now - f.get("last_battle", 0)))
+            await q.answer((f"⏳ Подожди {left} сек")[:200], show_alert=True)
+            return
+
+        target_b = await db_get(target_uid_b)
+        if not target_b:
+            await q.answer("Игрок не найден", show_alert=True)
+            return
+        if not target_b["alive"]:
+            await q.answer("Лягушка соперника мертва", show_alert=True)
+            return
+
+        c_power_b = round(f.get("power") or 0, 1)
+        t_power_b = round(target_b.get("power") or 0, 1)
+        c_name_b = f.get("frog_name") or f"Лягушка {q.from_user.first_name}"
+        t_name_b = target_b.get("frog_name") or f"Лягушка {target_b['first_name']}"
+        stake_line_b = (
+            f"\nСтавка (опционально): <b>{stake_b}{coin_emoji()}</b>" if stake_b else ""
+        )
+
+        async with aiosqlite.connect(DB_PATH) as db:
+            await db.execute(
+                "INSERT INTO battles(challenger_id,target_id,stake,status,chat_id,created_at) VALUES(?,?,?,?,?,?)",
+                (uid, target_uid_b, stake_b, "pending", q.message.chat.id, now),
+            )
+            await db.commit()
+            async with db.execute("SELECT last_insert_rowid()") as c_row:
+                battle_id_b = (await c_row.fetchone())[0]
+
+        kb_b = InlineKeyboardMarkup(
+            [
+                [
+                    btn(
+                        "⚔️ Принять батл!", callback_data=f"battle_accept_{battle_id_b}"
+                    ),
+                    btn(
+                        "❌ Отказаться", callback_data=f"battle_decline_{battle_id_b}"
+                    ),
+                ]
+            ]
+        )
+        t_username = target_b.get("username") or target_b["first_name"]
+        c_username = q.from_user.username or q.from_user.first_name
+        challenge_text = (
+            f"{_E_SWORDS} <b>Батл: @{he(c_username)} вызывает @{he(t_username)}!</b>\n\n"
+            f"<tg-emoji emoji-id='5341367834935075028'>🐸</tg-emoji> {he(c_name_b)} — ⚡{c_power_b} Power\n"
+            f"<tg-emoji emoji-id='5341367834935075028'>🐸</tg-emoji> {he(t_name_b)} — ⚡{t_power_b} Power"
+            f"{stake_line_b}\n\n"
+            f"@{he(t_username)}, принимаешь вызов?"
+        )
+        try:
+            await q.message.edit_text(
+                challenge_text,
+                parse_mode=ParseMode.HTML,
+                reply_markup=kb_b,
+            )
+        except (BadRequest, Forbidden):
+            pass
+        # Уведомляем соперника в ЛС
+        try:
+            await ctx.bot.send_message(
+                target_uid_b,
+                challenge_text + "",
+                parse_mode=ParseMode.HTML,
+                reply_markup=kb_b,
+            )
+        except Exception:
+            pass
+        ctx.job_queue.run_once(
+            lambda c: asyncio.create_task(_expire_battle(battle_id_b)),
+            when=300,
+            name=f"battle_{battle_id_b}",
+        )
+        return
+    # Ветка не нашлась — отдаём общему обработчику.
+    await on_callback(update, ctx)
+
+
+# ══════════════════════════════════════════════════════════════════════════════
+# 🛒  РОУТЕР МАГАЗИНА
+# ══════════════════════════════════════════════════════════════════════════════
+# Вынесено из on_callback. Регистрируется с pattern='^(shop_|buy_|market_|craft_|sub_|stars_)', поэтому
+# нажатие попадает сразу сюда, минуя чужие условия.
+async def shop_router(update: Update, ctx: ContextTypes.DEFAULT_TYPE):
+    _g = await cb_guard(update, ctx)
+    if _g is None:
+        return
+    q, uid, d, f = _g
+
+    if d == "market_main":
+        await q.answer()
+        listings = await market_get_listings(limit=10)
+        lines = ["🏪 <b>Болотный Рынок</b>\n\n<i>Покупай и продавай облики за КваКоины.</i>\n<i>Комиссия продавца — 10%.</i>\n"]
+        kb_rows_m = []
+        if listings:
+            for lot in listings[:8]:
+                s = SKINS.get(lot["skin"], {})
+                emoji_m = pemoji(lot["skin"])
+                rarity_m = R_ICON.get(s.get("rarity", "common"), "⚪")
+                seller_f = await db_get(lot["seller_id"])
+                seller_name = fname(seller_f) if seller_f else "?"
+                lines.append(f"{rarity_m} {emoji_m} <b>{lot['skin']}</b> — {lot['price']}🪙 от {he(seller_name)}")
+                kb_rows_m.append([btn(
+                    f"{emoji_m} {lot['skin']} — {lot['price']}🪙",
+                    callback_data=f"market_view_{lot['id']}",
+                )])
+        else:
+            lines.append("<i>Пока никто ничего не продаёт. Будь первым</i>")
+        kb_rows_m.append([
+            btn("📤 Продать облик", callback_data="market_sell_choose"),
+            btn("📋 Мои лоты", callback_data="market_my"),
+        ])
+        kb_rows_m.append([btn("◀️ Назад", callback_data="menu_shop")])
+        try:
+            await q.message.edit_text(
+                "\n".join(lines), parse_mode=ParseMode.HTML,
+                reply_markup=InlineKeyboardMarkup(kb_rows_m),
+            )
+        except Exception:
+            pass
+        return
+    if d.startswith("market_view_"):
+        await q.answer()
+        lid = int(d[len("market_view_"):])
+        listings_v = await market_get_listings(limit=100)
+        lot_v = next((l for l in listings_v if l["id"] == lid), None)
+        if not lot_v:
+            await q.answer("Лот уже куплен или снят", show_alert=True)
+            return
+        s_v = SKINS.get(lot_v["skin"], {})
+        seller_f_v = await db_get(lot_v["seller_id"])
+        seller_name_v = fname(seller_f_v) if seller_f_v else "?"
+        is_own = lot_v["seller_id"] == uid
+        kb_v = []
+        if is_own:
+            kb_v.append([btn("❌ Снять с продажи", callback_data=f"market_cancel_{lid}")])
+        else:
+            kb_v.append([btn(
+                f"💰 Купить за {lot_v['price']}🪙",
+                callback_data=f"market_confirm_{lid}",
+            )])
+        kb_v.append([btn("◀️ Рынок", callback_data="market_main")])
+        try:
+            await q.message.edit_text(
+                f"🏪 <b>Лот #{lid}</b>\n\n"
+                f"{pemoji(lot_v['skin'])} <b>{lot_v['skin']}</b>\n"
+                f"Редкость: {R_NAME.get(s_v.get('rarity','common'), '?')}\n"
+                f"Цена: <b>{lot_v['price']}{_E_COIN}</b>\n"
+                f"Продавец: <b>{he(seller_name_v)}</b>\n\n"
+                f"У тебя: <b>{f['coins']}{_E_COIN}</b>",
+                parse_mode=ParseMode.HTML,
+                reply_markup=InlineKeyboardMarkup(kb_v),
+            )
+        except Exception:
+            pass
+        return
+    if d.startswith("market_confirm_"):
+        await q.answer()
+        lid = int(d[len("market_confirm_"):])
+        lot_c = await market_buy(lid, uid)
+        if not lot_c:
+            await q.answer("😔 Облик уже купили — опередили", show_alert=True)
+            return
+        price_c = lot_c["price"]
+        if f["coins"] < price_c:
+            await q.answer((f"❌ Не хватает монет. Нужно {price_c}🪙, у тебя {f['coins']}🪙")[:200], show_alert=True)
+            # Откатываем — возвращаем статус active
+            async with aiosqlite.connect(DB_PATH) as _rdb:
+                await _rdb.execute("UPDATE market_listings SET status='active' WHERE id=?", (lid,))
+                await _rdb.commit()
+            return
+        # Списываем монеты у покупателя
+        f["coins"] -= price_c
+        await db_save(f)
+        # Начисляем продавцу (минус комиссия)
+        commission_c = max(1, int(price_c * MARKET_COMMISSION))
+        seller_payout = price_c - commission_c
+        seller_f_c = await db_get(lot_c["seller_id"])
+        if seller_f_c:
+            seller_f_c["coins"] += seller_payout
+            await db_save(seller_f_c)
+            try:
+                await ctx.bot.send_message(
+                    lot_c["seller_id"],
+                    f"🏪 <b>Твой облик куплен!</b>\n\n"
+                    f"{pemoji(lot_c['skin'])} <b>{lot_c['skin']}</b>\n"
+                    f"Выручка: <b>+{seller_payout}{_E_COIN}</b> (комиссия {commission_c}{_E_COIN})",
+                    parse_mode=ParseMode.HTML,
+                )
+            except Exception:
+                pass
+        # Выдаём облик покупателю
+        await db_add_skin(uid, lot_c["skin"])
+        try:
+            await q.message.edit_text(
+                f"✅ <b>Покупка совершена!</b>\n\n"
+                f"{pemoji(lot_c['skin'])} <b>{lot_c['skin']}</b> теперь твой!\n"
+                f"Потрачено: <b>{price_c}{_E_COIN}</b>\n"
+                f"Баланс: <b>{f['coins']}{_E_COIN}</b>",
+                parse_mode=ParseMode.HTML,
+                reply_markup=InlineKeyboardMarkup([[
+                    btn("🏪 На рынок", callback_data="market_main"),
+                ]]),
+            )
+        except Exception:
+            pass
+        return
+    if d.startswith("market_cancel_"):
+        lid = int(d[len("market_cancel_"):])
+        ok_c = await market_cancel(lid, uid)
+        if ok_c:
+            # Возвращаем облик продавцу
+            async with aiosqlite.connect(DB_PATH) as _cdb:
+                async with _cdb.execute("SELECT skin FROM market_listings WHERE id=?", (lid,)) as _cc:
+                    _crow = await _cc.fetchone()
+            if _crow:
+                await db_add_skin(uid, _crow[0])
+            await q.answer("✅ Лот снят с продажи, облик возвращён.", show_alert=True)
+        else:
+            await q.answer("Не удалось снять лот.", show_alert=True)
+        return
+    if d == "market_sell_choose":
+        await q.answer()
+        coll_m = await db_coll_qty(uid)
+        # Показываем только дубли (qty > 1) или облики которых нет на экипировке
+        equipped = f.get("skin", "")
+        sellable = [(skin, qty) for skin, qty in coll_m.items()
+                    if qty > 1 or (qty == 1 and skin != equipped)]
+        if not sellable:
+            await q.answer("Нет обликов для продажи. Нужен хотя бы один дубль", show_alert=True)
+            return
+        # Сортируем по редкости (редкие выше)
+        rarity_order = {"mythic": 0, "legendary": 1, "epic": 2, "rare": 3, "uncommon": 4, "common": 5, "secret": 0}
+        sellable.sort(key=lambda x: rarity_order.get(SKINS.get(x[0], {}).get("rarity", "common"), 5))
+        kb_sell = []
+        for skin_s, qty_s in sellable[:12]:
+            s_d = SKINS.get(skin_s, {})
+            kb_sell.append([btn(
+                f"{pemoji(skin_s)} {skin_s} ×{qty_s} ({R_NAME.get(s_d.get('rarity','common'), '?')})",
+                callback_data=f"market_set_price_{skin_s.replace(' ', '_')}",
+            )])
+        kb_sell.append([btn("◀️ Назад", callback_data="market_main")])
+        try:
+            await q.message.edit_text(
+                "📤 <b>Выбери облик для продажи</b>\n\n"
+                "<i>Выставляются дубли или неэкипированные облики.</i>",
+                parse_mode=ParseMode.HTML,
+                reply_markup=InlineKeyboardMarkup(kb_sell),
+            )
+        except Exception:
+            pass
+        return
+    if d.startswith("market_set_price_"):
+        skin_sp = d[len("market_set_price_"):].replace("_", " ")
+        if skin_sp not in SKINS:
+            await q.answer("Облик не найден.", show_alert=True)
+            return
+        ctx.user_data[f"market_sell_{uid}"] = {"skin": skin_sp, "msg_id": q.message.message_id}
+        await q.answer()
+        try:
+            await q.message.edit_text(
+                f"💰 <b>Продажа: {pemoji(skin_sp)} {skin_sp}</b>\n\n"
+                f"Напиши цену в монетах (от 10 до 50 000).\n"
+                f"Комиссия 10% при продаже.\n\n"
+                f"Твой баланс: <b>{f['coins']}{_E_COIN}</b>",
+                parse_mode=ParseMode.HTML,
+                reply_markup=InlineKeyboardMarkup([[
+                    btn("❌ Отмена", callback_data="market_main"),
+                ]]),
+            )
+        except Exception:
+            pass
+        return
+    if d == "market_my":
+        await q.answer()
+        my_lots = await market_my_listings(uid)
+        if not my_lots:
+            await q.answer("У тебя нет активных лотов.", show_alert=True)
+            return
+        lines_my = ["📋 <b>Мои активные лоты</b>\n"]
+        kb_my = []
+        for lot_m in my_lots:
+            lines_my.append(f"{pemoji(lot_m['skin'])} <b>{lot_m['skin']}</b> — {lot_m['price']}🪙")
+            kb_my.append([btn(
+                f"{_E_CROSS} Снять {lot_m['skin']}",
+                callback_data=f"market_cancel_{lot_m['id']}",
+            )])
+        kb_my.append([btn("◀️ Рынок", callback_data="market_main")])
+        try:
+            await q.message.edit_text(
+                "\n".join(lines_my), parse_mode=ParseMode.HTML,
+                reply_markup=InlineKeyboardMarkup(kb_my),
+            )
+        except Exception:
+            pass
+        return
+    # ── МАГАЗИН ЕДЫ ────────────────────────────────
+    if d == "shop_sub":
+        await q.answer()
+        now_sub = time.time()
+        sub_type_ss  = f.get("subscription_type", 0)
+        sub_until_ss = f.get("subscription_until", 0)
+        sub_auto_ss  = f.get("subscription_auto", 1)
+        active_ss          = sub_until_ss > now_sub and sub_type_ss > 0
+        trial_nanny        = f.get("trial_nanny_used", 0)
+        trial_worker       = f.get("trial_worker_used", 0)
+        nanny_trial_expired = trial_nanny and sub_until_ss <= now_sub
+
+        if active_ss:
+            until_ss = datetime.fromtimestamp(sub_until_ss, tz=timezone.utc).strftime("%d.%m.%Y")
+            icon_ss  = "🧑‍🍼 Болотная Няня" if sub_type_ss == 1 else "🏪 Трудяга"
+            auto_ss  = "✅ Авто-продление включено" if sub_auto_ss else "⏸ Авто-продление выключено"
+            status_ss = f"✅ <b>{icon_ss}</b> до <b>{until_ss}</b>"
+        else:
+            status_ss = "❌ Подписка не активна"
+
+        rows_ss = []
+        if active_ss:
+            toggle_ss = "⏸ Выключить авто-продление" if sub_auto_ss else "▶️ Включить авто-продление"
+            rows_ss.append([btn(toggle_ss, callback_data="sub_toggle_auto")])
+            if sub_type_ss == 1:
+                rows_ss.append([btn("🔼 Улучшить до Трудяги — 800⭐", callback_data="sub_buy_worker")])
+            rows_ss.append([btn("🔄 Продлить подписку", callback_data="sub_renew")])
+        else:
+            # Бесплатный пробник Трудяги — только после того как пробник Няни уже закончился
+            if not trial_nanny:
+                rows_ss.append([btn("🎁 3 дня Болотной Няни бесплатно", callback_data="sub_trial_nanny")])
+            elif nanny_trial_expired and not trial_worker:
+                rows_ss.append([btn("🎁 1 день Трудяги бесплатно", callback_data="sub_trial_worker")])
+            rows_ss.append([btn("🧑‍🍼 Болотная Няня — 200⭐/мес", callback_data="sub_buy_nanny")])
+            rows_ss.append([btn("🏪 Трудяга — 800⭐/мес", callback_data="sub_buy_worker")])
+
+        # Дневник рабочего дня (только для активной Трудяги)
+        workday_block_ss = ""
+        if active_ss and sub_type_ss >= 2:
+            phase_ss       = f.get("worker_phase", 0)
+            last_report_ss = f.get("last_worker_report", 0)
+            hour_msk_ss    = (datetime.utcnow().hour + 3) % 24
+            now_ss2        = time.time()
+            if phase_ss == 0 and last_report_ss > 0:
+                today_msk_ss = datetime.utcfromtimestamp(now_ss2 + 3*3600).strftime("%Y-%m-%d")
+                last_msk_ss  = datetime.utcfromtimestamp(last_report_ss + 3*3600).strftime("%Y-%m-%d")
+                last_dt_ss   = datetime.utcfromtimestamp(last_report_ss + 3*3600).strftime("%d.%m в %H:%M")
+                if today_msk_ss == last_msk_ss:
+                    next_ss = "Следующий выход — завтра в 07:00 МСК"
+                elif hour_msk_ss < 18:
+                    next_ss = "⚡ Выйдет при ближайшем запуске"
+                else:
+                    next_ss = "Выйдет сегодня вечером"
+                workday_block_ss = f"\n\n📅 Последний выход: {last_dt_ss}\n⏰ {next_ss}"
+
+        nanny_desc  = "🧑‍🍼 <b>Болотная Няня</b> — автоуход за лягушкой (кормит, моет, укладывает спать)"
+        worker_desc = (
+            "🏪 <b>Трудяга</b> — всё от Няни + лягушка каждый день ходит на работу\n"
+            "Профессии: торговка, IT-фрилансер, лекарь, художница, детектив, 🚀 космонавт\n"
+            f"Заработок: <b>400–700🪙</b>/день обычно, до <b>2 000🪙</b> если выпадет Космонавт\n"
+            f"<i>Пример: {he(f.get('frog_name') or 'Квакуся')} вышла на рынок в туман, нашла грибную поляну и продала урожай втридорога. Итог: +520🪙</i>"
+        )
+        trial_note  = ""
+        if not trial_nanny:
+            trial_note = "\n\n🎁 <i>Тебе доступен бесплатный пробник — попробуй прежде чем платить</i>"
+        elif nanny_trial_expired and not trial_worker:
+            trial_note = "\n\n🎁 <i>Пробник Няни закончился — можешь бесплатно попробовать 1 день Трудяги</i>"
+
+        rows_ss.append([btn("◀️ Назад", callback_data="menu_shop")])
+        try:
+            await q.message.edit_text(
+                f"🐸 <b>Подписки</b>\n\n"
+                f"{nanny_desc}\n"
+                f"{worker_desc}\n\n"
+                f"Статус: {status_ss}"
+                f"{workday_block_ss}"
+                f"{trial_note}",
+                parse_mode=ParseMode.HTML,
+                reply_markup=InlineKeyboardMarkup(rows_ss),
+            )
+        except Exception:
+            pass
+        return
+    if d == "shop_food":
+        await q.answer()
+        inv = await inv_get(uid)
+        rows = []
+
+        # Заголовок — одна строка, баланс справа
+        header = (
+            f"<b>Магазин еды</b> · {f['coins']} {coin_emoji()}\n"
+            f"<i>🪰 Муха бесплатна 1 раз в день. Остальная еда покупается здесь.</i>\n"
+        )
+
+        item_lines = []
+        for fid, food in FOOD.items():
+            if fid == "fly":
+                continue
+            qty = inv.get(fid, 0)
+            in_stock = f"  (в запасе: {qty})" if qty > 0 else ""
+            # Компактная строка: emoji имя — цена — эффекты
+            effects = []
+            if food["hunger"]: effects.append(f"🍖+{food['hunger']}")
+            if food["happy"]:  effects.append(f"😄+{food['happy']}")
+            if food["health"]: effects.append(f"❤️+{food['health']}")
+            effects_str = "  ".join(effects)
+            item_lines.append(
+                f"{food['emoji']} <b>{food['name']}</b> — {food['price']} {coin_emoji()}{in_stock}\n"
+                f"   {effects_str} · <i>{food['desc']}</i>"
+            )
+            rows.append([
+                btn(
+                    f"Купить ×1 {food['emoji']} {food['name']} ({food['price']}🪙)",
+                    callback_data=f"buy_food_{fid}",
+                ),
+                btn(
+                    f"×10 ({food['price']*10}🪙)",
+                    callback_data=f"buy_food_bulk_{fid}_10",
+                ),
+            ])
+
+        rows.append([btn("◀️ Назад", callback_data="menu_shop")])
+        text = header + "\n" + "\n\n".join(item_lines)
+        try:
+            await q.message.edit_text(
+                text,
+                parse_mode=ParseMode.HTML,
+                reply_markup=InlineKeyboardMarkup(rows),
+            )
+        except Exception:
+            pass
+        return
+    # ── Магазин еды из столовой (кнопка Назад → canteen_menu) ──────────────
+    if d == "shop_food_canteen":
+        await q.answer()
+        inv = await inv_get(uid)
+        rows = []
+        header = (
+            f"<b>Магазин еды</b> · {f['coins']} {coin_emoji()}\n"
+            f"<i>🪰 Муха бесплатна 1 раз в день. Остальная еда покупается здесь.</i>\n"
+        )
+        item_lines = []
+        for fid, food in FOOD.items():
+            if fid == "fly":
+                continue
+            qty = inv.get(fid, 0)
+            in_stock = f"  (в запасе: {qty})" if qty > 0 else ""
+            effects = []
+            if food["hunger"]: effects.append(f"🍖+{food['hunger']}")
+            if food["happy"]:  effects.append(f"😄+{food['happy']}")
+            if food["health"]: effects.append(f"❤️+{food['health']}")
+            effects_str = "  ".join(effects)
+            item_lines.append(
+                f"{food['emoji']} <b>{food['name']}</b> — {food['price']} {coin_emoji()}{in_stock}\n"
+                f"   {effects_str} · <i>{food['desc']}</i>"
+            )
+            rows.append([
+                btn(
+                    f"Купить ×1 {food['emoji']} {food['name']} ({food['price']}🪙)",
+                    callback_data=f"buy_food_{fid}",
+                ),
+                btn(
+                    f"×10 ({food['price']*10}🪙)",
+                    callback_data=f"buy_food_bulk_{fid}_10",
+                ),
+            ])
+        rows.append([btn("◀️ Назад в столовую", callback_data="canteen_menu")])
+        text = header + "\n" + "\n\n".join(item_lines)
+        try:
+            await q.message.edit_text(
+                text,
+                parse_mode=ParseMode.HTML,
+                reply_markup=InlineKeyboardMarkup(rows),
+            )
+        except Exception:
+            pass
+        return
+    # ── КУПИТЬ ЕДУ (BULK +10 с подтверждением) ─────
+    if d.startswith("buy_food_bulk_"):
+        parts_bulk = d[14:].rsplit("_", 1)
+        fid_bulk = parts_bulk[0]
+        qty_bulk = int(parts_bulk[1]) if len(parts_bulk) > 1 else 10
+        food_bulk = FOOD.get(fid_bulk)
+        if not food_bulk:
+            await q.answer("Неизвестный товар", show_alert=True)
+            return
+        total_cost = food_bulk["price"] * qty_bulk
+        if f["coins"] < total_cost:
+            await q.answer(
+                f"Нужно {total_cost} 🪙 (у тебя {f['coins']} 🪙)!",
+                show_alert=True,
+            )
+            return
+        # Показываем подтверждение
+        kb_conf = InlineKeyboardMarkup(
+            [
+                [
+                    btn(
+                        f"✅ Купить ×{qty_bulk} за {total_cost}🪙",
+                        callback_data=f"buy_food_confirm_{fid_bulk}_{qty_bulk}",
+                    ),
+                ],
+                [btn("◀️ Отмена", callback_data="shop_food")],
+            ]
+        )
+        try:
+            await q.message.edit_text(
+                f"{_E_SHOP} <b>Подтверждение покупки</b>\n\n"
+                f"{food_bulk['emoji']} <b>{he(food_bulk['name'])}</b> ×{qty_bulk}\n"
+                f"Стоимость: <b>{total_cost}{coin_emoji()}</b>\n"
+                f"💼 У тебя: {f['coins']}{coin_emoji()}\n\n"
+                f"Подтвердить?",
+                parse_mode=ParseMode.HTML,
+                reply_markup=kb_conf,
+            )
+        except Exception:
+            pass
+        return
+    if d.startswith("buy_food_confirm_"):
+        parts_conf = d[17:].rsplit("_", 1)
+        fid_conf = parts_conf[0]
+        qty_conf = int(parts_conf[1]) if len(parts_conf) > 1 else 10
+        food_conf = FOOD.get(fid_conf)
+        if not food_conf:
+            await q.answer("Неизвестный товар", show_alert=True)
+            return
+        # Жадная -10% к стоимости еды
+        _pers_gr2 = PERSONALITIES.get(f.get("personality", ""), {})
+        _price_disc2 = _pers_gr2.get("feed_cost_discount", 1.0)
+        total_conf = max(qty_conf, int(food_conf["price"] * qty_conf * _price_disc2))
+        if f["coins"] < total_conf:
+            await q.answer((f"Нужно {total_conf}{coin_plain()}")[:200], show_alert=True)
+            return
+        f["coins"] -= total_conf
+        f["coins_spent"] = f.get("coins_spent", 0) + total_conf
+        await inv_add(uid, fid_conf, qty_conf)
+        await db_save(f)
+        await check_referral_stages(f, ctx.bot)
+        await q.answer(
+            f"✅ Куплено: {food_conf['emoji']} ×{qty_conf}! Осталось {f['coins']}{coin_plain()}"
+        )
+        # Возвращаем в магазин еды
+        inv = await inv_get(uid)
+        lines = [f"🍽 <b>Магазин еды</b> {f['coins']}{coin_emoji()}\n"]
+        rows = []
+        for fid2, food2 in FOOD.items():
+            if fid2 == "fly":
+                continue
+            qty2 = inv.get(fid2, 0)
+            lines.append(
+                f"{food2['emoji']} <b>{food2['name']}</b> — {food2['price']}{coin_emoji()} ×{qty2}\n"
+                f"   🍖+{food2['hunger']} 😄+{food2['happy']} ❤️+{food2['health']} {_E_XP}+{food2['xp']}\n"
+                f"   <i>{food2['desc']}</i>\n"
+            )
+            rows.append(
+                [
+                    btn(
+                        f"Купить {food2['emoji']} ×1 ({food2['price']}🪙)",
+                        callback_data=f"buy_food_{fid2}",
+                    ),
+                    btn(
+                        f"×10 ({food2['price']*10}🪙)",
+                        callback_data=f"buy_food_bulk_{fid2}_10",
+                    ),
+                ]
+            )
+        rows.append([btn("◀️ Назад", callback_data="menu_shop")])
+        try:
+            await q.message.edit_text(
+                "\n".join(lines),
+                parse_mode=ParseMode.HTML,
+                reply_markup=InlineKeyboardMarkup(rows),
+            )
+        except Exception:
+            pass
+        return
+    # ── КУПИТЬ ЕДУ ─────────────────────────────────
+    if d.startswith("buy_food_"):
+        fid = d[9:]
+        food = FOOD.get(fid)
+        if not food:
+            await q.answer("Неизвестный товар", show_alert=True)
+            return
+        # Жадная -10% к стоимости еды
+        _pers_gr = PERSONALITIES.get(f.get("personality", ""), {})
+        _food_price = max(1, int(food["price"] * _pers_gr.get("feed_cost_discount", 1.0)))
+        if f["coins"] < _food_price:
+            await q.answer((f"Нужно {_food_price}{coin_plain()}")[:200], show_alert=True)
+            return
+        f["coins"] -= _food_price
+        f["coins_spent"] = f.get("coins_spent", 0) + _food_price
+        await inv_add(uid, fid)
+        await db_save(f)
+        await check_referral_stages(f, ctx.bot)
+        await q.answer(
+            f"✅ Куплено: {food['emoji']} {food['name']}! Осталось {f['coins']}{coin_plain()}"
+        )
+        # Обновить страницу магазина
+        inv = await inv_get(uid)
+        lines = [f"🍽 <b>Магазин еды</b> {f['coins']}{coin_emoji()}\n"]
+        rows = []
+        for fid2, food2 in FOOD.items():
+            if fid2 == "fly":
+                continue
+            qty = inv.get(fid2, 0)
+            lines.append(
+                f"{food2['emoji']} <b>{food2['name']}</b> — {food2['price']}{coin_emoji()} ×{qty}\n"
+                f"   🍖+{food2['hunger']} 😄+{food2['happy']} ❤️+{food2['health']} {_E_XP}+{food2['xp']}\n"
+                f"   <i>{food2['desc']}</i>\n"
+            )
+            rows.append(
+                [
+                    btn(
+                        f"Купить {food2['emoji']} ×1 ({food2['price']}🪙)",
+                        callback_data=f"buy_food_{fid2}",
+                    ),
+                    btn(
+                        f"×10 ({food2['price']*10}🪙)",
+                        callback_data=f"buy_food_bulk_{fid2}_10",
+                    ),
+                ]
+            )
+        rows.append([btn("◀️ Назад", callback_data="menu_shop")])
+        try:
+            await q.message.edit_text(
+                "\n".join(lines),
+                parse_mode=ParseMode.HTML,
+                reply_markup=InlineKeyboardMarkup(rows),
+            )
+        except Exception:
+            pass
+        return
+    # ── МАГАЗИН ОБЛИКОВ ────────────────────────────
+    if d.startswith("shop_skins_"):
+        await q.answer()
+        page = int(d.split("_")[2])
+        buyable = [
+            (k, v) for k, v in SKINS.items() if v["rarity"] in ("common", "uncommon")
+        ]
+        per = 6
+        total = math.ceil(len(buyable) / per)
+        chunk = buyable[page * per : (page + 1) * per]
+        coll = await db_coll(uid)
+        use_st = bool(f.get("use_static", 0))
+        lines = [
+            f"👗 <b>Магазин обликов</b> {f['coins']}{coin_emoji()}\n<i>(только обычные и необычные)</i>\n"
+        ]
+        rows = []
+        for sk, sv in chunk:
+            price = SHOP_SKIN_PRICES[sv["rarity"]]
+            owned = "✅" if sk in coll else f"{price}{coin_emoji()}"
+            lines.append(f"{R_ICON[sv['rarity']]} {display_skin(sk, use_st)} — {owned}")
+            if sk not in coll:
+                rows.append(
+                    [
+                        skin_btn(
+                            f"Купить {sk} ({price}{coin_plain()})",
+                            sk,
+                            f"buy_skin_{sk}",
+                        )
+                    ]
+                )
+        nav = []
+        if page > 0:
+            nav.append(btn("◀", callback_data=f"shop_skins_{page-1}"))
+        if page < total - 1:
+            nav.append(btn("▶", callback_data=f"shop_skins_{page+1}"))
+        if nav:
+            rows.append(nav)
+        rows.append([
+            btn("💎 Купить Stars и TON за рубли", url="https://t.me/FrogsStar_bot"),
+        ])
+        rows.append([btn("◀️ Назад", callback_data="menu_shop")])
+        try:
+            await q.message.edit_text(
+                "\n".join(lines),
+                parse_mode=ParseMode.HTML,
+                reply_markup=InlineKeyboardMarkup(rows),
+                link_preview_options=LinkPreviewOptions(),
+            )
+        except Exception:
+            pass
+        return
+    # ── КУПИТЬ ОБЛИК ───────────────────────────────
+    if d.startswith("buy_skin_"):
+        skin = d[9:]
+        if skin not in SKINS:
+            await q.answer("Неизвестный облик", show_alert=True)
+            return
+        s = SKINS[skin]
+        if s["rarity"] not in ("common", "uncommon"):
+            await q.answer("Этот облик можно только выбить в гаче", show_alert=True)
+            return
+        coll = await db_coll(uid)
+        if skin in coll:
+            await q.answer("Уже есть в коллекции", show_alert=True)
+            return
+        price = SHOP_SKIN_PRICES[s["rarity"]]
+        if f["coins"] < price:
+            await q.answer((f"Нужно {price}{coin_plain()}")[:200], show_alert=True)
+            return
+        f["coins"] -= price
+        f["coins_spent"] = f.get("coins_spent", 0) + price
+        await db_add_skin(uid, skin)
+        await db_save(f)
+        await q.answer(f"✅ Куплен {skin}! -{price}{coin_plain()}")
+        await show_status(q, f, edit=True)
+        return
+    # ── МЕНЮ КРАФТА ────────────────────────────────
+    if d == "craft_menu":
+        await q.answer()
+        coll_qty = await db_coll_qty(uid)
+        counts = {}
+        for sk, qty in coll_qty.items():
+            r = SKINS.get(sk, {}).get("rarity", "common") if sk != MYTHIC_SHARD_KEY else MYTHIC_SHARD_KEY
+            counts[r] = counts.get(r, 0) + qty
+        shard_count = coll_qty.get(MYTHIC_SHARD_KEY, 0)
+
+        lines = [
+            "🔨 <b>Крафт обликов</b>\n\n"
+            "<i>Комбинируй облики одной редкости → получи более редкий</i>\n"
+        ]
+        rows = []
+        for rar, recipe in CRAFT_RECIPES.items():
+            if recipe.get("special") == "mythic_shard":
+                have = counts.get(rar, 0)
+                ready_lbl = "✅" if have >= recipe["needs"] else f"({have}/{recipe['needs']})"
+                lines.append(
+                    f"{R_ICON[rar]} {R_NAME[rar]} ×{recipe['needs']} → 🔮 Осколок Мифика {ready_lbl}"
+                )
+                if have >= recipe["needs"]:
+                    rows.append([btn(
+                        f"{_E_HAMMER} Скрафтить Осколок ({have}/{recipe['needs']} легенд)",
+                        callback_data=f"craft_{rar}",
+                    )])
+            else:
+                have = counts.get(rar, 0)
+                result_rar = recipe["result_rarity"]
+                chance_txt = f" (шанс {int(recipe['chance']*100)}%)" if "chance" in recipe else ""
+                ready_lbl = "✅" if have >= recipe["needs"] else f"({have}/{recipe['needs']})"
+                lines.append(
+                    f"{R_ICON[rar]} {R_NAME[rar]} ×{recipe['needs']} → "
+                    f"{R_ICON[result_rar]} {R_NAME[result_rar]}{chance_txt} {ready_lbl}"
+                )
+                if have >= recipe["needs"]:
+                    rows.append([btn(
+                        f"{_E_HAMMER} Крафтить из {R_NAME[rar]}",
+                        callback_data=f"craft_{rar}",
+                    )])
+
+        # Кнопка сборки мифика из осколков
+        lines.append(f"\n🔮 <b>Осколки Мифика:</b> {shard_count}/{MYTHIC_SHARDS_NEEDED}")
+        if shard_count >= MYTHIC_SHARDS_NEEDED:
+            lines.append("<i>✅ Достаточно для сборки мифического облика</i>")
+            rows.append([btn(
+                f"🔮 Собрать Мифический облик ({shard_count}/{MYTHIC_SHARDS_NEEDED} осколков)",
+                callback_data="craft_assemble_mythic",
+            )])
+        else:
+            lines.append(f"<i>Собери ещё {MYTHIC_SHARDS_NEEDED - shard_count} осколков из легендарных обликов</i>")
+
+        # Кнопка «Скрафтить всё» — если есть хотя бы один готовый рецепт
+        can_craft_any = any(
+            counts.get(rar, 0) >= recipe["needs"]
+            for rar, recipe in CRAFT_RECIPES.items()
+        ) or shard_count >= MYTHIC_SHARDS_NEEDED
+        if can_craft_any and f.get("coins", 0) >= 1000:
+            rows.insert(0, [btn(
+                "⚡ Скрафтить всё (1 000🪙)",
+                callback_data="craft_all",
+            )])
+
+        rows.append([btn("◀️ Назад", callback_data="menu_shop")])
+        try:
+            await q.message.edit_text(
+                "\n".join(lines),
+                parse_mode=ParseMode.HTML,
+                reply_markup=InlineKeyboardMarkup(rows),
+            )
+        except Exception:
+            pass
+        return
+    # ── СКРАФТИТЬ ВСЁ ─────────────────────────────────────────────────────────
+    if d == "craft_all":
+        CRAFT_ALL_COST = 1000
+        if f.get("coins", 0) < CRAFT_ALL_COST:
+            await q.answer((f"Нужно {CRAFT_ALL_COST}🪙 для «Скрафтить всё»")[:200], show_alert=True)
+            return
+
+        # ── Загружаем коллекцию один раз ──────────────────────────────────
+        coll_qty = await db_coll_qty(uid)
+        # Работаем с копией в памяти — никаких промежуточных DB-запросов
+        inventory: dict[str, int] = {k: v for k, v in coll_qty.items()}
+
+        crafted_results: list[str] = []
+        to_remove: list[str] = []   # облики к списанию
+        to_add: list[str] = []      # облики к добавлению
+        total_xp = 0
+
+        # ── Крафтим в памяти до упора ─────────────────────────────────────
+        # Максимум 500 операций — защита от теоретически бесконечного цикла
+        # (на практике ограничено количеством обликов в коллекции)
+        safety = 500
+        changed = True
+        while changed and safety > 0:
+            changed = False
+            for rar, recipe in CRAFT_RECIPES.items():
+                needs = recipe["needs"]
+                if rar == MYTHIC_SHARD_KEY:
+                    # Особый рецепт — только осколки
+                    have = inventory.get(MYTHIC_SHARD_KEY, 0)
+                else:
+                    # Считаем сколько обликов нужной редкости есть в инвентаре
+                    available = [
+                        (sk, qty) for sk, qty in inventory.items()
+                        if SKINS.get(sk, {}).get("rarity") == rar
+                        and sk != MYTHIC_SHARD_KEY
+                        and qty > 0
+                    ]
+                    have = sum(qty for _, qty in available)
+
+                if have < needs:
+                    continue
+
+                # ── Списываем материалы из памяти ─────────────────────────
+                rem = needs
+                for sk, qty in sorted(
+                    [(sk, qty) for sk, qty in inventory.items()
+                     if SKINS.get(sk, {}).get("rarity") == rar and sk != MYTHIC_SHARD_KEY],
+                    key=lambda x: (-x[1], x[0])
+                ):
+                    if rem <= 0: break
+                    take = min(qty, rem)
+                    inventory[sk] = inventory.get(sk, 0) - take
+                    to_remove.extend([sk] * take)
+                    if inventory[sk] <= 0:
+                        del inventory[sk]
+                    rem -= take
+
+                # ── Производим крафт ──────────────────────────────────────
+                if recipe.get("special") == "mythic_shard":
+                    inventory[MYTHIC_SHARD_KEY] = inventory.get(MYTHIC_SHARD_KEY, 0) + 1
+                    to_add.append(MYTHIC_SHARD_KEY)
+                    crafted_results.append("🔮 Осколок Мифика")
+                    total_xp += 100
+                else:
+                    chance = recipe.get("chance", 1.0)
+                    if random.random() < chance:
+                        result_skin = roll(rarity_filter=recipe["result_rarity"])
+                        inventory[result_skin] = inventory.get(result_skin, 0) + 1
+                        to_add.append(result_skin)
+                        crafted_results.append(f"{R_ICON[recipe['result_rarity']]} {result_skin}")
+                        total_xp += 50
+                    else:
+                        crafted_results.append(f"💨 Провал из {R_NAME[rar]}")
+                        total_xp += 10
+
+                changed = True
+                safety -= 1
+                break  # перезапускаем цикл чтобы учесть новые материалы
+
+        if not crafted_results:
+            await q.answer("Нет доступных рецептов", show_alert=True)
+            return
+
+        # ── Один батч в БД для всех изменений ─────────────────────────────
+        await db_remove_skins_batch(uid, to_remove)
+        await db_add_skins_batch(uid, to_add)
+
+        # Проверяем не пропал ли текущий облик
+        if f["skin"] in to_remove:
+            new_coll = await db_coll_qty(uid)
+            if new_coll.get(f["skin"], 0) == 0:
+                f["skin"] = "Brownie"
+
+        f["coins"] -= CRAFT_ALL_COST
+        f["coins_spent"] = f.get("coins_spent", 0) + CRAFT_ALL_COST
+        f["total_crafts"] = f.get("total_crafts", 0) + len(crafted_results)
+        add_xp(f, total_xp)
+        rewards = await levelup(f, ctx.bot)
+        await db_save(f)
+        await ach_grant(uid, "crafter", ctx.bot)
+
+        n_ops = len(crafted_results)
+        results_text = "\n".join(f"• {r}" for r in crafted_results[:20])
+        if n_ops > 20:
+            results_text += f"\n<i>...и ещё {n_ops - 20} операций</i>"
+        text = (
+            f"⚡ <b>Скрафтить всё — готово!</b>\n\n"
+            f"Операций: <b>{n_ops}</b>\n"
+            f"{results_text}\n\n"
+            f"{_E_XP} +{total_xp} XP 💸 -{CRAFT_ALL_COST}🪙"
+        )
+        for lvl, rskin in rewards:
+            text += f"\n🎉 <b>Уровень {lvl}!</b> Облик: {display_skin(rskin)}"
+        kb = InlineKeyboardMarkup([
+            [btn("🔨 Крафт", callback_data="craft_menu")],
+            [btn("◀️ Главное меню", callback_data="refresh")],
+        ])
+        try:
+            await q.message.edit_text(text, parse_mode=ParseMode.HTML, reply_markup=kb,
+                                      link_preview_options=LinkPreviewOptions(is_disabled=True))
+        except Exception:
+            try: await q.message.reply_text(text, parse_mode=ParseMode.HTML, reply_markup=kb)
+            except Exception: pass
+        await q.answer()
+        return
+    # ── КРАФТ ──────────────────────────────────────
+    if d.startswith("craft_") and d != "craft_assemble_mythic":
+        rar = d[6:]
+        if rar not in CRAFT_RECIPES:
+            await q.answer("Неизвестный рецепт", show_alert=True)
+            return
+        recipe = CRAFT_RECIPES[rar]
+        coll_qty = await db_coll_qty(uid)
+        owned_by_rarity = [
+            (sk, qty)
+            for sk, qty in coll_qty.items()
+            if SKINS.get(sk, {}).get("rarity") == rar
+        ]
+        total_available = sum(qty for _, qty in owned_by_rarity)
+        if total_available < recipe["needs"]:
+            await q.answer((f"Нужно {recipe['needs']} обликов {R_NAME[rar]}")[:200], show_alert=True)
+            return
+        extra = recipe.get("price_coins", 0)
+        if extra and f["coins"] < extra:
+            await q.answer((f"Нужно {extra}{coin_plain()}")[:200], show_alert=True)
+            return
+
+        # Списываем материалы
+        to_remove = []
+        needed = recipe["needs"]
+        sorted_owned = sorted(owned_by_rarity, key=lambda x: (-x[1], x[0]))
+        for sk, qty in sorted_owned:
+            if needed <= 0:
+                break
+            take = min(qty, needed)
+            for _ in range(take):
+                to_remove.append(sk)
+            needed -= take
+        for sk in to_remove:
+            await db_remove_skin(uid, sk)
+            if f["skin"] == sk:
+                remaining = await db_coll_qty(uid)
+                if remaining.get(sk, 0) == 0:
+                    f["skin"] = "Brownie"
+        if extra:
+            f["coins"] -= extra
+            f["coins_spent"] = f.get("coins_spent", 0) + extra
+
+        from collections import Counter
+        removed_display = ", ".join(
+            f"{sk}×{n}" if n > 1 else sk for sk, n in Counter(to_remove).items()
+        )
+        use_st = bool(f.get("use_static", 0))
+
+        # ── Специальный рецепт: legendary → осколок мифика ─────────────────
+        if recipe.get("special") == "mythic_shard":
+            await db_add_skin(uid, MYTHIC_SHARD_KEY)
+            shard_now = (await db_coll_qty(uid)).get(MYTHIC_SHARD_KEY, 0)
+            add_xp(f, 100)
+            rewards = await levelup(f, ctx.bot)
+            f["total_crafts"] = f.get("total_crafts", 0) + 1
+            await db_save(f)
+            await ach_grant(uid, "crafter", ctx.bot)
+            text = (
+                f"{_E_HAMMER} <b>Крафт завершён!</b>\n\n"
+                f"Использовано: <i>{removed_display}</i>\n\n"
+                f"🔮 Получен: <b>Осколок Мифика</b>\n"
+                f"Осколков в инвентаре: <b>{shard_now}/{MYTHIC_SHARDS_NEEDED}</b>\n"
+                f"{_E_XP} +100 XP\n\n"
+                + (f"<i>✅ Достаточно для сборки! Жми «Собрать Мифический»</i>"
+                   if shard_now >= MYTHIC_SHARDS_NEEDED
+                   else f"<i>Ещё {MYTHIC_SHARDS_NEEDED - shard_now} осколков до мифического облика</i>")
+            )
+            for lvl, rskin in rewards:
+                text += f"\n🎉 <b>Уровень {lvl}!</b> Облик: {display_skin(rskin, use_st)}"
+            kb = InlineKeyboardMarkup([
+                [btn("🔨 Крафтить ещё", callback_data="craft_menu")],
+                [btn("◀️ Назад", callback_data="refresh")],
+            ])
+            if shard_now >= MYTHIC_SHARDS_NEEDED:
+                kb = InlineKeyboardMarkup([
+                    [btn("🔮 Собрать Мифический", callback_data="craft_assemble_mythic")],
+                    [btn("🔨 Крафтить ещё", callback_data="craft_menu")],
+                ])
+            try:
+                await q.message.edit_text(text, parse_mode=ParseMode.HTML, reply_markup=kb,
+                                          link_preview_options=LinkPreviewOptions(is_disabled=True))
+            except Exception:
+                try: await q.message.reply_text(text, parse_mode=ParseMode.HTML, reply_markup=kb)
+                except Exception: pass
+            return
+
+        # ── Обычный крафт с возможным шансом ───────────────────────────────
+        chance = recipe.get("chance", 1.0)
+        success = random.random() < chance
+
+        if not success:
+            # Провал — материалы уже списаны, просто сообщаем
+            add_xp(f, 10)
+            await db_save(f)
+            fail_text = recipe.get("fail_text", "💨 Крафт не удался... Материалы потеряны.")
+            chance_pct = int(chance * 100)
+            text = (
+                f"{_E_HAMMER} <b>Крафт</b> — неудача ({chance_pct}% шанс)\n\n"
+                f"Использовано: <i>{removed_display}</i>\n\n"
+                f"{fail_text}"
+            )
+            kb = InlineKeyboardMarkup([
+                [btn("🔨 Попробовать снова", callback_data=f"craft_{rar}")],
+                [btn("◀️ Назад", callback_data="craft_menu")],
+            ])
+            try:
+                await q.message.edit_text(text, parse_mode=ParseMode.HTML, reply_markup=kb,
+                                          link_preview_options=LinkPreviewOptions(is_disabled=True))
+            except Exception:
+                try: await q.message.reply_text(text, parse_mode=ParseMode.HTML, reply_markup=kb)
+                except Exception: pass
+            return
+
+        # Успех
+        result_skin = roll(rarity_filter=recipe["result_rarity"])
+        await db_add_skin(uid, result_skin)
+        add_xp(f, 50)
+        rewards = await levelup(f, ctx.bot)
+        f["total_crafts"] = f.get("total_crafts", 0) + 1
+        await db_save(f)
+        await ach_grant(uid, "crafter", ctx.bot)
+
+        chance_note = f" (шанс {int(chance*100)}% — повезло! 🍀)" if chance < 1.0 else ""
+        rs = SKINS[result_skin]
+        text = (
+            f"{_E_HAMMER} <b>Крафт завершён!</b>{chance_note}\n\n"
+            f"Использовано: <i>{removed_display}</i>\n\n"
+            f"✨ Получен:\n"
+            f"{R_ICON[recipe['result_rarity']]} {display_skin(result_skin, use_st)}\n"
+            f"Редкость: <b>{R_NAME[recipe['result_rarity']]}</b>\n"
+            f"{_E_XP} +50 XP"
+        )
+        for lvl, rskin in rewards:
+            text += f"\n🎉 <b>Уровень {lvl}!</b> Облик: {display_skin(rskin, use_st)}"
+        kb = InlineKeyboardMarkup([
+            [btn(f"✅ Надеть {result_skin}", callback_data=f"equip_{result_skin}")],
+            [
+                btn("🔨 Крафтить ещё", callback_data="craft_menu"),
+                btn("◀️ Назад", callback_data="refresh"),
+            ],
+        ])
+        try:
+            await q.message.edit_text(text, parse_mode=ParseMode.HTML, reply_markup=kb,
+                                      link_preview_options=LinkPreviewOptions(is_disabled=True))
+        except Exception as e:
+            print(f"⚠️ craft edit error: {e}")
+            try:
+                await q.message.reply_text(text, parse_mode=ParseMode.HTML, reply_markup=kb,
+                                           link_preview_options=LinkPreviewOptions(is_disabled=True))
+            except Exception:
+                pass
+        return
+    # ── СБОРКА МИФИКА ИЗ ОСКОЛКОВ ──────────────────────────────────────────
+    if d == "craft_assemble_mythic":
+        coll_qty = await db_coll_qty(uid)
+        shard_count = coll_qty.get(MYTHIC_SHARD_KEY, 0)
+        if shard_count < MYTHIC_SHARDS_NEEDED:
+            await q.answer(
+                f"Нужно {MYTHIC_SHARDS_NEEDED} осколков! У тебя: {shard_count}",
+                show_alert=True,
+            )
+            return
+        await q.answer()
+
+        # Списываем 5 осколков
+        for _ in range(MYTHIC_SHARDS_NEEDED):
+            await db_remove_skin(uid, MYTHIC_SHARD_KEY)
+
+        # Берём случайный мифический облик (кроме award-only)
+        mythic_skins = [
+            sk for sk, s in SKINS.items()
+            if s.get("rarity") == "mythic" and not s.get("award") and sk != MYTHIC_SHARD_KEY
+        ]
+        if not mythic_skins:
+            mythic_skins = [sk for sk, s in SKINS.items() if s.get("rarity") == "mythic"]
+
+        result_skin = random.choice(mythic_skins)
+        await db_add_skin(uid, result_skin)
+        add_xp(f, 500)
+        rewards = await levelup(f, ctx.bot)
+        f["total_crafts"] = f.get("total_crafts", 0) + 1
+        await db_save(f)
+        await ach_grant(uid, "crafter", ctx.bot)
+        await ach_grant(uid, "mythic_owner", ctx.bot)
+
+        use_st = bool(f.get("use_static", 0))
+        text = (
+            f"🔮 <b>Мифический облик собран!</b>\n\n"
+            f"5 осколков слились воедино...\n\n"
+            f"🔴 {display_skin(result_skin, use_st)}\n"
+            f"Редкость: <b>Мифический</b>\n"
+            f"{_E_XP} +500 XP"
+        )
+        for lvl, rskin in rewards:
+            text += f"\n🎉 <b>Уровень {lvl}!</b> Облик: {display_skin(rskin, use_st)}"
+
+        asyncio.create_task(letopis_add(uid, 'myth_craft', f"🔮 {fname(f)} собрала мифический облик {result_skin}!"))
+        # Анонс в чат
+        try:
+            await announce(
+                ctx.bot,
+                f"🔮 <b>Мифическое событие!</b>\n"
+                f"<b>{fname(f)}</b> собрала мифический облик из осколков:\n"
+                f"🔴 {result_skin} 🍀",
+                delete_after=300,
+            )
+        except Exception:
+            pass
+
+        kb = InlineKeyboardMarkup([
+            [btn(f"✅ Надеть {result_skin}", callback_data=f"equip_{result_skin}")],
+            [btn("◀️ Назад", callback_data="refresh")],
+        ])
+        try:
+            await q.message.edit_text(text, parse_mode=ParseMode.HTML, reply_markup=kb,
+                                      link_preview_options=LinkPreviewOptions(is_disabled=True))
+        except Exception:
+            try: await q.message.reply_text(text, parse_mode=ParseMode.HTML, reply_markup=kb)
+            except Exception: pass
+        return
+    if d == "buy_stars_quick":
+        await q.answer()
+        boost_mult_quick = await boost_get_mult()
+        stars_mult_quick = boost_mult_quick.get("stars", 1.0) if boost_mult_quick else 1.0
+        user_is_newbie_q = f.get("stars_spent", 0) == 0
+        today_s_q = today_str()
+        daily_used_q = await db_setting(f"deal_{uid}") == today_s_q
+        kb_rows = []
+        for i, p in enumerate(STAR_PACKAGES):
+            if p.get("newbie") and not user_is_newbie_q:
+                continue
+            if p.get("daily_deal") and daily_used_q:
+                continue
+            coins_display_quick = int(p["coins"] * stars_mult_quick)
+            farm_min = p.get("farm_min", 0)
+            farm_str = f"≈{farm_min}мин" if farm_min < 60 else f"≈{farm_min//60}ч"
+            if p.get("newbie"):
+                lbl_quick = f"{_E_GIFT} {p['stars']}{_E_STARS} → {coins_display_quick}🪙 ({farm_str})"
+            elif p.get("daily_deal"):
+                lbl_quick = f"🌅 {p['stars']}{_E_STARS} → {coins_display_quick}🪙 (ежедн.)"
+            else:
+                lbl_quick = f"{_E_STARS} {p['stars']} Stars → {coins_display_quick}🪙 ({farm_str})"
+            if stars_mult_quick > 1.0 and not p.get("newbie") and not p.get("daily_deal"):
+                lbl_quick += " ✨"
+            kb_rows.append([btn(lbl_quick, callback_data=f"buy_pkg_{i}")])
+        kb_rows.append([btn("◀️ Назад", callback_data="refresh")])
+        boost_note = f"\n✨ <b>Золотая лягушка:</b> 1{_E_XP} = {int(5*stars_mult_quick)}{_E_COIN}" if stars_mult_quick > 1.0 else ""
+        try:
+            await q.message.edit_text(
+                f"{_E_XP} <b>Пополнение КваКоинов</b>\n\nУ тебя: {f['coins']}{coin_emoji()}{boost_note}\n\nВыбери пакет:",
+                parse_mode=ParseMode.HTML,
+                reply_markup=InlineKeyboardMarkup(kb_rows),
+            )
+        except Exception:
+            pass
+        return
+    # ── БЫСТРАЯ ПОКУПКА ПАКЕТА (из buy_stars_quick) ───────────────
+    if d.startswith("buy_pkg_"):
+        pkg_idx = int(d[8:])
+        if pkg_idx >= len(STAR_PACKAGES):
+            await q.answer("Ошибка", show_alert=True)
+            return
+        pkg = STAR_PACKAGES[pkg_idx]
+        if pkg.get("newbie") and f.get("stars_spent", 0) > 0:
+            await q.answer("❌ Пакет «Новичок» доступен только при первой покупке", show_alert=True)
+            return
+        if pkg.get("daily_deal"):
+            today_s_q2 = today_str()
+            if await db_setting(f"deal_{uid}") == today_s_q2:
+                await q.answer("❌ Ежедневное предложение уже использовано сегодня", show_alert=True)
+                return
+        price_stars = pkg["stars"]
+        farm_min = pkg.get("farm_min", 0)
+        farm_label = f"≈{farm_min}мин фарма" if farm_min < 60 else f"≈{farm_min//60}ч{farm_min%60 or ''}мин фарма"
+        await q.answer("📩 Создаём счёт...", show_alert=False)
+        try:
+            await ctx.bot.send_invoice(
+                chat_id=uid,
+                title=f"🪙 {pkg['label']} — Frog Tamagotchi",
+                description=f"Получить {pkg['coins']}🪙 · {farm_label}",
+                payload=f"coins_{pkg_idx}",
+                provider_token="",
+                currency="XTR",
+                prices=[LabeledPrice(label=f"{pkg['coins']}{_E_COIN}", amount=price_stars)],
+            )
+            try:
+                await q.message.edit_text(
+                    f"📩 <b>Счёт отправлен!</b>\n\n"
+                    f"{coin_emoji()} {pkg['label']} за {_E_XP}{price_stars} Stars\n\n"
+                    f"<i>Проверь личные сообщения с ботом и нажми «Оплатить».</i>\n\n"
+                    f"⚠️ Если сообщение не пришло — сначала напиши /start боту в личку.",
+                    parse_mode=ParseMode.HTML,
+                    reply_markup=InlineKeyboardMarkup(
+                        [[btn("◀️ Назад", callback_data="buy_stars_quick")]]
+                    ),
+                )
+            except (BadRequest, Forbidden):
+                pass
+        except Exception as e:
+            err = str(e)
+            if "chat not found" in err.lower() or "bot was blocked" in err.lower() or "forbidden" in err.lower():
+                try:
+                    await q.message.edit_text(
+                        "❗ <b>Не могу отправить счёт!</b>\n\n"
+                        "Сначала напиши боту в личку:\n"
+                        "1. Нажми на имя бота\n"
+                        "2. Нажми «Написать сообщение»\n"
+                        "3. Отправь /start\n"
+                        "4. Вернись сюда и попробуй снова.",
+                        parse_mode=ParseMode.HTML,
+                        reply_markup=InlineKeyboardMarkup(
+                            [[btn("◀️ Назад", callback_data="buy_stars_quick")]]
+                        ),
+                    )
+                except (BadRequest, Forbidden):
+                    pass
+            else:
+                try:
+                    await q.message.edit_text(
+                        f"{_E_CROSS} Ошибка при создании счёта: {str(e)[:100]}",
+                        parse_mode=ParseMode.HTML,
+                        reply_markup=InlineKeyboardMarkup(
+                            [[btn("◀️ Назад", callback_data="buy_stars_quick")]]
+                        ),
+                    )
+                except (BadRequest, Forbidden):
+                    pass
+        return
+    # ── STARS → МОНЕТЫ ─────────────────────────────
+    if d == "stars_menu":
+        await q.answer()
+        boost_mult = await boost_get_mult()
+        stars_mult = boost_mult.get("stars", 1.0) if boost_mult else 1.0
+        is_boosted = stars_mult > 1.0
+
+        boost_line = ""
+        if is_boosted:
+            boost_line = f"\n✨ <b>Золотая лягушка:</b> 1{_E_STARS} = {int(5 * stars_mult)}{coin_emoji()} (+{int((stars_mult-1)*100)}%)\n"
+
+        header = "💫 <b>Магазин Telegram Stars</b>\n\n"
+        header += f"{coin_emoji()}{_E_COIN}: {f['coins']}\n"
+        if boost_line:
+            header += boost_line
+        else:
+            header += f"<b>КваКоины:</b> 1{_E_STARS} = 5{coin_emoji()} (объём даёт бонус)\n"
+        header += "<i>В скобках — примерное время фарма монет в игре</i>\n\n"
+
+        user_is_newbie = f.get("stars_spent", 0) == 0
+        today_s = today_str()
+        daily_used = await db_setting(f"deal_{uid}") == today_s
+
+        coin_rows = []
+        for i, p in enumerate(STAR_PACKAGES):
+            if p.get("subscription"):
+                continue  # подписки — не монеты, убираем из этого списка
+            if p.get("newbie") and not user_is_newbie:
+                continue
+            if p.get("daily_deal"):
+                if daily_used:
+                    continue  # уже использовано сегодня
+            coins_display = int(p["coins"] * stars_mult)
+            farm_min = p.get("farm_min", 0)
+            farm_str = f"≈{farm_min}мин" if farm_min < 60 else f"≈{farm_min//60}ч{farm_min%60 or ''}мин"
+            if p.get("newbie"):
+                lbl = f"{_E_GIFT} {p['stars']}{_E_STARS} → {coins_display}🪙 ({farm_str})"
+            elif p.get("daily_deal"):
+                lbl = f"🌅 {p['stars']}{_E_STARS} → {coins_display}🪙 Ежедн. предложение"
+            else:
+                lbl = f"{_E_STARS} {p['stars']} Stars → {coins_display}🪙 ({farm_str})"
+                if is_boosted:
+                    lbl += " ✨"
+            coin_rows.append(
+                [btn(lbl, callback_data=f"buy_stars_{i}")]
+            )
+
+        kb = InlineKeyboardMarkup(
+            coin_rows
+            + [[btn("◀️ Назад", callback_data="menu_shop")]]
+        )
+        try:
+            await q.message.edit_text(
+                header,
+                parse_mode=ParseMode.HTML,
+                reply_markup=kb,
+            )
+        except Exception:
+            pass
+        return
+    if d.startswith("buy_stars_"):
+        pkg_idx = int(d[10:])
+        if pkg_idx >= len(STAR_PACKAGES):
+            await q.answer("Ошибка", show_alert=True)
+            return
+        pkg = STAR_PACKAGES[pkg_idx]
+        # Новичковый пакет — проверяем право
+        if pkg.get("newbie") and f.get("stars_spent", 0) > 0:
+            await q.answer("❌ Пакет «Новичок» доступен только при первой покупке", show_alert=True)
+            return
+        # Ежедневное предложение — проверяем лимит
+        if pkg.get("daily_deal"):
+            today_s = today_str()
+            if await db_setting(f"deal_{uid}") == today_s:
+                await q.answer("❌ Ежедневное предложение уже использовано сегодня", show_alert=True)
+                return
+        boost_mult = await boost_get_mult()
+        stars_mult = boost_mult.get("stars", 1.0) if boost_mult else 1.0
+        coins_display = int(pkg["coins"] * stars_mult)
+        price_stars = pkg["stars"]
+        boost_desc = f" · Золотая лягушка: +{int((stars_mult-1)*100)}% бонус!" if stars_mult > 1.0 else ""
+        farm_min = pkg.get("farm_min", 0)
+        farm_label = f"≈{farm_min}мин фарма" if farm_min < 60 else f"≈{farm_min//60}ч{farm_min%60 or ''}мин фарма"
+        await q.answer("📩 Создаём счёт...", show_alert=False)
+        try:
+            await ctx.bot.send_invoice(
+                chat_id=uid,
+                title=f"{coins_display}🪙 — Frog Tamagotchi",
+                description=f"Получить {coins_display}🪙 · {farm_label}{boost_desc}",
+                payload=f"coins_{pkg_idx}",
+                provider_token="",  # Telegram Stars не требует токена провайдера
+                currency="XTR",
+                prices=[
+                    LabeledPrice(label=f"{pkg['coins']}{_E_COIN}", amount=price_stars)
+                ],
+            )
+            # Редактируем сообщение чтобы показать статус
+            try:
+                await q.message.edit_text(
+                    f"📩 <b>Счёт отправлен!</b>\n\n"
+                    f"{coin_emoji()} {pkg['label']} за {_E_XP}{price_stars} Stars\n\n"
+                    f"<i>Проверь личные сообщения с ботом и нажми «Оплатить».</i>\n\n"
+                    f"⚠️ Если сообщение не пришло — сначала напиши /start боту в личку.",
+                    parse_mode=ParseMode.HTML,
+                    reply_markup=InlineKeyboardMarkup(
+                        [[btn("◀️ Назад", callback_data="stars_menu")]]
+                    ),
+                )
+            except (BadRequest, Forbidden):
+                pass
+        except Exception as e:
+            err = str(e)
+            if (
+                "chat not found" in err.lower()
+                or "bot was blocked" in err.lower()
+                or "forbidden" in err.lower()
+            ):
+                try:
+                    await q.message.edit_text(
+                        "❗ <b>Не могу отправить счёт!</b>\n\n"
+                        "Сначала напиши боту в личку:\n"
+                        "1. Нажми на имя бота\n"
+                        "2. Нажми «Написать сообщение»\n"
+                        "3. Отправь /start\n"
+                        "4. Вернись сюда и попробуй снова.",
+                        parse_mode=ParseMode.HTML,
+                        reply_markup=InlineKeyboardMarkup(
+                            [
+                                [
+                                    btn(
+                                        "◀️ Назад", callback_data="stars_menu"
+                                    )
+                                ]
+                            ]
+                        ),
+                    )
+                except (BadRequest, Forbidden):
+                    pass
+            else:
+                try:
+                    await q.message.edit_text(
+                        f"{_E_CROSS} Ошибка при создании счёта:\n<code>{err[:200]}</code>",
+                        parse_mode=ParseMode.HTML,
+                        reply_markup=InlineKeyboardMarkup(
+                            [
+                                [
+                                    btn(
+                                        "◀️ Назад", callback_data="stars_menu"
+                                    )
+                                ]
+                            ]
+                        ),
+                    )
+                except (BadRequest, Forbidden):
+                    pass
+        return
+    # ── КУПИТЬ БИЛЕТЫ ГАЧИ ─────────────────────────
+    if d.startswith("buy_ticket_"):
+        pkg_idx = int(d[11:])
+        if pkg_idx >= len(TICKET_PACKAGES):
+            await q.answer("Ошибка", show_alert=True)
+            return
+        tp = TICKET_PACKAGES[pkg_idx]
+        price_stars = tp["stars"]  # всегда обычная цена (без скидки)
+
+        await q.answer("📩 Создаём счёт...", show_alert=False)
+        try:
+            await ctx.bot.send_invoice(
+                chat_id=uid,
+                title=f"🎟 {tp['label']} — Frog Tamagotchi",
+                description=f"Получить {tp['qty']} гача-билет{'а' if tp['qty'] > 1 else ''}",
+                payload=f"gacha_ticket_{tp['qty']}",
+                provider_token="",
+                currency="XTR",
+                prices=[LabeledPrice(label=tp["label"], amount=price_stars)],
+            )
+            try:
+                await q.message.edit_text(
+                    f"📩 <b>Счёт отправлен!</b>\n\n"
+                    f"{_E_TICKET} {tp['label']} за ⭐{price_stars} Stars\n\n"
+                    f"<i>Проверь личные сообщения с ботом и нажми «Оплатить».</i>",
+                    parse_mode=ParseMode.HTML,
+                    reply_markup=InlineKeyboardMarkup(
+                        [[btn("◀️ Назад", callback_data="stars_menu")]]
+                    ),
+                )
+            except (BadRequest, Forbidden):
+                pass
+        except Exception as e:
+            err = str(e)
+            if "chat not found" in err.lower() or "forbidden" in err.lower():
+                try:
+                    await q.message.edit_text(
+                        "❗ <b>Не могу отправить счёт!</b> Напиши /start боту в личку.",
+                        parse_mode=ParseMode.HTML,
+                        reply_markup=InlineKeyboardMarkup(
+                            [
+                                [
+                                    btn(
+                                        "◀️ Назад", callback_data="stars_menu"
+                                    )
+                                ]
+                            ]
+                        ),
+                    )
+                except (BadRequest, Forbidden):
+                    pass
+            else:
+                try:
+                    await q.message.edit_text(
+                        f"{_E_CROSS} Ошибка: <code>{err[:200]}</code>",
+                        parse_mode=ParseMode.HTML,
+                        reply_markup=InlineKeyboardMarkup(
+                            [
+                                [
+                                    btn(
+                                        "◀️ Назад", callback_data="stars_menu"
+                                    )
+                                ]
+                            ]
+                        ),
+                    )
+                except (BadRequest, Forbidden):
+                    pass
+        return
+    # ─── УПРАВЛЕНИЕ ПОДПИСКОЙ ────────────────────────────────────────────────
+    if d == "sub_toggle_auto":
+        f["subscription_auto"] = 0 if f.get("subscription_auto", 1) else 1
+        await db_save(f)
+        status = "возобновлена ▶️" if f["subscription_auto"] else "на паузе ⏸"
+        await q.answer((f"Автозабота {status}")[:200], show_alert=True)
+        return
+    if d == "sub_trial_nanny":
+        if f.get("trial_nanny_used", 0):
+            await q.answer("😔 Пробник Няни уже был использован.", show_alert=True)
+            return
+        frog_name_tn = f.get("frog_name") or f.get("first_name") or "Квакуся"
+        granted_tn = await grant_trial(uid, 1, 3, bot=ctx.bot)
+        if granted_tn:
+            await q.answer(
+                f"🎉 3 дня Болотной Няни активированы! Тётя Жаба уже спешит к {he(frog_name_tn)} 🧑‍🍼",
+                show_alert=True,
+            )
+            # Обновляем экран подписки
+            try:
+                await q.message.edit_reply_markup(reply_markup=InlineKeyboardMarkup([
+                    [btn("🏪 Трудяга — 800⭐/мес", callback_data="sub_buy_worker")],
+                    [btn("🎁 1 день Трудяги бесплатно", callback_data="sub_trial_worker")],
+                    [btn("◀️ Назад", callback_data="menu_shop")],
+                ]))
+            except Exception:
+                pass
+        else:
+            await q.answer("😔 Пробник уже был использован.", show_alert=True)
+        return
+    if d == "sub_trial_worker":
+        # Кнопка «Забрать 3 дня» прямо из рассылки
+        if f.get("trial_worker_used", 0):
+            await q.answer("😔 Пробный период уже был использован.", show_alert=True)
+            return
+        frog_name = f.get("frog_name") or f.get("first_name") or "Квакуся"
+        granted = await grant_trial(uid, 2, 3, bot=ctx.bot)
+        if granted:
+            await q.answer(
+                f"🎉 3 дня Трудяги активированы! {he(frog_name)} идёт на рынок 🏪",
+                show_alert=True,
+            )
+        else:
+            await q.answer("😔 Пробный период уже был использован.", show_alert=True)
+        return
+    # ── Офферные кнопки со скидкой (после истечения подписки) ─────────────────
+    if d in ("sub_renewal_offer_worker", "sub_renewal_offer_nanny"):
+        offer_key = f"sub_offer_{uid}"
+        offer = ctx.bot_data.get(offer_key)
+        is_worker = d == "sub_renewal_offer_worker"
+
+        # Проверяем не истёк ли 1-часовой оффер
+        if not offer or time.time() > offer.get("ends", 0):
+            await q.answer("⏰ Предложение истекло. Оформи по обычной цене.", show_alert=True)
+            # Показываем обычную кнопку
+            try:
+                await q.message.edit_reply_markup(reply_markup=InlineKeyboardMarkup([[
+                    btn(
+                        "🏪 Продлить по обычной цене",
+                        callback_data="sub_buy_worker" if is_worker else "sub_buy_nanny",
+                    )
+                ]]))
+            except Exception:
+                pass
+            return
+
+        sale_price = offer.get("price", 640 if is_worker else 160)
+        sub_name = "🏪 Трудяга — 30 дней" if is_worker else "🧑‍🍼 Болотная Няня — 30 дней"
+        description = (
+            "Автоуход + 400–700🪙/день с Болотного Рынка 🐸"
+            if is_worker else
+            "Автоматический уход за лягушкой — кормление, купание, сон 🐸"
+        )
+        sub_type_str = "worker" if is_worker else "nanny"
+        try:
+            await ctx.bot.send_invoice(
+                chat_id=uid,
+                title=f"🔥 {sub_name} (скидка!)",
+                description=description,
+                payload=f"subscription_{sub_type_str}_30_offer",
+                currency="XTR",
+                prices=[LabeledPrice(label=f"🔥 {sub_name}", amount=sale_price)],
+            )
+            await q.answer()
+            # Удаляем оффер чтобы не применить дважды
+            ctx.bot_data.pop(offer_key, None)
+        except Exception as _e:
+            await q.answer((f"Ошибка: {_e}")[:200], show_alert=True)
+        return
+    if d == "sub_buy_nanny_7":
+        # 7-дневный пакет Няни — низкий порог входа
+        pkg_idx = next(
+            (i for i, p in enumerate(STAR_PACKAGES)
+             if p.get("subscription") == "nanny" and p.get("days") == 7),
+            None,
+        )
+        if pkg_idx is None:
+            await q.answer("Пакет не найден.", show_alert=True)
+            return
+        pkg = STAR_PACKAGES[pkg_idx]
+        try:
+            await ctx.bot.send_invoice(
+                chat_id=uid,
+                title="🧑‍🍼 Болотная Няня — 7 дней",
+                description="Автоматический уход за лягушкой — кормление, купание, сон 🐸",
+                payload="subscription_nanny_7",
+                currency="XTR",
+                prices=[LabeledPrice(label="🧑‍🍼 Болотная Няня — 7 дней", amount=pkg["stars"])],
+            )
+            await q.answer()
+        except Exception as _e:
+            await q.answer((f"Ошибка: {_e}")[:200], show_alert=True)
+        return
+    if d in ("sub_buy_nanny", "sub_buy_worker", "sub_renew"):
+        # Отправляем инвойс на нужный тариф
+        is_worker = d == "sub_buy_worker" or (
+            d == "sub_renew" and f.get("subscription_type", 0) == 2
+        )
+        pkg_idx = next(
+            (i for i, p in enumerate(STAR_PACKAGES)
+             if p.get("subscription") == ("worker" if is_worker else "nanny")),
+            None,
+        )
+        if pkg_idx is None:
+            await q.answer("Ошибка: тариф не найден.", show_alert=True)
+            return
+        pkg = STAR_PACKAGES[pkg_idx]
+        sub_name = "🏪 Трудяга — 30 дней" if is_worker else "🧑‍🍼 Болотная Няня — 30 дней"
+        description = (
+            "Автоуход + 400–700🪙/день с Болотного Рынка 🐸"
+            if is_worker else
+            "Автоматический уход за лягушкой — кормление, купание, сон 🐸"
+        )
+        sub_type_str = "worker" if is_worker else "nanny"
+        try:
+            await ctx.bot.send_invoice(
+                chat_id=uid,
+                title=sub_name,
+                description=description,
+                payload=f"subscription_{sub_type_str}_30",
+                currency="XTR",
+                prices=[LabeledPrice(label=sub_name, amount=pkg["stars"])],
+            )
+            await q.answer()
+        except Exception as _e:
+            await q.answer((f"Ошибка отправки счёта: {_e}")[:200], show_alert=True)
+        return
+    # Ветка не нашлась — отдаём общему обработчику.
+    await on_callback(update, ctx)
+
+
+async def on_callback(update: Update, ctx: ContextTypes.DEFAULT_TYPE):
+    _g = await cb_guard(update, ctx)
+    if _g is None:
+        return
+    q, uid, d, f = _g
 
     if d == "noop":
         await q.answer()
@@ -34040,451 +38561,10 @@ async def on_callback(update: Update, ctx: ContextTypes.DEFAULT_TYPE):
         await show_status(q, f, edit=True)
         return
 
-    # ── ГАЧА ───────────────────────────────────────
-    if d == "gacha":
-        await q.answer()
-        cost = 50
-        cost5 = 250   # x5 без скидки
-        cost10 = 500  # x10 без скидки
-        inv = await inv_get(uid)
-        ticket_count = inv.get("gacha_ticket", 0)
-        kb_rows = []
-        if f["coins"] >= cost:
-            kb_rows.append(
-                [coin_btn(f"✅ ×1 за {cost}🪙", "gacha_confirm")]
-            )
-        if f["coins"] >= cost5:
-            kb_rows.append(
-                [coin_btn(f"✨ ×5 за {cost5}🪙", "gacha_confirm_5")]
-            )
-        if f["coins"] >= cost10:
-            kb_rows.append(
-                [coin_btn(f"💫 ×10 за {cost10}🪙", "gacha_confirm_10")]
-            )
-        # Крутить на все деньги
-        max_spins = f["coins"] // cost
-        if max_spins >= 1:
-            kb_rows.append(
-                [coin_btn(f"🌀 Всё на кон{SEP}×{max_spins} за {max_spins*cost}🪙",
-                          f"gacha_confirm_all_{max_spins}")]
-            )
-        if ticket_count > 0:
-            kb_rows.append(
-                [
-                    btn(
-                        f"🎫 Использовать билет (×{ticket_count})",
-                        callback_data="gacha_use_ticket",
-                    )
-                ]
-            )
-        else:
-            kb_rows.append(
-                [btn("🎫 Купить билеты", callback_data="stars_menu", style="primary")]
-            )
-        kb_rows.append([btn("❌ Отмена", callback_data="refresh", style="danger")])
-        kb = InlineKeyboardMarkup(kb_rows)
 
-        boost_mult_gacha = await boost_get_mult()
-        legendary_mult = boost_mult_gacha.get("legendary", 1.0) if boost_mult_gacha else 1.0
-        mythic_mult = boost_mult_gacha.get("mythic", 1.0) if boost_mult_gacha else 1.0
-        legendary_chance = 3.0 * legendary_mult
-        mythic_chance = 0.05 * mythic_mult
-        # Редкости — двумя строками вместо семи: шансы сравниваются взглядом.
-        _bm = lambda on: " ✨" if on else ""
-        chance_lines = (
-            f"⚫ 0.005%{SEP}🔴 {mythic_chance:.2f}%{_bm(mythic_mult > 1)}"
-            f"{SEP}🟡 {legendary_chance:.1f}%{_bm(legendary_mult > 1)}\n"
-            f"🟣 6%{SEP}🔵 15%{SEP}🟢 25%{SEP}⚪ 50%"
-        )
-        not_enough = ("" if f["coins"] >= cost
-                      else f"Не хватает {cost - f['coins']}{coin_emoji()}")
-        try:
-            await q.message.edit_text(
-                ui_card(
-                    ui_title("🎰", "Гача"),
-                    # Билеты отдельной строкой: с ними третья колонка уводит
-                    # строку за 21W и её рвёт переносом (tools/msgwidth.py).
-                    ui_line(f"крутка {ui_money(cost)}",
-                            f"баланс {ui_money(f['coins'])}")
-                    + (f"\n{_E_COSMETIC} {ui_plural(ticket_count, 'билет', 'билета', 'билетов')}"
-                       if ticket_count else ""),
-                    chance_lines,
-                    hint=not_enough,
-                ),
-                parse_mode=ParseMode.HTML,
-                reply_markup=kb,
-            )
-        except Exception:
-            pass
-        return
 
-    if d == "gacha_confirm":
-        cost = 50
-        if f["coins"] < cost:
-            await q.answer((f"Нужно {cost} 🪙. Зарабатывай через /daily и квесты.")[:200], show_alert=True)
-            return
-        try:
-            await q.message.edit_text("🎰 <b>Крутим гачу...</b>\n\n✨ · ✨ · ✨", parse_mode=ParseMode.HTML)
-        except Exception:
-            pass
-        await asyncio.sleep(1.5)
-        f["coins"] -= cost
-        f["coins_spent"] = f.get("coins_spent", 0) + cost
-        skin, pity_triggered = await roll_pity(f)
-        coll = await db_coll(uid)
-        is_new = skin not in coll
-        await db_add_skin(uid, skin)
-        await log_gacha_pull(uid, skin, cost=50, source="coins")
-        coll_qty = await db_coll_qty(uid)
-        qty = coll_qty.get(skin, 1)
-        add_xp(f, 20)
-        f["total_gacha"] += 1
-        rewards = await levelup(f, ctx.bot)
-        await db_save(f)
-        await quest_update(uid, "gacha")
-        await legend_track(uid, "gacha", bot=ctx.bot)
-        await ach_check(f, ctx.bot)
-        # Скин-билеты конкурса
-        _skin_tickets_earned = await _award_skin_contest_tickets(uid)
-        s = SKINS[skin]
-        use_st = bool(f.get("use_static", 0))
 
-        # ── Финальный результат ─────────────────────────────────────────
-        new_tag = ""
-        if is_new:
-            new_tag = " 🆕 <b>Новый!</b>"
-            if _skin_tickets_earned > 0:
-                new_tag += f" 🎟+{_skin_tickets_earned}"
-        elif qty > 1:
-            new_tag = f" (×{qty} в коллекции)"
 
-        if s["rarity"] in ("mythic", "legendary", "secret"):
-            rarity_prefix = {"secret": "⚫", "mythic": "🔴", "legendary": "🟡"}.get(s["rarity"], "🟡")
-            dup_tag = " (дубликат)" if not is_new else ""
-            rarity_label = {"secret": "🌑 СЕКРЕТНЫЙ", "mythic": "✨ МИФИЧЕСКИЙ", "legendary": "👑 ЛЕГЕНДАРНЫЙ"}.get(s["rarity"], "ЛЕГЕНДАРНЫЙ")
-            await announce(
-                ctx.bot,
-                f"{rarity_prefix} <b>{rarity_label} ДРОП!</b>{dup_tag}\n"
-                f"<b>{_html.escape(q.from_user.first_name)}</b> получил в гаче:\n"
-                f"{R_ICON[s['rarity']]} <b>{_html.escape(skin)}</b> {pemoji(skin)} 🍀",
-                delete_after=60,
-            )
-        pity_line = f"\n🎯 Питти: <b>{f.get('gacha_pity', 0)}/{PITY_THRESHOLD}</b>" if not pity_triggered else "\n🌟 <b>Питти сработал!</b> Гарантированная легенда!"
-        text = (
-            f"{_E_CASINO} <b>Результат гачи!</b>{new_tag}\n\n"
-            f"{R_ICON[s['rarity']]} {display_skin(skin, use_st)}\n"
-            f"Редкость: <b>{R_NAME[s['rarity']]}</b>\n"
-            f"Осталось: {f['coins']}{coin_emoji()} · {_E_XP} +20 XP"
-            f"{pity_line}"
-        )
-        for lvl, rskin in rewards:
-            text += f"\n🎉 <b>Уровень {lvl}!</b> Облик: {display_skin(rskin, use_st)}"
-        kb = InlineKeyboardMarkup(
-            [
-                [btn(f"✅ Надеть {skin}", callback_data=f"equip_{skin}", style="success")],
-                [
-                    btn("🎰 Ещё (50🪙)", callback_data="gacha", style="primary"),
-                    btn("◀️ Назад", callback_data="gacha"),
-                ],
-                [btn("⭐ Пополнить монеты", callback_data="buy_stars_quick")],
-            ]
-        )
-        try:
-            await q.message.edit_text(
-                text, parse_mode=ParseMode.HTML, reply_markup=kb, link_preview_options=LinkPreviewOptions(is_disabled=True),
-            )
-        except Exception as e:
-            print(f"⚠️ gacha edit error: {e}")
-            try:
-                await q.message.reply_text(
-                    text, parse_mode=ParseMode.HTML, reply_markup=kb, link_preview_options=LinkPreviewOptions(is_disabled=True),
-                )
-            except Exception:
-                pass
-        return
-
-    # ── ИСПОЛЬЗОВАТЬ ГАЧА-БИЛЕТ ─────────────────────
-    if d in ("gacha_confirm_5", "gacha_confirm_10"):
-        count = 5 if d == "gacha_confirm_5" else 10
-        cost_per = 50
-        total_cost = cost_per * count
-        if f["coins"] < total_cost:
-            await q.answer((f"Нужно {total_cost} 🪙. Недостаточно монет.")[:200], show_alert=True)
-            return
-        try:
-            dots = "✨ · " * count
-            await q.message.edit_text(f"{_E_CASINO} <b>Крутим ×{count}...</b>\n\n{dots.strip()}", parse_mode=ParseMode.HTML)
-        except Exception:
-            pass
-        await asyncio.sleep(2)
-        f["coins"] -= total_cost
-        f["coins_spent"] = f.get("coins_spent", 0) + total_cost
-        results = []
-        coll_before = set(await db_coll(uid))
-        pity_count = 0
-        for _ in range(count):
-            skin_i, pt = await roll_pity(f)
-            if pt:
-                pity_count += 1
-            await db_add_skin(uid, skin_i)
-            await log_gacha_pull(uid, skin_i, cost=50, source="coins")
-            results.append(skin_i)
-            add_xp(f, 20)
-            f["total_gacha"] += 1
-        rewards = await levelup(f, ctx.bot)
-        await db_save(f)
-        for _ in range(count):
-            await quest_update(uid, "gacha")
-        await legend_track(uid, "gacha", amount=count, bot=ctx.bot)  # ИСПРАВЛЕНО: было amount=1
-        await ach_check(f, ctx.bot)
-        # Скин-билеты конкурса: считаем сколько новых уникальных скинов
-        # len(set(...) - coll_before) — дедупликация внутри одного пулла,
-        # чтобы один и тот же новый скин не засчитывался дважды.
-        _skin_tickets_multi = await _award_skin_contest_tickets(uid)
-        use_st = bool(f.get("use_static", 0))
-        coll_qty = await db_coll_qty(uid)
-
-        # ── Анонсы редких скинов ────────────────────────────────────────
-        for skin_a in results:
-            s_a = SKINS[skin_a]
-            if s_a["rarity"] in ("mythic", "legendary", "secret"):
-                rarity_prefix = {"secret": "⚫", "mythic": "🔴", "legendary": "🟡"}.get(s_a["rarity"], "🟡")
-                dup_tag = " (дубликат)" if skin_a in coll_before else ""
-                rarity_label = {"secret": "🌑 СЕКРЕТНЫЙ", "mythic": "✨ МИФИЧЕСКИЙ", "legendary": "👑 ЛЕГЕНДАРНЫЙ"}.get(s_a["rarity"], "ЛЕГЕНДАРНЫЙ")
-                await announce(
-                    ctx.bot,
-                    f"{rarity_prefix} <b>{rarity_label} ДРОП (×{count})!</b>{dup_tag}\n"
-                    f"<b>{_html.escape(q.from_user.first_name)}</b> получил в гаче:\n"
-                    f"{R_ICON[s_a['rarity']]} <b>{_html.escape(skin_a)}</b> {pemoji(skin_a)} 🍀",
-                    delete_after=60,
-                )
-                coll_before.add(skin_a)
-
-        # ── Итоговое сообщение ──────────────────────────────────────────
-        from collections import Counter
-        result_counts = Counter(results)
-        lines = [f"{_E_CASINO} <b>Результат гачи ×{count}!</b>\n"]
-        for skin_r, cnt in sorted(result_counts.items(), key=lambda x: SKINS[x[0]]["chance"]):
-            s_r = SKINS[skin_r]
-            qty_total = coll_qty.get(skin_r, cnt)
-            cnt_tag = f" ×{cnt}" if cnt > 1 else ""
-            new_tag_r = " 🆕" if skin_r not in (set(coll_before) - set(results)) and qty_total <= cnt else ""
-            lines.append(f"{R_ICON[s_r['rarity']]} {display_skin(skin_r, use_st)}{cnt_tag}{new_tag_r}")
-        lines.append(f"\nПотрачено: <b>{total_cost}{coin_emoji()}</b> · Осталось: <b>{f['coins']}{coin_emoji()}</b>")
-        lines.append(f"{_E_XP} +{count * 20} XP")
-        pity_now = f.get('gacha_pity', 0)
-        pity_suffix = f"🌟 ×{pity_count} питти!" if pity_count else f"🎯 Питти: {pity_now}/{PITY_THRESHOLD}"
-        lines.append(pity_suffix)
-        if _skin_tickets_multi > 0:
-            lines.append(f"🎟 <b>+{_skin_tickets_multi} билет{'а' if _skin_tickets_multi > 1 else ''} конкурса!</b>")
-        for lvl, rskin in rewards:
-            lines.append(f"\n🎉 <b>Уровень {lvl}!</b> Облик: {display_skin(rskin, use_st)}")
-
-        kb = InlineKeyboardMarkup(
-            [
-                [coin_btn(f"🎰 Ещё ×{count} ({total_cost}🪙)", d)],
-                [coin_btn("🎰 ×1 (50🪙)", "gacha_confirm"),
-                 btn("◀️ Назад", callback_data="refresh")],
-                [btn("⭐ Пополнить монеты", callback_data="buy_stars_quick")],
-            ]
-        )
-        try:
-            await q.message.edit_text(
-                "\n".join(lines), parse_mode=ParseMode.HTML, reply_markup=kb, link_preview_options=LinkPreviewOptions(is_disabled=True),
-            )
-        except Exception as e:
-            print(f"⚠️ gacha multi edit error: {e}")
-        return
-
-    if d.startswith("gacha_confirm_all_"):
-        try:
-            count = int(d.removeprefix("gacha_confirm_all_"))
-        except ValueError:
-            await q.answer(); return
-        cost_per = 50
-        count = max(1, min(count, f["coins"] // cost_per))
-        total_cost = cost_per * count
-        if f["coins"] < total_cost:
-            await q.answer("Недостаточно монет", show_alert=True); return
-
-        try:
-            await q.message.edit_text(
-                f"🌀 <b>Крутим на всё ({count:,} раз)...</b>\n\n"
-                f"<i>Идёт расчёт, это займёт несколько секунд...</i>",
-                parse_mode=ParseMode.HTML)
-        except Exception:
-            pass
-
-        # ── Всё считаем в памяти, затем ONE батч в БД ─────────────────────
-        coll_before = set(await db_coll(uid))
-        results: list[str] = []
-        f["coins"] -= total_cost
-        f["coins_spent"] = f.get("coins_spent", 0) + total_cost
-
-        for _ in range(count):
-            # roll_pity обновляет только f["gacha_pity"] и f["total_gacha"] в памяти
-            skin_i, _ = await roll_pity(f)
-            results.append(skin_i)
-            add_xp(f, 20)
-            f["total_gacha"] += 1
-
-        # ── Одна транзакция для всех коллекций ────────────────────────────
-        await db_add_skins_batch(uid, results)
-
-        # ── Одна транзакция для всех логов ────────────────────────────────
-        await log_gacha_pulls_batch(uid, results, cost=50, source="coins")
-
-        # ── Квесты: один вызов с amount=count вместо N вызовов ────────────
-        await quest_update(uid, "gacha", amount=count)
-
-        # ── Сохраняем f (монеты, XP, pity) ────────────────────────────────
-        rewards = await levelup(f, ctx.bot)
-        await db_save(f)
-        await legend_track(uid, "gacha", amount=count, bot=ctx.bot)
-        await ach_check(f, ctx.bot)
-
-        # ── Анонсы редких дропов ──────────────────────────────────────────
-        from collections import Counter
-        for skin_a in results:
-            s_a = SKINS[skin_a]
-            if s_a["rarity"] in ("mythic", "legendary", "secret"):
-                rp = {"secret": "⚫", "mythic": "🔴", "legendary": "🟡"}.get(s_a["rarity"], "🟡")
-                rl = {"secret": "🌑 СЕКРЕТНЫЙ", "mythic": "✨ МИФИЧЕСКИЙ",
-                      "legendary": "👑 ЛЕГЕНДАРНЫЙ"}.get(s_a["rarity"], "ЛЕГЕНДАРНЫЙ")
-                dup = " (дубликат)" if skin_a in coll_before else " 🆕"
-                await announce(ctx.bot,
-                    f"{rp} <b>{rl} ДРОП!</b>{dup}\n"
-                    f"<b>{_html.escape(q.from_user.first_name)}</b> ×{count}: "
-                    f"{R_ICON[s_a['rarity']]} <b>{_html.escape(skin_a)}</b> {pemoji(skin_a)} 🌀",
-                    delete_after=60)
-                coll_before.add(skin_a)
-
-        # ── Итоговое сообщение ────────────────────────────────────────────
-        rc = Counter(results)
-        use_st = bool(f.get("use_static", 0))
-
-        # Группируем по редкости для компактности
-        by_rarity: dict[str, list] = {}
-        rarity_order = ["secret", "mythic", "legendary", "epic", "rare", "uncommon", "common"]
-        for skin_r, cnt in rc.items():
-            rar = SKINS[skin_r]["rarity"]
-            by_rarity.setdefault(rar, []).append((skin_r, cnt))
-
-        lines = [f"🌀 <b>Всё на кон</b>{SEP}{count:,} круток\n"]
-        for rar in rarity_order:
-            if rar not in by_rarity:
-                continue
-            for skin_r, cnt in sorted(by_rarity[rar], key=lambda x: -x[1]):
-                cnt_tag = f" ×{cnt}" if cnt > 1 else ""
-                lines.append(f"{R_ICON[rar]} {display_skin(skin_r, use_st)}{cnt_tag}")
-            if len(lines) > 25:  # не спамить если много обликов
-                remaining_count = sum(c for _, c in [(s,c) for r in rarity_order[rarity_order.index(rar)+1:] for s,c in by_rarity.get(r, [])])
-                if remaining_count:
-                    lines.append(f"<i>...и ещё {remaining_count} обычных</i>")
-                break
-
-        pity_now = f.get("gacha_pity", 0)
-        lines.append(f"\nПотрачено: <b>{total_cost:,}{coin_emoji()}</b> Осталось: <b>{f['coins']:,}{coin_emoji()}</b>")
-        lines.append(f"{_E_XP} +{count*20:,} XP 🎯 Питти: {pity_now}/{PITY_THRESHOLD}")
-        for lvl, rskin in rewards:
-            lines.append(f"🎉 <b>Уровень {lvl}!</b> {display_skin(rskin, use_st)}")
-
-        kb = InlineKeyboardMarkup([
-            [btn("◀️ Главное меню", callback_data="refresh")],
-            [btn("⭐ Пополнить монеты", callback_data="buy_stars_quick")],
-        ])
-        try:
-            await q.message.edit_text("\n".join(lines), parse_mode=ParseMode.HTML, reply_markup=kb,
-                                      link_preview_options=LinkPreviewOptions(is_disabled=True))
-        except Exception:
-            pass
-        await q.answer(f"🌀 {count:,} круток — готово")
-        return
-
-    if d == "gacha_use_ticket":
-        ticket_count = inv.get("gacha_ticket", 0)
-        if ticket_count <= 0:
-            await q.answer("У тебя нет гача-билетов. Купи в магазине Stars.", show_alert=True)
-            return
-        try:
-            await q.message.edit_text("🎰 <b>Используем билет...</b>\n\n<tg-emoji emoji-id='5341688243790323773'>🎟</tg-emoji> · ✨ · <tg-emoji emoji-id='5341688243790323773'>🎟</tg-emoji>", parse_mode=ParseMode.HTML)
-        except Exception:
-            pass
-        await asyncio.sleep(1.5)
-        await inv_add(uid, "gacha_ticket", -1)
-        skin, pity_triggered_t = await roll_pity(f)
-        coll = await db_coll(uid)
-        is_new = skin not in coll
-        await db_add_skin(uid, skin)
-        await log_gacha_pull(uid, skin, cost=0, source="ticket")
-        coll_qty = await db_coll_qty(uid)
-        qty = coll_qty.get(skin, 1)
-        add_xp(f, 20)
-        f["total_gacha"] += 1
-        rewards = await levelup(f, ctx.bot)
-        await db_save(f)
-        await quest_update(uid, "gacha")
-        await legend_track(uid, "gacha", bot=ctx.bot)
-        await ach_check(f, ctx.bot)
-        # Скин-билеты конкурса
-        _skin_tickets_t = await _award_skin_contest_tickets(uid)
-        s = SKINS[skin]
-        use_st = bool(f.get("use_static", 0))
-
-        # Анонс и результат
-        new_tag = ""
-        if is_new:
-            new_tag = " 🆕 <b>Новый!</b>"
-            if _skin_tickets_t > 0:
-                new_tag += f" 🎟+{_skin_tickets_t}"
-        elif qty > 1:
-            new_tag = f" (×{qty} в коллекции)"
-            rarity_prefix = {"secret": "⚫", "mythic": "🔴", "legendary": "🟡"}.get(s["rarity"], "🟡")
-            dup_tag = " (дубликат)" if not is_new else ""
-            rarity_label = {"secret": "🌑 СЕКРЕТНЫЙ", "mythic": "✨ МИФИЧЕСКИЙ", "legendary": "👑 ЛЕГЕНДАРНЫЙ"}.get(s["rarity"], "ЛЕГЕНДАРНЫЙ")
-            await announce(
-                ctx.bot,
-                f"{rarity_prefix} <b>{rarity_label} ДРОП!</b>{dup_tag}\n"
-                f"<b>{_html.escape(q.from_user.first_name)}</b> получил в гаче (по билету):\n"
-                f"{R_ICON[s['rarity']]} <b>{_html.escape(skin)}</b> {pemoji(skin)} 🍀",
-                delete_after=60,
-            )
-        new_ticket_count = (await inv_get(uid)).get("gacha_ticket", 0)
-        text = (
-            f"{_E_CASINO} <b>Результат (билет)!</b>{new_tag}\n\n"
-            f"{R_ICON[s['rarity']]} {display_skin(skin, use_st)}\n"
-            f"Редкость: <b>{R_NAME[s['rarity']]}</b>\n"
-            f"{_E_COSMETIC} Осталось билетов: {new_ticket_count} · {_E_XP} +20 XP"
-        )
-        for lvl, rskin in rewards:
-            text += f"\n🎉 <b>Уровень {lvl}!</b> Облик: {display_skin(rskin, use_st)}"
-        kb_rows = [
-            [btn(f"✅ Надеть {skin}", callback_data=f"equip_{skin}", style="success")],
-        ]
-        if new_ticket_count > 0:
-            kb_rows.append(
-                [
-                    btn(
-                        "🎫 Ещё (билет)", callback_data="gacha_use_ticket"
-                    )
-                ]
-            )
-        kb_rows.append(
-            [
-                btn("🎰 Ещё (50🪙)", callback_data="gacha", style="primary"),
-                btn("◀️ Назад", callback_data="refresh"),
-            ]
-        )
-        try:
-            await q.message.edit_text(
-                text,
-                parse_mode=ParseMode.HTML,
-                reply_markup=InlineKeyboardMarkup(kb_rows),
-                link_preview_options=LinkPreviewOptions(is_disabled=True),
-            )
-        except Exception:
-            pass
-        return
 
     # ── НАДЕТЬ ОБЛИК ───────────────────────────────
     if d.startswith("equip_"):
@@ -34848,15 +38928,6 @@ async def on_callback(update: Update, ctx: ContextTypes.DEFAULT_TYPE):
             pass
         return
 
-    # ── NFT-КОНКУРС ПО ЛИГАМ ────────────────────────────────────────────────
-    if d == "nft_contest_menu":
-        await q.answer()
-        text, kb = await _nft_contest_menu_text(uid)
-        try:
-            await q.message.edit_text(text, parse_mode=ParseMode.HTML, reply_markup=kb)
-        except Exception:
-            pass
-        return
 
     if d == "contest_refs_inline":
         await q.answer()
@@ -34965,305 +39036,14 @@ async def on_callback(update: Update, ctx: ContextTypes.DEFAULT_TYPE):
     # ══════════════════════════════════════════════════════════════════════
     # 🏪 БОЛОТНЫЙ РЫНОК — торговля обликами между игроками
     # ══════════════════════════════════════════════════════════════════════
-    MARKET_COMMISSION = 0.10  # 10% комиссия с продавца
 
-    if d == "market_main":
-        await q.answer()
-        listings = await market_get_listings(limit=10)
-        lines = ["🏪 <b>Болотный Рынок</b>\n\n<i>Покупай и продавай облики за КваКоины.</i>\n<i>Комиссия продавца — 10%.</i>\n"]
-        kb_rows_m = []
-        if listings:
-            for lot in listings[:8]:
-                s = SKINS.get(lot["skin"], {})
-                emoji_m = pemoji(lot["skin"])
-                rarity_m = R_ICON.get(s.get("rarity", "common"), "⚪")
-                seller_f = await db_get(lot["seller_id"])
-                seller_name = fname(seller_f) if seller_f else "?"
-                lines.append(f"{rarity_m} {emoji_m} <b>{lot['skin']}</b> — {lot['price']}🪙 от {he(seller_name)}")
-                kb_rows_m.append([btn(
-                    f"{emoji_m} {lot['skin']} — {lot['price']}🪙",
-                    callback_data=f"market_view_{lot['id']}",
-                )])
-        else:
-            lines.append("<i>Пока никто ничего не продаёт. Будь первым</i>")
-        kb_rows_m.append([
-            btn("📤 Продать облик", callback_data="market_sell_choose"),
-            btn("📋 Мои лоты", callback_data="market_my"),
-        ])
-        kb_rows_m.append([btn("◀️ Назад", callback_data="menu_shop")])
-        try:
-            await q.message.edit_text(
-                "\n".join(lines), parse_mode=ParseMode.HTML,
-                reply_markup=InlineKeyboardMarkup(kb_rows_m),
-            )
-        except Exception:
-            pass
-        return
 
-    if d.startswith("market_view_"):
-        await q.answer()
-        lid = int(d[len("market_view_"):])
-        listings_v = await market_get_listings(limit=100)
-        lot_v = next((l for l in listings_v if l["id"] == lid), None)
-        if not lot_v:
-            await q.answer("Лот уже куплен или снят", show_alert=True)
-            return
-        s_v = SKINS.get(lot_v["skin"], {})
-        seller_f_v = await db_get(lot_v["seller_id"])
-        seller_name_v = fname(seller_f_v) if seller_f_v else "?"
-        is_own = lot_v["seller_id"] == uid
-        kb_v = []
-        if is_own:
-            kb_v.append([btn("❌ Снять с продажи", callback_data=f"market_cancel_{lid}")])
-        else:
-            kb_v.append([btn(
-                f"💰 Купить за {lot_v['price']}🪙",
-                callback_data=f"market_confirm_{lid}",
-            )])
-        kb_v.append([btn("◀️ Рынок", callback_data="market_main")])
-        try:
-            await q.message.edit_text(
-                f"🏪 <b>Лот #{lid}</b>\n\n"
-                f"{pemoji(lot_v['skin'])} <b>{lot_v['skin']}</b>\n"
-                f"Редкость: {R_NAME.get(s_v.get('rarity','common'), '?')}\n"
-                f"Цена: <b>{lot_v['price']}{_E_COIN}</b>\n"
-                f"Продавец: <b>{he(seller_name_v)}</b>\n\n"
-                f"У тебя: <b>{f['coins']}{_E_COIN}</b>",
-                parse_mode=ParseMode.HTML,
-                reply_markup=InlineKeyboardMarkup(kb_v),
-            )
-        except Exception:
-            pass
-        return
 
-    if d.startswith("market_confirm_"):
-        await q.answer()
-        lid = int(d[len("market_confirm_"):])
-        lot_c = await market_buy(lid, uid)
-        if not lot_c:
-            await q.answer("😔 Облик уже купили — опередили", show_alert=True)
-            return
-        price_c = lot_c["price"]
-        if f["coins"] < price_c:
-            await q.answer((f"❌ Не хватает монет. Нужно {price_c}🪙, у тебя {f['coins']}🪙")[:200], show_alert=True)
-            # Откатываем — возвращаем статус active
-            async with aiosqlite.connect(DB_PATH) as _rdb:
-                await _rdb.execute("UPDATE market_listings SET status='active' WHERE id=?", (lid,))
-                await _rdb.commit()
-            return
-        # Списываем монеты у покупателя
-        f["coins"] -= price_c
-        await db_save(f)
-        # Начисляем продавцу (минус комиссия)
-        commission_c = max(1, int(price_c * MARKET_COMMISSION))
-        seller_payout = price_c - commission_c
-        seller_f_c = await db_get(lot_c["seller_id"])
-        if seller_f_c:
-            seller_f_c["coins"] += seller_payout
-            await db_save(seller_f_c)
-            try:
-                await ctx.bot.send_message(
-                    lot_c["seller_id"],
-                    f"🏪 <b>Твой облик куплен!</b>\n\n"
-                    f"{pemoji(lot_c['skin'])} <b>{lot_c['skin']}</b>\n"
-                    f"Выручка: <b>+{seller_payout}{_E_COIN}</b> (комиссия {commission_c}{_E_COIN})",
-                    parse_mode=ParseMode.HTML,
-                )
-            except Exception:
-                pass
-        # Выдаём облик покупателю
-        await db_add_skin(uid, lot_c["skin"])
-        try:
-            await q.message.edit_text(
-                f"✅ <b>Покупка совершена!</b>\n\n"
-                f"{pemoji(lot_c['skin'])} <b>{lot_c['skin']}</b> теперь твой!\n"
-                f"Потрачено: <b>{price_c}{_E_COIN}</b>\n"
-                f"Баланс: <b>{f['coins']}{_E_COIN}</b>",
-                parse_mode=ParseMode.HTML,
-                reply_markup=InlineKeyboardMarkup([[
-                    btn("🏪 На рынок", callback_data="market_main"),
-                ]]),
-            )
-        except Exception:
-            pass
-        return
 
-    if d.startswith("market_cancel_"):
-        lid = int(d[len("market_cancel_"):])
-        ok_c = await market_cancel(lid, uid)
-        if ok_c:
-            # Возвращаем облик продавцу
-            async with aiosqlite.connect(DB_PATH) as _cdb:
-                async with _cdb.execute("SELECT skin FROM market_listings WHERE id=?", (lid,)) as _cc:
-                    _crow = await _cc.fetchone()
-            if _crow:
-                await db_add_skin(uid, _crow[0])
-            await q.answer("✅ Лот снят с продажи, облик возвращён.", show_alert=True)
-        else:
-            await q.answer("Не удалось снять лот.", show_alert=True)
-        return
 
-    if d == "market_sell_choose":
-        await q.answer()
-        coll_m = await db_coll_qty(uid)
-        # Показываем только дубли (qty > 1) или облики которых нет на экипировке
-        equipped = f.get("skin", "")
-        sellable = [(skin, qty) for skin, qty in coll_m.items()
-                    if qty > 1 or (qty == 1 and skin != equipped)]
-        if not sellable:
-            await q.answer("Нет обликов для продажи. Нужен хотя бы один дубль", show_alert=True)
-            return
-        # Сортируем по редкости (редкие выше)
-        rarity_order = {"mythic": 0, "legendary": 1, "epic": 2, "rare": 3, "uncommon": 4, "common": 5, "secret": 0}
-        sellable.sort(key=lambda x: rarity_order.get(SKINS.get(x[0], {}).get("rarity", "common"), 5))
-        kb_sell = []
-        for skin_s, qty_s in sellable[:12]:
-            s_d = SKINS.get(skin_s, {})
-            kb_sell.append([btn(
-                f"{pemoji(skin_s)} {skin_s} ×{qty_s} ({R_NAME.get(s_d.get('rarity','common'), '?')})",
-                callback_data=f"market_set_price_{skin_s.replace(' ', '_')}",
-            )])
-        kb_sell.append([btn("◀️ Назад", callback_data="market_main")])
-        try:
-            await q.message.edit_text(
-                "📤 <b>Выбери облик для продажи</b>\n\n"
-                "<i>Выставляются дубли или неэкипированные облики.</i>",
-                parse_mode=ParseMode.HTML,
-                reply_markup=InlineKeyboardMarkup(kb_sell),
-            )
-        except Exception:
-            pass
-        return
 
-    if d.startswith("market_set_price_"):
-        skin_sp = d[len("market_set_price_"):].replace("_", " ")
-        if skin_sp not in SKINS:
-            await q.answer("Облик не найден.", show_alert=True)
-            return
-        ctx.user_data[f"market_sell_{uid}"] = {"skin": skin_sp, "msg_id": q.message.message_id}
-        await q.answer()
-        try:
-            await q.message.edit_text(
-                f"💰 <b>Продажа: {pemoji(skin_sp)} {skin_sp}</b>\n\n"
-                f"Напиши цену в монетах (от 10 до 50 000).\n"
-                f"Комиссия 10% при продаже.\n\n"
-                f"Твой баланс: <b>{f['coins']}{_E_COIN}</b>",
-                parse_mode=ParseMode.HTML,
-                reply_markup=InlineKeyboardMarkup([[
-                    btn("❌ Отмена", callback_data="market_main"),
-                ]]),
-            )
-        except Exception:
-            pass
-        return
 
-    if d == "market_my":
-        await q.answer()
-        my_lots = await market_my_listings(uid)
-        if not my_lots:
-            await q.answer("У тебя нет активных лотов.", show_alert=True)
-            return
-        lines_my = ["📋 <b>Мои активные лоты</b>\n"]
-        kb_my = []
-        for lot_m in my_lots:
-            lines_my.append(f"{pemoji(lot_m['skin'])} <b>{lot_m['skin']}</b> — {lot_m['price']}🪙")
-            kb_my.append([btn(
-                f"{_E_CROSS} Снять {lot_m['skin']}",
-                callback_data=f"market_cancel_{lot_m['id']}",
-            )])
-        kb_my.append([btn("◀️ Рынок", callback_data="market_main")])
-        try:
-            await q.message.edit_text(
-                "\n".join(lines_my), parse_mode=ParseMode.HTML,
-                reply_markup=InlineKeyboardMarkup(kb_my),
-            )
-        except Exception:
-            pass
-        return
 
-    # ── МАГАЗИН ЕДЫ ────────────────────────────────
-    if d == "shop_sub":
-        await q.answer()
-        now_sub = time.time()
-        sub_type_ss  = f.get("subscription_type", 0)
-        sub_until_ss = f.get("subscription_until", 0)
-        sub_auto_ss  = f.get("subscription_auto", 1)
-        active_ss          = sub_until_ss > now_sub and sub_type_ss > 0
-        trial_nanny        = f.get("trial_nanny_used", 0)
-        trial_worker       = f.get("trial_worker_used", 0)
-        nanny_trial_expired = trial_nanny and sub_until_ss <= now_sub
-
-        if active_ss:
-            until_ss = datetime.fromtimestamp(sub_until_ss, tz=timezone.utc).strftime("%d.%m.%Y")
-            icon_ss  = "🧑‍🍼 Болотная Няня" if sub_type_ss == 1 else "🏪 Трудяга"
-            auto_ss  = "✅ Авто-продление включено" if sub_auto_ss else "⏸ Авто-продление выключено"
-            status_ss = f"✅ <b>{icon_ss}</b> до <b>{until_ss}</b>"
-        else:
-            status_ss = "❌ Подписка не активна"
-
-        rows_ss = []
-        if active_ss:
-            toggle_ss = "⏸ Выключить авто-продление" if sub_auto_ss else "▶️ Включить авто-продление"
-            rows_ss.append([btn(toggle_ss, callback_data="sub_toggle_auto")])
-            if sub_type_ss == 1:
-                rows_ss.append([btn("🔼 Улучшить до Трудяги — 800⭐", callback_data="sub_buy_worker")])
-            rows_ss.append([btn("🔄 Продлить подписку", callback_data="sub_renew")])
-        else:
-            # Бесплатный пробник Трудяги — только после того как пробник Няни уже закончился
-            if not trial_nanny:
-                rows_ss.append([btn("🎁 3 дня Болотной Няни бесплатно", callback_data="sub_trial_nanny")])
-            elif nanny_trial_expired and not trial_worker:
-                rows_ss.append([btn("🎁 1 день Трудяги бесплатно", callback_data="sub_trial_worker")])
-            rows_ss.append([btn("🧑‍🍼 Болотная Няня — 200⭐/мес", callback_data="sub_buy_nanny")])
-            rows_ss.append([btn("🏪 Трудяга — 800⭐/мес", callback_data="sub_buy_worker")])
-
-        # Дневник рабочего дня (только для активной Трудяги)
-        workday_block_ss = ""
-        if active_ss and sub_type_ss >= 2:
-            phase_ss       = f.get("worker_phase", 0)
-            last_report_ss = f.get("last_worker_report", 0)
-            hour_msk_ss    = (datetime.utcnow().hour + 3) % 24
-            now_ss2        = time.time()
-            if phase_ss == 0 and last_report_ss > 0:
-                today_msk_ss = datetime.utcfromtimestamp(now_ss2 + 3*3600).strftime("%Y-%m-%d")
-                last_msk_ss  = datetime.utcfromtimestamp(last_report_ss + 3*3600).strftime("%Y-%m-%d")
-                last_dt_ss   = datetime.utcfromtimestamp(last_report_ss + 3*3600).strftime("%d.%m в %H:%M")
-                if today_msk_ss == last_msk_ss:
-                    next_ss = "Следующий выход — завтра в 07:00 МСК"
-                elif hour_msk_ss < 18:
-                    next_ss = "⚡ Выйдет при ближайшем запуске"
-                else:
-                    next_ss = "Выйдет сегодня вечером"
-                workday_block_ss = f"\n\n📅 Последний выход: {last_dt_ss}\n⏰ {next_ss}"
-
-        nanny_desc  = "🧑‍🍼 <b>Болотная Няня</b> — автоуход за лягушкой (кормит, моет, укладывает спать)"
-        worker_desc = (
-            "🏪 <b>Трудяга</b> — всё от Няни + лягушка каждый день ходит на работу\n"
-            "Профессии: торговка, IT-фрилансер, лекарь, художница, детектив, 🚀 космонавт\n"
-            f"Заработок: <b>400–700🪙</b>/день обычно, до <b>2 000🪙</b> если выпадет Космонавт\n"
-            f"<i>Пример: {he(f.get('frog_name') or 'Квакуся')} вышла на рынок в туман, нашла грибную поляну и продала урожай втридорога. Итог: +520🪙</i>"
-        )
-        trial_note  = ""
-        if not trial_nanny:
-            trial_note = "\n\n🎁 <i>Тебе доступен бесплатный пробник — попробуй прежде чем платить</i>"
-        elif nanny_trial_expired and not trial_worker:
-            trial_note = "\n\n🎁 <i>Пробник Няни закончился — можешь бесплатно попробовать 1 день Трудяги</i>"
-
-        rows_ss.append([btn("◀️ Назад", callback_data="menu_shop")])
-        try:
-            await q.message.edit_text(
-                f"🐸 <b>Подписки</b>\n\n"
-                f"{nanny_desc}\n"
-                f"{worker_desc}\n\n"
-                f"Статус: {status_ss}"
-                f"{workday_block_ss}"
-                f"{trial_note}",
-                parse_mode=ParseMode.HTML,
-                reply_markup=InlineKeyboardMarkup(rows_ss),
-            )
-        except Exception:
-            pass
-        return
 
 
     if d.startswith("seasonal_buy_"):
@@ -35399,761 +39179,16 @@ async def on_callback(update: Update, ctx: ContextTypes.DEFAULT_TYPE):
             pass
         return
 
-    if d == "shop_food":
-        await q.answer()
-        inv = await inv_get(uid)
-        rows = []
 
-        # Заголовок — одна строка, баланс справа
-        header = (
-            f"<b>Магазин еды</b> · {f['coins']} {coin_emoji()}\n"
-            f"<i>🪰 Муха бесплатна 1 раз в день. Остальная еда покупается здесь.</i>\n"
-        )
 
-        item_lines = []
-        for fid, food in FOOD.items():
-            if fid == "fly":
-                continue
-            qty = inv.get(fid, 0)
-            in_stock = f"  (в запасе: {qty})" if qty > 0 else ""
-            # Компактная строка: emoji имя — цена — эффекты
-            effects = []
-            if food["hunger"]: effects.append(f"🍖+{food['hunger']}")
-            if food["happy"]:  effects.append(f"😄+{food['happy']}")
-            if food["health"]: effects.append(f"❤️+{food['health']}")
-            effects_str = "  ".join(effects)
-            item_lines.append(
-                f"{food['emoji']} <b>{food['name']}</b> — {food['price']} {coin_emoji()}{in_stock}\n"
-                f"   {effects_str} · <i>{food['desc']}</i>"
-            )
-            rows.append([
-                btn(
-                    f"Купить ×1 {food['emoji']} {food['name']} ({food['price']}🪙)",
-                    callback_data=f"buy_food_{fid}",
-                ),
-                btn(
-                    f"×10 ({food['price']*10}🪙)",
-                    callback_data=f"buy_food_bulk_{fid}_10",
-                ),
-            ])
 
-        rows.append([btn("◀️ Назад", callback_data="menu_shop")])
-        text = header + "\n" + "\n\n".join(item_lines)
-        try:
-            await q.message.edit_text(
-                text,
-                parse_mode=ParseMode.HTML,
-                reply_markup=InlineKeyboardMarkup(rows),
-            )
-        except Exception:
-            pass
-        return
 
-    # ── Магазин еды из столовой (кнопка Назад → canteen_menu) ──────────────
-    if d == "shop_food_canteen":
-        await q.answer()
-        inv = await inv_get(uid)
-        rows = []
-        header = (
-            f"<b>Магазин еды</b> · {f['coins']} {coin_emoji()}\n"
-            f"<i>🪰 Муха бесплатна 1 раз в день. Остальная еда покупается здесь.</i>\n"
-        )
-        item_lines = []
-        for fid, food in FOOD.items():
-            if fid == "fly":
-                continue
-            qty = inv.get(fid, 0)
-            in_stock = f"  (в запасе: {qty})" if qty > 0 else ""
-            effects = []
-            if food["hunger"]: effects.append(f"🍖+{food['hunger']}")
-            if food["happy"]:  effects.append(f"😄+{food['happy']}")
-            if food["health"]: effects.append(f"❤️+{food['health']}")
-            effects_str = "  ".join(effects)
-            item_lines.append(
-                f"{food['emoji']} <b>{food['name']}</b> — {food['price']} {coin_emoji()}{in_stock}\n"
-                f"   {effects_str} · <i>{food['desc']}</i>"
-            )
-            rows.append([
-                btn(
-                    f"Купить ×1 {food['emoji']} {food['name']} ({food['price']}🪙)",
-                    callback_data=f"buy_food_{fid}",
-                ),
-                btn(
-                    f"×10 ({food['price']*10}🪙)",
-                    callback_data=f"buy_food_bulk_{fid}_10",
-                ),
-            ])
-        rows.append([btn("◀️ Назад в столовую", callback_data="canteen_menu")])
-        text = header + "\n" + "\n\n".join(item_lines)
-        try:
-            await q.message.edit_text(
-                text,
-                parse_mode=ParseMode.HTML,
-                reply_markup=InlineKeyboardMarkup(rows),
-            )
-        except Exception:
-            pass
-        return
 
-    # ── КУПИТЬ ЕДУ (BULK +10 с подтверждением) ─────
-    if d.startswith("buy_food_bulk_"):
-        parts_bulk = d[14:].rsplit("_", 1)
-        fid_bulk = parts_bulk[0]
-        qty_bulk = int(parts_bulk[1]) if len(parts_bulk) > 1 else 10
-        food_bulk = FOOD.get(fid_bulk)
-        if not food_bulk:
-            await q.answer("Неизвестный товар", show_alert=True)
-            return
-        total_cost = food_bulk["price"] * qty_bulk
-        if f["coins"] < total_cost:
-            await q.answer(
-                f"Нужно {total_cost} 🪙 (у тебя {f['coins']} 🪙)!",
-                show_alert=True,
-            )
-            return
-        # Показываем подтверждение
-        kb_conf = InlineKeyboardMarkup(
-            [
-                [
-                    btn(
-                        f"✅ Купить ×{qty_bulk} за {total_cost}🪙",
-                        callback_data=f"buy_food_confirm_{fid_bulk}_{qty_bulk}",
-                    ),
-                ],
-                [btn("◀️ Отмена", callback_data="shop_food")],
-            ]
-        )
-        try:
-            await q.message.edit_text(
-                f"{_E_SHOP} <b>Подтверждение покупки</b>\n\n"
-                f"{food_bulk['emoji']} <b>{he(food_bulk['name'])}</b> ×{qty_bulk}\n"
-                f"Стоимость: <b>{total_cost}{coin_emoji()}</b>\n"
-                f"💼 У тебя: {f['coins']}{coin_emoji()}\n\n"
-                f"Подтвердить?",
-                parse_mode=ParseMode.HTML,
-                reply_markup=kb_conf,
-            )
-        except Exception:
-            pass
-        return
 
-    if d.startswith("buy_food_confirm_"):
-        parts_conf = d[17:].rsplit("_", 1)
-        fid_conf = parts_conf[0]
-        qty_conf = int(parts_conf[1]) if len(parts_conf) > 1 else 10
-        food_conf = FOOD.get(fid_conf)
-        if not food_conf:
-            await q.answer("Неизвестный товар", show_alert=True)
-            return
-        # Жадная -10% к стоимости еды
-        _pers_gr2 = PERSONALITIES.get(f.get("personality", ""), {})
-        _price_disc2 = _pers_gr2.get("feed_cost_discount", 1.0)
-        total_conf = max(qty_conf, int(food_conf["price"] * qty_conf * _price_disc2))
-        if f["coins"] < total_conf:
-            await q.answer((f"Нужно {total_conf}{coin_plain()}")[:200], show_alert=True)
-            return
-        f["coins"] -= total_conf
-        f["coins_spent"] = f.get("coins_spent", 0) + total_conf
-        await inv_add(uid, fid_conf, qty_conf)
-        await db_save(f)
-        await check_referral_stages(f, ctx.bot)
-        await q.answer(
-            f"✅ Куплено: {food_conf['emoji']} ×{qty_conf}! Осталось {f['coins']}{coin_plain()}"
-        )
-        # Возвращаем в магазин еды
-        inv = await inv_get(uid)
-        lines = [f"🍽 <b>Магазин еды</b> {f['coins']}{coin_emoji()}\n"]
-        rows = []
-        for fid2, food2 in FOOD.items():
-            if fid2 == "fly":
-                continue
-            qty2 = inv.get(fid2, 0)
-            lines.append(
-                f"{food2['emoji']} <b>{food2['name']}</b> — {food2['price']}{coin_emoji()} ×{qty2}\n"
-                f"   🍖+{food2['hunger']} 😄+{food2['happy']} ❤️+{food2['health']} {_E_XP}+{food2['xp']}\n"
-                f"   <i>{food2['desc']}</i>\n"
-            )
-            rows.append(
-                [
-                    btn(
-                        f"Купить {food2['emoji']} ×1 ({food2['price']}🪙)",
-                        callback_data=f"buy_food_{fid2}",
-                    ),
-                    btn(
-                        f"×10 ({food2['price']*10}🪙)",
-                        callback_data=f"buy_food_bulk_{fid2}_10",
-                    ),
-                ]
-            )
-        rows.append([btn("◀️ Назад", callback_data="menu_shop")])
-        try:
-            await q.message.edit_text(
-                "\n".join(lines),
-                parse_mode=ParseMode.HTML,
-                reply_markup=InlineKeyboardMarkup(rows),
-            )
-        except Exception:
-            pass
-        return
 
-    # ── КУПИТЬ ЕДУ ─────────────────────────────────
-    if d.startswith("buy_food_"):
-        fid = d[9:]
-        food = FOOD.get(fid)
-        if not food:
-            await q.answer("Неизвестный товар", show_alert=True)
-            return
-        # Жадная -10% к стоимости еды
-        _pers_gr = PERSONALITIES.get(f.get("personality", ""), {})
-        _food_price = max(1, int(food["price"] * _pers_gr.get("feed_cost_discount", 1.0)))
-        if f["coins"] < _food_price:
-            await q.answer((f"Нужно {_food_price}{coin_plain()}")[:200], show_alert=True)
-            return
-        f["coins"] -= _food_price
-        f["coins_spent"] = f.get("coins_spent", 0) + _food_price
-        await inv_add(uid, fid)
-        await db_save(f)
-        await check_referral_stages(f, ctx.bot)
-        await q.answer(
-            f"✅ Куплено: {food['emoji']} {food['name']}! Осталось {f['coins']}{coin_plain()}"
-        )
-        # Обновить страницу магазина
-        inv = await inv_get(uid)
-        lines = [f"🍽 <b>Магазин еды</b> {f['coins']}{coin_emoji()}\n"]
-        rows = []
-        for fid2, food2 in FOOD.items():
-            if fid2 == "fly":
-                continue
-            qty = inv.get(fid2, 0)
-            lines.append(
-                f"{food2['emoji']} <b>{food2['name']}</b> — {food2['price']}{coin_emoji()} ×{qty}\n"
-                f"   🍖+{food2['hunger']} 😄+{food2['happy']} ❤️+{food2['health']} {_E_XP}+{food2['xp']}\n"
-                f"   <i>{food2['desc']}</i>\n"
-            )
-            rows.append(
-                [
-                    btn(
-                        f"Купить {food2['emoji']} ×1 ({food2['price']}🪙)",
-                        callback_data=f"buy_food_{fid2}",
-                    ),
-                    btn(
-                        f"×10 ({food2['price']*10}🪙)",
-                        callback_data=f"buy_food_bulk_{fid2}_10",
-                    ),
-                ]
-            )
-        rows.append([btn("◀️ Назад", callback_data="menu_shop")])
-        try:
-            await q.message.edit_text(
-                "\n".join(lines),
-                parse_mode=ParseMode.HTML,
-                reply_markup=InlineKeyboardMarkup(rows),
-            )
-        except Exception:
-            pass
-        return
 
-    # ── МАГАЗИН ОБЛИКОВ ────────────────────────────
-    if d.startswith("shop_skins_"):
-        await q.answer()
-        page = int(d.split("_")[2])
-        buyable = [
-            (k, v) for k, v in SKINS.items() if v["rarity"] in ("common", "uncommon")
-        ]
-        per = 6
-        total = math.ceil(len(buyable) / per)
-        chunk = buyable[page * per : (page + 1) * per]
-        coll = await db_coll(uid)
-        use_st = bool(f.get("use_static", 0))
-        lines = [
-            f"👗 <b>Магазин обликов</b> {f['coins']}{coin_emoji()}\n<i>(только обычные и необычные)</i>\n"
-        ]
-        rows = []
-        for sk, sv in chunk:
-            price = SHOP_SKIN_PRICES[sv["rarity"]]
-            owned = "✅" if sk in coll else f"{price}{coin_emoji()}"
-            lines.append(f"{R_ICON[sv['rarity']]} {display_skin(sk, use_st)} — {owned}")
-            if sk not in coll:
-                rows.append(
-                    [
-                        skin_btn(
-                            f"Купить {sk} ({price}{coin_plain()})",
-                            sk,
-                            f"buy_skin_{sk}",
-                        )
-                    ]
-                )
-        nav = []
-        if page > 0:
-            nav.append(btn("◀", callback_data=f"shop_skins_{page-1}"))
-        if page < total - 1:
-            nav.append(btn("▶", callback_data=f"shop_skins_{page+1}"))
-        if nav:
-            rows.append(nav)
-        rows.append([
-            btn("💎 Купить Stars и TON за рубли", url="https://t.me/FrogsStar_bot"),
-        ])
-        rows.append([btn("◀️ Назад", callback_data="menu_shop")])
-        try:
-            await q.message.edit_text(
-                "\n".join(lines),
-                parse_mode=ParseMode.HTML,
-                reply_markup=InlineKeyboardMarkup(rows),
-                link_preview_options=LinkPreviewOptions(),
-            )
-        except Exception:
-            pass
-        return
 
-    # ── КУПИТЬ ОБЛИК ───────────────────────────────
-    if d.startswith("buy_skin_"):
-        skin = d[9:]
-        if skin not in SKINS:
-            await q.answer("Неизвестный облик", show_alert=True)
-            return
-        s = SKINS[skin]
-        if s["rarity"] not in ("common", "uncommon"):
-            await q.answer("Этот облик можно только выбить в гаче", show_alert=True)
-            return
-        coll = await db_coll(uid)
-        if skin in coll:
-            await q.answer("Уже есть в коллекции", show_alert=True)
-            return
-        price = SHOP_SKIN_PRICES[s["rarity"]]
-        if f["coins"] < price:
-            await q.answer((f"Нужно {price}{coin_plain()}")[:200], show_alert=True)
-            return
-        f["coins"] -= price
-        f["coins_spent"] = f.get("coins_spent", 0) + price
-        await db_add_skin(uid, skin)
-        await db_save(f)
-        await q.answer(f"✅ Куплен {skin}! -{price}{coin_plain()}")
-        await show_status(q, f, edit=True)
-        return
 
-    # ── МЕНЮ КРАФТА ────────────────────────────────
-    if d == "craft_menu":
-        await q.answer()
-        coll_qty = await db_coll_qty(uid)
-        counts = {}
-        for sk, qty in coll_qty.items():
-            r = SKINS.get(sk, {}).get("rarity", "common") if sk != MYTHIC_SHARD_KEY else MYTHIC_SHARD_KEY
-            counts[r] = counts.get(r, 0) + qty
-        shard_count = coll_qty.get(MYTHIC_SHARD_KEY, 0)
-
-        lines = [
-            "🔨 <b>Крафт обликов</b>\n\n"
-            "<i>Комбинируй облики одной редкости → получи более редкий</i>\n"
-        ]
-        rows = []
-        for rar, recipe in CRAFT_RECIPES.items():
-            if recipe.get("special") == "mythic_shard":
-                have = counts.get(rar, 0)
-                ready_lbl = "✅" if have >= recipe["needs"] else f"({have}/{recipe['needs']})"
-                lines.append(
-                    f"{R_ICON[rar]} {R_NAME[rar]} ×{recipe['needs']} → 🔮 Осколок Мифика {ready_lbl}"
-                )
-                if have >= recipe["needs"]:
-                    rows.append([btn(
-                        f"{_E_HAMMER} Скрафтить Осколок ({have}/{recipe['needs']} легенд)",
-                        callback_data=f"craft_{rar}",
-                    )])
-            else:
-                have = counts.get(rar, 0)
-                result_rar = recipe["result_rarity"]
-                chance_txt = f" (шанс {int(recipe['chance']*100)}%)" if "chance" in recipe else ""
-                ready_lbl = "✅" if have >= recipe["needs"] else f"({have}/{recipe['needs']})"
-                lines.append(
-                    f"{R_ICON[rar]} {R_NAME[rar]} ×{recipe['needs']} → "
-                    f"{R_ICON[result_rar]} {R_NAME[result_rar]}{chance_txt} {ready_lbl}"
-                )
-                if have >= recipe["needs"]:
-                    rows.append([btn(
-                        f"{_E_HAMMER} Крафтить из {R_NAME[rar]}",
-                        callback_data=f"craft_{rar}",
-                    )])
-
-        # Кнопка сборки мифика из осколков
-        lines.append(f"\n🔮 <b>Осколки Мифика:</b> {shard_count}/{MYTHIC_SHARDS_NEEDED}")
-        if shard_count >= MYTHIC_SHARDS_NEEDED:
-            lines.append("<i>✅ Достаточно для сборки мифического облика</i>")
-            rows.append([btn(
-                f"🔮 Собрать Мифический облик ({shard_count}/{MYTHIC_SHARDS_NEEDED} осколков)",
-                callback_data="craft_assemble_mythic",
-            )])
-        else:
-            lines.append(f"<i>Собери ещё {MYTHIC_SHARDS_NEEDED - shard_count} осколков из легендарных обликов</i>")
-
-        # Кнопка «Скрафтить всё» — если есть хотя бы один готовый рецепт
-        can_craft_any = any(
-            counts.get(rar, 0) >= recipe["needs"]
-            for rar, recipe in CRAFT_RECIPES.items()
-        ) or shard_count >= MYTHIC_SHARDS_NEEDED
-        if can_craft_any and f.get("coins", 0) >= 1000:
-            rows.insert(0, [btn(
-                "⚡ Скрафтить всё (1 000🪙)",
-                callback_data="craft_all",
-            )])
-
-        rows.append([btn("◀️ Назад", callback_data="menu_shop")])
-        try:
-            await q.message.edit_text(
-                "\n".join(lines),
-                parse_mode=ParseMode.HTML,
-                reply_markup=InlineKeyboardMarkup(rows),
-            )
-        except Exception:
-            pass
-        return
-
-    # ── СКРАФТИТЬ ВСЁ ─────────────────────────────────────────────────────────
-    if d == "craft_all":
-        CRAFT_ALL_COST = 1000
-        if f.get("coins", 0) < CRAFT_ALL_COST:
-            await q.answer((f"Нужно {CRAFT_ALL_COST}🪙 для «Скрафтить всё»")[:200], show_alert=True)
-            return
-
-        # ── Загружаем коллекцию один раз ──────────────────────────────────
-        coll_qty = await db_coll_qty(uid)
-        # Работаем с копией в памяти — никаких промежуточных DB-запросов
-        inventory: dict[str, int] = {k: v for k, v in coll_qty.items()}
-
-        crafted_results: list[str] = []
-        to_remove: list[str] = []   # облики к списанию
-        to_add: list[str] = []      # облики к добавлению
-        total_xp = 0
-
-        # ── Крафтим в памяти до упора ─────────────────────────────────────
-        # Максимум 500 операций — защита от теоретически бесконечного цикла
-        # (на практике ограничено количеством обликов в коллекции)
-        safety = 500
-        changed = True
-        while changed and safety > 0:
-            changed = False
-            for rar, recipe in CRAFT_RECIPES.items():
-                needs = recipe["needs"]
-                if rar == MYTHIC_SHARD_KEY:
-                    # Особый рецепт — только осколки
-                    have = inventory.get(MYTHIC_SHARD_KEY, 0)
-                else:
-                    # Считаем сколько обликов нужной редкости есть в инвентаре
-                    available = [
-                        (sk, qty) for sk, qty in inventory.items()
-                        if SKINS.get(sk, {}).get("rarity") == rar
-                        and sk != MYTHIC_SHARD_KEY
-                        and qty > 0
-                    ]
-                    have = sum(qty for _, qty in available)
-
-                if have < needs:
-                    continue
-
-                # ── Списываем материалы из памяти ─────────────────────────
-                rem = needs
-                for sk, qty in sorted(
-                    [(sk, qty) for sk, qty in inventory.items()
-                     if SKINS.get(sk, {}).get("rarity") == rar and sk != MYTHIC_SHARD_KEY],
-                    key=lambda x: (-x[1], x[0])
-                ):
-                    if rem <= 0: break
-                    take = min(qty, rem)
-                    inventory[sk] = inventory.get(sk, 0) - take
-                    to_remove.extend([sk] * take)
-                    if inventory[sk] <= 0:
-                        del inventory[sk]
-                    rem -= take
-
-                # ── Производим крафт ──────────────────────────────────────
-                if recipe.get("special") == "mythic_shard":
-                    inventory[MYTHIC_SHARD_KEY] = inventory.get(MYTHIC_SHARD_KEY, 0) + 1
-                    to_add.append(MYTHIC_SHARD_KEY)
-                    crafted_results.append("🔮 Осколок Мифика")
-                    total_xp += 100
-                else:
-                    chance = recipe.get("chance", 1.0)
-                    if random.random() < chance:
-                        result_skin = roll(rarity_filter=recipe["result_rarity"])
-                        inventory[result_skin] = inventory.get(result_skin, 0) + 1
-                        to_add.append(result_skin)
-                        crafted_results.append(f"{R_ICON[recipe['result_rarity']]} {result_skin}")
-                        total_xp += 50
-                    else:
-                        crafted_results.append(f"💨 Провал из {R_NAME[rar]}")
-                        total_xp += 10
-
-                changed = True
-                safety -= 1
-                break  # перезапускаем цикл чтобы учесть новые материалы
-
-        if not crafted_results:
-            await q.answer("Нет доступных рецептов", show_alert=True)
-            return
-
-        # ── Один батч в БД для всех изменений ─────────────────────────────
-        await db_remove_skins_batch(uid, to_remove)
-        await db_add_skins_batch(uid, to_add)
-
-        # Проверяем не пропал ли текущий облик
-        if f["skin"] in to_remove:
-            new_coll = await db_coll_qty(uid)
-            if new_coll.get(f["skin"], 0) == 0:
-                f["skin"] = "Brownie"
-
-        f["coins"] -= CRAFT_ALL_COST
-        f["coins_spent"] = f.get("coins_spent", 0) + CRAFT_ALL_COST
-        f["total_crafts"] = f.get("total_crafts", 0) + len(crafted_results)
-        add_xp(f, total_xp)
-        rewards = await levelup(f, ctx.bot)
-        await db_save(f)
-        await ach_grant(uid, "crafter", ctx.bot)
-
-        n_ops = len(crafted_results)
-        results_text = "\n".join(f"• {r}" for r in crafted_results[:20])
-        if n_ops > 20:
-            results_text += f"\n<i>...и ещё {n_ops - 20} операций</i>"
-        text = (
-            f"⚡ <b>Скрафтить всё — готово!</b>\n\n"
-            f"Операций: <b>{n_ops}</b>\n"
-            f"{results_text}\n\n"
-            f"{_E_XP} +{total_xp} XP 💸 -{CRAFT_ALL_COST}🪙"
-        )
-        for lvl, rskin in rewards:
-            text += f"\n🎉 <b>Уровень {lvl}!</b> Облик: {display_skin(rskin)}"
-        kb = InlineKeyboardMarkup([
-            [btn("🔨 Крафт", callback_data="craft_menu")],
-            [btn("◀️ Главное меню", callback_data="refresh")],
-        ])
-        try:
-            await q.message.edit_text(text, parse_mode=ParseMode.HTML, reply_markup=kb,
-                                      link_preview_options=LinkPreviewOptions(is_disabled=True))
-        except Exception:
-            try: await q.message.reply_text(text, parse_mode=ParseMode.HTML, reply_markup=kb)
-            except Exception: pass
-        await q.answer()
-        return
-
-    # ── КРАФТ ──────────────────────────────────────
-    if d.startswith("craft_") and d != "craft_assemble_mythic":
-        rar = d[6:]
-        if rar not in CRAFT_RECIPES:
-            await q.answer("Неизвестный рецепт", show_alert=True)
-            return
-        recipe = CRAFT_RECIPES[rar]
-        coll_qty = await db_coll_qty(uid)
-        owned_by_rarity = [
-            (sk, qty)
-            for sk, qty in coll_qty.items()
-            if SKINS.get(sk, {}).get("rarity") == rar
-        ]
-        total_available = sum(qty for _, qty in owned_by_rarity)
-        if total_available < recipe["needs"]:
-            await q.answer((f"Нужно {recipe['needs']} обликов {R_NAME[rar]}")[:200], show_alert=True)
-            return
-        extra = recipe.get("price_coins", 0)
-        if extra and f["coins"] < extra:
-            await q.answer((f"Нужно {extra}{coin_plain()}")[:200], show_alert=True)
-            return
-
-        # Списываем материалы
-        to_remove = []
-        needed = recipe["needs"]
-        sorted_owned = sorted(owned_by_rarity, key=lambda x: (-x[1], x[0]))
-        for sk, qty in sorted_owned:
-            if needed <= 0:
-                break
-            take = min(qty, needed)
-            for _ in range(take):
-                to_remove.append(sk)
-            needed -= take
-        for sk in to_remove:
-            await db_remove_skin(uid, sk)
-            if f["skin"] == sk:
-                remaining = await db_coll_qty(uid)
-                if remaining.get(sk, 0) == 0:
-                    f["skin"] = "Brownie"
-        if extra:
-            f["coins"] -= extra
-            f["coins_spent"] = f.get("coins_spent", 0) + extra
-
-        from collections import Counter
-        removed_display = ", ".join(
-            f"{sk}×{n}" if n > 1 else sk for sk, n in Counter(to_remove).items()
-        )
-        use_st = bool(f.get("use_static", 0))
-
-        # ── Специальный рецепт: legendary → осколок мифика ─────────────────
-        if recipe.get("special") == "mythic_shard":
-            await db_add_skin(uid, MYTHIC_SHARD_KEY)
-            shard_now = (await db_coll_qty(uid)).get(MYTHIC_SHARD_KEY, 0)
-            add_xp(f, 100)
-            rewards = await levelup(f, ctx.bot)
-            f["total_crafts"] = f.get("total_crafts", 0) + 1
-            await db_save(f)
-            await ach_grant(uid, "crafter", ctx.bot)
-            text = (
-                f"{_E_HAMMER} <b>Крафт завершён!</b>\n\n"
-                f"Использовано: <i>{removed_display}</i>\n\n"
-                f"🔮 Получен: <b>Осколок Мифика</b>\n"
-                f"Осколков в инвентаре: <b>{shard_now}/{MYTHIC_SHARDS_NEEDED}</b>\n"
-                f"{_E_XP} +100 XP\n\n"
-                + (f"<i>✅ Достаточно для сборки! Жми «Собрать Мифический»</i>"
-                   if shard_now >= MYTHIC_SHARDS_NEEDED
-                   else f"<i>Ещё {MYTHIC_SHARDS_NEEDED - shard_now} осколков до мифического облика</i>")
-            )
-            for lvl, rskin in rewards:
-                text += f"\n🎉 <b>Уровень {lvl}!</b> Облик: {display_skin(rskin, use_st)}"
-            kb = InlineKeyboardMarkup([
-                [btn("🔨 Крафтить ещё", callback_data="craft_menu")],
-                [btn("◀️ Назад", callback_data="refresh")],
-            ])
-            if shard_now >= MYTHIC_SHARDS_NEEDED:
-                kb = InlineKeyboardMarkup([
-                    [btn("🔮 Собрать Мифический", callback_data="craft_assemble_mythic")],
-                    [btn("🔨 Крафтить ещё", callback_data="craft_menu")],
-                ])
-            try:
-                await q.message.edit_text(text, parse_mode=ParseMode.HTML, reply_markup=kb,
-                                          link_preview_options=LinkPreviewOptions(is_disabled=True))
-            except Exception:
-                try: await q.message.reply_text(text, parse_mode=ParseMode.HTML, reply_markup=kb)
-                except Exception: pass
-            return
-
-        # ── Обычный крафт с возможным шансом ───────────────────────────────
-        chance = recipe.get("chance", 1.0)
-        success = random.random() < chance
-
-        if not success:
-            # Провал — материалы уже списаны, просто сообщаем
-            add_xp(f, 10)
-            await db_save(f)
-            fail_text = recipe.get("fail_text", "💨 Крафт не удался... Материалы потеряны.")
-            chance_pct = int(chance * 100)
-            text = (
-                f"{_E_HAMMER} <b>Крафт</b> — неудача ({chance_pct}% шанс)\n\n"
-                f"Использовано: <i>{removed_display}</i>\n\n"
-                f"{fail_text}"
-            )
-            kb = InlineKeyboardMarkup([
-                [btn("🔨 Попробовать снова", callback_data=f"craft_{rar}")],
-                [btn("◀️ Назад", callback_data="craft_menu")],
-            ])
-            try:
-                await q.message.edit_text(text, parse_mode=ParseMode.HTML, reply_markup=kb,
-                                          link_preview_options=LinkPreviewOptions(is_disabled=True))
-            except Exception:
-                try: await q.message.reply_text(text, parse_mode=ParseMode.HTML, reply_markup=kb)
-                except Exception: pass
-            return
-
-        # Успех
-        result_skin = roll(rarity_filter=recipe["result_rarity"])
-        await db_add_skin(uid, result_skin)
-        add_xp(f, 50)
-        rewards = await levelup(f, ctx.bot)
-        f["total_crafts"] = f.get("total_crafts", 0) + 1
-        await db_save(f)
-        await ach_grant(uid, "crafter", ctx.bot)
-
-        chance_note = f" (шанс {int(chance*100)}% — повезло! 🍀)" if chance < 1.0 else ""
-        rs = SKINS[result_skin]
-        text = (
-            f"{_E_HAMMER} <b>Крафт завершён!</b>{chance_note}\n\n"
-            f"Использовано: <i>{removed_display}</i>\n\n"
-            f"✨ Получен:\n"
-            f"{R_ICON[recipe['result_rarity']]} {display_skin(result_skin, use_st)}\n"
-            f"Редкость: <b>{R_NAME[recipe['result_rarity']]}</b>\n"
-            f"{_E_XP} +50 XP"
-        )
-        for lvl, rskin in rewards:
-            text += f"\n🎉 <b>Уровень {lvl}!</b> Облик: {display_skin(rskin, use_st)}"
-        kb = InlineKeyboardMarkup([
-            [btn(f"✅ Надеть {result_skin}", callback_data=f"equip_{result_skin}")],
-            [
-                btn("🔨 Крафтить ещё", callback_data="craft_menu"),
-                btn("◀️ Назад", callback_data="refresh"),
-            ],
-        ])
-        try:
-            await q.message.edit_text(text, parse_mode=ParseMode.HTML, reply_markup=kb,
-                                      link_preview_options=LinkPreviewOptions(is_disabled=True))
-        except Exception as e:
-            print(f"⚠️ craft edit error: {e}")
-            try:
-                await q.message.reply_text(text, parse_mode=ParseMode.HTML, reply_markup=kb,
-                                           link_preview_options=LinkPreviewOptions(is_disabled=True))
-            except Exception:
-                pass
-        return
-
-    # ── СБОРКА МИФИКА ИЗ ОСКОЛКОВ ──────────────────────────────────────────
-    if d == "craft_assemble_mythic":
-        coll_qty = await db_coll_qty(uid)
-        shard_count = coll_qty.get(MYTHIC_SHARD_KEY, 0)
-        if shard_count < MYTHIC_SHARDS_NEEDED:
-            await q.answer(
-                f"Нужно {MYTHIC_SHARDS_NEEDED} осколков! У тебя: {shard_count}",
-                show_alert=True,
-            )
-            return
-        await q.answer()
-
-        # Списываем 5 осколков
-        for _ in range(MYTHIC_SHARDS_NEEDED):
-            await db_remove_skin(uid, MYTHIC_SHARD_KEY)
-
-        # Берём случайный мифический облик (кроме award-only)
-        mythic_skins = [
-            sk for sk, s in SKINS.items()
-            if s.get("rarity") == "mythic" and not s.get("award") and sk != MYTHIC_SHARD_KEY
-        ]
-        if not mythic_skins:
-            mythic_skins = [sk for sk, s in SKINS.items() if s.get("rarity") == "mythic"]
-
-        result_skin = random.choice(mythic_skins)
-        await db_add_skin(uid, result_skin)
-        add_xp(f, 500)
-        rewards = await levelup(f, ctx.bot)
-        f["total_crafts"] = f.get("total_crafts", 0) + 1
-        await db_save(f)
-        await ach_grant(uid, "crafter", ctx.bot)
-        await ach_grant(uid, "mythic_owner", ctx.bot)
-
-        use_st = bool(f.get("use_static", 0))
-        text = (
-            f"🔮 <b>Мифический облик собран!</b>\n\n"
-            f"5 осколков слились воедино...\n\n"
-            f"🔴 {display_skin(result_skin, use_st)}\n"
-            f"Редкость: <b>Мифический</b>\n"
-            f"{_E_XP} +500 XP"
-        )
-        for lvl, rskin in rewards:
-            text += f"\n🎉 <b>Уровень {lvl}!</b> Облик: {display_skin(rskin, use_st)}"
-
-        asyncio.create_task(letopis_add(uid, 'myth_craft', f"🔮 {fname(f)} собрала мифический облик {result_skin}!"))
-        # Анонс в чат
-        try:
-            await announce(
-                ctx.bot,
-                f"🔮 <b>Мифическое событие!</b>\n"
-                f"<b>{fname(f)}</b> собрала мифический облик из осколков:\n"
-                f"🔴 {result_skin} 🍀",
-                delete_after=300,
-            )
-        except Exception:
-            pass
-
-        kb = InlineKeyboardMarkup([
-            [btn(f"✅ Надеть {result_skin}", callback_data=f"equip_{result_skin}")],
-            [btn("◀️ Назад", callback_data="refresh")],
-        ])
-        try:
-            await q.message.edit_text(text, parse_mode=ParseMode.HTML, reply_markup=kb,
-                                      link_preview_options=LinkPreviewOptions(is_disabled=True))
-        except Exception:
-            try: await q.message.reply_text(text, parse_mode=ParseMode.HTML, reply_markup=kb)
-            except Exception: pass
-        return
 
     # ── КВЕСТЫ ─────────────────────────────────────
     if d == "quests":
@@ -36388,25 +39423,6 @@ async def on_callback(update: Update, ctx: ContextTypes.DEFAULT_TYPE):
 
 
     # ── КАЗИНО — МЕНЮ ──────────────────────────────
-    CASINO = {
-        "dice": {"emoji": "🎲", "name": "Кубик", "desc": "5: ×2 · 6: ×3.4"},
-        "dart": {"emoji": "🎯", "name": "Дартс", "desc": "5: ×2 · 6: ×3.4"},
-        "basketball": {
-            "emoji": "🏀",
-            "name": "Баскетбол",
-            "desc": "5: ×2.4 · 6: ×3",
-        },
-        "slots": {
-            "emoji": "🎰",
-            "name": "Слоты",
-            "desc": "Джекпот ×8 · Тройка ×3 · Пара ×2",
-        },
-        "double": {
-            "emoji": "🎲",
-            "name": "Double or Nothing",
-            "desc": "Удваивай банк до 10 раз — или потеряй всё!",
-        },
-    }
     if d in ("menu_lottery", "menu_jackpot"):
         if d == "menu_lottery":
             today = lottery_today()
@@ -36584,665 +39600,22 @@ async def on_callback(update: Update, ctx: ContextTypes.DEFAULT_TYPE):
             pass
         return
 
-    if d == "buy_stars_quick":
-        await q.answer()
-        boost_mult_quick = await boost_get_mult()
-        stars_mult_quick = boost_mult_quick.get("stars", 1.0) if boost_mult_quick else 1.0
-        user_is_newbie_q = f.get("stars_spent", 0) == 0
-        today_s_q = today_str()
-        daily_used_q = await db_setting(f"deal_{uid}") == today_s_q
-        kb_rows = []
-        for i, p in enumerate(STAR_PACKAGES):
-            if p.get("newbie") and not user_is_newbie_q:
-                continue
-            if p.get("daily_deal") and daily_used_q:
-                continue
-            coins_display_quick = int(p["coins"] * stars_mult_quick)
-            farm_min = p.get("farm_min", 0)
-            farm_str = f"≈{farm_min}мин" if farm_min < 60 else f"≈{farm_min//60}ч"
-            if p.get("newbie"):
-                lbl_quick = f"{_E_GIFT} {p['stars']}{_E_STARS} → {coins_display_quick}🪙 ({farm_str})"
-            elif p.get("daily_deal"):
-                lbl_quick = f"🌅 {p['stars']}{_E_STARS} → {coins_display_quick}🪙 (ежедн.)"
-            else:
-                lbl_quick = f"{_E_STARS} {p['stars']} Stars → {coins_display_quick}🪙 ({farm_str})"
-            if stars_mult_quick > 1.0 and not p.get("newbie") and not p.get("daily_deal"):
-                lbl_quick += " ✨"
-            kb_rows.append([btn(lbl_quick, callback_data=f"buy_pkg_{i}")])
-        kb_rows.append([btn("◀️ Назад", callback_data="refresh")])
-        boost_note = f"\n✨ <b>Золотая лягушка:</b> 1{_E_XP} = {int(5*stars_mult_quick)}{_E_COIN}" if stars_mult_quick > 1.0 else ""
-        try:
-            await q.message.edit_text(
-                f"{_E_XP} <b>Пополнение КваКоинов</b>\n\nУ тебя: {f['coins']}{coin_emoji()}{boost_note}\n\nВыбери пакет:",
-                parse_mode=ParseMode.HTML,
-                reply_markup=InlineKeyboardMarkup(kb_rows),
-            )
-        except Exception:
-            pass
-        return
 
-    # ── БЫСТРАЯ ПОКУПКА ПАКЕТА (из buy_stars_quick) ───────────────
-    if d.startswith("buy_pkg_"):
-        pkg_idx = int(d[8:])
-        if pkg_idx >= len(STAR_PACKAGES):
-            await q.answer("Ошибка", show_alert=True)
-            return
-        pkg = STAR_PACKAGES[pkg_idx]
-        if pkg.get("newbie") and f.get("stars_spent", 0) > 0:
-            await q.answer("❌ Пакет «Новичок» доступен только при первой покупке", show_alert=True)
-            return
-        if pkg.get("daily_deal"):
-            today_s_q2 = today_str()
-            if await db_setting(f"deal_{uid}") == today_s_q2:
-                await q.answer("❌ Ежедневное предложение уже использовано сегодня", show_alert=True)
-                return
-        price_stars = pkg["stars"]
-        farm_min = pkg.get("farm_min", 0)
-        farm_label = f"≈{farm_min}мин фарма" if farm_min < 60 else f"≈{farm_min//60}ч{farm_min%60 or ''}мин фарма"
-        await q.answer("📩 Создаём счёт...", show_alert=False)
-        try:
-            await ctx.bot.send_invoice(
-                chat_id=uid,
-                title=f"🪙 {pkg['label']} — Frog Tamagotchi",
-                description=f"Получить {pkg['coins']}🪙 · {farm_label}",
-                payload=f"coins_{pkg_idx}",
-                provider_token="",
-                currency="XTR",
-                prices=[LabeledPrice(label=f"{pkg['coins']}{_E_COIN}", amount=price_stars)],
-            )
-            try:
-                await q.message.edit_text(
-                    f"📩 <b>Счёт отправлен!</b>\n\n"
-                    f"{coin_emoji()} {pkg['label']} за {_E_XP}{price_stars} Stars\n\n"
-                    f"<i>Проверь личные сообщения с ботом и нажми «Оплатить».</i>\n\n"
-                    f"⚠️ Если сообщение не пришло — сначала напиши /start боту в личку.",
-                    parse_mode=ParseMode.HTML,
-                    reply_markup=InlineKeyboardMarkup(
-                        [[btn("◀️ Назад", callback_data="buy_stars_quick")]]
-                    ),
-                )
-            except (BadRequest, Forbidden):
-                pass
-        except Exception as e:
-            err = str(e)
-            if "chat not found" in err.lower() or "bot was blocked" in err.lower() or "forbidden" in err.lower():
-                try:
-                    await q.message.edit_text(
-                        "❗ <b>Не могу отправить счёт!</b>\n\n"
-                        "Сначала напиши боту в личку:\n"
-                        "1. Нажми на имя бота\n"
-                        "2. Нажми «Написать сообщение»\n"
-                        "3. Отправь /start\n"
-                        "4. Вернись сюда и попробуй снова.",
-                        parse_mode=ParseMode.HTML,
-                        reply_markup=InlineKeyboardMarkup(
-                            [[btn("◀️ Назад", callback_data="buy_stars_quick")]]
-                        ),
-                    )
-                except (BadRequest, Forbidden):
-                    pass
-            else:
-                try:
-                    await q.message.edit_text(
-                        f"{_E_CROSS} Ошибка при создании счёта: {str(e)[:100]}",
-                        parse_mode=ParseMode.HTML,
-                        reply_markup=InlineKeyboardMarkup(
-                            [[btn("◀️ Назад", callback_data="buy_stars_quick")]]
-                        ),
-                    )
-                except (BadRequest, Forbidden):
-                    pass
-        return
 
-    if d == "casino_menu":
-        await q.answer()
-        # Глобальное отключение казино
-        if await db_setting("casino_disabled") == "1":
-            try:
-                await q.message.edit_text(
-                    "🎰 <b>Казино временно недоступно.</b>\n"
-                    "<i>Ведётся техническое обслуживание. Попробуй позже.</i>",
-                    parse_mode=ParseMode.HTML,
-                    reply_markup=InlineKeyboardMarkup([[
-                        btn("◀️ Назад", callback_data="menu_games")
-                    ]]),
-                )
-            except Exception:
-                pass
-            return
-        kb = InlineKeyboardMarkup(
-            [
-                [
-                    btn(
-                        f"{v['emoji']} {v['name']}",
-                        callback_data=f"casino_pick_{k}",
-                    )
-                ]
-                for k, v in CASINO.items()
-            ]
-            + [
-                [btn("🎯 Режим желания", callback_data="casino_wish_menu")],
-                [
-                    btn(
-                        "🎰 Джекпот", callback_data="menu_jackpot"
-                    )
-                ],
-                [btn("◀️ Назад", callback_data="menu_games")],
-            ]
-        )
-        jp = await jackpot_get()
-        try:
-            await q.message.edit_text(
-                ui_card(ui_title("🎰", "Казино"),
-                        ui_line(ui_money(f["coins"]), f"джекпот {jp:,}{coin_emoji()}")),
-                parse_mode=ParseMode.HTML,
-                reply_markup=kb,
-            )
-        except Exception:
-            pass
-        return
 
-    if d.startswith("casino_pick_"):
-        gtype = d[12:]
-        if gtype not in CASINO:
-            await q.answer("Неизвестная игра", show_alert=True)
-            return
-        g = CASINO[gtype]
-        if gtype == "double":
-            # Double or Nothing: свой набор ставок
-            stakes = [10, 25, 50, 100, 250, 500]
-            kb_rows = [
-                [coin_btn(f"{s}🪙", f"casino_bet_double_{s}") for s in stakes[:3]],
-                [coin_btn(f"{s}🪙", f"casino_bet_double_{s}") for s in stakes[3:]],
-                [btn("◀️ Назад", callback_data="casino_menu")],
-            ]
-            kb = InlineKeyboardMarkup(kb_rows)
-            extra_info = (
-                "\n\n🎲 <b>Как играть:</b> ставка списывается сразу. После каждого раунда "
-                "можно <b>забрать банк</b> или <b>рискнуть</b> и удвоить. "
-                "Шанс 50/50. Максимум 10 удвоений = ×1024!"
-            )
-            try:
-                await q.message.edit_text(
-                    f"{g['emoji']} <b>{g['name']}</b> — {g['desc']}\n\nУ тебя: {f['coins']}{coin_emoji()}\nВыбери начальную ставку:{extra_info}",
-                    parse_mode=ParseMode.HTML,
-                    reply_markup=kb,
-                )
-            except Exception:
-                pass
-            return
-        if gtype == "slots":
-            stakes = [10, 25, 50, 100, 250, 500]
-        else:
-            stakes = [10, 25, 50, 100, 250]
-        kb_rows = [
-            [coin_btn(f"{s}🪙", f"casino_bet_{gtype}_{s}") for s in stakes[:3]],
-            [coin_btn(f"{s}🪙", f"casino_bet_{gtype}_{s}") for s in stakes[3:]],
-        ]
-        if gtype == "slots":
-            kb_rows.append([
-                btn("5️⃣×50🪙 (5 круток)", callback_data=f"casino_slots5_{50}"),
-                btn("5️⃣×100🪙 (5 круток)", callback_data=f"casino_slots5_{100}"),
-            ])
-        if gtype not in ("slots",):
-            # Режим «Брошу сам» доступен только в личных чатах
-            _is_private_chat = not (q.message and q.message.chat.type in ("group", "supergroup"))
-            if _is_private_chat:
-                kb_rows.insert(-1, [
-                    btn(
-                        f"🎲 Брошу сам — выбери ставку",
-                        callback_data=f"casino_selfpick_{gtype}",
-                    )
-                ])
-        kb_rows.append([btn("◀️ Назад", callback_data="casino_menu")])
-        kb = InlineKeyboardMarkup(kb_rows)
-        if gtype == "slots":
-            jp = await jackpot_get()
-            extra = (
-                "\n\n<b>📋 Таблица выплат:</b>\n"
-                "7️⃣ 7️⃣ 7️⃣ → <b>×10</b> + Джекпот-банк 🎉\n"
-                "BAR BAR BAR → <b>×6</b> 🔥\n"
-                "🍇 🍇 🍇 → <b>×4</b>\n"
-                "🍋 🍋 🍋 → <b>×3</b>\n"
-                "Два 7️⃣ → <b>×4</b> ✨\n\n"
-                f"💰 Джекпот-банк сейчас: <b>{jp:,}{_E_COIN}</b>"
-            )
-        else:
-            extra = ""
-        try:
-            await q.message.edit_text(
-                f"{g['emoji']} <b>{g['name']}</b> — {g['desc']}\n\nУ тебя: {f['coins']}{coin_emoji()}\nВыбери ставку:{extra}",
-                parse_mode=ParseMode.HTML,
-                reply_markup=kb,
-            )
-        except Exception:
-            pass
-        return
 
-    # ── Режим "Брошу сам": показываем кнопки выбора ставки ──────────────────
-    if d.startswith("casino_selfpick_"):
-        gtype = d[16:]
-        if gtype not in CASINO or gtype in ("slots", "double"):
-            await q.answer("Для этой игры режим недоступен.", show_alert=True)
-            return
-        g = CASINO[gtype]
-        stakes = [10, 25, 50, 100, 250]
-        kb_rows = [
-            [coin_btn(f"{s}🪙", f"casino_self_{gtype}_{s}") for s in stakes[:3]],
-            [coin_btn(f"{s}🪙", f"casino_self_{gtype}_{s}") for s in stakes[3:]],
-            [btn("◀️ Назад", callback_data=f"casino_pick_{gtype}")],
-        ]
-        try:
-            await q.message.edit_text(
-                f"{g['emoji']} <b>{g['name']} — режим «Брошу сам»</b>\n\n"
-                f"Монеты спишутся сразу. После выбора ставки — брось {g['emoji']} в чат.\n\n"
-                f"У тебя: {f['coins']}{coin_emoji()}\nВыбери ставку:",
-                parse_mode=ParseMode.HTML,
-                reply_markup=InlineKeyboardMarkup(kb_rows),
-            )
-        except Exception:
-            pass
-        return
 
-    # ── Режим "Брошу сам": списание монет и ожидание броска ─────────────────
-    if d.startswith("casino_self_"):
-        parts = d[12:].rsplit("_", 1)
-        gtype, stake = parts[0], int(parts[1])
-        if gtype not in CASINO or gtype in ("slots", "double"):
-            await q.answer("Для этой игры режим недоступен.", show_alert=True)
-            return
-        now = time.time()
-        if now - f.get("last_casino", 0) < 5:
-            await q.answer("⏳ Подожди секунду перед следующей игрой.", show_alert=True)
-            return
-        if f["coins"] < stake:
-            await q.answer((f"Нужно {stake}{coin_plain()}")[:200], show_alert=True)
-            return
-        # Проверяем, нет ли уже активного ожидания
-        if f"casino_wait_{uid}" in ctx.user_data:
-            await q.answer("У тебя уже есть незавершённая игра — брось кубик", show_alert=True)
-            return
-        f["coins"] -= stake
-        f["coins_spent"] = f.get("coins_spent", 0) + stake
-        f["last_casino"] = now
-        f["total_casino"] = f.get("total_casino", 0) + 1
-        await db_save(f)
-        # Сохраняем состояние ожидания
-        ctx.user_data[f"casino_wait_{uid}"] = {
-            "game": gtype,
-            "stake": stake,
-            "chat_id": q.message.chat.id,
-            "expires": now + 120,  # 2 минуты на бросок
-        }
-        g = CASINO[gtype]
-        await q.answer()
-        try:
-            await q.message.edit_text(
-                f"{g['emoji']} <b>{g['name']} — твой ход!</b>\n\n"
-                f"Ставка: <b>{stake}{coin_emoji()}</b> списана.\n\n"
-                f"🎲 Брось <b>{g['emoji']}</b> в этот чат — и бот посчитает результат!\n\n"
-                f"<i>⏳ Есть 2 минуты, иначе ставка вернётся автоматически.</i>",
-                parse_mode=ParseMode.HTML,
-                reply_markup=InlineKeyboardMarkup([
-                    [btn("❌ Отменить (вернуть монеты)", callback_data=f"casino_self_cancel_{uid}", style="danger")],
-                ]),
-            )
-        except Exception:
-            pass
-        return
 
-    if d.startswith("casino_self_cancel_"):
-        target_uid = int(d.split("_")[-1])
-        if target_uid != uid:
-            await q.answer("Это не твоя игра", show_alert=True)
-            return
-        cw = ctx.user_data.pop(f"casino_wait_{uid}", None)
-        if not cw:
-            await q.answer("Нет активной игры.", show_alert=True)
-            return
-        f2 = await db_get(uid)
-        if f2:
-            f2["coins"] += cw["stake"]
-            f2["total_casino"] = max(0, f2.get("total_casino", 0) - 1)
-            await db_save(f2)
-        await q.answer((f"❌ Игра отменена. {cw['stake']}{coin_plain()} возвращены.")[:200], show_alert=True)
-        try:
-            await q.message.edit_text(
-                f"{_E_CROSS} <b>Игра отменена.</b> {cw['stake']}{coin_emoji()} возвращены.\n"
-                f"💼 Баланс: {f2['coins'] if f2 else '?'}{coin_emoji()}",
-                parse_mode=ParseMode.HTML,
-                reply_markup=InlineKeyboardMarkup([
-                    [btn("🎰 Казино", callback_data="casino_menu")],
-                ]),
-            )
-        except Exception:
-            pass
-        return
 
     # ── КАЗИНО: РЕЖИМ ЖЕЛАНИЯ ──────────────────────────────────────────────
     # Игрок ставит X монет и указывает желаемый выигрыш Y.
     # Бот показывает «честный» шанс P = X/(X+Y)*100%.
     # Фактический шанс = P × 0.72 (казино в плюсе, игроки не знают).
 
-    if d == "casino_wish_menu":
-        await q.answer()
-        stakes_wish = [10, 25, 50, 100, 250, 500]
-        stake_rows = [
-            [coin_btn(f"{s}🪙", f"casino_wish_bet_{s}") for s in stakes_wish[:3]],
-            [coin_btn(f"{s}🪙", f"casino_wish_bet_{s}") for s in stakes_wish[3:]],
-        ]
-        stake_rows.append([btn("◀️ Назад", callback_data="casino_menu")])
-        try:
-            await q.message.edit_text(
-                f"🎯 <b>Режим желания</b>\n\n"
-                f"Ты ставишь монеты и сам выбираешь сумму выигрыша.\n"
-                f"Бот рассчитает твой шанс и запустит испытание!\n\n"
-                f"💼 Твой баланс: <b>{f['coins']}{coin_emoji()}</b>\n\n"
-                f"",
-                parse_mode=ParseMode.HTML,
-                reply_markup=InlineKeyboardMarkup(stake_rows),
-            )
-        except Exception:
-            pass
-        return
 
-    if d.startswith("casino_wish_bet_"):
-        try:
-            wish_stake = int(d[len("casino_wish_bet_"):])
-        except ValueError:
-            await q.answer("Ошибка", show_alert=True)
-            return
-        if f["coins"] < wish_stake:
-            await q.answer((f"❌ Не хватает монет. У тебя {f['coins']}🪙")[:200], show_alert=True)
-            return
-        # Запоминаем ставку и просим ввести желаемую сумму текстом
-        ctx.user_data[f"casino_wish_input_{uid}"] = {
-            "stake": wish_stake,
-            "msg_id": q.message.message_id,
-            "chat_id": q.message.chat.id,
-        }
-        await q.answer()
-        try:
-            await q.message.edit_text(
-                f"🎯 <b>Режим желания</b> · Ставка: <b>{wish_stake}{coin_emoji()}</b>\n\n"
-                f"Напиши сколько хочешь <b>получить</b> при победе (включая ставку).\n"
-                f"Например: <code>{wish_stake * 2}</code> → получишь {wish_stake * 2}{_E_COIN}, прибыль +{wish_stake}{_E_COIN}, шанс 50%\n"
-                f"Чем больше сумма — тем меньше шанс. Честный шанс = ставка ÷ желаемая сумма.\n\n"
-                f"💼 Баланс: <b>{f['coins']}{coin_emoji()}</b>",
-                parse_mode=ParseMode.HTML,
-                reply_markup=InlineKeyboardMarkup([
-                    [btn("❌ Отмена", callback_data="casino_wish_menu")],
-                ]),
-            )
-        except Exception:
-            pass
-        return
 
-    if d.startswith("casino_wish_play_"):
-        parts_wp = d[len("casino_wish_play_"):].split("_")
-        if len(parts_wp) != 2:
-            await q.answer("Ошибка", show_alert=True)
-            return
-        try:
-            wish_stake_p = int(parts_wp[0])
-            wish_target_p = int(parts_wp[1])
-        except ValueError:
-            await q.answer("Ошибка", show_alert=True)
-            return
-        now_wp = time.time()
-        if now_wp - f.get("last_casino", 0) < 5:
-            await q.answer("⏳ Подожди немного", show_alert=True)
-            return
-        if f["coins"] < wish_stake_p:
-            await q.answer((f"❌ Недостаточно монет. У тебя {f['coins']}🪙")[:200], show_alert=True)
-            return
-        # wish_target_p — это ИТОГОВЫЙ возврат при победе
-        # Честный шанс: stake / target. Фактический: × 0.80 (RTP 80%)
-        displayed_pct = wish_stake_p / wish_target_p * 100
-        actual_chance = (wish_stake_p / wish_target_p) * 0.80
-        profit_wp = wish_target_p - wish_stake_p
-        # Списываем ставку
-        f["coins"] -= wish_stake_p
-        f["coins_spent"] = f.get("coins_spent", 0) + wish_stake_p
-        f["last_casino"] = now_wp
-        f["total_casino"] = f.get("total_casino", 0) + 1
-        won_wp = random.random() < actual_chance
-        if won_wp:
-            f["coins"] += wish_target_p  # получаем target (ставка + прибыль)
-            f["total_casino_wins"] = f.get("total_casino_wins", 0) + 1
-            f["casino_win_streak"] = f.get("casino_win_streak", 0) + 1
-        else:
-            f["casino_win_streak"] = 0
-            # Проигрыш — пополняем банк джекпота
-            _wish_tax = max(1, wish_stake_p // 10)
-            asyncio.create_task(jackpot_add(_wish_tax))
-        await db_save(f)
-        asyncio.create_task(log_game(
-            uid, "casino_wish", wish_stake_p,
-            wish_target_p if won_wp else 0,
-            "win" if won_wp else "loss",
-            {"target": wish_target_p, "profit": profit_wp, "displayed_pct": round(displayed_pct, 1)},
-        ))
-        asyncio.create_task(update_trial_progress(uid, "casino", bot=ctx.bot))
-        await quest_update(uid, "casino")
-        await legend_track(uid, "casino", bot=ctx.bot)
-        if won_wp:
-            await quest_update(uid, "casino_win")
-            asyncio.create_task(update_trial_progress(uid, "casino_win", bot=ctx.bot))
-        await q.answer()
-        if won_wp:
-            result_text = (
-                f"✨ <b>Победа!</b>\n\n"
-                f"Ставка: <b>{wish_stake_p}{coin_emoji()}</b>\n"
-                f"Получено: <b>{wish_target_p}{coin_emoji()}</b> (прибыль: +{profit_wp}{coin_emoji()})\n"
-                f"Шанс был: <b>{displayed_pct:.1f}%</b>\n\n"
-                f"💼 Баланс: <b>{f['coins']}{coin_emoji()}</b>"
-            )
-        else:
-            result_text = (
-                f"💸 <b>Не повезло!</b>\n\n"
-                f"Ставка: <b>{wish_stake_p}{coin_emoji()}</b> — потеряна\n"
-                f"Хотел получить: <b>{wish_target_p}{coin_emoji()}</b>\n"
-                f"Шанс был: <b>{displayed_pct:.1f}%</b>\n\n"
-                f"💼 Баланс: <b>{f['coins']}{coin_emoji()}</b>"
-            )
-        try:
-            await q.message.edit_text(
-                result_text,
-                parse_mode=ParseMode.HTML,
-                reply_markup=InlineKeyboardMarkup([
-                    [coin_btn(f"🔄 Ещё раз ({wish_stake_p}🪙)", f"casino_wish_bet_{wish_stake_p}")],
-                    [btn("🎯 Изменить ставку", callback_data="casino_wish_menu")],
-                    [btn("◀️ Казино", callback_data="casino_menu")],
-                ]),
-            )
-        except Exception:
-            pass
-        return
 
-    if d.startswith("casino_slots5_"):
-        stake = int(d[14:])
-        total_cost = stake * 5
-        now = time.time()
-        if now - f.get("last_casino", 0) < 5:
-            await q.answer("⏳ Подожди секунду перед следующей игрой.", show_alert=True)
-            return
-        if f["coins"] < total_cost:
-            await q.answer((f"Нужно {total_cost}{coin_plain()} для 5 круток")[:200], show_alert=True)
-            return
-        f["coins"] -= total_cost
-        f["coins_spent"] = f.get("coins_spent", 0) + total_cost
-        f["last_casino"] = now
-        f["total_casino"] = f.get("total_casino", 0) + 5
-        await db_save(f)
-        await q.answer()  # ← подтверждаем сразу, дальше длинная анимация
-        # Запускаем 5 круток подряд
-        spin_results = []
-        total_winnings = 0
-        jackpot_won_total = 0
-        wins_count = 0
-        for spin_i in range(5):
-            dice_msg = await ctx.bot.send_dice(chat_id=q.message.chat.id, emoji="🎰")
-            val = dice_msg.dice.value
-            await asyncio.sleep(3)
-            asyncio.create_task(_delete_casino_dice(
-                ctx.bot, q.message.chat.id, dice_msg.message_id, q.message.chat.type
-            ))
-            comb = get_slot_symbols(val)
-            winnings, desc = slot_evaluate(val, stake)
-            if val == 64:
-                jp_amount = await jackpot_claim()
-                if jp_amount > 0:
-                    total_winnings += jp_amount
-                    jackpot_won_total += jp_amount
-                    await ach_grant(uid, "casino_jackpot", ctx.bot)
-            elif winnings == 0:
-                tax = max(1, stake // 10)
-                await jackpot_add(tax)
-            total_winnings += winnings
-            if winnings > 0:
-                wins_count += 1
-                f["total_casino_wins"] = f.get("total_casino_wins", 0) + 1
-                f["casino_win_streak"] = f.get("casino_win_streak", 0) + 1
-            else:
-                f["casino_win_streak"] = 0
-            spin_results.append(f"Крутка {spin_i+1}: {desc}")
-        f2 = await db_get(uid)
-        if f2:
-            f = f2
-            # total_cost уже списан до игры — здесь только зачисляем выигрыш
-            f["coins"] += total_winnings
-        else:
-            f["coins"] += total_winnings
-        rewards = await levelup(f, ctx.bot)
-        await db_save(f)
-        await ach_check(f, ctx.bot)
-        net = total_winnings - total_cost
-        # Логируем результат 5 круток
-        asyncio.create_task(log_game(
-            uid, "casino", total_cost, total_winnings,
-            "win" if total_winnings >= total_cost else "loss",
-            {"game": "slots5", "stake_per_spin": stake, "wins": wins_count, "net": net, "jackpot": jackpot_won_total},
-        ))
-        asyncio.create_task(update_trial_progress(uid, "casino", amount=5, bot=ctx.bot))
-        await legend_track(uid, "casino", amount=5, bot=ctx.bot)  # ИСПРАВЛЕНО: legend_track отсутствовал в slots5
-        if wins_count > 0:
-            asyncio.create_task(update_trial_progress(uid, "casino_win", amount=wins_count, bot=ctx.bot))
-        # Анонс крупного выигрыша slots5
-        if total_winnings > BIG_WIN_THRESHOLD:
-            s5_name = he(q.from_user.first_name)
-            asyncio.create_task(maybe_big_win_announce(
-                ctx.bot, s5_name, total_winnings, "Казино 5×Слотов",
-                stake=total_cost, source_chat_id=f.get("source_chat_id", 0),
-            ))
-        jp_line = f"\n{_E_CASINO} <b>+{jackpot_won_total:,}{coin_emoji()} из банка казино!</b>" if jackpot_won_total > 0 else ""
-        result = (
-            f"{_E_CASINO} <b>5 круток — ставка {stake}{coin_emoji()} × 5 = {total_cost}{coin_emoji()}</b>\n\n"
-            + "\n".join(spin_results)
-            + f"\n\n{_E_CHART} Выиграно: <b>{total_winnings}{coin_emoji()}</b> ({wins_count}/5 побед)"
-            + f"\n{'✅' if net >= 0 else '💸'} Чистый профит: <b>{'+' if net >= 0 else ''}{net}{coin_emoji()}</b>"
-            + jp_line
-            + f"\n💼 Баланс: {f['coins']}{coin_emoji()}"
-        )
-        kb = InlineKeyboardMarkup([
-            [coin_btn(f"↩️ Ещё 5×{stake}🪙", f"casino_slots5_{stake}")],
-            [btn("🎰 Другая игра", callback_data="casino_menu"),
-             btn("◀️ Назад", callback_data="refresh")],
-        ])
-        try:
-            await q.message.edit_text(result, parse_mode=ParseMode.HTML, reply_markup=kb)
-        except Exception:
-            pass
-        return
 
-    # ── DOUBLE OR NOTHING ─────────────────────────────────────────────────────
-    if d.startswith("casino_bet_double_"):
-        stake = int(d.split("_")[-1])
-        now = time.time()
-        if now - f.get("last_casino", 0) < 5:
-            await q.answer("⏳ Подожди секунду перед следующей игрой.", show_alert=True)
-            return
-
-        # ── Защита от двойного списания: если игра уже идёт — показываем её ──
-        existing_state = ctx.user_data.get(f"double_{uid}")
-        if existing_state:
-            cur_bank = existing_state["bank"]
-            cur_round = existing_state["round"]
-            rounds_left = existing_state["max_rounds"] - cur_round + 1
-            kb_d = InlineKeyboardMarkup([
-                [
-                    coin_btn(f"✅ Забрать {cur_bank}🪙", f"double_take_{uid}"),
-                    btn(t("btn_casino_risk", f), callback_data=f"double_risk_{uid}"),
-                ]
-            ])
-            try:
-                await q.message.edit_text(
-                    f"🎲 <b>Double or Nothing — раунд {cur_round}</b>\n\n"
-                    f"⚠️ У тебя уже идёт игра!\n"
-                    f"💰 Текущий банк: <b>{cur_bank}{coin_emoji()}</b>\n"
-                    f"📈 Раундов до максимума: {rounds_left}\n\n"
-                    f"Забрать банк или рискнуть и удвоить его?",
-                    parse_mode=ParseMode.HTML,
-                    reply_markup=kb_d,
-                )
-            except Exception:
-                await q.answer((f"⚠️ Игра уже идёт. Банк: {cur_bank}{coin_plain()}")[:200], show_alert=True)
-            return
-
-        if f["coins"] < stake:
-            await q.answer((f"Нужно {stake}{coin_plain()}")[:200], show_alert=True)
-            return
-        f["coins"] -= stake
-        f["coins_spent"] = f.get("coins_spent", 0) + stake
-        f["last_casino"] = now
-        f["total_casino"] = f.get("total_casino", 0) + 1
-        await db_save(f)
-        # Сохраняем состояние игры
-        ctx.user_data[f"double_{uid}"] = {
-            "stake": stake,
-            "bank": stake,
-            "round": 1,
-            "max_rounds": 10,
-            "chat_id": q.message.chat.id,
-        }
-        await q.answer()
-        # Показываем первый раунд
-        kb_d = InlineKeyboardMarkup([
-            [
-                coin_btn(f"✅ Забрать {stake}🪙", f"double_take_{uid}"),
-                btn(t("btn_casino_risk", f), callback_data=f"double_risk_{uid}"),
-            ]
-        ])
-        edited = False
-        try:
-            await q.message.edit_text(
-                f"🎲 <b>Double or Nothing — раунд 1</b>\n\n"
-                f"💰 Текущий банк: <b>{stake}{coin_emoji()}</b>\n"
-                f"📈 Раундов до максимума: 10\n\n"
-                f"Забрать банк или рискнуть и удвоить его?",
-                parse_mode=ParseMode.HTML,
-                reply_markup=kb_d,
-            )
-            edited = True
-        except Exception:
-            pass
-        # Если edit_text не сработал — отправляем новое сообщение
-        if not edited:
-            try:
-                await ctx.bot.send_message(
-                    chat_id=q.message.chat.id,
-                    text=(
-                        f"🎲 <b>Double or Nothing — раунд 1</b>\n\n"
-                        f"💰 Текущий банк: <b>{stake}{coin_emoji()}</b>\n"
-                        f"📈 Раундов до максимума: 10\n\n"
-                        f"Забрать банк или рискнуть и удвоить его?"
-                    ),
-                    parse_mode=ParseMode.HTML,
-                    reply_markup=kb_d,
-                )
-            except Exception:
-                pass
-        return
 
     if d.startswith("double_take_"):
         target_uid = int(d.split("_")[-1])
@@ -37398,243 +39771,8 @@ async def on_callback(update: Update, ctx: ContextTypes.DEFAULT_TYPE):
                 pass
         return
 
-    if d.startswith("casino_bet_"):
-        parts = d[11:].rsplit("_", 1)
-        gtype, stake = parts[0], int(parts[1])
-        if gtype == "double":
-            # Handled above by casino_bet_double_ block
-            return
-        if gtype not in CASINO:
-            await q.answer("Ошибка", show_alert=True)
-            return
-        now = time.time()
-        if now - f.get("last_casino", 0) < 5:
-            await q.answer("⏳ Подожди секунду перед следующей игрой.", show_alert=True)
-            return
-        if f["coins"] < stake:
-            await q.answer((f"Нужно {stake}{coin_plain()}")[:200], show_alert=True)
-            return
-        f["coins"] -= stake
-        f["coins_spent"] = f.get("coins_spent", 0) + stake
-        f["last_casino"] = now
-        f["total_casino"] = f.get("total_casino", 0) + 1
-        await db_save(f)
-        await quest_update(uid, "casino")
-        await legend_track(uid, "casino", bot=ctx.bot)
-        asyncio.create_task(update_trial_progress(uid, "casino", bot=ctx.bot))
-        await q.answer()  # ← подтверждаем до отправки кубика и sleep(3)
-        try:
-            dice_msg = await ctx.bot.send_dice(
-                chat_id=q.message.chat.id, emoji=CASINO[gtype]["emoji"]
-            )
-        except Exception as e:
-            # Возвращаем монеты при ошибке отправки кубика
-            f["coins"] += stake
-            f["coins_spent"] = f.get("coins_spent", 0) - stake
-            f["total_casino"] = f.get("total_casino", 0) - 1
-            await db_save(f)
-            await q.message.reply_text("❌ Ошибка при запуске игры. Монеты возвращены.")
-            return
-        val = dice_msg.dice.value
-        await asyncio.sleep(3)  # Ждём анимацию кубика
-        asyncio.create_task(_delete_casino_dice(
-            ctx.bot, q.message.chat.id, dice_msg.message_id, q.message.chat.type
-        ))
-        def casino_result(gtype, val, stake):
-            if gtype == "dice":
-                # 🎲 1-6: 5→×2, 6→×3.7  EV=(2+3.7)/6=0.95
-                if val == 6:
-                    return int(stake * 3.7), "🎲 <b>6</b> — УДАЧА! ×3.7!"
-                elif val == 5:
-                    return stake * 2, "🎲 <b>5</b> — выигрыш ×2!"
-                else:
-                    return 0, f"🎲 <b>{val}</b> — проигрыш"
-            elif gtype == "dart":
-                # 🎯 1-6: 6=bullseye ×3.7, 5=почти ×2  EV=(2+3.7)/6=0.95
-                if val == 6:
-                    return int(stake * 3.7), "🎯 <b>6</b> — В ЯБЛОЧКО! ×3.7!"
-                elif val == 5:
-                    return stake * 2, "🎯 <b>5</b> — почти в цель! ×2"
-                else:
-                    return 0, f"🎯 <b>{val}</b> — мимо"
-            elif gtype == "basketball":
-                # 🏀 ДИАПАЗОН 1-5 (не 1-6!)
-                # 5=slam dunk ×2.75, 4=попадание ×2  EV=(2+2.75)/5=0.95
-                if val == 5:
-                    return int(stake * 2.75), "🏀 <b>5</b> — SLAM DUNK! ×2.75! 🔥"
-                elif val == 4:
-                    return stake * 2, "🏀 <b>4</b> — Попадание! ×2! 🎯"
-                else:
-                    return 0, f"🏀 <b>{val}</b> — мимо корзины"
-            elif gtype == "slots":
-                # Единая таблица выплат — см. slot_evaluate()
-                winnings, desc_slot = slot_evaluate(val, stake)
-                return winnings, desc_slot
-            return 0, "?"
 
-        winnings, desc = casino_result(gtype, val, stake)
-        f2 = await db_get(uid)  # Свежие данные
-        if f2:
-            f = f2
 
-        # ── ДЖЕКПОТ-БАНК: накопление 10% с проигрышей ──────────
-        jackpot_won_amount = 0
-        if winnings == 0:
-            tax = max(1, stake // 10)
-            await jackpot_add(tax)
-
-        if winnings > 0:
-            f["coins"] += winnings
-            f["total_casino_wins"] = f.get("total_casino_wins", 0) + 1
-            f["casino_win_streak"] = f.get("casino_win_streak", 0) + 1
-            await quest_update(uid, "casino_win")
-            asyncio.create_task(update_trial_progress(uid, "casino_win", bot=ctx.bot))
-            if gtype == "slots" and val == 64:
-                # ── ВЫПЛАТА ДЖЕКПОТ-БАНКА ──────────────────
-                jackpot_won_amount = await jackpot_claim()
-                if jackpot_won_amount > 0:
-                    f["coins"] += jackpot_won_amount
-                    # Объявляем в общий чат
-                    jackpot_winner_name = (
-                        f"@{q.from_user.username}"
-                        if q.from_user.username
-                        else he(q.from_user.first_name)
-                    )
-                    jackpot_msg = (
-                        f"🎉💥 <b>Джекпот В слотах!</b> 💥🎉\n\n"
-                        f"Игрок {jackpot_winner_name} выбил {_E_CASINO} 64 и забирает весь банк казино!\n"
-                        f"🎯 Ставка была: <b>{stake}{coin_emoji()}</b>\n"
-                        f"💰 Джекпот: <b>{jackpot_won_amount:,}{coin_emoji()}</b>\n"
-                        f"📈 Чистый профит: <b>+{jackpot_won_amount + winnings - stake:,}{coin_emoji()}</b>\n\n"
-                        f"Поздравляем! 🐸🎊"
-                    )
-                    if jackpot_won_amount > 500:
-                        await announce(ctx.bot, jackpot_msg, delete_after=180)
-                    # Уведомляем в адмчат через admin_notify
-                    await admin_notify(
-                        ctx.bot,
-                        f"{_E_CASINO} Джекпот сорван! {jackpot_winner_name} забрал <b>{jackpot_won_amount:,}{coin_emoji()}</b> (ставка: {stake}🪙)",
-                        "🎰",
-                    )
-            if f.get("casino_win_streak", 0) >= 5:
-                await ach_grant(uid, "casino_win_5", ctx.bot)
-        else:
-            f["casino_win_streak"] = 0
-        rewards = await levelup(f, ctx.bot)
-        await db_save(f)
-        await ach_check(f, ctx.bot)
-        # ── Анонс крупного выигрыша (без джекпота — он анонсируется отдельно) ──
-        if winnings > BIG_WIN_THRESHOLD and not jackpot_won_amount:
-            w_name = he(q.from_user.first_name)
-            g_label = CASINO[gtype].get("name", gtype) if gtype in CASINO else gtype
-            asyncio.create_task(maybe_big_win_announce(
-                ctx.bot, w_name, winnings, f"Казино ({g_label})",
-                stake=stake, source_chat_id=f.get("source_chat_id", 0),
-            ))
-        g = CASINO[gtype]
-        net = winnings - stake  # net profit (could be negative)
-        # Логируем результат игры
-        asyncio.create_task(log_game(
-            uid, "casino", stake, winnings,
-            "win" if winnings > 0 else "loss",
-            {"game": gtype, "dice_value": val, "net": net, "jackpot": jackpot_won_amount},
-        ))
-        jackpot_line = (
-            f"\n{_E_CASINO} <b>+{jackpot_won_amount:,}{coin_emoji()} из банка казино!</b>"
-            if jackpot_won_amount > 0
-            else ""
-        )
-        if winnings > 0:
-            result_line = f"<b>Выигрыш! Получено: {winnings}{coin_emoji()}</b> (чистый профит: +{net}{coin_emoji()}){jackpot_line}"
-        else:
-            result_line = f"💸 <b>Проигрыш. Потеряно: {stake}{coin_emoji()}</b>"
-        result = (
-            f"{g['emoji']} <b>{g['name']}</b>\n\n"
-            f"Ставка: {stake}{coin_emoji()}\n{desc}\n\n"
-            + result_line
-            + f"\n💼 Баланс: {f['coins']}{coin_emoji()}"
-        )
-        kb = InlineKeyboardMarkup(
-            [
-                [
-                    coin_btn(
-                        f"↩️ Ещё ({stake}🪙)",
-                        f"casino_bet_{gtype}_{stake}",
-                    ),
-                    btn(t("btn_casino_auto", f), callback_data=f"casino_auto_{gtype}_{stake}"),
-                ],
-                [
-                    btn("🎰 Другая игра", callback_data="casino_menu"),
-                    btn("◀️ Назад", callback_data="refresh"),
-                ],
-                [btn("⭐ Пополнить монеты", callback_data="buy_stars_quick")],
-            ]
-        )
-        try:
-            await q.message.edit_text(
-                result, parse_mode=ParseMode.HTML, reply_markup=kb
-            )
-        except Exception:
-            pass
-        return
-
-    # ── КАЗИНО: АВТО-РЕЖИМ (непрерывный цикл) ─────────────────────
-    if d.startswith("casino_auto_") and not d.startswith("casino_auto_stop_"):
-        parts_auto = d[12:].rsplit("_", 1)
-        if len(parts_auto) != 2:
-            await q.answer("Неверный формат.", show_alert=True)
-            return
-        gtype_a, stake_a = parts_auto[0], int(parts_auto[1])
-        if gtype_a not in CASINO or gtype_a == "double":
-            await q.answer("Авто-режим недоступен для этой игры.", show_alert=True)
-            return
-
-        auto_key = f"casino_auto_{uid}"
-
-        # Если авто уже запущен — игнорируем
-        if ctx.user_data.get(auto_key, {}).get("running"):
-            await q.answer("🔁 Авто-режим уже запущен", show_alert=True)
-            return
-
-        if f["coins"] < stake_a:
-            await q.answer((f"❌ Недостаточно монет. Нужно {stake_a}🪙")[:200], show_alert=True)
-            return
-
-        ctx.user_data[auto_key] = {"running": True, "gtype": gtype_a, "stake": stake_a, "count": 0}
-        await q.answer()
-
-        asyncio.create_task(_casino_auto_loop(
-            uid, gtype_a, stake_a,
-            q.message.chat.id, q.message.message_id,
-            ctx.bot, ctx.user_data, ctx,
-            chat_type=q.message.chat.type,
-        ))
-        return
-
-    if d.startswith("casino_auto_stop_"):
-        target_uid = int(d[17:])
-        if target_uid != uid:
-            await q.answer("Это не твоя игра", show_alert=True)
-            return
-        auto_key = f"casino_auto_{uid}"
-        state = ctx.user_data.pop(auto_key, None)
-        if state:
-            # Сбрасываем флаг — фоновая задача остановится после текущей анимации
-            state["running"] = False
-        await q.answer("⏹ Авто-режим останавливается...", show_alert=False)
-        try:
-            await q.message.edit_text(
-                f"⏹ <b>Авто-режим остановлен.</b>\n💼 Баланс: {f['coins']}{_E_COIN}",
-                parse_mode=ParseMode.HTML,
-                reply_markup=InlineKeyboardMarkup([[
-                    btn("🎰 Казино", callback_data="casino_menu"),
-                    coin_btn(f"🔁 Авто снова ({state['stake'] if state else '?'}🪙)",
-                             f"casino_auto_{state['gtype']}_{state['stake']}" if state else "casino_menu"),
-                ]]),
-            )
-        except Exception:
-            pass
-        return
 
     # ── МИНИ-ИГРА: ПАМЯТЬ 🧠 ──────────────────────
     if d == "memo_start":
@@ -44577,391 +46715,10 @@ async def on_callback(update: Update, ctx: ContextTypes.DEFAULT_TYPE):
             pass
         return
 
-    # ── 🐸 NFT МАГАЗИН ────────────────────────────────────────────────────────
-    # Формат: nft_shop_{page}_{filter}
-    # Каждая кнопка = один лот: [premium_emoji_облика] Название  R_ICON  Цена⭐
-    # При нажатии → ссылка на t.me/nft/KissedFrog-XXXX
-    if d.startswith("nft_shop_"):
-        await q.answer()
-        parts = d.removeprefix("nft_shop_").split("_", 1)
-        try:
-            page = int(parts[0])
-        except ValueError:
-            page = 0
-        flt = parts[1] if len(parts) > 1 else "all"
 
-        # permille → rarity key для R_ICON
-        def _nft_rarity(permille: int) -> str:
-            if permille <= 5:  return "legendary"
-            if permille <= 10: return "epic"
-            if permille <= 20: return "rare"
-            if permille <= 30: return "uncommon"
-            return "common"
 
-        # Фильтрация
-        catalog = NFT_CATALOG
-        if flt == "cheap":
-            catalog = [x for x in catalog if x["stars"] < 10_000]
-        elif flt == "mid":
-            catalog = [x for x in catalog if 10_000 <= x["stars"] < 50_000]
-        elif flt == "rare":
-            catalog = [x for x in catalog if x["stars"] >= 50_000]
-        elif flt == "legendary":
-            catalog = [x for x in catalog if x["rarity"] <= 5]
-        elif flt == "epic":
-            catalog = [x for x in catalog if x["rarity"] <= 10]
 
-        total = len(catalog)
-        total_pages = max(1, (total + NFT_PAGE_SIZE - 1) // NFT_PAGE_SIZE)
-        page = max(0, min(page, total_pages - 1))
-        slice_items = catalog[page * NFT_PAGE_SIZE: (page + 1) * NFT_PAGE_SIZE]
 
-        flt_labels = {
-            "all":       "все",
-            "cheap":     "< 10K⭐",
-            "mid":       "10–50K⭐",
-            "rare":      "50K+⭐",
-            "legendary": "🟡 легендарные",
-            "epic":      "🟣 эпические",
-        }
-        header = (
-            f"🐸 <b>NFT KissedFrog</b> · {flt_labels.get(flt, flt)}\n"
-            f"<i>Стр. {page+1}/{total_pages} · {total} лотов</i>"
-        )
-
-        buttons = []
-        for item in slice_items:
-            rarity_key = _nft_rarity(item["rarity"])
-            rarity_icon = R_ICON.get(rarity_key, "⚪")
-            stars_fmt = f"{item['stars']:,}".replace(",", "\u202f")  # narrow no-break space
-            label = f"{item['model']} {rarity_icon} {stars_fmt}{_E_STARS}"
-            buttons.append([btn(
-                label,
-                url=item["url"],
-                icon_id=str(item["model_doc"]),
-            )])
-
-        # Навигация
-        nav = []
-        if page > 0:
-            nav.append(btn("◀️", callback_data=f"nft_shop_{page-1}_{flt}"))
-        nav.append(btn(f"{page+1} / {total_pages}", callback_data="noop"))
-        if page < total_pages - 1:
-            nav.append(btn("▶️", callback_data=f"nft_shop_{page+1}_{flt}"))
-        buttons.append(nav)
-
-        # Фильтры
-        buttons.append([
-            btn("Все",     callback_data="nft_shop_0_all"),
-            btn("< 10K⭐", callback_data="nft_shop_0_cheap"),
-            btn("10–50K⭐",callback_data="nft_shop_0_mid"),
-        ])
-        buttons.append([
-            btn("50K+⭐",  callback_data="nft_shop_0_rare"),
-            btn("🟡",      callback_data="nft_shop_0_legendary"),
-            btn("🟣",      callback_data="nft_shop_0_epic"),
-        ])
-        buttons.append([
-            btn("💎 Купить Stars и TON за рубли", url="https://t.me/FrogsStar_bot"),
-        ])
-        buttons.append([btn("◀️ Магазин", callback_data="menu_shop")])
-
-        try:
-            await q.message.edit_text(
-                header,
-                parse_mode=ParseMode.HTML,
-                reply_markup=InlineKeyboardMarkup(buttons),
-                link_preview_options=LinkPreviewOptions(is_disabled=True),
-            )
-        except Exception:
-            pass
-        return
-
-    # ── STARS → МОНЕТЫ ─────────────────────────────
-    if d == "stars_menu":
-        await q.answer()
-        boost_mult = await boost_get_mult()
-        stars_mult = boost_mult.get("stars", 1.0) if boost_mult else 1.0
-        is_boosted = stars_mult > 1.0
-
-        boost_line = ""
-        if is_boosted:
-            boost_line = f"\n✨ <b>Золотая лягушка:</b> 1{_E_STARS} = {int(5 * stars_mult)}{coin_emoji()} (+{int((stars_mult-1)*100)}%)\n"
-
-        header = "💫 <b>Магазин Telegram Stars</b>\n\n"
-        header += f"{coin_emoji()}{_E_COIN}: {f['coins']}\n"
-        if boost_line:
-            header += boost_line
-        else:
-            header += f"<b>КваКоины:</b> 1{_E_STARS} = 5{coin_emoji()} (объём даёт бонус)\n"
-        header += "<i>В скобках — примерное время фарма монет в игре</i>\n\n"
-
-        user_is_newbie = f.get("stars_spent", 0) == 0
-        today_s = today_str()
-        daily_used = await db_setting(f"deal_{uid}") == today_s
-
-        coin_rows = []
-        for i, p in enumerate(STAR_PACKAGES):
-            if p.get("subscription"):
-                continue  # подписки — не монеты, убираем из этого списка
-            if p.get("newbie") and not user_is_newbie:
-                continue
-            if p.get("daily_deal"):
-                if daily_used:
-                    continue  # уже использовано сегодня
-            coins_display = int(p["coins"] * stars_mult)
-            farm_min = p.get("farm_min", 0)
-            farm_str = f"≈{farm_min}мин" if farm_min < 60 else f"≈{farm_min//60}ч{farm_min%60 or ''}мин"
-            if p.get("newbie"):
-                lbl = f"{_E_GIFT} {p['stars']}{_E_STARS} → {coins_display}🪙 ({farm_str})"
-            elif p.get("daily_deal"):
-                lbl = f"🌅 {p['stars']}{_E_STARS} → {coins_display}🪙 Ежедн. предложение"
-            else:
-                lbl = f"{_E_STARS} {p['stars']} Stars → {coins_display}🪙 ({farm_str})"
-                if is_boosted:
-                    lbl += " ✨"
-            coin_rows.append(
-                [btn(lbl, callback_data=f"buy_stars_{i}")]
-            )
-
-        kb = InlineKeyboardMarkup(
-            coin_rows
-            + [[btn("◀️ Назад", callback_data="menu_shop")]]
-        )
-        try:
-            await q.message.edit_text(
-                header,
-                parse_mode=ParseMode.HTML,
-                reply_markup=kb,
-            )
-        except Exception:
-            pass
-        return
-
-    if d.startswith("buy_stars_"):
-        pkg_idx = int(d[10:])
-        if pkg_idx >= len(STAR_PACKAGES):
-            await q.answer("Ошибка", show_alert=True)
-            return
-        pkg = STAR_PACKAGES[pkg_idx]
-        # Новичковый пакет — проверяем право
-        if pkg.get("newbie") and f.get("stars_spent", 0) > 0:
-            await q.answer("❌ Пакет «Новичок» доступен только при первой покупке", show_alert=True)
-            return
-        # Ежедневное предложение — проверяем лимит
-        if pkg.get("daily_deal"):
-            today_s = today_str()
-            if await db_setting(f"deal_{uid}") == today_s:
-                await q.answer("❌ Ежедневное предложение уже использовано сегодня", show_alert=True)
-                return
-        boost_mult = await boost_get_mult()
-        stars_mult = boost_mult.get("stars", 1.0) if boost_mult else 1.0
-        coins_display = int(pkg["coins"] * stars_mult)
-        price_stars = pkg["stars"]
-        boost_desc = f" · Золотая лягушка: +{int((stars_mult-1)*100)}% бонус!" if stars_mult > 1.0 else ""
-        farm_min = pkg.get("farm_min", 0)
-        farm_label = f"≈{farm_min}мин фарма" if farm_min < 60 else f"≈{farm_min//60}ч{farm_min%60 or ''}мин фарма"
-        await q.answer("📩 Создаём счёт...", show_alert=False)
-        try:
-            await ctx.bot.send_invoice(
-                chat_id=uid,
-                title=f"{coins_display}🪙 — Frog Tamagotchi",
-                description=f"Получить {coins_display}🪙 · {farm_label}{boost_desc}",
-                payload=f"coins_{pkg_idx}",
-                provider_token="",  # Telegram Stars не требует токена провайдера
-                currency="XTR",
-                prices=[
-                    LabeledPrice(label=f"{pkg['coins']}{_E_COIN}", amount=price_stars)
-                ],
-            )
-            # Редактируем сообщение чтобы показать статус
-            try:
-                await q.message.edit_text(
-                    f"📩 <b>Счёт отправлен!</b>\n\n"
-                    f"{coin_emoji()} {pkg['label']} за {_E_XP}{price_stars} Stars\n\n"
-                    f"<i>Проверь личные сообщения с ботом и нажми «Оплатить».</i>\n\n"
-                    f"⚠️ Если сообщение не пришло — сначала напиши /start боту в личку.",
-                    parse_mode=ParseMode.HTML,
-                    reply_markup=InlineKeyboardMarkup(
-                        [[btn("◀️ Назад", callback_data="stars_menu")]]
-                    ),
-                )
-            except (BadRequest, Forbidden):
-                pass
-        except Exception as e:
-            err = str(e)
-            if (
-                "chat not found" in err.lower()
-                or "bot was blocked" in err.lower()
-                or "forbidden" in err.lower()
-            ):
-                try:
-                    await q.message.edit_text(
-                        "❗ <b>Не могу отправить счёт!</b>\n\n"
-                        "Сначала напиши боту в личку:\n"
-                        "1. Нажми на имя бота\n"
-                        "2. Нажми «Написать сообщение»\n"
-                        "3. Отправь /start\n"
-                        "4. Вернись сюда и попробуй снова.",
-                        parse_mode=ParseMode.HTML,
-                        reply_markup=InlineKeyboardMarkup(
-                            [
-                                [
-                                    btn(
-                                        "◀️ Назад", callback_data="stars_menu"
-                                    )
-                                ]
-                            ]
-                        ),
-                    )
-                except (BadRequest, Forbidden):
-                    pass
-            else:
-                try:
-                    await q.message.edit_text(
-                        f"{_E_CROSS} Ошибка при создании счёта:\n<code>{err[:200]}</code>",
-                        parse_mode=ParseMode.HTML,
-                        reply_markup=InlineKeyboardMarkup(
-                            [
-                                [
-                                    btn(
-                                        "◀️ Назад", callback_data="stars_menu"
-                                    )
-                                ]
-                            ]
-                        ),
-                    )
-                except (BadRequest, Forbidden):
-                    pass
-        return
-
-    # ── КУПИТЬ БИЛЕТЫ ГАЧИ ─────────────────────────
-    if d.startswith("buy_ticket_"):
-        pkg_idx = int(d[11:])
-        if pkg_idx >= len(TICKET_PACKAGES):
-            await q.answer("Ошибка", show_alert=True)
-            return
-        tp = TICKET_PACKAGES[pkg_idx]
-        price_stars = tp["stars"]  # всегда обычная цена (без скидки)
-
-        await q.answer("📩 Создаём счёт...", show_alert=False)
-        try:
-            await ctx.bot.send_invoice(
-                chat_id=uid,
-                title=f"🎟 {tp['label']} — Frog Tamagotchi",
-                description=f"Получить {tp['qty']} гача-билет{'а' if tp['qty'] > 1 else ''}",
-                payload=f"gacha_ticket_{tp['qty']}",
-                provider_token="",
-                currency="XTR",
-                prices=[LabeledPrice(label=tp["label"], amount=price_stars)],
-            )
-            try:
-                await q.message.edit_text(
-                    f"📩 <b>Счёт отправлен!</b>\n\n"
-                    f"{_E_TICKET} {tp['label']} за ⭐{price_stars} Stars\n\n"
-                    f"<i>Проверь личные сообщения с ботом и нажми «Оплатить».</i>",
-                    parse_mode=ParseMode.HTML,
-                    reply_markup=InlineKeyboardMarkup(
-                        [[btn("◀️ Назад", callback_data="stars_menu")]]
-                    ),
-                )
-            except (BadRequest, Forbidden):
-                pass
-        except Exception as e:
-            err = str(e)
-            if "chat not found" in err.lower() or "forbidden" in err.lower():
-                try:
-                    await q.message.edit_text(
-                        "❗ <b>Не могу отправить счёт!</b> Напиши /start боту в личку.",
-                        parse_mode=ParseMode.HTML,
-                        reply_markup=InlineKeyboardMarkup(
-                            [
-                                [
-                                    btn(
-                                        "◀️ Назад", callback_data="stars_menu"
-                                    )
-                                ]
-                            ]
-                        ),
-                    )
-                except (BadRequest, Forbidden):
-                    pass
-            else:
-                try:
-                    await q.message.edit_text(
-                        f"{_E_CROSS} Ошибка: <code>{err[:200]}</code>",
-                        parse_mode=ParseMode.HTML,
-                        reply_markup=InlineKeyboardMarkup(
-                            [
-                                [
-                                    btn(
-                                        "◀️ Назад", callback_data="stars_menu"
-                                    )
-                                ]
-                            ]
-                        ),
-                    )
-                except (BadRequest, Forbidden):
-                    pass
-        return
-
-    if d == "nft_menu":
-        await q.answer()
-        async with aiosqlite.connect(DB_PATH) as db:
-            db.row_factory = aiosqlite.Row
-            async with db.execute(
-                "SELECT * FROM nft_frogs WHERE user_id=?", (uid,)
-            ) as c:
-                nfts = [dict(r) for r in await c.fetchall()]
-        if nfts:
-            lines = ["🪸 <b>Мои KissedFrog NFT</b>\n"]
-            kb_rows = []
-            for n in nfts:
-                v = "✅" if n["verified"] else "⏳"
-                model = n.get("model_name") or ""
-                nft_url = (
-                    n.get("nft_url") or f"https://t.me/nft/KissedFrog-{n['nft_number']}"
-                )
-                # NFT облик с фоном — ссылка открывает нативный preview Telegram
-                if model and model in SKINS:
-                    lines.append(
-                        f'{v} <a href="{nft_url}">KissedFrog #{n["nft_number"]} — {model} {pemoji(model)}</a>'
-                    )
-                else:
-                    lines.append(
-                        f'{v} <a href="{nft_url}">KissedFrog #{n["nft_number"]}</a>'
-                    )
-                if n["verified"] and model and model in SKINS:
-                    kb_rows.append(
-                        [
-                            btn(
-                                f"👗 Надеть {model}", callback_data=f"equip_{model}"
-                            )
-                        ]
-                    )
-            lines.append("\n<i>Добавить ещё: /nft ссылка</i>")
-            text = "\n".join(lines)
-            kb_rows.append([btn("◀️ Назад", callback_data="menu_more")])
-            kb = InlineKeyboardMarkup(kb_rows)
-        else:
-            text = (
-                "🪸 <b>KissedFrog NFT</b>\n\n"
-                "Пока ни одной. Есть жаба из коллекции — добавь ссылкой:\n"
-                "<code>/nft https://t.me/nft/KissedFrog-XXXX</code>"
-            )
-            kb = InlineKeyboardMarkup(
-                [[btn("◀️ Назад", callback_data="menu_more")]]
-            )
-        try:
-            await q.message.edit_text(
-                text,
-                parse_mode=ParseMode.HTML,
-                reply_markup=kb,
-                link_preview_options=LinkPreviewOptions(),
-            )
-        except Exception:
-            pass
-        return
 
 
 
@@ -45166,158 +46923,11 @@ async def on_callback(update: Update, ctx: ContextTypes.DEFAULT_TYPE):
             pass
         return
 
-    # ─── УПРАВЛЕНИЕ ПОДПИСКОЙ ────────────────────────────────────────────────
-    if d == "sub_toggle_auto":
-        f["subscription_auto"] = 0 if f.get("subscription_auto", 1) else 1
-        await db_save(f)
-        status = "возобновлена ▶️" if f["subscription_auto"] else "на паузе ⏸"
-        await q.answer((f"Автозабота {status}")[:200], show_alert=True)
-        return
 
-    if d == "sub_trial_nanny":
-        if f.get("trial_nanny_used", 0):
-            await q.answer("😔 Пробник Няни уже был использован.", show_alert=True)
-            return
-        frog_name_tn = f.get("frog_name") or f.get("first_name") or "Квакуся"
-        granted_tn = await grant_trial(uid, 1, 3, bot=ctx.bot)
-        if granted_tn:
-            await q.answer(
-                f"🎉 3 дня Болотной Няни активированы! Тётя Жаба уже спешит к {he(frog_name_tn)} 🧑‍🍼",
-                show_alert=True,
-            )
-            # Обновляем экран подписки
-            try:
-                await q.message.edit_reply_markup(reply_markup=InlineKeyboardMarkup([
-                    [btn("🏪 Трудяга — 800⭐/мес", callback_data="sub_buy_worker")],
-                    [btn("🎁 1 день Трудяги бесплатно", callback_data="sub_trial_worker")],
-                    [btn("◀️ Назад", callback_data="menu_shop")],
-                ]))
-            except Exception:
-                pass
-        else:
-            await q.answer("😔 Пробник уже был использован.", show_alert=True)
-        return
 
-    if d == "sub_trial_worker":
-        # Кнопка «Забрать 3 дня» прямо из рассылки
-        if f.get("trial_worker_used", 0):
-            await q.answer("😔 Пробный период уже был использован.", show_alert=True)
-            return
-        frog_name = f.get("frog_name") or f.get("first_name") or "Квакуся"
-        granted = await grant_trial(uid, 2, 3, bot=ctx.bot)
-        if granted:
-            await q.answer(
-                f"🎉 3 дня Трудяги активированы! {he(frog_name)} идёт на рынок 🏪",
-                show_alert=True,
-            )
-        else:
-            await q.answer("😔 Пробный период уже был использован.", show_alert=True)
-        return
 
-    # ── Офферные кнопки со скидкой (после истечения подписки) ─────────────────
-    if d in ("sub_renewal_offer_worker", "sub_renewal_offer_nanny"):
-        offer_key = f"sub_offer_{uid}"
-        offer = ctx.bot_data.get(offer_key)
-        is_worker = d == "sub_renewal_offer_worker"
 
-        # Проверяем не истёк ли 1-часовой оффер
-        if not offer or time.time() > offer.get("ends", 0):
-            await q.answer("⏰ Предложение истекло. Оформи по обычной цене.", show_alert=True)
-            # Показываем обычную кнопку
-            try:
-                await q.message.edit_reply_markup(reply_markup=InlineKeyboardMarkup([[
-                    btn(
-                        "🏪 Продлить по обычной цене",
-                        callback_data="sub_buy_worker" if is_worker else "sub_buy_nanny",
-                    )
-                ]]))
-            except Exception:
-                pass
-            return
 
-        sale_price = offer.get("price", 640 if is_worker else 160)
-        sub_name = "🏪 Трудяга — 30 дней" if is_worker else "🧑‍🍼 Болотная Няня — 30 дней"
-        description = (
-            "Автоуход + 400–700🪙/день с Болотного Рынка 🐸"
-            if is_worker else
-            "Автоматический уход за лягушкой — кормление, купание, сон 🐸"
-        )
-        sub_type_str = "worker" if is_worker else "nanny"
-        try:
-            await ctx.bot.send_invoice(
-                chat_id=uid,
-                title=f"🔥 {sub_name} (скидка!)",
-                description=description,
-                payload=f"subscription_{sub_type_str}_30_offer",
-                currency="XTR",
-                prices=[LabeledPrice(label=f"🔥 {sub_name}", amount=sale_price)],
-            )
-            await q.answer()
-            # Удаляем оффер чтобы не применить дважды
-            ctx.bot_data.pop(offer_key, None)
-        except Exception as _e:
-            await q.answer((f"Ошибка: {_e}")[:200], show_alert=True)
-        return
-
-    if d == "sub_buy_nanny_7":
-        # 7-дневный пакет Няни — низкий порог входа
-        pkg_idx = next(
-            (i for i, p in enumerate(STAR_PACKAGES)
-             if p.get("subscription") == "nanny" and p.get("days") == 7),
-            None,
-        )
-        if pkg_idx is None:
-            await q.answer("Пакет не найден.", show_alert=True)
-            return
-        pkg = STAR_PACKAGES[pkg_idx]
-        try:
-            await ctx.bot.send_invoice(
-                chat_id=uid,
-                title="🧑‍🍼 Болотная Няня — 7 дней",
-                description="Автоматический уход за лягушкой — кормление, купание, сон 🐸",
-                payload="subscription_nanny_7",
-                currency="XTR",
-                prices=[LabeledPrice(label="🧑‍🍼 Болотная Няня — 7 дней", amount=pkg["stars"])],
-            )
-            await q.answer()
-        except Exception as _e:
-            await q.answer((f"Ошибка: {_e}")[:200], show_alert=True)
-        return
-
-    if d in ("sub_buy_nanny", "sub_buy_worker", "sub_renew"):
-        # Отправляем инвойс на нужный тариф
-        is_worker = d == "sub_buy_worker" or (
-            d == "sub_renew" and f.get("subscription_type", 0) == 2
-        )
-        pkg_idx = next(
-            (i for i, p in enumerate(STAR_PACKAGES)
-             if p.get("subscription") == ("worker" if is_worker else "nanny")),
-            None,
-        )
-        if pkg_idx is None:
-            await q.answer("Ошибка: тариф не найден.", show_alert=True)
-            return
-        pkg = STAR_PACKAGES[pkg_idx]
-        sub_name = "🏪 Трудяга — 30 дней" if is_worker else "🧑‍🍼 Болотная Няня — 30 дней"
-        description = (
-            "Автоуход + 400–700🪙/день с Болотного Рынка 🐸"
-            if is_worker else
-            "Автоматический уход за лягушкой — кормление, купание, сон 🐸"
-        )
-        sub_type_str = "worker" if is_worker else "nanny"
-        try:
-            await ctx.bot.send_invoice(
-                chat_id=uid,
-                title=sub_name,
-                description=description,
-                payload=f"subscription_{sub_type_str}_30",
-                currency="XTR",
-                prices=[LabeledPrice(label=sub_name, amount=pkg["stars"])],
-            )
-            await q.answer()
-        except Exception as _e:
-            await q.answer((f"Ошибка отправки счёта: {_e}")[:200], show_alert=True)
-        return
 
     # ─── ОТКРЫТАЯ ДУЭЛЬ (принять вызов без конкретной цели) ────────────────
     if d.startswith("duel_open_"):
@@ -45363,1483 +46973,21 @@ async def on_callback(update: Update, ctx: ContextTypes.DEFAULT_TYPE):
         # через изменение d
         d = f"duel_accept_{duel_id}"
 
-    if d.startswith("duel_accept_"):
-        duel_id = int(d[12:])
-        async with aiosqlite.connect(DB_PATH) as db:
-            db.row_factory = aiosqlite.Row
-            async with db.execute("SELECT * FROM duels WHERE id=?", (duel_id,)) as c:
-                duel = await c.fetchone()
-        if not duel:
-            await q.answer("Дуэль не найдена", show_alert=True)
-            return
-        duel = dict(duel)
-        if duel["status"] != "pending":
-            await q.answer("Дуэль уже завершена", show_alert=True)
-            return
-        if uid != duel["target_id"]:
-            await q.answer("Это не твоя дуэль", show_alert=True)
-            return
-        challenger = await db_get(duel["challenger_id"])
-        if not challenger:
-            await q.answer("Вызывающий не найден", show_alert=True)
-            return
-        if challenger["coins"] < duel["stake"] or f["coins"] < duel["stake"]:
-            await q.answer("Недостаточно КваКоинов", show_alert=True)
-            async with aiosqlite.connect(DB_PATH) as db:
-                await db.execute(
-                    "UPDATE duels SET status='cancelled' WHERE id=?", (duel_id,)
-                )
-                await db.commit()
-            return
 
-        # Атомично переводим статус в in_progress ДО анимации — защита от двойного Accept
-        async with aiosqlite.connect(DB_PATH) as db:
-            cur = await db.execute(
-                "UPDATE duels SET status='in_progress' WHERE id=? AND status='pending'",
-                (duel_id,),
-            )
-            await db.commit()
-            if cur.rowcount == 0:
-                await q.answer("Дуэль уже принята", show_alert=True)
-                return
 
-        # Бонус от редкости облика (мифический +3, легендарный +2, эпический +1, редкий +0)
-        RARITY_BONUS = {
-            "mythic": 0,
-            "legendary": 0,
-            "epic": 0,
-            "rare": 0,
-            "uncommon": 0,
-            "common": 0,
-        }
-        c_skin_rarity = SKINS.get(challenger.get("skin", "Brownie"), {}).get(
-            "rarity", "common"
-        )
-        t_skin_rarity = SKINS.get(f.get("skin", "Brownie"), {}).get("rarity", "common")
-        c_bonus = RARITY_BONUS.get(c_skin_rarity, 0)
-        t_bonus = RARITY_BONUS.get(t_skin_rarity, 0)
 
-        # Анимированный бросок: сначала вызывающий
-        c_name = he(
-            challenger.get("frog_name") or f"Лягушка {challenger['first_name']}"
-        )
-        t_name = he(f.get("frog_name") or f"Лягушка {f['first_name']}")
 
-        # Определяем: дуэль в ЛС или в группе?
-        is_private_duel = q.message.chat.type == "private"
-        is_group_duel = q.message.chat.type in ("group", "supergroup")
-        # Если дуэль в ЛС, нужно дублировать прогресс в чат с challanger
-        mirror_duel_msg = None
 
-        try:
-            await q.message.edit_text(
-                f"{_E_SWORDS} <b>Дуэль начинается!</b>\n\n" f"🎲 {c_name} бросает кубик...",
-                parse_mode=ParseMode.HTML,
-            )
-        except (BadRequest, Forbidden):
-            pass
-        await q.answer()  # ← подтверждаем до длинной анимации (sleep 3.5 × 2)
 
-        # Зеркальное сообщение для challenger если дуэль в ЛС
-        if is_private_duel and duel["challenger_id"] != uid:
-            try:
-                mirror_duel_msg = await ctx.bot.send_message(
-                    duel["challenger_id"],
-                    f"{_E_SWORDS} <b>Дуэль начинается!</b>\n\n🎲 {c_name} бросает кубик...",
-                    parse_mode=ParseMode.HTML,
-                )
-            except Exception:
-                pass
 
-        dice_c = await ctx.bot.send_dice(chat_id=q.message.chat.id, emoji="🎲")
-        if is_group_duel:
-            asyncio.create_task(
-                schedule_delete(ctx.bot, q.message.chat.id, dice_c.message_id)
-            )
-        roll_c = dice_c.dice.value + c_bonus
-        # Пересылаем кубик challenger'у (не отправляем новый — иначе значение будет другим!)
-        if is_private_duel and duel["challenger_id"] != uid:
-            try:
-                await ctx.bot.forward_message(
-                    chat_id=duel["challenger_id"],
-                    from_chat_id=q.message.chat.id,
-                    message_id=dice_c.message_id,
-                )
-            except Exception:
-                pass
-        await asyncio.sleep(3.5)
 
-        # Затем цель
-        step2_text = (
-            f"✅ {c_name}: <b>{dice_c.dice.value}</b>"
-            + (f" = <b>{roll_c}</b>" if c_bonus else "")
-            + f"\n\n🎲 {t_name} бросает кубик..."
-        )
-        try:
-            step2_msg = await ctx.bot.send_message(
-                q.message.chat.id,
-                step2_text,
-                parse_mode=ParseMode.HTML,
-            )
-            if is_group_duel:
-                asyncio.create_task(
-                    schedule_delete(ctx.bot, q.message.chat.id, step2_msg.message_id)
-                )
-        except Exception:
-            pass
-        if is_private_duel and duel["challenger_id"] != uid:
-            try:
-                await ctx.bot.send_message(
-                    duel["challenger_id"],
-                    step2_text,
-                    parse_mode=ParseMode.HTML,
-                )
-            except Exception:
-                pass
 
-        dice_t = await ctx.bot.send_dice(chat_id=q.message.chat.id, emoji="🎲")
-        if is_group_duel:
-            asyncio.create_task(
-                schedule_delete(ctx.bot, q.message.chat.id, dice_t.message_id)
-            )
-        roll_t = dice_t.dice.value + t_bonus
-        # Пересылаем кубик цели challenger'у
-        if is_private_duel and duel["challenger_id"] != uid:
-            try:
-                await ctx.bot.forward_message(
-                    chat_id=duel["challenger_id"],
-                    from_chat_id=q.message.chat.id,
-                    message_id=dice_t.message_id,
-                )
-            except Exception:
-                pass
-        await asyncio.sleep(3.5)
 
-        if roll_c > roll_t:
-            winner, loser = challenger, f
-            w_roll, l_roll = roll_c, roll_t
-        elif roll_t > roll_c:
-            winner, loser = f, challenger
-            w_roll, l_roll = roll_t, roll_c
-        else:
-            # Ничья
-            async with aiosqlite.connect(DB_PATH) as db:
-                await db.execute(
-                    "UPDATE duels SET status='draw' WHERE id=?", (duel_id,)
-                )
-                await db.commit()
-            try:
-                await q.message.edit_text(
-                    f"🤝 <b>Ничья!</b>\n\nОба выбросили {roll_c}!\nСтавки возвращены.",
-                    parse_mode=ParseMode.HTML,
-                )
-                if is_group_duel:
-                    asyncio.create_task(schedule_delete(ctx.bot, q.message.chat.id, q.message.message_id))
-            except (BadRequest, Forbidden):
-                pass
-            return
-        winner["coins"] += duel["stake"]
-        loser["coins"] -= duel["stake"]
-        # Налог чата — применяем к выигрышу победителя
-        _duel_chat_id = q.message.chat.id if q.message and q.message.chat.type in ("group", "supergroup") else 0
-        if _duel_chat_id:
-            _tax_deduct = duel["stake"] - await apply_chat_tax(_duel_chat_id, winner["user_id"], duel["stake"], ctx)
-            winner["coins"] -= _tax_deduct
-            asyncio.create_task(log_chat_activity(_duel_chat_id, winner["user_id"],
-                winner.get("username", ""), "дуэль победа", duel["stake"] - _tax_deduct))
-        winner["total_duel_wins"] = winner.get("total_duel_wins", 0) + 1
-        winner["total_duels"] = winner.get("total_duels", 0) + 1
-        loser["total_duels"] = loser.get("total_duels", 0) + 1
-        loser["coins_spent"] = loser.get("coins_spent", 0) + duel["stake"]
-        # Дуэль даёт +0.5 exp ко всем боевым статам (независимо от исхода)
-        add_stat_exp(winner, atk=0.5, def_=0.5, hp=0.5)
-        add_stat_exp(loser, atk=0.5, def_=0.5, hp=0.5)
-        await db_save(winner)
-        await db_save(loser)
-        # player action log
-        asyncio.create_task(plog(
-            winner["user_id"], "duel_win",
-            f"vs uid={loser['user_id']} бросок={w_roll}>{l_roll} ставка={duel['stake']}",
-            coins_delta=duel["stake"],
-        ))
-        asyncio.create_task(plog(
-            loser["user_id"], "duel_lose",
-            f"vs uid={winner['user_id']} бросок={l_roll}<{w_roll} ставка={duel['stake']}",
-            coins_delta=-duel["stake"],
-        ))
-        async with aiosqlite.connect(DB_PATH) as db:
-            await db.execute(
-                "UPDATE duels SET status='finished' WHERE id=?", (duel_id,)
-            )
-            await db.commit()
-        # Квесты: участие в дуэли и победа
-        await quest_update(winner["user_id"], "duels")
-        await quest_update(winner["user_id"], "duel_wins")
-        await quest_update(loser["user_id"], "duels")
-        asyncio.create_task(update_trial_progress(winner["user_id"], "duels", bot=ctx.bot))
-        asyncio.create_task(update_trial_progress(winner["user_id"], "duel_wins", bot=ctx.bot))
-        asyncio.create_task(update_trial_progress(loser["user_id"], "duels", bot=ctx.bot))
-        # Проверяем реферальные этапы для победителя дуэли
-        await check_referral_stages(winner, ctx.bot)
-        await check_referral_stages(loser, ctx.bot)
-        # Логируем результат дуэли
-        asyncio.create_task(log_game(
-            winner["user_id"], "duel", duel["stake"], duel["stake"] * 2,
-            "win", {"opponent": loser["user_id"], "roll_winner": w_roll, "roll_loser": l_roll},
-        ))
-        asyncio.create_task(log_game(
-            loser["user_id"], "duel", duel["stake"], 0,
-            "loss", {"opponent": winner["user_id"], "roll_winner": w_roll, "roll_loser": l_roll},
-        ))
-        # ── Проверка подозрительного винрейта (сливные аккаунты) ─────────────
-        # check_duel_suspicious отключён вручную
-        # asyncio.create_task(check_duel_suspicious(loser["user_id"]))
-        # asyncio.create_task(check_duel_suspicious(winner["user_id"]))
-        w_name = he(winner.get("frog_name") or f"Лягушка {winner['first_name']}")
-        l_name = he(loser.get("frog_name") or f"Лягушка {loser['first_name']}")
-        result = (
-            f"{_E_SWORDS} <b>Дуэль завершена!</b>\n\n"
-            f"🎲 {w_name}: <b>{w_roll}</b>\n"
-            f"🎲 {l_name}: <b>{l_roll}</b>\n\n"
-            f"{_E_TROPHY} <b>{w_name}</b> победила!\n"
-            f"+{duel['stake']}{coin_emoji()} победителю"
-        )
-        try:
-            await q.message.edit_text(result, parse_mode=ParseMode.HTML)
-            if is_group_duel:
-                asyncio.create_task(schedule_delete(ctx.bot, q.message.chat.id, q.message.message_id))
-        except (BadRequest, Forbidden):
-            pass
-        # Уведомляем challenger (всегда — в группе это нужно, в ЛС тоже нужно)
-        try:
-            await ctx.bot.send_message(
-                duel["challenger_id"], result, parse_mode=ParseMode.HTML
-            )
-        except Exception:
-            pass
-        # ── Анонс крупного выигрыша в дуэли ──────────
-        duel_prize = duel["stake"] * 2
-        if duel_prize > BIG_WIN_THRESHOLD:
-            asyncio.create_task(maybe_big_win_announce(
-                ctx.bot,
-                w_name,
-                duel_prize,
-                "Дуэль ⚔️",
-                stake=duel["stake"],
-                source_chat_id=winner.get("source_chat_id", 0),
-            ))
-        return
 
-    # ── ДУЭЛЬ: ОТКЛОНИТЬ ───────────────────────────
-    if d.startswith("duel_decline_"):
-        await q.answer()
-        duel_id = int(d[13:])
-        async with aiosqlite.connect(DB_PATH) as db:
-            await db.execute(
-                "UPDATE duels SET status='declined' WHERE id=?", (duel_id,)
-            )
-            await db.commit()
-        try:
-            await q.message.edit_text("❌ Дуэль отклонена.", parse_mode=ParseMode.HTML)
-            if q.message.chat.type in ("group", "supergroup"):
-                asyncio.create_task(schedule_delete(ctx.bot, q.message.chat.id, q.message.message_id))
-        except Exception:
-            pass
-        return
 
-    # ── БАТЛ: ПРИНЯТЬ ──────────────────────────────────
-    if d.startswith("battle_accept_"):
-        battle_id = int(d[14:])
-        async with aiosqlite.connect(DB_PATH) as db:
-            db.row_factory = aiosqlite.Row
-            async with db.execute(
-                "SELECT * FROM battles WHERE id=?", (battle_id,)
-            ) as c:
-                battle = await c.fetchone()
-        if not battle:
-            await q.answer("Бой не найден", show_alert=True)
-            return
-        battle = dict(battle)
-        if battle["status"] != "pending":
-            await q.answer("Бой уже завершён", show_alert=True)
-            return
-        if uid != battle["target_id"]:
-            await q.answer("Это не твой бой", show_alert=True)
-            return
 
-        challenger = await db_get(battle["challenger_id"])
-        target_f = await db_get(battle["target_id"])
-        if not challenger or not target_f:
-            await q.answer("Участник не найден", show_alert=True)
-            return
 
-        stake = battle["stake"]
-        if stake > 0 and (challenger["coins"] < stake or target_f["coins"] < stake):
-            await q.answer("Недостаточно КваКоинов для ставки", show_alert=True)
-            async with aiosqlite.connect(DB_PATH) as db:
-                await db.execute(
-                    "UPDATE battles SET status='cancelled' WHERE id=?", (battle_id,)
-                )
-                await db.commit()
-            return
 
-        # Атомично переводим статус в in_progress ДО анимации — защита от двойного Accept
-        async with aiosqlite.connect(DB_PATH) as db:
-            cur = await db.execute(
-                "UPDATE battles SET status='in_progress' WHERE id=? AND status='pending'",
-                (battle_id,),
-            )
-            await db.commit()
-            if cur.rowcount == 0:
-                await q.answer("Бой уже принят", show_alert=True)
-                return
-
-        c_name = challenger.get("frog_name") or f"Лягушка {challenger['first_name']}"
-        t_name = target_f.get("frog_name") or f"Лягушка {target_f['first_name']}"
-        c_power = round(challenger.get("power") or 0, 1)
-        t_power = round(target_f.get("power") or 0, 1)
-        c_user = challenger.get("username") or challenger["first_name"]
-        t_user = target_f.get("username") or target_f["first_name"]
-        stake_txt = f"Ставка: <b>{stake}{coin_emoji()}</b>\n" if stake else ""
-
-        # Базовая вероятность победы challenger'а
-        total_pow = (c_power + t_power) or 1
-        base_p = c_power / total_pow
-
-        BAR_LEN = 14  # длина шкалы
-
-        def _bar_line(prob_a: float) -> str:
-            """Имена над шкалой, проценты + бар в code-блоке.
-            @A ⚡5.4     ⚡17.1 @B
-            19% [██████░░░░░░░░] 81%
-            """
-            filled = max(0, min(BAR_LEN, round(prob_a * BAR_LEN)))
-            bar = "█" * filled + "░" * (BAR_LEN - filled)
-            pct_a = int(prob_a * 100)
-            pct_b = 100 - pct_a
-            # Строки имён — слева A, справа B, выровненные через пробелы
-            a_label = f"@{he(c_user)} ⚡{c_power}"
-            b_label = f"⚡{t_power} @{he(t_user)}"
-            bar_str = f"{pct_a}% [{bar}] {pct_b}%"
-            # Выравниваем имена по ширине строки шкалы
-            total_w = max(len(bar_str), len(a_label) + len(b_label) + 2)
-            gap = total_w - len(a_label) - len(b_label)
-            names_row = a_label + " " * max(1, gap) + b_label
-            return f"<code>{names_row}\n{bar_str}</code>"
-
-        def _battle_msg(
-            prob_a: float, title: str, body: str = "", footer: str = ""
-        ) -> str:
-            lines = [
-                f"{_E_SWORDS} <b>Батл!</b> {stake_txt}",
-                f"🐸 <b>{he(c_name)}</b> vs <b>{he(t_name)}</b> 🐸",
-                _bar_line(prob_a),
-            ]
-            if title:
-                lines.append(f"\n{title}")
-            if body:
-                lines.append(body)
-            if footer:
-                lines.append(f"\n{footer}")
-            return "\n".join(lines)
-
-        is_private = q.message.chat.type == "private"
-        main_chat = q.message.chat.id
-        challenger_id = battle["challenger_id"]
-        target_id = battle["target_id"]
-
-        # ── Шаг 1: Показываем начальные шансы ──
-        try:
-            await q.message.edit_text(
-                _battle_msg(
-                    base_p,
-                    f"{_E_CHART} <b>Начальные шансы по Power</b>",
-                    f"<i>@{he(c_user)} имеет {int(base_p*100)}% — смотри на шкалу!\nСейчас бросаем кубики...</i>",
-                ),
-                parse_mode=ParseMode.HTML,
-            )
-        except (BadRequest, Forbidden):
-            pass
-        await q.answer()  # ← подтверждаем до длинной анимации батла (sleep 2.5 + 0.5 + 4 + ...)
-
-        # Зеркало для ЛС
-        mirror_msg_id = None
-        mirror_chat_id = None
-        if is_private:
-            mirror_chat_id = challenger_id
-            try:
-                m = await ctx.bot.send_message(
-                    mirror_chat_id,
-                    _battle_msg(
-                        base_p,
-                        f"{_E_CHART} <b>Начальные шансы по Power</b>",
-                        f"<i>@{he(c_user)} имеет {int(base_p*100)}% — смотри на шкалу!\nСейчас бросаем кубики...</i>",
-                    ),
-                    parse_mode=ParseMode.HTML,
-                )
-                mirror_msg_id = m.message_id
-            except Exception:
-                pass
-
-        async def edit_both(text: str, kb=None):
-            kwargs = {"parse_mode": ParseMode.HTML}
-            if kb:
-                kwargs["reply_markup"] = kb
-            try:
-                await q.message.edit_text(text, **kwargs)
-            except Exception:
-                pass
-            if mirror_msg_id and mirror_chat_id:
-                try:
-                    await ctx.bot.edit_message_text(
-                        text=text,
-                        chat_id=mirror_chat_id,
-                        message_id=mirror_msg_id,
-                        **kwargs,
-                    )
-                except Exception:
-                    pass
-
-        await asyncio.sleep(2.5)
-
-        # ── Шаг 2: Кубик challenger'а ──
-        await edit_both(
-            _battle_msg(
-                base_p,
-                f"🎲 <b>Кидаем кубик @{he(c_user)}...</b>",
-            )
-        )
-        await asyncio.sleep(0.5)
-        dice_msg_c = await ctx.bot.send_dice(main_chat, "🎲")
-        await asyncio.sleep(4)
-        dice_val_c = dice_msg_c.dice.value
-
-        # Описание результата кубика
-        dice_c_emoji = (
-            "😱 Невезуха!"
-            if dice_val_c <= 2
-            else "😐 Средне." if dice_val_c <= 4 else "🔥 Отлично!"
-        )
-        prob_after_c = max(
-            0.0, min(1.0, base_p + (dice_val_c - 3.5) * BATTLE_DICE_INFLUENCE)
-        )
-        delta_c = int(prob_after_c * 100) - int(base_p * 100)
-        delta_c_str = f"+{delta_c}%" if delta_c > 0 else f"{delta_c}%"
-
-        await edit_both(
-            _battle_msg(
-                prob_after_c,
-                f"🎲 @{he(c_user)} выбросил <b>{dice_val_c}</b> — {dice_c_emoji}",
-                f"<i>Шансы сдвинулись: {delta_c_str} для @{he(c_user)}\nТеперь бросает @{he(t_user)}...</i>",
-            )
-        )
-        await asyncio.sleep(2.5)
-
-        # ── Шаг 3: Кубик target'а ──
-        await edit_both(
-            _battle_msg(
-                prob_after_c,
-                f"🎲 <b>Кидаем кубик @{he(t_user)}...</b>",
-            )
-        )
-        await asyncio.sleep(0.5)
-        dice_msg_t = await ctx.bot.send_dice(main_chat, "🎲")
-        await asyncio.sleep(4)
-        dice_val_t = dice_msg_t.dice.value
-
-        dice_t_emoji = (
-            "😱 Невезуха!"
-            if dice_val_t <= 2
-            else "😐 Средне." if dice_val_t <= 4 else "🔥 Отлично!"
-        )
-
-        # ── Шаг 4: Финальный расчёт ──
-        winner_code, base_p2, final_p, r = determine_battle_winner(
-            c_power, t_power, dice_val_c, dice_val_t
-        )
-        delta_t = int(prob_after_c * 100) - int(final_p * 100)
-        delta_t_str = f"+{delta_t}%" if delta_t > 0 else f"{delta_t}%"
-
-        await edit_both(
-            _battle_msg(
-                final_p,
-                f"🎲 @{he(t_user)} выбросил <b>{dice_val_t}</b> — {dice_t_emoji}",
-                f"<i>Шансы сдвинулись: {delta_t_str} для @{he(t_user)}\nОпределяем победителя...</i>",
-            )
-        )
-        await asyncio.sleep(2)
-
-        if winner_code == 1:
-            winner_f, loser_f = challenger, target_f
-        elif winner_code == 2:
-            winner_f, loser_f = target_f, challenger
-        else:
-            winner_f, loser_f = (
-                (challenger, target_f)
-                if random.random() < 0.5
-                else (target_f, challenger)
-            )
-
-        winner_id = winner_f["user_id"]
-        loser_id = loser_f["user_id"]
-        w_name = winner_f.get("frog_name") or f"Лягушка {winner_f['first_name']}"
-        w_user = winner_f.get("username") or winner_f["first_name"]
-        l_user = loser_f.get("username") or loser_f["first_name"]
-
-        # Начисляем Power
-        add_power(challenger, 0.1)  # участие
-        add_power(target_f, 0.1)  # участие
-        add_power(winner_f, 0.2)  # победа
-
-        # КваКоины
-        if stake > 0:
-            winner_f["coins"] += stake
-            loser_f["coins"] = max(0, loser_f["coins"] - stake)
-            loser_f["coins_spent"] = loser_f.get("coins_spent", 0) + stake
-
-        winner_f["total_battle_wins"] = winner_f.get("total_battle_wins", 0) + 1
-        winner_f["total_battles"] = winner_f.get("total_battles", 0) + 1
-        loser_f["total_battles"] = loser_f.get("total_battles", 0) + 1
-        now_t = time.time()
-        winner_f["last_battle"] = now_t
-        loser_f["last_battle"] = now_t
-
-        await db_save(winner_f)
-        await db_save(loser_f)
-
-        async with aiosqlite.connect(DB_PATH) as db:
-            await db.execute(
-                "UPDATE battles SET status='finished',winner_id=? WHERE id=?",
-                (winner_id, battle_id),
-            )
-            await db.commit()
-
-        stake_result = (
-            f"\n<b>+{stake}{coin_emoji()}</b> достаётся @{he(w_user)}!"
-            if stake > 0
-            else ""
-        )
-        w_final_power = round(winner_f.get("power") or 0, 1)
-        l_final_power = round(loser_f.get("power") or 0, 1)
-
-        # ── Шаг 5: Результат ──
-        result_text = (
-            f"{_E_TROPHY} <b>ПОБЕДИТЕЛЬ — @{he(w_user)}!</b>\n"
-            f"{stake_txt}"
-            f"\n"
-            f"🐸 <b>{he(c_name)}</b> vs <b>{he(t_name)}</b> 🐸\n"
-            f"{_bar_line(final_p)}\n"
-            f"\n"
-            f"🎲 @{he(c_user)}: <b>{dice_val_c}</b> · 🎲 @{he(t_user)}: <b>{dice_val_t}</b>\n"
-            f"{_E_CHART} Итоговые шансы: @{he(c_user)} {int(final_p*100)}% / @{he(t_user)} {100-int(final_p*100)}%"
-            f"{stake_result}\n"
-            f"\n"
-            f"⚡ @{he(w_user)} +0.3 → {w_final_power}\n⚡ @{he(l_user)} +0.1 → {l_final_power}"
-        )
-        kb_result = InlineKeyboardMarkup(
-            [[btn(t("btn_my_frog", f), callback_data="refresh")]]
-        )
-        await edit_both(result_text, kb=kb_result)
-        # Логируем результат батла
-        asyncio.create_task(log_game(
-            winner_id, "battle", stake, stake * 2 if stake > 0 else 0,
-            "win", {"opponent": loser_id, "dice_c": dice_val_c, "dice_t": dice_val_t, "power": float(final_p)},
-        ))
-        asyncio.create_task(log_game(
-            loser_id, "battle", stake, 0,
-            "loss", {"opponent": winner_id, "dice_c": dice_val_c, "dice_t": dice_val_t, "power": float(final_p)},
-        ))
-
-        if not is_private:
-            try:
-                await ctx.bot.send_message(
-                    winner_id,
-                    f"{_E_TROPHY} Ты <b>победил</b> в батле!{stake_result}\n{_E_BOLT} +0.3 Power → {w_final_power}",
-                    parse_mode=ParseMode.HTML,
-                )
-            except Exception:
-                pass
-            try:
-                await ctx.bot.send_message(
-                    loser_id,
-                    f"{_E_SKULL} Ты <b>проиграл</b> батл против <b>{he(w_name)}</b>.\n{_E_BOLT} +0.1 Power → {l_final_power}",
-                    parse_mode=ParseMode.HTML,
-                )
-            except Exception:
-                pass
-        return
-
-    # ── БАТЛ: ОТКАЗАТЬСЯ ───────────────────────────────
-    if d.startswith("battle_decline_"):
-        await q.answer()
-        battle_id = int(d[15:])
-        async with aiosqlite.connect(DB_PATH) as db:
-            async with db.execute(
-                "SELECT challenger_id FROM battles WHERE id=?", (battle_id,)
-            ) as c:
-                row = await c.fetchone()
-            await db.execute(
-                "UPDATE battles SET status='declined' WHERE id=?", (battle_id,)
-            )
-            await db.commit()
-        try:
-            await q.message.edit_text(
-                "❌ Вызов на бой отклонён.", parse_mode=ParseMode.HTML
-            )
-        except Exception:
-            pass
-        return
-
-    # ── ТУРНИР: СОЗДАТЬ ────────────────────────────
-    if d == "tournament_create":
-        if not f["alive"]:
-            await q.answer("💀 Используй /revive", show_alert=True)
-            return
-        # Показываем выбор ставки
-        stakes = [25, 50, 100, 200, 500]
-        kb_rows = []
-        for s_val in stakes:
-            label = f"Ставка {s_val}{coin_plain()}" + (
-                " ✅" if f["coins"] >= s_val else " ❌"
-            )
-            kb_rows.append(
-                [btn(label, callback_data=f"tournament_stake_{s_val}")]
-            )
-        kb_rows.append([btn("◀️ Назад", callback_data="menu_games")])
-        try:
-            await q.message.edit_text(
-                f"{_E_TROPHY} <b>Создать турнир</b>\n\n"
-                f"У тебя: {f['coins']}{coin_emoji()}\n\n"
-                f"Выбери ставку для входа (с каждого участника):",
-                parse_mode=ParseMode.HTML,
-                reply_markup=InlineKeyboardMarkup(kb_rows),
-            )
-        except Exception:
-            pass
-        return
-
-    if d.startswith("tournament_stake_"):
-        stake = int(d[17:])
-        if not f["alive"]:
-            await q.answer("💀 Используй /revive", show_alert=True)
-            return
-        if f["coins"] < stake:
-            await q.answer((f"Нужно {stake}{coin_plain()} для участия")[:200], show_alert=True)
-            return
-        now = time.time()
-        # Создаём турнир в БД
-        async with aiosqlite.connect(DB_PATH) as db:
-            await db.execute(
-                "INSERT INTO tournaments(creator_id,stake,status,created_at,chat_id,participants) "
-                "VALUES(?,?,?,?,?,?)",
-                (uid, stake, "waiting", now, q.message.chat.id, json.dumps([uid])),
-            )
-            await db.commit()
-            async with db.execute("SELECT last_insert_rowid()") as c:
-                tid = (await c.fetchone())[0]
-        kb = InlineKeyboardMarkup(
-            [
-                [
-                    btn(
-                        "⚔️ Вступить в турнир!", callback_data=f"tournament_join_{tid}", style="success"
-                    ),
-                    btn(
-                        "🚀 Начать (3+ чел)", callback_data=f"tournament_start_{tid}", style="primary"
-                    ),
-                ]
-            ]
-        )
-        await q.message.edit_text(
-            f"{_E_TROPHY} <b>Турнир открыт!</b>\n\n"
-            f"Создатель: <b>{he(q.from_user.first_name)}</b>\n"
-            f"Ставка: <b>{stake}{coin_emoji()}</b>\n"
-            f"Участников: <b>1</b>\n\n"
-            f"<i>Нужно минимум 3 участника.</i>",
-            parse_mode=ParseMode.HTML,
-            reply_markup=kb,
-        )
-        return
-
-    if d.startswith("tournament_join_"):
-        tid = int(d[16:])
-        if not f["alive"]:
-            await q.answer("💀 Используй /revive", show_alert=True)
-            return
-        async with aiosqlite.connect(DB_PATH) as db:
-            db.row_factory = aiosqlite.Row
-            async with db.execute("SELECT * FROM tournaments WHERE id=?", (tid,)) as c:
-                tourn = await c.fetchone()
-        if not tourn:
-            await q.answer("Турнир не найден", show_alert=True)
-            return
-        tourn = dict(tourn)
-        if tourn["status"] != "waiting":
-            await q.answer("Турнир уже начался или завершён", show_alert=True)
-            return
-        parts = json.loads(tourn["participants"] or "[]")
-        if uid in parts:
-            await q.answer("Ты уже в турнире", show_alert=True)
-            return
-        stake = tourn["stake"]
-        if f["coins"] < stake:
-            await q.answer((f"Нужно {stake}{coin_plain()} для участия")[:200], show_alert=True)
-            return
-        # Списываем ставку СРАЗУ при вступлении, иначе игрок может потратить монеты до старта
-        f["coins"] -= stake
-        f["coins_spent"] = f.get("coins_spent", 0) + stake
-        await db_save(f)
-        parts.append(uid)
-        async with aiosqlite.connect(DB_PATH) as db:
-            await db.execute(
-                "UPDATE tournaments SET participants=? WHERE id=?",
-                (json.dumps(parts), tid),
-            )
-            await db.commit()
-        # Получаем имена участников
-        names = []
-        for p_uid in parts:
-            pf = await db_get(p_uid)
-            names.append(fname(pf) if pf else f"ID:{p_uid}")
-        kb = InlineKeyboardMarkup(
-            [
-                [
-                    btn(
-                        "⚔️ Вступить в турнир!", callback_data=f"tournament_join_{tid}", style="success"
-                    ),
-                    btn(
-                        "🚀 Начать (3+ чел)", callback_data=f"tournament_start_{tid}", style="primary"
-                    ),
-                ]
-            ]
-        )
-        try:
-            await q.message.edit_text(
-                f"{_E_TROPHY} <b>Турнир #{tid}</b>\n\n"
-                f"Ставка: <b>{stake}{coin_emoji()}</b>\n"
-                f"Участников: <b>{len(parts)}</b>\n\n"
-                + "\n".join(f"• {he(n)}" for n in names)
-                + f"\n\n<i>Нужно минимум 3 участника.</i>",
-                parse_mode=ParseMode.HTML,
-                reply_markup=kb,
-            )
-        except (BadRequest, Forbidden):
-            pass
-        await q.answer(f"✅ {q.from_user.first_name} вступил в турнир")
-        return
-
-    if d.startswith("tournament_start_"):
-        tid = int(d[17:])
-        async with aiosqlite.connect(DB_PATH) as db:
-            db.row_factory = aiosqlite.Row
-            async with db.execute("SELECT * FROM tournaments WHERE id=?", (tid,)) as c:
-                tourn = await c.fetchone()
-        if not tourn:
-            await q.answer("Турнир не найден", show_alert=True)
-            return
-        tourn = dict(tourn)
-        if tourn["creator_id"] != uid:
-            await q.answer("Только создатель может начать", show_alert=True)
-            return
-        if tourn["status"] != "waiting":
-            await q.answer("Турнир уже начался", show_alert=True)
-            return
-        parts = json.loads(tourn["participants"] or "[]")
-        if len(parts) < 3:
-            await q.answer(
-                f"Нужно минимум 3 участника! Сейчас: {len(parts)}", show_alert=True
-            )
-            return
-        # Монеты уже списаны при вступлении — здесь только проверяем что участники живы
-        stake = tourn["stake"]
-        valid_parts = list(parts)  # все вступившие уже заплатили
-        if len(valid_parts) < 2:
-            await q.answer("Недостаточно участников", show_alert=True)
-            return
-        # Турнир — каждый бросает кубик, побеждает с наибольшим числом
-        async with aiosqlite.connect(DB_PATH) as db:
-            await db.execute(
-                "UPDATE tournaments SET status='running',participants=? WHERE id=?",
-                (json.dumps(valid_parts), tid),
-            )
-            await db.commit()
-        try:
-            await q.message.edit_text(
-                f"{_E_TROPHY} <b>Турнир #{tid} начался!</b>\n\n"
-                f"Участников: {len(valid_parts)}\n"
-                f"Ставка каждого: {stake}{coin_emoji()}\n"
-                f"Приз: {stake * len(valid_parts)}{coin_emoji()}\n\n"
-                f"<i>Бросаем кубики...</i>",
-                parse_mode=ParseMode.HTML,
-            )
-        except (BadRequest, Forbidden):
-            pass
-        await q.answer()  # ← подтверждаем до серии кубиков (sleep 3.5 × N участников)
-        # Бросаем кубики последовательно
-        results = {}
-        RARITY_BONUS = {
-            "mythic": 0,
-            "legendary": 0,
-            "epic": 0,
-            "rare": 0,
-            "uncommon": 0,
-            "common": 0,
-        }
-        for p_uid in valid_parts:
-            pf = await db_get(p_uid)
-            skin_r = (
-                SKINS.get(pf.get("skin", "Brownie"), {}).get("rarity", "common")
-                if pf
-                else "common"
-            )
-            bonus = RARITY_BONUS.get(skin_r, 0)
-            try:
-                dice_msg = await ctx.bot.send_dice(
-                    chat_id=q.message.chat.id, emoji="🎲"
-                )
-                roll_val = dice_msg.dice.value + bonus
-                results[p_uid] = (roll_val, fname(pf) if pf else f"ID:{p_uid}", bonus)
-                asyncio.create_task(_delete_casino_dice(
-                    ctx.bot, q.message.chat.id, dice_msg.message_id, q.message.chat.type
-                ))
-                await asyncio.sleep(3.5)
-            except Exception:
-                results[p_uid] = (
-                    random.randint(1, 6),
-                    fname(pf) if pf else f"ID:{p_uid}",
-                    0,
-                )
-        # Определяем победителя (или победителей при ничьей)
-        prize = stake * len(valid_parts)
-        max_roll = max(results[p][0] for p in results)
-        tied_uids = [p for p in results if results[p][0] == max_roll]
-
-        sorted_results = sorted(results.items(), key=lambda x: x[1][0], reverse=True)
-        medals = ["🥇", "🥈", "🥉"] + ["🔹"] * 10
-        lines = [f"{_E_TROPHY} <b>Результаты турнира #{tid}!</b>\n"]
-        for i, (p_uid, (roll_val, name, bonus)) in enumerate(sorted_results):
-            bonus_s = f" +{bonus}🎨" if bonus else ""
-            lines.append(f"{medals[i]} {he(name)}: <b>{roll_val}</b>{bonus_s}")
-
-        if len(tied_uids) > 1:
-            # НИЧЬЯ — предлагаем выбор: разделить или переброс
-            tied_names = " vs ".join(he(results[p][1]) for p in tied_uids)
-            lines.append(f"\n⚖️ <b>Ничья!</b> {tied_names} выбросили <b>{max_roll}</b>!")
-            lines.append("Решайте: разделить приз или переброс?")
-            # Сохраняем данные ничьей в bot_data для переброса
-            ctx.bot_data[f"tie_{tid}"] = {
-                "tied_uids": tied_uids,
-                "prize": prize,
-                "stake": stake,
-                "results": {str(p): list(v) for p, v in results.items()},
-            }
-            tie_kb = InlineKeyboardMarkup([
-                [
-                    btn("🤝 Разделить приз", callback_data=f"tournament_tie_split_{tid}"),
-                    btn("🎲 Переброс", callback_data=f"tournament_tie_reroll_{tid}"),
-                ]
-            ])
-            try:
-                await ctx.bot.send_message(
-                    q.message.chat.id,
-                    "\n".join(lines),
-                    parse_mode=ParseMode.HTML,
-                    reply_markup=tie_kb,
-                )
-            except Exception:
-                pass
-            # Отмечаем турнир как tie-pending
-            async with aiosqlite.connect(DB_PATH) as db:
-                await db.execute(
-                    "UPDATE tournaments SET status='tie_pending' WHERE id=?", (tid,)
-                )
-                await db.commit()
-        else:
-            # Один победитель
-            winner_uid = tied_uids[0]
-            wf = await db_get(winner_uid)
-            if wf:
-                wf["coins"] += prize
-                wf["total_duel_wins"] = wf.get("total_duel_wins", 0) + 1
-                await db_save(wf)
-            async with aiosqlite.connect(DB_PATH) as db:
-                await db.execute(
-                    "UPDATE tournaments SET status='finished',winner_id=? WHERE id=?",
-                    (winner_uid, tid),
-                )
-                await db.commit()
-            # Логируем результаты турнира
-            rolls_log = {str(p): results[p][0] for p in results}
-            for p_uid in valid_parts:
-                is_winner = (p_uid == winner_uid)
-                asyncio.create_task(log_game(
-                    p_uid, "tournament", stake,
-                    prize if is_winner else 0,
-                    "win" if is_winner else "loss",
-                    {"tid": tid, "rolls": rolls_log, "participants": len(valid_parts)},
-                ))
-            w_name = results[winner_uid][1]
-            lines.append(
-                f"\n🎉 <b>{he(w_name)}</b> победил и получил <b>{prize}{coin_emoji()}</b>!"
-            )
-            try:
-                await ctx.bot.send_message(
-                    q.message.chat.id,
-                    "\n".join(lines),
-                    parse_mode=ParseMode.HTML,
-                )
-            except Exception:
-                pass
-            # Уведомляем победителя
-            try:
-                await ctx.bot.send_message(
-                    winner_uid,
-                    f"{_E_TROPHY} <b>Ты победил в турнире!</b>\n+{prize}{coin_emoji()}",
-                    parse_mode=ParseMode.HTML,
-                )
-            except Exception:
-                pass
-        return
-
-    # ── ТУРНИР: РАЗДЕЛИТЬ ПРИЗ ─────────────────────
-    if d.startswith("tournament_tie_split_"):
-        tid = int(d[21:])
-        tie_data = ctx.bot_data.get(f"tie_{tid}")
-        if not tie_data:
-            await q.answer("Данные ничьей не найдены", show_alert=True)
-            return
-        tied_uids = tie_data["tied_uids"]
-        prize = tie_data["prize"]
-        share = prize // len(tied_uids)
-        leftover = prize - share * len(tied_uids)
-        names = []
-        for p_uid in tied_uids:
-            pf = await db_get(p_uid)
-            if pf:
-                pf["coins"] += share
-                await db_save(pf)
-                names.append(fname(pf))
-        async with aiosqlite.connect(DB_PATH) as db:
-            await db.execute(
-                "UPDATE tournaments SET status='finished' WHERE id=?", (tid,)
-            )
-            await db.commit()
-        ctx.bot_data.pop(f"tie_{tid}", None)
-        # Логируем ничью
-        for p_uid in tied_uids:
-            asyncio.create_task(log_game(
-                p_uid, "tournament", stake, share, "draw",
-                {"tid": tid, "split": True, "winners_count": len(tied_uids)},
-            ))
-        split_msg = (
-            f"🤝 <b>Приз поделён поровну!</b>\n"
-            f"Каждый получил <b>{share}{coin_emoji()}</b>: "
-            + ", ".join(he(n) for n in names)
-            + (f"\n<i>(+{leftover}{coin_emoji()} не делится — остались в банке)</i>" if leftover else "")
-        )
-        try:
-            await q.message.edit_text(split_msg, parse_mode=ParseMode.HTML)
-        except Exception:
-            pass
-        return
-
-    # ── ТУРНИР: ПЕРЕБРОС ─────────────────────────
-    if d.startswith("tournament_tie_reroll_"):
-        tid = int(d[22:])
-        tie_data = ctx.bot_data.get(f"tie_{tid}")
-        if not tie_data:
-            await q.answer("Данные ничьей не найдены", show_alert=True)
-            return
-        tied_uids = tie_data["tied_uids"]
-        prize = tie_data["prize"]
-        # Переброс только среди участников ничьей
-        reroll_results = {}
-        for p_uid in tied_uids:
-            pf = await db_get(p_uid)
-            try:
-                dice_msg = await ctx.bot.send_dice(chat_id=q.message.chat.id, emoji="🎲")
-                roll_val = dice_msg.dice.value
-                reroll_results[p_uid] = (roll_val, fname(pf) if pf else f"ID:{p_uid}")
-                asyncio.create_task(_delete_casino_dice(
-                    ctx.bot, q.message.chat.id, dice_msg.message_id, q.message.chat.type
-                ))
-                await asyncio.sleep(3.5)
-            except Exception:
-                reroll_results[p_uid] = (random.randint(1, 6), fname(pf) if pf else f"ID:{p_uid}")
-        max_reroll = max(reroll_results[p][0] for p in reroll_results)
-        reroll_winners = [p for p in reroll_results if reroll_results[p][0] == max_reroll]
-        lines = [f"🎲 <b>Переброс турнира #{tid}!</b>\n"]
-        sorted_rr = sorted(reroll_results.items(), key=lambda x: x[1][0], reverse=True)
-        medals = ["🥇", "🥈", "🥉"] + ["🔹"] * 10
-        for i, (p_uid, (rv, rname)) in enumerate(sorted_rr):
-            lines.append(f"{medals[i]} {he(rname)}: <b>{rv}</b>")
-        ctx.bot_data.pop(f"tie_{tid}", None)
-        if len(reroll_winners) > 1:
-            # Ничья снова — делим автоматически
-            share = prize // len(reroll_winners)
-            for p_uid in reroll_winners:
-                pf = await db_get(p_uid)
-                if pf:
-                    pf["coins"] += share
-                    await db_save(pf)
-            tied_names = ", ".join(he(reroll_results[p][1]) for p in reroll_winners)
-            lines.append(f"\n⚖️ <b>Снова ничья!</b> Приз поделён ({share}{coin_emoji()} каждому): {tied_names}")
-        else:
-            final_winner = reroll_winners[0]
-            wf = await db_get(final_winner)
-            if wf:
-                wf["coins"] += prize
-                wf["total_duel_wins"] = wf.get("total_duel_wins", 0) + 1
-                await db_save(wf)
-            w_name = reroll_results[final_winner][1]
-            lines.append(f"\n🎉 <b>{he(w_name)}</b> победил в перебросе и получил <b>{prize}{coin_emoji()}</b>!")
-        async with aiosqlite.connect(DB_PATH) as db:
-            await db.execute(
-                "UPDATE tournaments SET status='finished' WHERE id=?", (tid,)
-            )
-            await db.commit()
-        try:
-            await ctx.bot.send_message(
-                q.message.chat.id, "\n".join(lines), parse_mode=ParseMode.HTML
-            )
-        except Exception:
-            pass
-        return
-
-    # ── ПОИСК ИГРОКА ДЛЯ ДУЭЛИ ────────────────────
-    if d == "duel_search":
-        rows = await db_top(20)
-        alive_others = [r for r in rows if r["user_id"] != uid and r["alive"]][:10]
-        if not alive_others:
-            await q.answer("Нет других игроков", show_alert=True)
-            return
-        kb_rows = []
-        for r in alive_others:
-            name = r["frog_name"] if r["frog_name"] else f"Лягушка {r['first_name']}"
-            s = SKINS.get(r["skin"], SKINS["Brownie"])
-            label = f"{R_ICON[s['rarity']]} {name} — ур.{r['level']}"
-            kb_rows.append(
-                [
-                    btn(
-                        label, callback_data=f"duel_pick_opp_{r['user_id']}"
-                    )
-                ]
-            )
-        kb_rows.append([btn("◀️ Назад", callback_data="menu_games")])
-        try:
-            await q.message.edit_text(
-                f"{_E_SWORDS} <b>Дуэль — выбери соперника</b> {f['coins']}{coin_emoji()}\n\n"
-                f"<i>(топ-10 активных игроков)</i>",
-                parse_mode=ParseMode.HTML,
-                reply_markup=InlineKeyboardMarkup(kb_rows),
-            )
-        except Exception:
-            pass
-        return
-
-    # ── ДУЭЛЬ: ВЫБОР СТАВКИ ────────────────────────
-    if d.startswith("duel_pick_opp_"):
-        target_uid_d = int(d[14:])
-        target_d = await db_get(target_uid_d)
-        if not target_d:
-            await q.answer("Игрок не найден", show_alert=True)
-            return
-        if not target_d["alive"]:
-            await q.answer("Лягушка соперника мертва", show_alert=True)
-            return
-        s_t = SKINS.get(target_d["skin"], SKINS["Brownie"])
-        stakes = [10, 25, 50, 100, 250, 500]
-        kb_rows = [
-            [
-                btn(
-                    f"🪙 {s}", callback_data=f"duel_challenge_uid_{target_uid_d}_{s}"
-                )
-                for s in stakes[:3]
-            ],
-            [
-                btn(
-                    f"🪙 {s}", callback_data=f"duel_challenge_uid_{target_uid_d}_{s}"
-                )
-                for s in stakes[3:]
-            ],
-            [btn("◀️ Назад", callback_data="duel_search")],
-        ]
-        t_name = target_d.get("frog_name") or f"Лягушка {target_d['first_name']}"
-        try:
-            await q.message.edit_text(
-                f"{_E_SWORDS} <b>Дуэль vs {he(t_name)}</b>\n"
-                f"Облик: {R_ICON[s_t['rarity']]} {he(target_d['skin'])}\n\n"
-                f"У тебя: {f['coins']}{coin_emoji()}\n"
-                f"",
-                parse_mode=ParseMode.HTML,
-                reply_markup=InlineKeyboardMarkup(kb_rows),
-            )
-        except Exception:
-            pass
-        return
-
-    # ── ДУЭЛЬ: ВЫЗОВ ЧЕРЕЗ МЕНЮ ────────────────────
-    if d.startswith("duel_challenge_uid_"):
-        # формат: duel_challenge_uid_<target_uid>_<stake>
-        parts_d = d.split("_")
-        target_uid_d = int(parts_d[3])
-        try:
-            stake_d = int(parts_d[4]) if len(parts_d) > 4 else 50
-        except (ValueError, IndexError):
-            stake_d = 50
-        if target_uid_d == uid:
-            await q.answer("Нельзя вызвать себя", show_alert=True)
-            return
-        if not f["alive"] and not f.get("trial_active", 0):
-            await q.answer("💀 Используй /revive", show_alert=True)
-            return
-        if f["coins"] < stake_d:
-            await q.answer(
-                f"Нужно {stake_d} 🪙 для ставки!", show_alert=True
-            )
-            return
-        target_d = await db_get(target_uid_d)
-        if not target_d:
-            await q.answer("Игрок не найден", show_alert=True)
-            return
-        if not target_d["alive"]:
-            await q.answer("Лягушка соперника мертва", show_alert=True)
-            return
-        now_d = time.time()
-        async with aiosqlite.connect(DB_PATH) as db:
-            await db.execute(
-                "INSERT INTO duels(challenger_id,target_id,stake,status,chat_id,created_at) VALUES(?,?,?,?,?,?)",
-                (uid, target_uid_d, stake_d, "pending", q.message.chat.id, now_d),
-            )
-            await db.commit()
-            async with db.execute("SELECT last_insert_rowid()") as c_r:
-                duel_id_d = (await c_r.fetchone())[0]
-        use_st_d = bool(f.get("use_static", 0))
-        use_st_td = bool(target_d.get("use_static", 0))
-        kb_d = InlineKeyboardMarkup(
-            [
-                [
-                    btn(
-                        "⚔️ Принять!", callback_data=f"duel_accept_{duel_id_d}"
-                    ),
-                    btn(
-                        "❌ Отклонить", callback_data=f"duel_decline_{duel_id_d}"
-                    ),
-                ]
-            ]
-        )
-        challenge_d = (
-            f"{_E_SWORDS} <b>{he(q.from_user.first_name)}</b> вызывает "
-            f"<b>{he(target_d.get('first_name', '?'))}</b> на дуэль!\n\n"
-            f"Ставка: <b>{stake_d}{coin_emoji()}</b>\n"
-            f"{display_skin(f['skin'], use_st_d)} vs {display_skin(target_d['skin'], use_st_td)}\n\n"
-            f"Принимаешь вызов?"
-        )
-        try:
-            await q.message.edit_text(
-                challenge_d,
-                parse_mode=ParseMode.HTML,
-                reply_markup=kb_d,
-                link_preview_options=LinkPreviewOptions(),
-            )
-        except Exception:
-            pass
-        try:
-            await ctx.bot.send_message(
-                target_uid_d,
-                f"{_E_SWORDS} <b>{he(q.from_user.first_name)}</b> вызывает тебя на дуэль!\n"
-                f"Ставка: <b>{stake_d}{coin_emoji()}</b>\n\n<i>Прими вызов в чате или нажми кнопку:</i>",
-                parse_mode=ParseMode.HTML,
-                reply_markup=kb_d,
-            )
-        except Exception:
-            pass
-        ctx.job_queue.run_once(
-            lambda c: asyncio.create_task(_expire_duel(duel_id_d)),
-            when=300,
-            name=f"duel_{duel_id_d}",
-        )
-        return
-
-    if d == "battle_search":
-        if not f["alive"]:
-            await q.answer("💀 Используй /revive", show_alert=True)
-            return
-        now = time.time()
-        cd = 5  # КД батла: 5 секунд
-        if now - f.get("last_battle", 0) < cd:
-            left = int(cd - (now - f.get("last_battle", 0)))
-            await q.answer(
-                f"⏳ Подожди ещё {left} сек перед следующим батлом",
-                show_alert=True,
-            )
-            return
-        rows = await db_top(20)
-        alive_others = [r for r in rows if r["user_id"] != uid and r["alive"]][:10]
-        if not alive_others:
-            await q.answer("Нет других игроков", show_alert=True)
-            return
-        my_power_s = round(f.get("power") or 0, 1)
-        kb_rows = []
-        for r in alive_others:
-            r_full = await db_get(r["user_id"])
-            if not r_full:
-                continue
-            r_power = round(r_full.get("power") or 0, 1)
-            name = r_full.get("frog_name") or f"Лягушка {r_full['first_name']}"
-            s = SKINS.get(r_full["skin"], SKINS["Brownie"])
-            label = f"{R_ICON[s['rarity']]} {name} — ⚡{r_power}"
-            kb_rows.append(
-                [
-                    btn(
-                        label,
-                        callback_data=f"battle_challenge_uid_{r_full['user_id']}_0",
-                    )
-                ]
-            )
-        kb_rows.append([btn("◀️ Назад", callback_data="menu_games")])
-        try:
-            await q.message.edit_text(
-                f"🥊 <b>Батл (кубики + Power)</b>\n\n"
-                f"Твой Power: {_E_BOLT}{my_power_s}\n\n"
-                f"Выбери соперника для батла:\n"
-                f"<i>(топ-10 активных игроков)</i>\n\n"
-                f"<i>Или напиши</i> <code>/battle @username [ставка]</code>",
-                parse_mode=ParseMode.HTML,
-                reply_markup=InlineKeyboardMarkup(kb_rows),
-            )
-        except Exception:
-            pass
-        return
-
-    if d.startswith("battle_challenge_uid_"):
-        # формат: battle_challenge_uid_<uid>_<stake>
-        parts_d = d.split("_")
-        target_uid = int(parts_d[3])
-        stake = int(parts_d[4]) if len(parts_d) > 4 else 0
-        if target_uid == uid:
-            await q.answer("Нельзя вызвать себя", show_alert=True)
-            return
-        if stake > 0 and f["coins"] < stake:
-            await q.answer((f"Нужно {stake}{coin_plain()}")[:200], show_alert=True)
-            return
-        target = await db_get(target_uid)
-        if not target:
-            await q.answer("Игрок не найден", show_alert=True)
-            return
-        if not target["alive"]:
-            await q.answer("Лягушка соперника мертва", show_alert=True)
-            return
-        now = time.time()
-        cd = 5  # КД батла: 5 секунд
-        if now - f.get("last_battle", 0) < cd:
-            left = int(cd - (now - f.get("last_battle", 0)))
-            await q.answer((f"⏳ Подожди ещё {left} сек")[:200], show_alert=True)
-            return
-        async with aiosqlite.connect(DB_PATH) as db:
-            await db.execute(
-                "INSERT INTO battles(challenger_id,target_id,stake,status,chat_id,created_at) VALUES(?,?,?,?,?,?)",
-                (uid, target_uid, stake, "pending", q.message.chat.id, now),
-            )
-            await db.commit()
-            async with db.execute("SELECT last_insert_rowid()") as c:
-                battle_id = (await c.fetchone())[0]
-
-        regen_hp(f)
-        regen_hp(target)
-        c_power_d = round(f.get("power") or 0, 1)
-        t_power_d = round(target.get("power") or 0, 1)
-        c_name = fname(f)
-        t_name = fname(target)
-        stake_txt = (
-            f"\nСтавка (опционально): <b>{stake}{coin_emoji()}</b>" if stake else ""
-        )
-
-        kb = InlineKeyboardMarkup(
-            [
-                [
-                    btn(
-                        "⚔️ Принять батл!", callback_data=f"battle_accept_{battle_id}"
-                    ),
-                    btn(
-                        "❌ Отказаться", callback_data=f"battle_decline_{battle_id}"
-                    ),
-                ]
-            ]
-        )
-        msg_text = (
-            f"{_E_SWORDS} <b>Батл: {he(q.from_user.first_name)} вызывает {he(target['first_name'])}!</b>{stake_txt}\n\n"
-            f"<tg-emoji emoji-id='5341367834935075028'>🐸</tg-emoji> {he(c_name)} — ⚡{c_power_d} Power\n"
-            f"<tg-emoji emoji-id='5341367834935075028'>🐸</tg-emoji> {he(t_name)} — ⚡{t_power_d} Power\n\n"
-            f"@{he(target.get('username') or target['first_name'])}, принимаешь вызов?"
-        )
-        try:
-            await q.message.edit_text(
-                msg_text,
-                parse_mode=ParseMode.HTML,
-                reply_markup=kb,
-                link_preview_options=LinkPreviewOptions(),
-            )
-        except (BadRequest, Forbidden):
-            pass
-        # Уведомляем цель в ЛС
-        try:
-            await ctx.bot.send_message(
-                target_uid,
-                f"{_E_SWORDS} <b>Батл: {he(q.from_user.first_name)} вызывает {he(target['first_name'])}!</b>{stake_txt}\n\n"
-                f"<tg-emoji emoji-id='5341367834935075028'>🐸</tg-emoji> {he(c_name)} — ⚡{c_power_d} Power\n"
-                f"<tg-emoji emoji-id='5341367834935075028'>🐸</tg-emoji> {he(t_name)} — ⚡{t_power_d} Power\n\n"
-                f"<i>Прими вызов в чате или нажми кнопку:</i>",
-                parse_mode=ParseMode.HTML,
-                reply_markup=kb,
-            )
-        except Exception:
-            pass
-        ctx.job_queue.run_once(
-            lambda c: asyncio.create_task(_expire_battle(battle_id)),
-            when=300,
-            name=f"battle_{battle_id}",
-        )
-        return
-    # ── ПОИСК ИГРОКА ДЛЯ БАТЛА ────────────────────
-    if d == "battle_search":
-        if not f["alive"]:
-            await q.answer("💀 Используй /revive", show_alert=True)
-            return
-        # КД батла
-        now = time.time()
-        cd = 5  # КД батла: 5 секунд
-        if now - f.get("last_battle", 0) < cd:
-            left = int(cd - (now - f.get("last_battle", 0)))
-            await q.answer(
-                f"⏳ До следующего батла: {left} сек",
-                show_alert=True,
-            )
-            return
-
-        my_power = round(f.get("power") or 0, 1)
-
-        rows = await db_top(20)
-        alive_others = [r for r in rows if r["user_id"] != uid and r["alive"]][:10]
-        if not alive_others:
-            await q.answer("Нет других игроков", show_alert=True)
-            return
-
-        kb_rows = []
-        for r in alive_others:
-            r_power = round(r.get("power") or 0, 1)
-            name = r["frog_name"] if r["frog_name"] else f"Лягушка {r['first_name']}"
-            s = SKINS.get(r["skin"], SKINS["Brownie"])
-            label = f"{R_ICON[s['rarity']]} {name} — ⚡{r_power}"
-            kb_rows.append(
-                [
-                    btn(
-                        label, callback_data=f"battle_challenge_uid_{r['user_id']}_0"
-                    )
-                ]
-            )
-        kb_rows.append([btn("◀️ Назад", callback_data="menu_games")])
-
-        try:
-            await q.message.edit_text(
-                f"🥊 <b>Батл (кубики + Power)</b> {f['coins']}{coin_emoji()}\n\n"
-                f"Твой Power: {_E_BOLT}{my_power}\n\n"
-                f"Выбери соперника:\n<i>(топ-10 активных игроков)</i>",
-                parse_mode=ParseMode.HTML,
-                reply_markup=InlineKeyboardMarkup(kb_rows),
-            )
-        except Exception:
-            pass
-        return
-
-    if d.startswith("battle_challenge_uid_"):
-        # формат: battle_challenge_uid_<uid>_<stake>
-        parts_b = d.split("_")
-        target_uid_b = int(parts_b[3])
-        stake_b = int(parts_b[4]) if len(parts_b) > 4 else 0
-        if target_uid_b == uid:
-            await q.answer("Нельзя вызвать себя", show_alert=True)
-            return
-        if stake_b > 0 and f["coins"] < stake_b:
-            await q.answer((f"Нужно {stake_b}{coin_plain()}")[:200], show_alert=True)
-            return
-
-        now = time.time()
-        cd = 5  # КД батла: 5 секунд
-        if now - f.get("last_battle", 0) < cd:
-            left = int(cd - (now - f.get("last_battle", 0)))
-            await q.answer((f"⏳ Подожди {left} сек")[:200], show_alert=True)
-            return
-
-        target_b = await db_get(target_uid_b)
-        if not target_b:
-            await q.answer("Игрок не найден", show_alert=True)
-            return
-        if not target_b["alive"]:
-            await q.answer("Лягушка соперника мертва", show_alert=True)
-            return
-
-        c_power_b = round(f.get("power") or 0, 1)
-        t_power_b = round(target_b.get("power") or 0, 1)
-        c_name_b = f.get("frog_name") or f"Лягушка {q.from_user.first_name}"
-        t_name_b = target_b.get("frog_name") or f"Лягушка {target_b['first_name']}"
-        stake_line_b = (
-            f"\nСтавка (опционально): <b>{stake_b}{coin_emoji()}</b>" if stake_b else ""
-        )
-
-        async with aiosqlite.connect(DB_PATH) as db:
-            await db.execute(
-                "INSERT INTO battles(challenger_id,target_id,stake,status,chat_id,created_at) VALUES(?,?,?,?,?,?)",
-                (uid, target_uid_b, stake_b, "pending", q.message.chat.id, now),
-            )
-            await db.commit()
-            async with db.execute("SELECT last_insert_rowid()") as c_row:
-                battle_id_b = (await c_row.fetchone())[0]
-
-        kb_b = InlineKeyboardMarkup(
-            [
-                [
-                    btn(
-                        "⚔️ Принять батл!", callback_data=f"battle_accept_{battle_id_b}"
-                    ),
-                    btn(
-                        "❌ Отказаться", callback_data=f"battle_decline_{battle_id_b}"
-                    ),
-                ]
-            ]
-        )
-        t_username = target_b.get("username") or target_b["first_name"]
-        c_username = q.from_user.username or q.from_user.first_name
-        challenge_text = (
-            f"{_E_SWORDS} <b>Батл: @{he(c_username)} вызывает @{he(t_username)}!</b>\n\n"
-            f"<tg-emoji emoji-id='5341367834935075028'>🐸</tg-emoji> {he(c_name_b)} — ⚡{c_power_b} Power\n"
-            f"<tg-emoji emoji-id='5341367834935075028'>🐸</tg-emoji> {he(t_name_b)} — ⚡{t_power_b} Power"
-            f"{stake_line_b}\n\n"
-            f"@{he(t_username)}, принимаешь вызов?"
-        )
-        try:
-            await q.message.edit_text(
-                challenge_text,
-                parse_mode=ParseMode.HTML,
-                reply_markup=kb_b,
-            )
-        except (BadRequest, Forbidden):
-            pass
-        # Уведомляем соперника в ЛС
-        try:
-            await ctx.bot.send_message(
-                target_uid_b,
-                challenge_text + "",
-                parse_mode=ParseMode.HTML,
-                reply_markup=kb_b,
-            )
-        except Exception:
-            pass
-        ctx.job_queue.run_once(
-            lambda c: asyncio.create_task(_expire_battle(battle_id_b)),
-            when=300,
-            name=f"battle_{battle_id_b}",
-        )
-        return
     # Игнорирование пустых кнопок
     if d == "ignore":
         await q.answer()
@@ -46892,12 +47040,6 @@ async def on_callback(update: Update, ctx: ContextTypes.DEFAULT_TYPE):
         await _handle_partnerinfo_callback(q, uid, ctx)
         return
 
-    # Пагинация списка заявок
-    if d.startswith("nft_list_page_"):
-        page = int(d.split("_")[-1])
-        await show_nft_list(q, ctx, page, edit=True)
-        await q.answer()
-        return
 
 
 
@@ -47042,80 +47184,7 @@ async def on_callback(update: Update, ctx: ContextTypes.DEFAULT_TYPE):
 
 
 
-    # ── ADMIN: НФТ ПЕРЕПРОВЕРКА — оставить или забрать скин ────────────
-    if d.startswith("nft_recheck_keep_"):
-        if uid not in ADMIN_IDS:
-            await q.answer("⛔", show_alert=True); return
-        try:
-            nft_id = int(d[len("nft_recheck_keep_"):])
-        except ValueError:
-            await q.answer(); return
-        async with aiosqlite.connect(DB_PATH) as db:
-            await db.execute(
-                "UPDATE nft_frogs SET profile_hidden=0, pending_review=0 WHERE id=?",
-                (nft_id,)
-            )
-            await db.commit()
-        await q.answer("✅ НФТ оставлен, владелец сохраняет бонусы.", show_alert=True)
-        try:
-            await q.message.edit_reply_markup(reply_markup=None)
-        except Exception:
-            pass
-        return
 
-    if d.startswith("nft_recheck_revoke_"):
-        if uid not in ADMIN_IDS:
-            await q.answer("⛔", show_alert=True); return
-        try:
-            parts_rcv = d[len("nft_recheck_revoke_"):].split("_", 1)
-            nft_id_rcv = int(parts_rcv[0])
-            target_uid_rcv = int(parts_rcv[1])
-        except (ValueError, IndexError):
-            await q.answer("Ошибка", show_alert=True); return
-        # Узнаём model_name у этого нфт
-        async with aiosqlite.connect(DB_PATH) as db:
-            db.row_factory = aiosqlite.Row
-            async with db.execute("SELECT model_name FROM nft_frogs WHERE id=?", (nft_id_rcv,)) as _c:
-                _nft_row = await _c.fetchone()
-            # Помечаем как не верифицированный и скрытый
-            await db.execute(
-                "UPDATE nft_frogs SET verified=0, profile_hidden=1, pending_review=0 WHERE id=?",
-                (nft_id_rcv,)
-            )
-            await db.commit()
-        # Если есть model_name — убираем соответствующий облик из коллекции
-        if _nft_row and _nft_row["model_name"]:
-            skin_to_remove = _nft_row["model_name"]
-            async with aiosqlite.connect(DB_PATH) as db:
-                await db.execute(
-                    "DELETE FROM collections WHERE user_id=? AND skin=?",
-                    (target_uid_rcv, skin_to_remove)
-                )
-                await db.commit()
-            _user_cache.invalidate(target_uid_rcv)
-            p_rcv = await db_get(target_uid_rcv)
-            if p_rcv and p_rcv.get("skin") == skin_to_remove:
-                p_rcv["skin"] = "Brownie"
-                await db_save(p_rcv)
-            try:
-                await ctx.bot.send_message(
-                    target_uid_rcv,
-                    f"⚠️ <b>Ваш НФТ не прошёл проверку.</b>\n\n"
-                    f"Профиль в see.tg скрыт — подтвердить владение невозможно.\n"
-                    f"Облик <b>{he(skin_to_remove)}</b> был изъят из коллекции.\n\n"
-                    f"Если это ошибка — напишите администратору.",
-                    parse_mode=ParseMode.HTML,
-                )
-            except Exception:
-                pass
-            await q.answer((f"✅ Облик {skin_to_remove} изъят, НФТ деверифицирован.")[:200], show_alert=True)
-        else:
-            await q.answer("✅ НФТ деверифицирован (облик не найден).", show_alert=True)
-        try:
-            await q.message.edit_reply_markup(reply_markup=None)
-        except Exception:
-            pass
-        return
 
 
 
@@ -67979,10 +68048,17 @@ def main():
     # Специализированные роутеры идут ПЕРЕД общим on_callback: у них есть
     # pattern=, поэтому нажатие попадает сразу в нужную группу, а не проходит
     # сотни чужих условий. Общий обработчик — всегда последним.
-    app.add_handler(CallbackQueryHandler(
-        admin_router,
-        pattern=r"^(admin|ca_|cs_|nft_approve|nft_reject)",
-    ))
+    # Порядок важен: админка идёт первой, чтобы nft_approve/nft_reject не
+    # перехватил роутер NFT. Общий обработчик — всегда последним.
+    for _pattern, _router in (
+        (r"^(admin|ca_|cs_|nft_approve|nft_reject)", admin_router),
+        (r"^gacha",                                  gacha_router),
+        (r"^nft_",                                   nft_router),
+        (r"^(casino|jackpot|menu_jackpot)",          casino_router),
+        (r"^(duel|battle_|tournament)",              duel_router),
+        (r"^(shop_|buy_|market_|craft_|sub_|stars_)", shop_router),
+    ):
+        app.add_handler(CallbackQueryHandler(_router, pattern=_pattern))
     app.add_handler(CallbackQueryHandler(on_callback))
     app.add_handler(PreCheckoutQueryHandler(pre_checkout))
     app.add_handler(CommandHandler("nft_list", cmd_nft_list))
