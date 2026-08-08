@@ -3152,12 +3152,6 @@ def _fz_register_handlers(app: Application) -> None:
     app.add_handler(CommandHandler("fzsetpkg",   cmd_fzsetpkg))
     app.add_handler(CommandHandler("resetwar",   cmd_resetwar))
 
-    # ── Прятки ───────────────────────────────────────────────────────────────
-    app.add_handler(CommandHandler("hsstart",    cmd_hsstart))
-    app.add_handler(CommandHandler("hsseeker",   cmd_hsseeker))
-    app.add_handler(CommandHandler("hsstop",     cmd_hsstop))
-    app.add_handler(CommandHandler("hsstatus",   cmd_hsstatus))
-    app.add_handler(CommandHandler("hsforce",    cmd_hsforce))
     app.add_handler(CommandHandler("newsdigest",  cmd_newsdigest))
 
     # Хендлер форвардов для верификации репостов
@@ -5318,12 +5312,9 @@ _LANGS = {
         "btn_memory":      "🧠 Память",
         "btn_sapper":      "💣 Сапёр",
         "btn_ttt":         "⭕ Крестики-нолики",
-        "btn_hangman":     "🪢 Виселица",
-        "btn_rps":         "✊ КНБ",
         "btn_duel":        "⚔️ Дуэль",
         "btn_duel_dice":   "⚔️ Дуэль (кубик)",
         "btn_checkers":    "♟️ Шашки",
-        "btn_battleship":  "🚢 Морской бой",
         "btn_lottery":     "🎟 Лотерея",
         "btn_jackpot":     "🎰 Джекпот",
         "btn_funnel":      "🔥 Воронка (ивент!)",
@@ -5392,10 +5383,6 @@ _LANGS = {
         "btn_duel_split":    "🤝 Разделить приз",
         "btn_duel_solo":     "🤖 Соло vs бот (×2 при победе)",
         # ── Виселица ──
-        "btn_hm_solo":       "📗 Соло (лёгкий)",
-        "btn_hm_solo_hard":  "📕 Соло (сложный)",
-        "btn_hm_group":      "👥 Загадать слово в чате",
-        "btn_hm_surrender":  "🏳 Завершить игру",
         # ── КНБ ──
         "btn_rps_rock":      "🪨 Камень",
         "btn_rps_scissors":  "✂️ Ножницы",
@@ -5575,12 +5562,9 @@ _LANGS = {
         "btn_memory":      "🧠 Memory",
         "btn_sapper":      "💣 Minesweeper",
         "btn_ttt":         "⭕ Tic-Tac-Toe",
-        "btn_hangman":     "🪢 Hangman",
-        "btn_rps":         "✊ Rock Paper Scissors",
         "btn_duel":        "⚔️ Duel",
         "btn_duel_dice":   "⚔️ Duel (dice)",
         "btn_checkers":    "♟️ Checkers",
-        "btn_battleship":  "🚢 Battleship",
         "btn_lottery":     "🎟 Lottery",
         "btn_jackpot":     "🎰 Jackpot",
         "btn_funnel":      "🔥 Funnel (event!)",
@@ -5649,10 +5633,6 @@ _LANGS = {
         "btn_duel_split":    "🤝 Split Prize",
         "btn_duel_solo":     "🤖 Solo vs Bot (×2 on win)",
         # ── Hangman ──
-        "btn_hm_solo":       "📗 Solo (easy)",
-        "btn_hm_solo_hard":  "📕 Solo (hard)",
-        "btn_hm_group":      "👥 Set word in chat",
-        "btn_hm_surrender":  "🏳 End Game",
         # ── RPS ──
         "btn_rps_rock":      "🪨 Rock",
         "btn_rps_scissors":  "✂️ Scissors",
@@ -5832,12 +5812,9 @@ _LANGS = {
         "btn_memory":      "🧠 记忆游戏",
         "btn_sapper":      "💣 扫雷",
         "btn_ttt":         "⭕ 井字棋",
-        "btn_hangman":     "🪢 猜词游戏",
-        "btn_rps":         "✊ 石头剪刀布",
         "btn_duel":        "⚔️ 决斗",
         "btn_duel_dice":   "⚔️ 决斗（骰子）",
         "btn_checkers":    "♟️ 跳棋",
-        "btn_battleship":  "🚢 海战棋",
         "btn_lottery":     "🎟 彩票",
         "btn_jackpot":     "🎰 大奖",
         "btn_funnel":      "🔥 活动漏斗！",
@@ -5906,10 +5883,6 @@ _LANGS = {
         "btn_duel_split":    "🤝 分享奖励",
         "btn_duel_solo":     "🤖 单人 vs 机器人（获胜×2）",
         # ── 猜词 ──
-        "btn_hm_solo":       "📗 单人（简单）",
-        "btn_hm_solo_hard":  "📕 单人（困难）",
-        "btn_hm_group":      "👥 在群聊中出题",
-        "btn_hm_surrender":  "🏳 结束游戏",
         # ── 石头剪刀布 ──
         "btn_rps_rock":      "🪨 石头",
         "btn_rps_scissors":  "✂️ 剪刀",
@@ -10997,739 +10970,61 @@ async def _sk_launch(bot, sk_id: int):
 #  - Последние выжившие → финальный раунд на меньшем поле
 # ══════════════════════════════════════════════════════════════════════════════
 
-HS_GRID_MAIN  = 6   # основной раунд 6×6
-HS_GRID_FINAL = 3   # финал 3×3
-HS_HIDE_SECS  = 300  # 5 минут на выбор клетки
-HS_REVEAL_DELAY = 2  # пауза между вскрытиями (сек)
 
 # ─────────────────────────────────────────────────────────────────────────────
 # МИГРАЦИЯ
 # ─────────────────────────────────────────────────────────────────────────────
 
-async def hs_migrate(db: aiosqlite.Connection) -> None:
-    await db.execute("""
-        CREATE TABLE IF NOT EXISTS hideseek_events (
-            id            INTEGER PRIMARY KEY AUTOINCREMENT,
-            status        TEXT    DEFAULT 'recruiting',
-            seeker_uid    INTEGER DEFAULT 0,
-            grid_size     INTEGER DEFAULT 6,
-            chat_id       INTEGER DEFAULT 0,
-            pinned_msg_id INTEGER DEFAULT 0,
-            seeker_msg_id INTEGER DEFAULT 0,
-            hide_until    REAL    DEFAULT 0,
-            prize_coins   INTEGER DEFAULT 0,
-            prize_text    TEXT    DEFAULT '',
-            round         INTEGER DEFAULT 1,
-            created_at    REAL    DEFAULT 0,
-            finished_at   REAL    DEFAULT 0,
-            revealed_empty TEXT   DEFAULT '',
-            sb_msg_id     INTEGER DEFAULT 0,
-            recruit_msg_id INTEGER DEFAULT 0
-        )
-    """)
-    # Миграция для существующих БД
-    for col, definition in [
-        ("revealed_empty",       "TEXT    DEFAULT '[]'"),
-        ("sb_msg_id",            "INTEGER DEFAULT 0"),
-        ("recruit_msg_id",       "INTEGER DEFAULT 0"),
-        ("escape_pending_cells", "TEXT    DEFAULT '[]'"),
-    ]:
-        try:
-            await db.execute(f"ALTER TABLE hideseek_events ADD COLUMN {col} {definition}")
-        except Exception:
-            pass
-
-    # Новые колонки игроков
-    for col, definition in [
-        ("relocate_left",   "INTEGER DEFAULT 1"),
-        ("escape_pending",  "INTEGER DEFAULT 0"),
-        ("escape_deadline", "REAL    DEFAULT 0"),
-        ("escape_from",     "INTEGER DEFAULT -1"),
-    ]:
-        try:
-            await db.execute(f"ALTER TABLE hideseek_players ADD COLUMN {col} {definition}")
-        except Exception:
-            pass
-    await db.execute("""
-        CREATE TABLE IF NOT EXISTS hideseek_players (
-            id         INTEGER PRIMARY KEY AUTOINCREMENT,
-            event_id   INTEGER NOT NULL,
-            uid        INTEGER NOT NULL,
-            cell       INTEGER DEFAULT -1,
-            eliminated INTEGER DEFAULT 0,
-            round      INTEGER DEFAULT 1,
-            joined_at  REAL    DEFAULT 0,
-            UNIQUE(event_id, uid, round)
-        )
-    """)
-    await db.execute(
-        "CREATE INDEX IF NOT EXISTS idx_hs_players_event ON hideseek_players(event_id)"
-    )
-    await db.commit()
 
 
 # ─────────────────────────────────────────────────────────────────────────────
 # DB ХЕЛПЕРЫ
 # ─────────────────────────────────────────────────────────────────────────────
 
-async def hs_get_active() -> dict | None:
-    async with aiosqlite.connect(DB_PATH) as db:
-        db.row_factory = aiosqlite.Row
-        async with db.execute(
-            "SELECT * FROM hideseek_events WHERE status NOT IN ('finished','cancelled') "
-            "ORDER BY id DESC LIMIT 1"
-        ) as c:
-            row = await c.fetchone()
-    return dict(row) if row else None
 
 
-async def hs_get(event_id: int) -> dict | None:
-    async with aiosqlite.connect(DB_PATH) as db:
-        db.row_factory = aiosqlite.Row
-        async with db.execute("SELECT * FROM hideseek_events WHERE id=?", (event_id,)) as c:
-            row = await c.fetchone()
-    return dict(row) if row else None
 
 
-async def hs_get_players(event_id: int, round_n: int = None,
-                          eliminated: int = None) -> list[dict]:
-    conditions = ["event_id=?"]
-    params: list = [event_id]
-    if round_n is not None:
-        conditions.append("round=?"); params.append(round_n)
-    if eliminated is not None:
-        conditions.append("eliminated=?"); params.append(eliminated)
-    where = " AND ".join(conditions)
-    async with aiosqlite.connect(DB_PATH) as db:
-        db.row_factory = aiosqlite.Row
-        async with db.execute(
-            f"SELECT * FROM hideseek_players WHERE {where} ORDER BY joined_at", params
-        ) as c:
-            return [dict(r) for r in await c.fetchall()]
 
 
 # ─────────────────────────────────────────────────────────────────────────────
 # КЛАВИАТУРЫ
 # ─────────────────────────────────────────────────────────────────────────────
 
-def hs_hide_keyboard(event_id: int, grid_size: int,
-                      my_cell: int = -1) -> InlineKeyboardMarkup:
-    """Поле для прятки — пронумерованные кнопки. Нажатие тайное."""
-    rows = []
-    for row in range(grid_size):
-        row_btns = []
-        for col in range(grid_size):
-            cell = row * grid_size + col
-            row_btns.append(btn(
-                f"{cell + 1:02d}",
-                callback_data=f"hs_hide_{event_id}_{cell}",
-            ))
-        rows.append(row_btns)
-    return InlineKeyboardMarkup(rows)
 
 
-def hs_reveal_keyboard(event_id: int, grid_size: int,
-                        revealed_empty: set[int],
-                        revealed_caught: set[int] = None,
-                        escape_pending_cells: set[int] = None) -> InlineKeyboardMarkup:
-    """Поле для ищущего. ⬜=пусто 💥=поймали ⏳=побег в процессе номер=не вскрыто."""
-    if revealed_caught is None:
-        revealed_caught = set()
-    if escape_pending_cells is None:
-        escape_pending_cells = set()
-    rows = []
-    for row in range(grid_size):
-        row_btns = []
-        for col in range(grid_size):
-            cell = row * grid_size + col
-            if cell in revealed_caught:
-                row_btns.append(btn("💥", callback_data="hs_noop"))
-            elif cell in escape_pending_cells:
-                row_btns.append(btn("⏳", callback_data="hs_noop"))
-            elif cell in revealed_empty:
-                row_btns.append(btn("⬜", callback_data="hs_noop"))
-            else:
-                row_btns.append(btn(
-                    f"{cell + 1:02d}",
-                    callback_data=f"hs_reveal_{event_id}_{cell}",
-                ))
-        rows.append(row_btns)
-    return InlineKeyboardMarkup(rows)
 
 
 # ─────────────────────────────────────────────────────────────────────────────
 # ТЕКСТЫ
 # ─────────────────────────────────────────────────────────────────────────────
 
-def hs_grid_text(event: dict, players: list[dict], phase: str,
-                  chosen_count: int = 0, last_event: str = "") -> str:
-    alive  = [p for p in players if not p["eliminated"]]
-    total  = len(players)
-    prize  = event.get("prize_text") or (f"{event['prize_coins']}🪙" if event.get("prize_coins") else "")
-
-    if phase == "hiding":
-        hide_left = max(0, int(event["hide_until"] - time.time()))
-        m, s = divmod(hide_left, 60)
-        hiders_total = len([p for p in players if p.get("uid") != event.get("seeker_uid")])
-        return (
-            f"🙈 <b>Прятки</b> · выбор укрытия\n"
-            f"\n"
-            f"Нажми на {_E_LEAF} — спрячешься там. Ищущий не видит твой выбор.\n"
-            f"\n"
-            f"⏳ До конца пряток: <b>{m}м {s}с</b>\n"
-            f"🫣 Спрятались: <b>{chosen_count}/{hiders_total}</b>\n"
-            + (f"{_E_TROPHY} Приз: <b>{prize}</b>" if prize else "")
-        )
-    elif phase == "seeking":
-        text = (
-            f"{_E_SEARCH} <b>ПРЯТКИ — ищущий вскрывает клетки</b>\n"
-            f"\n"
-            f"Выживших: <b>{len(alive)}</b> из <b>{total}</b>\n"
-            + (f"{_E_TROPHY} Приз: <b>{prize}</b>" if prize else "")
-        )
-        if last_event:
-            text += f"\n\n{last_event}"
-        return text
-    return ""
 
 
 # ─────────────────────────────────────────────────────────────────────────────
 # КОМАНДЫ АДМИНИСТРАТОРА
 # ─────────────────────────────────────────────────────────────────────────────
 
-def _hs_setup_text(s: dict) -> str:
-    prize   = s.get("prize") or "не указан"
-    limit   = s.get("limit") or "без лимита"
-    broad   = "всем игрокам в ЛС" if s.get("broadcast", True) else "только в чате"
-    chat    = s.get("chat_id") or "не указан"
-    return (
-        f"🙈 <b>Настройка прятки</b>\n"
-        "\n"
-        f"{_E_TROPHY} Приз: <b>{prize}</b>\n"
-        f"{_E_USERS} Макс. участников: <b>{limit}</b>\n"
-        f"📢 Рассылка: <b>{broad}</b>\n"
-        f"💬 Чат (chat_id): <b>{chat}</b>\n"
-        "\n"
-        f"<i>Приз — только текст, выдача на усмотрение админа.</i>"
-    )
 
 
-def _hs_setup_kb(uid: int) -> InlineKeyboardMarkup:
-    return InlineKeyboardMarkup([
-        [btn("✏️ Указать приз",        callback_data=f"hs_set_prize_{uid}")],
-        [btn("👥 Лимит участников",     callback_data=f"hs_set_limit_{uid}")],
-        [btn("📢 Переключить рассылку", callback_data=f"hs_toggle_broad_{uid}")],
-        [btn("💬 Указать chat_id",      callback_data=f"hs_set_chat_{uid}")],
-        [btn("▶️ Запустить набор",      callback_data=f"hs_launch_{uid}", style="primary")],
-        [btn("❌ Отмена",               callback_data=f"hs_cancel_setup_{uid}")],
-    ])
 
 
-async def cmd_hsstart(update: Update, ctx: ContextTypes.DEFAULT_TYPE) -> None:
-    """/hsstart — открыть панель настройки ивента прятки."""
-    uid = update.effective_user.id
-    if uid not in ADMIN_IDS:
-        return
 
-    active = await hs_get_active()
-    if active:
-        await update.message.reply_text(
-            f"{_E_CROSS} Уже есть активный ивент #{active['id']} ({active['status']}).\n"
-            f"Отменить: /hsstop"
-        )
-        return
 
-    # Инициализируем настройки в bot_data
-    ctx.bot_data.setdefault("hs_setup", {})[uid] = {
-        "prize": None, "limit": None, "broadcast": True, "chat_id": None,
-    }
 
-    await update.message.reply_text(
-        _hs_setup_text(ctx.bot_data["hs_setup"][uid]),
-        parse_mode=ParseMode.HTML,
-        reply_markup=_hs_setup_kb(uid),
-    )
 
 
-async def cmd_hsseeker(update: Update, ctx: ContextTypes.DEFAULT_TYPE) -> None:
-    """/hsseeker <uid> — назначить ищущего и запустить фазу пряток."""
-    uid = update.effective_user.id
-    if uid not in ADMIN_IDS:
-        return
 
-    event = await hs_get_active()
-    if not event or event["status"] != "recruiting":
-        await update.message.reply_text("❌ Нет активного набора. /hsstart")
-        return
 
-    if not ctx.args:
-        # Показать список участников
-        players = await hs_get_players(event["id"])
-        if not players:
-            await update.message.reply_text("Пока никто не вступил.")
-            return
-        lines = []
-        for p in players:
-            f = await db_get(p["uid"])
-            lines.append(f"  {p['uid']} — {he(fname(f) if f else str(p['uid']))}")
-        await update.message.reply_text(
-            f"Участников: {len(players)}\n\n" + "\n".join(lines) +
-            f"\n\nИспользование: /hsseeker &lt;uid&gt;",
-            parse_mode=ParseMode.HTML,
-        )
-        return
 
-    try:
-        arg = ctx.args[0]
-        if arg.startswith("@"):
-            # Ищем по username
-            uname = arg.lstrip("@").lower()
-            async with aiosqlite.connect(DB_PATH) as db:
-                async with db.execute(
-                    "SELECT user_id FROM frogs WHERE LOWER(username)=?", (uname,)
-                ) as c:
-                    row = await c.fetchone()
-            if not row:
-                await update.message.reply_text(f"{_E_CROSS} Игрок {arg} не найден.")
-                return
-            seeker_uid = row[0]
-        else:
-            seeker_uid = int(arg)
-    except (ValueError, IndexError):
-        await update.message.reply_text("❌ Укажи uid или @username.")
-        return
 
-    seeker_f = await db_get(seeker_uid)
-    if not seeker_f:
-        await update.message.reply_text("❌ Игрок не найден.")
-        return
 
-    players = await hs_get_players(event["id"])
-    player_uids = [p["uid"] for p in players]
 
-    # Если ищущий не среди участников — добавляем
-    if seeker_uid not in player_uids:
-        async with aiosqlite.connect(DB_PATH) as db:
-            await db.execute(
-                "INSERT OR IGNORE INTO hideseek_players(event_id,uid,round,joined_at)"
-                " VALUES(?,?,1,?)", (event["id"], seeker_uid, time.time())
-            )
-            await db.commit()
-        players = await hs_get_players(event["id"])
 
-    hide_until = time.time() + HS_HIDE_SECS
-    seeker_name = he(fname(seeker_f))
 
-    async with aiosqlite.connect(DB_PATH) as db:
-        await db.execute(
-            "UPDATE hideseek_events SET status='hiding',seeker_uid=?,hide_until=? WHERE id=?",
-            (seeker_uid, hide_until, event["id"]),
-        )
-        await db.commit()
 
-    event = await hs_get(event["id"])
 
-    # Сообщение в чат (если задан)
-    chat_id_hs = event["chat_id"]
-    hiders     = [p for p in players if p["uid"] != seeker_uid]
 
-    grid_text = hs_grid_text(event, hiders, "hiding")
-    grid_kb   = hs_hide_keyboard(event["id"], HS_GRID_MAIN)
-
-    pinned_msg_id = 0
-    if chat_id_hs:
-        try:
-            # Одно сообщение в чате с полем — все прячутся здесь
-            pinned_msg = await ctx.bot.send_message(
-                chat_id_hs,
-                f"🙈 <b>Прятки начинаются!</b>\n\n"
-                f"{_E_SEARCH} Ищущий: <b>{seeker_name}</b>\n"
-                f"{_E_LEAF} Прячется <b>{ui_plural(len(hiders), 'игрок', 'игрока', 'игроков')}</b>\n\n"
-                f"{grid_text}",
-                parse_mode=ParseMode.HTML,
-                reply_markup=grid_kb,
-            )
-            try:
-                await ctx.bot.pin_chat_message(chat_id_hs, pinned_msg.message_id)
-            except Exception:
-                pass
-            pinned_msg_id = pinned_msg.message_id
-        except Exception:
-            pass
-
-    # Ищущему в ЛС — только уведомление что он ищущий
-    try:
-        await ctx.bot.send_message(
-            seeker_uid,
-            f"{_E_SEARCH} <b>Ты ищущий!</b>\n\n"
-            f"Прячется {ui_plural(len(hiders), 'игрок', 'игрока', 'игроков')}.\n"
-            f"Жди — через 5 минут в чате появится поле для вскрытия.",
-            parse_mode=ParseMode.HTML,
-        )
-    except Exception:
-        pass
-
-    # Каждому прячущемуся в ЛС — уведомление с кнопкой
-    prize_text_n = event.get("prize_text") or ""
-    hide_text = (
-        f"🙈 <b>Прятки начались!</b>\n\n"
-        f"Тебя назначили прятаться.\n"
-        f"Ищущий: <b>{seeker_name}</b>\n\n"
-        f"Нажми на клетку в чате чтобы спрятаться.\n"
-        f"⏳ У тебя <b>5 минут</b>!"
-        + (f"\n\n{_E_TROPHY} Приз: <b>{he(prize_text_n)}</b>" if prize_text_n else "")
-    )
-    for hider in hiders:
-        try:
-            await ctx.bot.send_message(
-                hider["uid"], hide_text, parse_mode=ParseMode.HTML,
-            )
-        except Exception:
-            pass
-
-    if pinned_msg_id:
-        async with aiosqlite.connect(DB_PATH) as db:
-            await db.execute(
-                "UPDATE hideseek_events SET pinned_msg_id=? WHERE id=?",
-                (pinned_msg_id, event["id"]),
-            )
-            await db.commit()
-
-    await update.message.reply_text(
-        f"✅ Ищущий назначен: {seeker_name}\n"
-        f"Прячется: {ui_plural(len(hiders), 'игрок', 'игрока', 'игроков')}\n"
-        f"⏳ Фаза пряток: 5 минут"
-    )
-
-    # Запускаем таймер и тикер обновления
-    asyncio.create_task(_hs_hiding_timeout(ctx.bot, event["id"]))
-    if chat_id_hs and pinned_msg_id:
-        asyncio.create_task(
-            _hs_hiding_ticker(ctx.bot, event["id"], chat_id_hs, pinned_msg_id, grid_kb)
-        )
-
-
-async def _hs_update_scoreboard(bot, event: dict, players: list[dict],
-                                 chat_id: int) -> None:
-    """Редактирует или постит список участников в чате."""
-    if not chat_id:
-        return
-    seeker_uid = event.get("seeker_uid", 0)
-    seeker_f   = await db_get(seeker_uid) if seeker_uid else None
-    seeker_str = f"@{seeker_f['username']}" if seeker_f and seeker_f.get("username") else (
-        he(fname(seeker_f)) if seeker_f else "?"
-    )
-
-    lines = [f"{_E_SEARCH} Ищущий: <b>{seeker_str}</b>\n"]
-    for p in players:
-        if p["uid"] == seeker_uid:
-            continue
-        pf    = await db_get(p["uid"])
-        uname = pf.get("username") if pf else None
-        name  = f"@{uname}" if uname else he(fname(pf) if pf else str(p["uid"]))
-        if p["eliminated"]:
-            lines.append(f"💥 <s>{name}</s>")
-        else:
-            lines.append(f"🐸 {name}")
-
-    text = "\n".join(lines)
-
-    # Читаем sb_msg_id из БД (персистентно между перезапусками)
-    sb_msg_id = event.get("sb_msg_id") or 0
-
-    if sb_msg_id:
-        try:
-            await bot.edit_message_text(
-                text, chat_id=chat_id, message_id=sb_msg_id,
-                parse_mode=ParseMode.HTML,
-            )
-            return
-        except BadRequest as e:
-            if "not modified" in str(e).lower():
-                return  # текст не изменился — всё ок, новое сообщение не нужно
-            # Сообщение удалено или недоступно — сбрасываем id и постим заново
-        except Exception:
-            pass  # другая ошибка — тоже постим заново
-
-    try:
-        msg = await bot.send_message(chat_id, text, parse_mode=ParseMode.HTML)
-        async with aiosqlite.connect(DB_PATH) as db:
-            await db.execute(
-                "UPDATE hideseek_events SET sb_msg_id=? WHERE id=?",
-                (msg.message_id, event["id"]),
-            )
-            await db.commit()
-    except Exception:
-        pass
-
-
-async def cmd_hsforce(update: Update, ctx: ContextTypes.DEFAULT_TYPE) -> None:
-    """/hsforce — принудительно перевести ивент на следующий шаг."""
-    uid = update.effective_user.id
-    if uid not in ADMIN_IDS:
-        return
-    event = await hs_get_active()
-    if not event:
-        await update.message.reply_text("❌ Нет активного ивента.")
-        return
-
-    status = event["status"]
-    bot    = ctx.bot
-
-    if status == "recruiting":
-        await update.message.reply_text(
-            "⏳ Ивент в фазе набора.\n"
-            "Назначь ищущего: /hsseeker <uid или @username>"
-        )
-
-    elif status == "hiding":
-        await update.message.reply_text("⚡ Принудительно запускаю вскрытие...")
-        await _hs_start_seeking(bot, event["id"])
-
-    elif status in ("seeking", "final"):
-        players      = await hs_get_players(event["id"], round_n=event["round"])
-        alive_hiders = [p for p in players
-                        if not p["eliminated"] and p["uid"] != event["seeker_uid"]]
-        if not alive_hiders:
-            await update.message.reply_text("⚡ Никого не осталось — завершаю...")
-            await _hs_no_survivors(bot, event)
-        else:
-            await update.message.reply_text(
-                f"⚡ Принудительно завершаю раунд. Выживших: {len(alive_hiders)}"
-            )
-            await _hs_round_end(bot, event, alive_hiders)
-    else:
-        await update.message.reply_text(f"Статус: {status} — нечего форсировать.")
-
-
-async def _hs_hiding_ticker(bot, event_id: int, chat_id: int,
-                             pinned_msg_id: int, grid_kb) -> None:
-    """Обновляет сообщение каждые 15 секунд — таймер + счётчик."""
-    while True:
-        await asyncio.sleep(15)
-        event = await hs_get(event_id)
-        if not event or event["status"] != "hiding":
-            break
-        players = await hs_get_players(event_id, round_n=event["round"])
-        hiders  = [p for p in players if p["uid"] != event["seeker_uid"]]
-        chosen  = sum(1 for p in hiders if p["cell"] != -1)
-        txt = hs_grid_text(event, hiders, "hiding", chosen)
-        try:
-            await bot.edit_message_text(
-                txt, chat_id=chat_id, message_id=pinned_msg_id,
-                parse_mode=ParseMode.HTML, reply_markup=grid_kb,
-            )
-        except Exception:
-            pass
-
-
-async def _hs_recruiting_ticker(bot, event_id: int, chat_id: int, msg_id: int) -> None:
-    """Обновляет список участников в чате каждые 20 секунд."""
-    while True:
-        await asyncio.sleep(20)
-        event = await hs_get(event_id)
-        if not event or event["status"] != "recruiting":
-            break  # ивент стартовал или отменён — останавливаем
-
-        players = await hs_get_players(event_id)
-        prize_text = event.get("prize_text") or ""
-
-        lines = []
-        async with aiosqlite.connect(DB_PATH) as db:
-            for p in players:
-                async with db.execute("SELECT * FROM frogs WHERE user_id=?", (p["uid"],)) as c:
-                    pf_row = await c.fetchone()
-                    pf = dict(zip([d[0] for d in c.description], pf_row)) if pf_row else None
-                uname = pf.get("username") if pf else None
-                lines.append(f"  {'@' + uname if uname else he(str(p['uid']))}")
-
-        participants_block = "\n".join(lines) if lines else "  пока никого"
-        updated_text = (
-            f"🙈 <b>Ивент прятки — набор</b>\n\n"
-            f"Одного назначат ищущим — остальные прячутся.\n"
-            f"Ищущий вскрывает клетки одну за другой.\n"
-            f"Кто доживёт до конца — победит!\n\n"
-            + (f"{_E_TROPHY} Приз: <b>{he(prize_text)}</b>\n\n" if prize_text else "")
-            + f"Участники ({len(players)}):\n{participants_block}\n\n"
-        )
-        join_kb = InlineKeyboardMarkup([[
-            btn("🙋 Участвовать", callback_data=f"hs_join_{event_id}", style="primary"),
-        ]])
-        try:
-            await bot.edit_message_text(
-                updated_text, chat_id=chat_id, message_id=msg_id,
-                parse_mode=ParseMode.HTML, reply_markup=join_kb,
-            )
-        except Exception:
-            pass  # текст не изменился — Telegram вернёт ошибку, это нормально
-
-
-async def _hs_start_seeking(bot, event_id: int) -> None:
-    """Переводит в фазу вскрытия — вызывается таймаутом или /hsforce."""
-    async with aiosqlite.connect(DB_PATH) as db:
-        await db.execute(
-            "UPDATE hideseek_events SET status='seeking' WHERE id=? AND status='hiding'",
-            (event_id,),
-        )
-        await db.commit()
-
-    event = await hs_get(event_id)
-    if not event or event["status"] != "seeking":
-        return
-
-    players    = await hs_get_players(event_id, round_n=event["round"])
-    hiders     = [p for p in players if p["uid"] != event["seeker_uid"]]
-    alive      = [p for p in hiders if not p["eliminated"]]
-    seeker_uid = event["seeker_uid"]
-    seeker_f   = await db_get(seeker_uid)
-    seeker_name = he(fname(seeker_f) if seeker_f else str(seeker_uid))
-
-    # Кто не выбрал — случайная клетка + уведомление
-    for p in alive:
-        if p["cell"] == -1:
-            rand_cell = random.randint(0, event["grid_size"] ** 2 - 1)
-            async with aiosqlite.connect(DB_PATH) as db:
-                await db.execute(
-                    "UPDATE hideseek_players SET cell=? WHERE event_id=? AND uid=? AND round=?",
-                    (rand_cell, event_id, p["uid"], event["round"]),
-                )
-                await db.commit()
-            try:
-                await bot.send_message(
-                    p["uid"],
-                    "⏰ Время вышло — тебя спрятали в случайную клетку.",
-                    parse_mode=ParseMode.HTML,
-                )
-            except Exception:
-                pass
-
-    chat_id_hs    = event["chat_id"]
-    pinned_msg_id = event["pinned_msg_id"]
-    total_alive   = len(alive)
-    reveal_kb     = hs_reveal_keyboard(event_id, event["grid_size"], set(), set())
-
-    reveal_text = (
-        f"{_E_SEARCH} <b>{seeker_name}</b> начинает искать!\n\n"
-        f"Прячется <b>{ui_plural(total_alive, 'игрок', 'игрока', 'игроков')}</b> "
-        f"в {event['grid_size']}×{event['grid_size']} клетках\n\n"
-        f"Только ищущий может вскрывать клетки 👇"
-    )
-
-    if chat_id_hs and pinned_msg_id:
-        try:
-            await bot.edit_message_text(
-                reveal_text, chat_id=chat_id_hs, message_id=pinned_msg_id,
-                parse_mode=ParseMode.HTML, reply_markup=reveal_kb,
-            )
-        except Exception:
-            try:
-                msg = await bot.send_message(
-                    chat_id_hs, reveal_text,
-                    parse_mode=ParseMode.HTML, reply_markup=reveal_kb,
-                )
-                async with aiosqlite.connect(DB_PATH) as db:
-                    await db.execute(
-                        "UPDATE hideseek_events SET pinned_msg_id=? WHERE id=?",
-                        (msg.message_id, event_id),
-                    )
-                    await db.commit()
-            except Exception:
-                pass
-
-    # Напоминание ищущему в ЛС
-    try:
-        await bot.send_message(
-            seeker_uid,
-            f"{_E_SEARCH} <b>Пора искать!</b>\n"
-            f"Прячется {ui_plural(total_alive, 'игрок', 'игрока', 'игроков')}.\n"
-            f"Нажимай клетки в чате чтобы вскрывать 👆",
-            parse_mode=ParseMode.HTML,
-        )
-    except Exception:
-        pass
-
-    # Уведомляем всех прячущихся в ЛС + даём кнопку перепрятаться
-    for p in alive:
-        if p["uid"] == seeker_uid:
-            continue
-        try:
-            await bot.send_message(
-                p["uid"],
-                f"{_E_SEARCH} <b>{seeker_name} начинает искать!</b>\n"
-                f"Следи за чатом — сейчас начнётся вскрытие!\n\n"
-                f"У тебя <b>{HS_RELOCATE_COUNT}</b> перемещение — можешь сменить укрытие "
-                f"пока ищущий ещё не добрался до тебя.",
-                parse_mode=ParseMode.HTML,
-                reply_markup=InlineKeyboardMarkup([[
-                    btn("🔄 Перепрятаться", callback_data=f"hs_relocate_{event_id}"),
-                ]]),
-            )
-        except Exception:
-            pass
-
-
-async def _hs_hiding_timeout(bot, event_id: int) -> None:
-    """Ждёт 5 минут и запускает фазу вскрытия."""
-    await asyncio.sleep(HS_HIDE_SECS)
-    event = await hs_get(event_id)
-    if not event or event["status"] != "hiding":
-        return
-    await _hs_start_seeking(bot, event_id)
-async def cmd_hsstop(update: Update, ctx: ContextTypes.DEFAULT_TYPE) -> None:
-    """/hsstop — отменить активный ивент прятки."""
-    uid = update.effective_user.id
-    if uid not in ADMIN_IDS:
-        return
-    event = await hs_get_active()
-    if not event:
-        await update.message.reply_text("Нет активного ивента.")
-        return
-    async with aiosqlite.connect(DB_PATH) as db:
-        await db.execute(
-            "UPDATE hideseek_events SET status='cancelled' WHERE id=?", (event["id"],)
-        )
-        await db.commit()
-    await update.message.reply_text(f"✅ Ивент #{event['id']} отменён.")
-
-
-async def cmd_hsstatus(update: Update, ctx: ContextTypes.DEFAULT_TYPE) -> None:
-    """/hsstatus — текущее состояние ивента."""
-    uid = update.effective_user.id
-    if uid not in ADMIN_IDS:
-        return
-    event = await hs_get_active()
-    if not event:
-        await update.message.reply_text("Нет активного ивента.")
-        return
-
-    players = await hs_get_players(event["id"], round_n=event["round"])
-    alive   = [p for p in players if not p["eliminated"] and p["uid"] != event["seeker_uid"]]
-    elim    = [p for p in players if p["eliminated"]]
-    chose   = [p for p in alive if p["cell"] != -1]
-
-    status_names = {
-        "recruiting": "⏳ Набор",
-        "hiding":     "🙈 Прятки",
-        "seeking":    "🔍 Вскрытие",
-        "final":      "🏁 Финал",
-        "finished":   "✅ Завершён",
-    }
-    st = status_names.get(event["status"], event["status"])
-    time_left = max(0, int(event["hide_until"] - time.time())) if event["status"] == "hiding" else 0
-    m, s = divmod(time_left, 60)
-
-    seeker_f = await db_get(event["seeker_uid"]) if event["seeker_uid"] else None
-    seeker_name = he(fname(seeker_f)) if seeker_f else "не назначен"
-
-    await update.message.reply_text(
-        f"🙈 <b>Ивент прятки #{event['id']}</b>\n"
-        f"Статус: <b>{st}</b> · Раунд: <b>{event['round']}</b>\n"
-        f"Ищущий: <b>{seeker_name}</b>\n"
-        f"{_E_USERS} <b>{len(players)}</b> · 🐸 <b>{len(alive)}</b> · 💀 <b>{len(elim)}</b>\n"
-        + (f"Выбрали клетку: <b>{len(chose)}/{len(alive)}</b>\n" if event["status"] == "hiding" else "")
-        + (f"⏳ До вскрытия: <b>{m}м {s}с</b>" if time_left else ""),
-        parse_mode=ParseMode.HTML,
-    )
 
 
 # ─────────────────────────────────────────────────────────────────────────────
@@ -12006,911 +11301,8 @@ async def cmd_newsdigest(update: Update, ctx: ContextTypes.DEFAULT_TYPE) -> None
 
 
 
-    """/hsremind — разослать напоминание прятаться всем участникам текущей игры."""
-    uid = update.effective_user.id
-    if uid not in ADMIN_IDS:
-        return
 
-    event = await hs_get_active()
-    if not event:
-        await update.message.reply_text("Нет активного ивента прятки.")
-        return
 
-    if event["status"] not in ("hiding", "seeking", "final"):
-        await update.message.reply_text(
-            f"Ивент в фазе <b>{event['status']}</b> — напоминание не актуально.",
-            parse_mode=ParseMode.HTML,
-        )
-        return
-
-    seeker_uid  = event.get("seeker_uid", 0)
-    seeker_f    = await db_get(seeker_uid) if seeker_uid else None
-    seeker_name = he(fname(seeker_f) if seeker_f else "?")
-    prize_text  = event.get("prize_text") or ""
-    players     = await hs_get_players(event["id"], round_n=event["round"])
-
-    if event["status"] == "hiding":
-        # Фаза пряток — напоминаем всем кто не выбрал клетку
-        hide_left = max(0, int(event.get("hide_until", 0) - time.time()))
-        m, s = divmod(hide_left, 60)
-        hiders = [p for p in players if p["uid"] != seeker_uid]
-        not_chosen = [p for p in hiders if p["cell"] == -1]
-        already_chosen = [p for p in hiders if p["cell"] != -1]
-
-        text = (
-            f"🙈 <b>Прятки идут!</b>\n\n"
-            f"Ищущий: <b>{seeker_name}</b>\n"
-            f"Нажми на клетку в чате чтобы спрятаться!\n"
-            f"⏳ Осталось: <b>{m}м {s}с</b>"
-            + (f"\n\n{_E_TROPHY} Приз: <b>{he(prize_text)}</b>" if prize_text else "")
-        )
-
-        sent = 0
-        # Отправляем только тем кто ещё не спрятался
-        targets = not_chosen if not_chosen else hiders
-        for p in targets:
-            try:
-                await ctx.bot.send_message(
-                    p["uid"], text, parse_mode=ParseMode.HTML,
-                )
-                sent += 1
-            except Exception:
-                pass
-
-        await update.message.reply_text(
-            f"✅ Разослано {sent} игрокам\n"
-            f"Не выбрали клетку: {len(not_chosen)}/{len(hiders)}"
-        )
-
-    elif event["status"] in ("seeking", "final"):
-        # Фаза вскрытия — напоминаем живым что идёт поиск
-        alive = [p for p in players
-                 if not p["eliminated"] and p["uid"] != seeker_uid]
-        text = (
-            f"{_E_SEARCH} <b>Ищущий вскрывает клетки!</b>\n\n"
-            f"Следи за чатом — поиск идёт прямо сейчас.\n"
-            f"Выживших: <b>{len(alive)}</b>"
-            + (f"\n\n{_E_TROPHY} Приз: <b>{he(prize_text)}</b>" if prize_text else "")
-        )
-        sent = 0
-        for p in alive:
-            try:
-                await ctx.bot.send_message(
-                    p["uid"], text, parse_mode=ParseMode.HTML,
-                )
-                sent += 1
-            except Exception:
-                pass
-
-        await update.message.reply_text(f"✅ Разослано {sent} живым игрокам")
-    """/hsannounce — повторно отправить сообщение о наборе в чат."""
-    uid = update.effective_user.id
-    if uid not in ADMIN_IDS:
-        return
-
-    event = await hs_get_active()
-    if not event:
-        await update.message.reply_text("Нет активного ивента прятки.")
-        return
-
-    if event["status"] != "recruiting":
-        await update.message.reply_text(
-            f"Ивент уже в фазе: <b>{event['status']}</b>. Набор закрыт.",
-            parse_mode=ParseMode.HTML,
-        )
-        return
-
-    chat_id_hs = event.get("chat_id", 0)
-    if not chat_id_hs:
-        await update.message.reply_text("У ивента не задан chat_id.")
-        return
-
-    players = await hs_get_players(event["id"])
-    prize_text = event.get("prize_text") or ""
-    lines = []
-    for p in players:
-        pf = await db_get(p["uid"])
-        uname = pf.get("username") if pf else None
-        lines.append(f"  {'@' + uname if uname else he(fname(pf) if pf else str(p['uid']))}")
-
-    participants_block = "\n".join(lines) if lines else "  пока никого"
-    join_text = (
-        f"🙈 <b>Ивент прятки — набор</b>\n\n"
-        f"Одного назначат ищущим — остальные прячутся.\n"
-        f"Ищущий вскрывает клетки одну за другой.\n"
-        f"Кто доживёт до конца — победит!\n\n"
-        + (f"{_E_TROPHY} Приз: <b>{he(prize_text)}</b>\n\n" if prize_text else "")
-        + f"Участники ({len(players)}):\n{participants_block}\n\n"
-    )
-    join_kb = InlineKeyboardMarkup([[
-        btn("🙋 Участвовать", callback_data=f"hs_join_{event['id']}", style="primary"),
-    ]])
-
-    try:
-        chat_msg = await ctx.bot.send_message(
-            chat_id_hs, join_text,
-            parse_mode=ParseMode.HTML, reply_markup=join_kb,
-        )
-        async with aiosqlite.connect(DB_PATH) as db:
-            await db.execute(
-                "UPDATE hideseek_events SET recruit_msg_id=? WHERE id=?",
-                (chat_msg.message_id, event["id"]),
-            )
-            await db.commit()
-        asyncio.create_task(
-            _hs_recruiting_ticker(ctx.bot, event["id"], chat_id_hs, chat_msg.message_id)
-        )
-        await update.message.reply_text(
-            f"✅ Сообщение отправлено в чат. Новый msg_id: {chat_msg.message_id}"
-        )
-    except Exception as e:
-        await update.message.reply_text(f"{_E_CROSS} Ошибка: {e}")
-
-
-async def hs_callbacks(q, d: str, uid: int, ctx) -> bool:
-    """Обрабатывает hs_* колбэки. Возвращает True если обработано."""
-    bot = ctx.bot
-
-    if d == "hs_noop":
-        await q.answer()
-        return True
-
-    # ── Панель настройки ─────────────────────────────────────────────────────
-
-    if d.startswith("hs_cancel_setup_"):
-        try:
-            setup_uid = int(d.removeprefix("hs_cancel_setup_"))
-        except ValueError:
-            await q.answer(); return True
-        if uid != setup_uid:
-            await q.answer("Не твоя панель", show_alert=True); return True
-        ctx.bot_data.get("hs_setup", {}).pop(uid, None)
-        await q.answer("Отменено")
-        try:
-            await q.message.edit_reply_markup(reply_markup=None)
-        except Exception:
-            pass
-        return True
-
-    if d.startswith("hs_toggle_broad_"):
-        try:
-            setup_uid = int(d.removeprefix("hs_toggle_broad_"))
-        except ValueError:
-            await q.answer(); return True
-        if uid != setup_uid:
-            await q.answer("Не твоя панель", show_alert=True); return True
-        setup = ctx.bot_data.setdefault("hs_setup", {}).setdefault(uid, {})
-        setup["broadcast"] = not setup.get("broadcast", True)
-        await q.answer("✅ Изменено")
-        try:
-            await q.message.edit_text(
-                _hs_setup_text(setup), parse_mode=ParseMode.HTML,
-                reply_markup=_hs_setup_kb(uid),
-            )
-        except Exception:
-            pass
-        return True
-
-    if d.startswith("hs_set_prize_"):
-        try:
-            setup_uid = int(d.removeprefix("hs_set_prize_"))
-        except ValueError:
-            await q.answer(); return True
-        if uid != setup_uid:
-            await q.answer("Не твоя панель", show_alert=True); return True
-        ctx.bot_data.setdefault("hs_pending_input", {})[uid] = {
-            "type": "hs_prize", "ts": time.time()
-        }
-        await q.answer("Напиши приз следующим сообщением", show_alert=True)
-        return True
-
-    if d.startswith("hs_set_limit_"):
-        try:
-            setup_uid = int(d.removeprefix("hs_set_limit_"))
-        except ValueError:
-            await q.answer(); return True
-        if uid != setup_uid:
-            await q.answer("Не твоя панель", show_alert=True); return True
-        ctx.bot_data.setdefault("hs_pending_input", {})[uid] = {
-            "type": "hs_limit", "ts": time.time()
-        }
-        await q.answer("Напиши максимальное кол-во участников (или 0 = без лимита)", show_alert=True)
-        return True
-
-    if d.startswith("hs_set_chat_"):
-        try:
-            setup_uid = int(d.removeprefix("hs_set_chat_"))
-        except ValueError:
-            await q.answer(); return True
-        if uid != setup_uid:
-            await q.answer("Не твоя панель", show_alert=True); return True
-        ctx.bot_data.setdefault("hs_pending_input", {})[uid] = {
-            "type": "hs_chat", "ts": time.time()
-        }
-        await q.answer("Напиши chat_id чата (число, например -1001234567890)", show_alert=True)
-        return True
-
-    if d.startswith("hs_launch_"):
-        try:
-            setup_uid = int(d.removeprefix("hs_launch_"))
-        except ValueError:
-            await q.answer(); return True
-        if uid != setup_uid:
-            await q.answer("Не твоя панель", show_alert=True); return True
-
-        setup = ctx.bot_data.get("hs_setup", {}).get(uid, {})
-        prize_text = setup.get("prize") or ""
-        limit      = setup.get("limit") or 0
-        broadcast  = setup.get("broadcast", True)
-        chat_id_hs = setup.get("chat_id") or 0
-
-        active = await hs_get_active()
-        if active:
-            await q.answer(f"Уже есть активный ивент #{active['id']}", show_alert=True)
-            return True
-
-        now = time.time()
-        async with aiosqlite.connect(DB_PATH) as db:
-            cur = await db.execute(
-                "INSERT INTO hideseek_events(status,grid_size,chat_id,prize_coins,prize_text,created_at)"
-                " VALUES('recruiting',?,?,0,?,?)",
-                (HS_GRID_MAIN, chat_id_hs, prize_text, now),
-            )
-            event_id = cur.lastrowid
-            await db.commit()
-
-        ctx.bot_data.get("hs_setup", {}).pop(uid, None)
-
-        join_text = (
-            f"🙈 <b>Ивент прятки!</b>\n\n"
-            f"Одного назначат ищущим — остальные прячутся.\n"
-            f"Ищущий вскрывает клетки одну за другой.\n"
-            f"Кто доживёт до конца — победит!\n\n"
-            + (f"{_E_TROPHY} Приз: <b>{he(prize_text)}</b>\n\n" if prize_text else "")
-        )
-        join_kb = InlineKeyboardMarkup([[
-            btn("🙋 Участвовать", callback_data=f"hs_join_{event_id}", style="primary"),
-        ]])
-
-        sent = 0
-        if broadcast:
-            async with aiosqlite.connect(DB_PATH) as db:
-                async with db.execute("SELECT user_id FROM frogs WHERE alive=1") as c:
-                    all_uids = [r[0] for r in await c.fetchall()]
-            if limit:
-                all_uids = all_uids[:limit * 3]
-
-            # Получаем invite link чата если задан
-            invite_link = ""
-            if chat_id_hs:
-                try:
-                    link_obj = await bot.create_chat_invite_link(chat_id_hs)
-                    invite_link = link_obj.invite_link
-                except Exception:
-                    try:
-                        invite_link = await bot.export_chat_invite_link(chat_id_hs)
-                    except Exception:
-                        invite_link = ""
-
-            sem = asyncio.Semaphore(20)
-
-            async def _notify_hs(target_uid):
-                nonlocal sent
-                async with sem:
-                    try:
-                        # Проверяем есть ли игрок в чате
-                        in_chat = True
-                        if chat_id_hs:
-                            try:
-                                member = await bot.get_chat_member(chat_id_hs, target_uid)
-                                in_chat = member.status not in ("left", "kicked")
-                            except Exception:
-                                in_chat = False
-
-                        extra = ""
-                        if not in_chat and invite_link:
-                            extra = f"\n\n👉 <a href='{invite_link}'>Вступить в чат игры</a>"
-
-                        await bot.send_message(
-                            target_uid, join_text + extra,
-                            parse_mode=ParseMode.HTML,
-                            reply_markup=join_kb,
-                            disable_web_page_preview=True,
-                        )
-                        sent += 1
-                    except Exception:
-                        pass
-
-            await q.answer("Запускаю рассылку...")
-            await asyncio.gather(*[_notify_hs(u) for u in all_uids])
-        else:
-            await q.answer("✅ Запущено")
-
-        # Также постим в чат если задан
-        recruit_msg_id = 0
-        if chat_id_hs:
-            try:
-                chat_msg = await bot.send_message(
-                    chat_id_hs, join_text,
-                    parse_mode=ParseMode.HTML, reply_markup=join_kb,
-                )
-                recruit_msg_id = chat_msg.message_id
-                async with aiosqlite.connect(DB_PATH) as db:
-                    await db.execute(
-                        "UPDATE hideseek_events SET recruit_msg_id=? WHERE id=?",
-                        (recruit_msg_id, event_id),
-                    )
-                    await db.commit()
-            except Exception:
-                pass
-
-        # Запускаем тикер автообновления списка участников
-        if chat_id_hs and recruit_msg_id:
-            asyncio.create_task(
-                _hs_recruiting_ticker(bot, event_id, chat_id_hs, recruit_msg_id)
-            )
-
-        try:
-            await q.message.edit_text(
-                f"✅ <b>Ивент прятки #{event_id} запущен!</b>\n\n"
-                + (f"Рассылка: отправлено {sent} игрокам\n" if broadcast else "Рассылка: только в чате\n")
-                + f"Приз: {prize_text or 'не указан'}\n\n"
-                f"Когда соберётся достаточно игроков:\n"
-                f"<code>/hsseeker &lt;uid&gt;</code> — назначить ищущего",
-                parse_mode=ParseMode.HTML,
-                reply_markup=None,
-            )
-        except Exception:
-            pass
-        return True
-
-    # ── Вступить в ивент ─────────────────────────────────────────────────────
-    if d.startswith("hs_join_"):
-        try:
-            event_id = int(d.removeprefix("hs_join_"))
-        except ValueError:
-            await q.answer(); return True
-
-        event = await hs_get(event_id)
-        if not event or event["status"] != "recruiting":
-            await q.answer("Набор уже закрыт", show_alert=True)
-            return True
-
-        already = False
-        async with aiosqlite.connect(DB_PATH) as db:
-            try:
-                await db.execute(
-                    "INSERT INTO hideseek_players(event_id,uid,round,joined_at)"
-                    " VALUES(?,?,1,?)",
-                    (event_id, uid, time.time()),
-                )
-                await db.commit()
-            except Exception:
-                already = True
-
-        if already:
-            await q.answer("Ты уже участвуешь! 🙋", show_alert=True)
-            return True
-
-        await q.answer("✅ Ты в игре. Жди начала.", show_alert=True)
-
-        # Обновляем сообщение в чате — показываем список участников
-        # Кнопку НЕ меняем — она остаётся "Участвовать" для всех
-        players = await hs_get_players(event_id)
-        prize_text = event.get("prize_text") or ""
-
-        lines = []
-        for p in players:
-            pf = await db_get(p["uid"])
-            uname = pf.get("username") if pf else None
-            lines.append(f"  {'@' + uname if uname else he(fname(pf) if pf else str(p['uid']))}")
-
-        participants_block = "\n".join(lines) if lines else "  пока никого"
-
-        updated_text = (
-            f"🙈 <b>Ивент прятки — набор</b>\n\n"
-            f"Одного назначат ищущим — остальные прячутся.\n"
-            f"Ищущий вскрывает клетки одну за другой.\n"
-            f"Кто доживёт до конца — победит!\n\n"
-            + (f"{_E_TROPHY} Приз: <b>{he(prize_text)}</b>\n\n" if prize_text else "")
-            + f"Участники ({len(players)}):\n{participants_block}\n\n"
-        )
-        join_kb = InlineKeyboardMarkup([[
-            btn("🙋 Участвовать", callback_data=f"hs_join_{event_id}", style="primary"),
-        ]])
-
-        try:
-            await q.message.edit_text(
-                updated_text,
-                parse_mode=ParseMode.HTML,
-                reply_markup=join_kb,
-            )
-        except Exception:
-            pass
-
-        # Также обновляем сообщение в чате
-        event_fresh = await hs_get(event_id)
-        chat_id_hs    = event_fresh.get("chat_id", 0) if event_fresh else 0
-        recruit_msg_id = event_fresh.get("recruit_msg_id", 0) if event_fresh else 0
-        if chat_id_hs and recruit_msg_id:
-            try:
-                await bot.edit_message_text(
-                    updated_text, chat_id=chat_id_hs, message_id=recruit_msg_id,
-                    parse_mode=ParseMode.HTML, reply_markup=join_kb,
-                )
-            except Exception:
-                pass
-
-        return True
-
-    # ── Выбор клетки (прятка) ────────────────────────────────────────────────
-    if d.startswith("hs_hide_"):
-        parts = d.removeprefix("hs_hide_").split("_")
-        if len(parts) < 2:
-            await q.answer(); return True
-        try:
-            event_id, cell = int(parts[0]), int(parts[1])
-        except ValueError:
-            await q.answer(); return True
-
-        event = await hs_get(event_id)
-        if not event or event["status"] != "hiding":
-            await q.answer("Фаза пряток уже закончилась", show_alert=True)
-            return True
-
-        if uid == event["seeker_uid"]:
-            await q.answer("Ты ищущий — тебе прятаться нельзя", show_alert=True)
-            return True
-
-        # Проверяем что игрок участвует
-        async with aiosqlite.connect(DB_PATH) as db:
-            async with db.execute(
-                "SELECT cell FROM hideseek_players WHERE event_id=? AND uid=? AND round=?",
-                (event_id, uid, event["round"])
-            ) as c:
-                row = await c.fetchone()
-
-        if not row:
-            await q.answer("Ты не участник этого ивента", show_alert=True)
-            return True
-
-        old_cell = row[0]
-        grid = event["grid_size"]
-        row_n = cell // grid + 1
-        col_n = cell %  grid + 1
-        cell_name = f"Ряд {row_n}, клетка {col_n}"
-
-        # Обновляем клетку (можно поменять до окончания времени)
-        async with aiosqlite.connect(DB_PATH) as db:
-            await db.execute(
-                "UPDATE hideseek_players SET cell=? WHERE event_id=? AND uid=? AND round=?",
-                (cell, event_id, uid, event["round"])
-            )
-            await db.commit()
-
-        if old_cell == -1:
-            await q.answer(
-                f"🤫 Спрятался!\n{cell_name}\n\nМожешь нажать другую клетку чтобы перепрятаться.",
-                show_alert=True,
-            )
-        else:
-            await q.answer(
-                f"{_E_REFRESH} Перепрятался!\n{cell_name}",
-                show_alert=True,
-            )
-        # Клавиатура не меняется — ищущий не видит выборов
-        return True
-
-    # ── Вскрытие клетки (ищущий) ─────────────────────────────────────────────
-    if d.startswith("hs_reveal_"):
-        parts = d.removeprefix("hs_reveal_").split("_")
-        if len(parts) < 2:
-            await q.answer(); return True
-        try:
-            event_id, cell = int(parts[0]), int(parts[1])
-        except ValueError:
-            await q.answer(); return True
-
-        event = await hs_get(event_id)
-        if not event or event["status"] not in ("seeking", "final"):
-            await q.answer("Фаза вскрытия недоступна", show_alert=True)
-            return True
-
-        if uid != event["seeker_uid"]:
-            await q.answer("Ты не ищущий", show_alert=True)
-            return True
-
-        await q.answer()
-
-        # Кто спрятался в этой клетке?
-        players_in_cell = []
-        async with aiosqlite.connect(DB_PATH) as db:
-            db.row_factory = aiosqlite.Row
-            async with db.execute(
-                "SELECT * FROM hideseek_players WHERE event_id=? AND cell=? AND round=? AND eliminated=0",
-                (event_id, cell, event["round"])
-            ) as c:
-                players_in_cell = [dict(r) for r in await c.fetchall()]
-
-        grid      = event["grid_size"]
-        row_n     = cell // grid + 1
-        col_n     = cell %  grid + 1
-        cell_name = f"Ряд {row_n}, клетка {col_n}"
-        chat_id   = event["chat_id"]
-
-        # ── Найдены игроки — даём шанс на побег ────────────────────────────
-        names = []
-        if players_in_cell:
-            escape_launched = []
-            no_escape       = []
-            for p in players_in_cell:
-                ok = await _hs_send_escape_board(bot, p["uid"], event, cell)
-                if ok:
-                    escape_launched.append(p)
-                else:
-                    no_escape.append(p)
-
-            # Некуда бежать — выбываем сразу
-            if no_escape:
-                async with aiosqlite.connect(DB_PATH) as db:
-                    for p in no_escape:
-                        await db.execute(
-                            "UPDATE hideseek_players SET eliminated=1 "
-                            "WHERE event_id=? AND uid=? AND round=?",
-                            (event_id, p["uid"], event["round"]),
-                        )
-                    await db.commit()
-                for p in no_escape:
-                    pf     = await db_get(p["uid"])
-                    _uname = pf.get("username") if pf else None
-                    _name  = f"@{_uname}" if _uname else he(fname(pf) if pf else str(p["uid"]))
-                    names.append(_name)
-                    try:
-                        await bot.send_message(
-                            p["uid"],
-                            "💥 <b>Тебя нашли!</b>\nНекуда бежать — ты выбыл.",
-                            parse_mode=ParseMode.HTML,
-                        )
-                    except Exception:
-                        pass
-
-            if escape_launched:
-                cnt = len(escape_launched)
-                if chat_id:
-                    try:
-                        await bot.send_message(
-                            chat_id,
-                            f"⏳ <b>{cell_name}</b> — {"кто-то" if cnt == 1 else f"{cnt} игрока"}!\n"
-                            f"{"Он пытается" if cnt == 1 else "Они пытаются"} убежать...",
-                            parse_mode=ParseMode.HTML,
-                        )
-                    except Exception:
-                        pass
-                event_for_escape = await hs_get(event_id)
-                if event_for_escape:
-                    await _hs_update_escape_boards(bot, event_for_escape)
-
-            if names and chat_id:
-                try:
-                    await bot.send_message(
-                        chat_id,
-                        f"💥 {', '.join(names)} — некуда бежать, выбыли!",
-                        parse_mode=ParseMode.HTML,
-                    )
-                except Exception:
-                    pass
-
-            if escape_launched:
-                last_event = f"⏳ <b>{cell_name}</b> — погоня!"
-            else:
-                last_event = f"💥 <b>{cell_name}</b> — {' '.join(names)} выбыли!"
-        else:
-            last_event = f"{_E_LEAF} <b>{cell_name}</b> — пусто."
-
-        # ── Обновляем поле ───────────────────────────────────────────────────
-        all_players  = await hs_get_players(event_id, round_n=event["round"])
-        alive_hiders = [p for p in all_players
-                        if not p["eliminated"] and p["uid"] != event["seeker_uid"]]
-
-        # Собираем вскрытые клетки с пойманными из БД
-        caught_cells: set[int] = set()
-        async with aiosqlite.connect(DB_PATH) as db:
-            async with db.execute(
-                "SELECT cell FROM hideseek_players WHERE event_id=? AND round=? AND eliminated=1",
-                (event_id, event["round"])
-            ) as c:
-                for row in await c.fetchall():
-                    if row[0] is not None and row[0] >= 0:
-                        caught_cells.add(row[0])
-
-        # Пустые клетки — читаем из БД, дописываем текущую, сохраняем обратно
-        raw_empty = event.get("revealed_empty") or "[]"
-        try:
-            known_empty: set[int] = set(json.loads(raw_empty))
-        except Exception:
-            known_empty = set()
-        if not players_in_cell:
-            known_empty.add(cell)
-        async with aiosqlite.connect(DB_PATH) as db:
-            await db.execute(
-                "UPDATE hideseek_events SET revealed_empty=? WHERE id=?",
-                (json.dumps(list(known_empty)), event_id),
-            )
-            await db.commit()
-
-        raw_pending_r = event.get("escape_pending_cells") or "[]"
-        try:
-            pending_cells: set[int] = set(json.loads(raw_pending_r))
-        except Exception:
-            pending_cells = set()
-        new_kb        = hs_reveal_keyboard(event_id, grid, known_empty, caught_cells, pending_cells)
-        pinned_msg_id = event["pinned_msg_id"]
-        updated_text  = hs_grid_text(event, all_players, "seeking", last_event=last_event)
-
-        if chat_id and pinned_msg_id:
-            try:
-                await bot.edit_message_text(
-                    updated_text,
-                    chat_id=chat_id, message_id=pinned_msg_id,
-                    parse_mode=ParseMode.HTML, reply_markup=new_kb,
-                )
-            except Exception:
-                try:
-                    await bot.edit_message_reply_markup(
-                        chat_id=chat_id, message_id=pinned_msg_id, reply_markup=new_kb,
-                    )
-                except Exception:
-                    pass
-        else:
-            try:
-                await q.message.edit_text(
-                    updated_text, parse_mode=ParseMode.HTML, reply_markup=new_kb,
-                )
-            except Exception:
-                try:
-                    await q.message.edit_reply_markup(reply_markup=new_kb)
-                except Exception:
-                    pass
-
-        # Обновляем список участников (перечитываем event чтобы sb_msg_id был актуальным)
-        all_pl      = await hs_get_players(event_id, round_n=event["round"])
-        event_fresh = await hs_get(event_id)
-        await _hs_update_scoreboard(bot, event_fresh or event, all_pl, chat_id)
-
-        # ── Проверяем условие конца раунда ───────────────────────────────────
-        if not alive_hiders:
-            await _hs_no_survivors(bot, event)
-            return True
-
-        # Остался последний — сразу победитель, не ждём пока откроют все клетки
-        if len(alive_hiders) == 1:
-            await _hs_winner(bot, event, [alive_hiders[0]["uid"]])
-            return True
-
-        total_cells  = grid * grid
-        cells_opened = len(known_empty) + len(caught_cells)
-        if cells_opened >= total_cells:
-            await _hs_round_end(bot, event, alive_hiders)
-
-        return True
-
-    # ── Кнопка "Закончить раунд" (добавляем ищущему) ─────────────────────────
-    if d.startswith("hs_endround_"):
-        try:
-            event_id = int(d.removeprefix("hs_endround_"))
-        except ValueError:
-            await q.answer(); return True
-
-        event = await hs_get(event_id)
-        if not event or uid != event["seeker_uid"]:
-            await q.answer("Только ищущий может завершить раунд", show_alert=True)
-            return True
-
-        await q.answer()
-        all_players  = await hs_get_players(event_id, round_n=event["round"])
-        alive_hiders = [p for p in all_players
-                        if not p["eliminated"] and p["uid"] != event["seeker_uid"]]
-        await _hs_round_end(bot, event, alive_hiders)
-        return True
-
-    # ── Показать меню перепрятывания ─────────────────────────────────────────
-    if d.startswith("hs_relocate_"):
-        try:
-            event_id = int(d.removeprefix("hs_relocate_"))
-        except ValueError:
-            await q.answer(); return True
-
-        event = await hs_get(event_id)
-        if not event or event["status"] not in ("seeking", "final"):
-            await q.answer("Сейчас нельзя перепрятаться", show_alert=True)
-            return True
-
-        # Проверяем что игрок участвует и не выбыл
-        async with aiosqlite.connect(DB_PATH) as db:
-            db.row_factory = aiosqlite.Row
-            async with db.execute(
-                "SELECT relocate_left, eliminated, escape_pending "
-                "FROM hideseek_players WHERE event_id=? AND uid=? AND round=?",
-                (event_id, uid, event["round"])
-            ) as c:
-                row = await c.fetchone()
-        if not row:
-            await q.answer("Ты не участник", show_alert=True); return True
-        if row["eliminated"]:
-            await q.answer("Ты уже выбыл", show_alert=True); return True
-        if row["escape_pending"]:
-            await q.answer("Сначала реши — бежать или нет", show_alert=True); return True
-        if row["relocate_left"] <= 0:
-            await q.answer("У тебя нет перемещений", show_alert=True); return True
-
-        kb = await _hs_build_relocate_kb(event_id, event, exclude_uid=uid, mode="relocate")
-        if not kb:
-            await q.answer("Нет свободных клеток", show_alert=True); return True
-
-        await q.answer()
-        grid = event["grid_size"]
-        async with aiosqlite.connect(DB_PATH) as db:
-            async with db.execute(
-                "SELECT cell FROM hideseek_players WHERE event_id=? AND uid=? AND round=?",
-                (event_id, uid, event["round"])
-            ) as c:
-                cur_row = await c.fetchone()
-        cur_cell = cur_row[0] if cur_row else -1
-
-        try:
-            await bot.send_message(
-                uid,
-                f"{_E_REFRESH} <b>Перепрятывание</b>\n\n"
-                f"Сейчас ты в клетке <b>{cur_cell + 1}</b>.\n"
-                f"Выбери новое укрытие — только свободные клетки:\n\n"
-                f"Перемещений осталось: <b>{row['relocate_left']}</b>",
-                parse_mode=ParseMode.HTML,
-                reply_markup=kb,
-            )
-        except Exception:
-            pass
-        return True
-
-    # ── Выбор клетки при перепрятывании ──────────────────────────────────────
-    if d.startswith("hs_relocpick_"):
-        parts = d.removeprefix("hs_relocpick_").split("_")
-        if len(parts) < 2:
-            await q.answer(); return True
-        try:
-            event_id, new_cell = int(parts[0]), int(parts[1])
-        except ValueError:
-            await q.answer(); return True
-
-        event = await hs_get(event_id)
-        if not event or event["status"] not in ("seeking", "final"):
-            await q.answer("Уже поздно", show_alert=True); return True
-
-        async with aiosqlite.connect(DB_PATH) as db:
-            db.row_factory = aiosqlite.Row
-            async with db.execute(
-                "SELECT relocate_left, cell, eliminated FROM hideseek_players "
-                "WHERE event_id=? AND uid=? AND round=?",
-                (event_id, uid, event["round"])
-            ) as c:
-                row = await c.fetchone()
-        if not row or row["eliminated"] or row["relocate_left"] <= 0:
-            await q.answer("Нельзя перепрятаться", show_alert=True); return True
-
-        # Проверяем что клетка ещё свободна (быстрая защита от двойного нажатия)
-        raw_empty_r = event.get("revealed_empty") or "[]"
-        try:
-            known_empty_r = set(json.loads(raw_empty_r))
-        except Exception:
-            known_empty_r = set()
-        async with aiosqlite.connect(DB_PATH) as db:
-            async with db.execute(
-                "SELECT cell FROM hideseek_players WHERE event_id=? AND round=? "
-                "AND eliminated=0 AND uid!=? AND cell=?",
-                (event_id, event["round"], uid, new_cell)
-            ) as c:
-                occupied_r = await c.fetchone()
-        raw_pending_r2 = event.get("escape_pending_cells") or "[]"
-        try:
-            pend_r = set(json.loads(raw_pending_r2))
-        except Exception:
-            pend_r = set()
-
-        if new_cell in known_empty_r or new_cell in pend_r or occupied_r:
-            await q.answer("Эта клетка уже занята или открыта", show_alert=True)
-            return True
-
-        async with aiosqlite.connect(DB_PATH) as db:
-            await db.execute(
-                "UPDATE hideseek_players SET cell=?, relocate_left=relocate_left-1 "
-                "WHERE event_id=? AND uid=? AND round=?",
-                (new_cell, event_id, uid, event["round"]),
-            )
-            await db.commit()
-
-        grid = event["grid_size"]
-        r_n  = new_cell // grid + 1
-        c_n  = new_cell % grid + 1
-        await q.answer(
-            f"✅ Перепрятался!\nНовое укрытие: Ряд {r_n}, клетка {c_n}",
-            show_alert=True,
-        )
-        try:
-            await q.message.edit_reply_markup(reply_markup=None)
-        except Exception:
-            pass
-        return True
-
-    # ── Выбор клетки при побеге ───────────────────────────────────────────────
-    if d.startswith("hs_escapepick_"):
-        parts = d.removeprefix("hs_escapepick_").split("_")
-        if len(parts) < 2:
-            await q.answer(); return True
-        try:
-            event_id, to_cell = int(parts[0]), int(parts[1])
-        except ValueError:
-            await q.answer(); return True
-
-        event = await hs_get(event_id)
-        if not event:
-            await q.answer(); return True
-
-        async with aiosqlite.connect(DB_PATH) as db:
-            db.row_factory = aiosqlite.Row
-            async with db.execute(
-                "SELECT escape_pending, escape_deadline, escape_from "
-                "FROM hideseek_players WHERE event_id=? AND uid=? AND round=?",
-                (event_id, uid, event["round"])
-            ) as c:
-                esc_row = await c.fetchone()
-
-        if not esc_row or not esc_row["escape_pending"]:
-            await q.answer("Побег уже завершён", show_alert=True); return True
-        if time.time() > esc_row["escape_deadline"]:
-            await q.answer("Время вышло", show_alert=True); return True
-
-        # Проверяем что клетка ещё свободна
-        raw_empty_e = event.get("revealed_empty") or "[]"
-        try:
-            known_empty_e = set(json.loads(raw_empty_e))
-        except Exception:
-            known_empty_e = set()
-        async with aiosqlite.connect(DB_PATH) as db:
-            async with db.execute(
-                "SELECT cell FROM hideseek_players WHERE event_id=? AND round=? "
-                "AND eliminated=0 AND uid!=? AND cell=?",
-                (event_id, event["round"], uid, to_cell)
-            ) as c:
-                occ_e = await c.fetchone()
-
-        if to_cell in known_empty_e or occ_e:
-            await q.answer("Эта клетка уже занята или открыта. Выбери другую.", show_alert=True)
-            return True
-
-        await q.answer("⏳ Пытаешься убежать...", show_alert=True)
-        try:
-            await q.message.edit_reply_markup(reply_markup=None)
-        except Exception:
-            pass
-
-        # Обновляем cell на новую (куда бежит) до броска
-        async with aiosqlite.connect(DB_PATH) as db:
-            await db.execute(
-                "UPDATE hideseek_players SET cell=? WHERE event_id=? AND uid=? AND round=?",
-                (to_cell, event_id, uid, event["round"]),
-            )
-            await db.commit()
-
-        # Бросок судьбы
-        success = random.random() < HS_ESCAPE_CHANCE
-        await _hs_resolve_escape(
-            bot, event, uid, event["round"],
-            success=success,
-            reason="caught" if not success else "",
-        )
-        return True
-
-
-    return False
 
 
 # ─────────────────────────────────────────────────────────────────────────────
@@ -12918,13 +11310,9 @@ async def hs_callbacks(q, d: str, uid: int, ctx) -> bool:
 # ─────────────────────────────────────────────────────────────────────────────
 
 
-HS_RELOCATE_COUNT  = 1      # сколько перепрятываний за игру
-HS_ESCAPE_SECS     = 120    # секунд на побег
-HS_ESCAPE_CHANCE   = 0.70   # вероятность успешного побега
 
 
 # ─── НОВЫЕ МИГРАЦИИ ───────────────────────────────────────────────────────────
-# Добавить в hs_migrate() после существующих ALTER TABLE:
 #
 #   for col, definition in [
 #       ("relocate_left",   "INTEGER DEFAULT 1"),
@@ -12953,650 +11341,27 @@ HS_ESCAPE_CHANCE   = 0.70   # вероятность успешного побе
 
 # ─── ВСПОМОГАТЕЛЬНАЯ: свободные клетки для перепрятывания/побега ─────────────
 
-async def _hs_free_cells(event_id: int, round_n: int,
-                          known_empty: set[int], caught_cells: set[int],
-                          escape_pending_cells: set[int],
-                          grid_size: int,
-                          exclude_uid: int = 0) -> set[int]:
-    """
-    Возвращает клетки куда можно переместиться:
-    - не вскрытые (не в known_empty, не в caught_cells, не в escape_pending_cells)
-    - не занятые другими живыми игроками (кроме самого игрока)
-    """
-    blocked = known_empty | caught_cells | escape_pending_cells
-    all_cells = set(range(grid_size * grid_size))
-    unrevealed = all_cells - blocked
-
-    # Убираем клетки занятые другими игроками
-    async with aiosqlite.connect(DB_PATH) as db:
-        async with db.execute(
-            "SELECT cell FROM hideseek_players "
-            "WHERE event_id=? AND round=? AND eliminated=0 AND uid!=? AND cell>=0",
-            (event_id, round_n, exclude_uid)
-        ) as c:
-            occupied = {r[0] for r in await c.fetchall()}
-
-    return unrevealed - occupied
 
 
-async def _hs_build_relocate_kb(event_id: int, event: dict,
-                                  exclude_uid: int,
-                                  mode: str = "relocate") -> InlineKeyboardMarkup | None:
-    """
-    Строит клавиатуру для перепрятывания или побега.
-    mode='relocate' → callback hs_relocpick_{event_id}_{cell}
-    mode='escape'   → callback hs_escapepick_{event_id}_{cell}
-    Возвращает None если свободных клеток нет.
-    """
-    round_n = event["round"]
-    grid    = event["grid_size"]
-
-    raw_empty = event.get("revealed_empty") or "[]"
-    try:
-        known_empty = set(json.loads(raw_empty))
-    except Exception:
-        known_empty = set()
-
-    async with aiosqlite.connect(DB_PATH) as db:
-        async with db.execute(
-            "SELECT cell FROM hideseek_players WHERE event_id=? AND round=? AND eliminated=1",
-            (event_id, round_n)
-        ) as c:
-            caught_cells = {r[0] for r in await c.fetchall() if r[0] is not None and r[0] >= 0}
-
-    raw_pending = event.get("escape_pending_cells") or "[]"
-    try:
-        escape_pending_cells = set(json.loads(raw_pending))
-    except Exception:
-        escape_pending_cells = set()
-
-    free = await _hs_free_cells(
-        event_id, round_n, known_empty, caught_cells,
-        escape_pending_cells, grid, exclude_uid=exclude_uid,
-    )
-    if not free:
-        return None
-
-    prefix = "hs_relocpick" if mode == "relocate" else "hs_escapepick"
-    sorted_free = sorted(free)
-    rows = []
-    for i in range(0, len(sorted_free), 6):
-        row = [
-            btn(
-                f"{c + 1:02d}",
-                callback_data=f"{prefix}_{event_id}_{c}",
-            )
-            for c in sorted_free[i:i+6]
-        ]
-        rows.append(row)
-    return InlineKeyboardMarkup(rows)
 
 
 # ─── ОТПРАВИТЬ КАРТУ ПОБЕГА В ЛС ─────────────────────────────────────────────
 
-async def _hs_send_escape_board(bot, uid: int, event: dict,
-                                 caught_cell: int) -> bool:
-    """
-    Отправляет игроку персональное поле для побега в ЛС.
-    Возвращает False если некуда бежать (автоматическое выбывание).
-    """
-    event_id = event["id"]
-    grid     = event["grid_size"]
-    round_n  = event["round"]
 
-    kb = await _hs_build_relocate_kb(event_id, event, exclude_uid=uid, mode="escape")
-    if not kb:
-        return False   # некуда бежать
 
-    raw_empty = event.get("revealed_empty") or "[]"
-    try:
-        known_empty = set(json.loads(raw_empty))
-    except Exception:
-        known_empty = set()
 
-    caught_row_n = caught_cell // grid + 1
-    caught_col_n = caught_cell % grid + 1
-    total_cells  = grid * grid
-    cells_opened = len(known_empty)  # приблизительно для информации
-    alive_count  = await _hs_alive_count(event_id, round_n)
 
-    text = (
-        f"⚠️ <b>Тебя нашли в клетке {caught_cell + 1}!</b>\n"
-        f"Ряд {caught_row_n}, столбец {caught_col_n}\n\n"
-        f"У тебя <b>один шанс</b> убежать — {HS_ESCAPE_SECS // 60} минуты.\n"
-        f"Выбери клетку куда хочешь переместиться.\n\n"
-        f"Выживших сейчас: <b>{alive_count}</b>\n"
-        f"Открыто клеток: <b>{cells_opened}/{total_cells}</b>\n\n"
-        f"<i>Шанс успешного побега: {int(HS_ESCAPE_CHANCE * 100)}%</i>\n"
-        f"<i>Если не выберешь — выбываешь автоматически.</i>\n\n"
-        f"⏳ <b>У тебя {HS_ESCAPE_SECS} секунд!</b>"
-    )
 
-    try:
-        await bot.send_message(uid, text, parse_mode=ParseMode.HTML, reply_markup=kb)
-    except Exception:
-        return False
 
-    # Сохраняем состояние побега
-    deadline = time.time() + HS_ESCAPE_SECS
-    async with aiosqlite.connect(DB_PATH) as db:
-        await db.execute(
-            "UPDATE hideseek_players "
-            "SET escape_pending=1, escape_deadline=?, escape_from=? "
-            "WHERE event_id=? AND uid=? AND round=?",
-            (deadline, caught_cell, event_id, uid, round_n),
-        )
-        # Помечаем клетку как "pending" в events (ищущий не может открыть её снова)
-        raw_pending = event.get("escape_pending_cells") or "[]"
-        try:
-            pending_set = set(json.loads(raw_pending))
-        except Exception:
-            pending_set = set()
-        pending_set.add(caught_cell)
-        await db.execute(
-            "UPDATE hideseek_events SET escape_pending_cells=? WHERE id=?",
-            (json.dumps(list(pending_set)), event_id),
-        )
-        await db.commit()
 
-    # Запускаем таймаут побега
-    asyncio.create_task(_hs_escape_timeout(bot, event_id, uid, round_n, deadline))
-    return True
 
 
-async def _hs_alive_count(event_id: int, round_n: int) -> int:
-    async with aiosqlite.connect(DB_PATH) as db:
-        async with db.execute(
-            "SELECT COUNT(*) FROM hideseek_players "
-            "WHERE event_id=? AND round=? AND eliminated=0",
-            (event_id, round_n)
-        ) as c:
-            row = await c.fetchone()
-    return (row[0] or 1) - 1   # минус ищущий
 
 
-async def _hs_update_escape_boards(bot, event: dict) -> None:
-    """
-    Обновляет карты побега у всех кто в процессе escape_pending.
-    Вызывается после каждого вскрытия чтобы убрать уже открытые клетки.
-    """
-    event_id = event["id"]
-    round_n  = event["round"]
 
-    async with aiosqlite.connect(DB_PATH) as db:
-        db.row_factory = aiosqlite.Row
-        async with db.execute(
-            "SELECT uid, escape_from FROM hideseek_players "
-            "WHERE event_id=? AND round=? AND escape_pending=1 AND eliminated=0",
-            (event_id, round_n)
-        ) as c:
-            pending = [dict(r) for r in await c.fetchall()]
 
-    for p in pending:
-        # Перестраиваем клавиатуру (теперь без только что открытых клеток)
-        kb = await _hs_build_relocate_kb(event_id, event, exclude_uid=p["uid"], mode="escape")
-        if not kb:
-            # Некуда бежать — автовыбывание
-            await _hs_resolve_escape(bot, event, p["uid"], round_n, success=False, reason="no_cells")
-            continue
-        try:
-            # Отправляем обновлённую карту
-            grid  = event["grid_size"]
-            fc    = p["escape_from"]
-            fr_n  = fc // grid + 1
-            fc_n  = fc % grid + 1
-            alive = await _hs_alive_count(event_id, round_n)
-            raw_empty = event.get("revealed_empty") or "[]"
-            try:
-                known_empty = set(json.loads(raw_empty))
-            except Exception:
-                known_empty = set()
-            cells_opened = len(known_empty)
 
-            text = (
-                f"⚠️ <b>Тебя нашли в клетке {fc + 1}!</b>\n"
-                f"Ряд {fr_n}, столбец {fc_n}\n\n"
-                f"<b>Поле обновлено</b> — выбирай куда бежать!\n\n"
-                f"Выживших: <b>{alive}</b> · "
-                f"Открыто: <b>{cells_opened}/{grid*grid}</b>\n\n"
-                f"⏳ Поторопись!"
-            )
-            await bot.send_message(p["uid"], text, parse_mode=ParseMode.HTML, reply_markup=kb)
-        except Exception:
-            pass
 
-
-async def _hs_escape_timeout(bot, event_id: int, uid: int,
-                               round_n: int, deadline: float) -> None:
-    """Если игрок не выбрал за 2 минуты — выбывает."""
-    await asyncio.sleep(max(0, deadline - time.time()))
-
-    async with aiosqlite.connect(DB_PATH) as db:
-        async with db.execute(
-            "SELECT escape_pending FROM hideseek_players "
-            "WHERE event_id=? AND uid=? AND round=?",
-            (event_id, uid, round_n)
-        ) as c:
-            row = await c.fetchone()
-
-    if not row or not row[0]:
-        return   # уже разрешился
-
-    event = await hs_get(event_id)
-    if not event:
-        return
-
-    await _hs_resolve_escape(bot, event, uid, round_n, success=False, reason="timeout")
-
-
-async def _hs_resolve_escape(bot, event: dict,
-                               uid: int, round_n: int,
-                               success: bool, reason: str = "") -> None:
-    """
-    Разрешает попытку побега.
-    success=True  → игрок переместился (клетка освобождена, новая занята)
-    success=False → игрок пойман
-    Обновляет поле ищущего и scoreboard.
-    """
-    event_id = event["id"]
-    chat_id  = event.get("chat_id", 0)
-
-    async with aiosqlite.connect(DB_PATH) as db:
-        db.row_factory = aiosqlite.Row
-        async with db.execute(
-            "SELECT * FROM hideseek_players WHERE event_id=? AND uid=? AND round=?",
-            (event_id, uid, round_n)
-        ) as c:
-            player = await c.fetchone()
-
-    if not player:
-        return
-    player = dict(player)
-
-    if not player.get("escape_pending"):
-        return   # уже разрешён (race condition guard)
-
-    caught_cell = player.get("escape_from", -1)
-    new_cell    = player.get("cell", caught_cell)  # куда переместился (если success)
-    pf          = await db_get(uid)
-    uname       = pf.get("username") if pf else None
-    name        = f"@{uname}" if uname else he(fname(pf) if pf else str(uid))
-
-    # Снимаем клетку из escape_pending_cells события
-    raw_pending = event.get("escape_pending_cells") or "[]"
-    try:
-        pending_set = set(json.loads(raw_pending))
-    except Exception:
-        pending_set = set()
-    if caught_cell >= 0:
-        pending_set.discard(caught_cell)
-
-    if success:
-        # Помечаем старую клетку как пустую (беглец ушёл)
-        raw_empty = event.get("revealed_empty") or "[]"
-        try:
-            known_empty = set(json.loads(raw_empty))
-        except Exception:
-            known_empty = set()
-        if caught_cell >= 0:
-            known_empty.add(caught_cell)
-
-        async with aiosqlite.connect(DB_PATH) as db:
-            await db.execute(
-                "UPDATE hideseek_players SET escape_pending=0, escape_deadline=0 "
-                "WHERE event_id=? AND uid=? AND round=?",
-                (event_id, uid, round_n)
-            )
-            await db.execute(
-                "UPDATE hideseek_events SET revealed_empty=?, escape_pending_cells=? WHERE id=?",
-                (json.dumps(list(known_empty)), json.dumps(list(pending_set)), event_id),
-            )
-            await db.commit()
-
-        # Уведомляем игрока
-        try:
-            await bot.send_message(
-                uid,
-                f"{_E_RUN} <b>Побег удался!</b>\n"
-                f"Ты скрылся — ищущий думает что там пусто.\n"
-                f"Новое укрытие: клетка <b>{new_cell + 1}</b>",
-                parse_mode=ParseMode.HTML,
-            )
-        except Exception:
-            pass
-
-        # В чат — без имени чтобы не давать подсказки ищущему
-        if chat_id:
-            try:
-                await bot.send_message(
-                    chat_id,
-                    f"🌀 Кто-то сбежал из найденной клетки!",
-                    parse_mode=ParseMode.HTML,
-                )
-            except Exception:
-                pass
-
-    else:
-        # Пойман
-        async with aiosqlite.connect(DB_PATH) as db:
-            await db.execute(
-                "UPDATE hideseek_players SET eliminated=1, escape_pending=0, escape_deadline=0 "
-                "WHERE event_id=? AND uid=? AND round=?",
-                (event_id, uid, round_n)
-            )
-            # Клетка где поймали → caught
-            # (уже помечена или будет помечена при следующем обновлении)
-            await db.execute(
-                "UPDATE hideseek_events SET escape_pending_cells=? WHERE id=?",
-                (json.dumps(list(pending_set)), event_id),
-            )
-            await db.commit()
-
-        reason_text = {
-            "timeout": "Время вышло — не успел выбрать укрытие.",
-            "no_cells": "Некуда было бежать — все клетки открыты.",
-            "caught":   "Поймали при побеге!",
-        }.get(reason, "")
-
-        try:
-            await bot.send_message(
-                uid,
-                f"💥 <b>Поймали!</b> {reason_text}",
-                parse_mode=ParseMode.HTML,
-            )
-        except Exception:
-            pass
-
-        if chat_id:
-            try:
-                await bot.send_message(
-                    chat_id,
-                    f"💥 {name} пойман при попытке побега!",
-                    parse_mode=ParseMode.HTML,
-                )
-            except Exception:
-                pass
-
-    # Обновляем поле ищущего и scoreboard
-    event_fresh = await hs_get(event_id)
-    if not event_fresh:
-        return
-
-    all_pl = await hs_get_players(event_id, round_n=round_n)
-    alive_hiders = [p for p in all_pl
-                    if not p["eliminated"] and p["uid"] != event_fresh["seeker_uid"]
-                    and not p.get("escape_pending")]
-
-    raw_empty_f = event_fresh.get("revealed_empty") or "[]"
-    try:
-        known_empty_f = set(json.loads(raw_empty_f))
-    except Exception:
-        known_empty_f = set()
-    async with aiosqlite.connect(DB_PATH) as db:
-        async with db.execute(
-            "SELECT cell FROM hideseek_players WHERE event_id=? AND round=? AND eliminated=1",
-            (event_id, round_n)
-        ) as c:
-            caught_cells_f = {r[0] for r in await c.fetchall() if r[0] is not None and r[0] >= 0}
-
-    raw_pending_f = event_fresh.get("escape_pending_cells") or "[]"
-    try:
-        pending_cells_f = set(json.loads(raw_pending_f))
-    except Exception:
-        pending_cells_f = set()
-
-    new_kb = hs_reveal_keyboard(event_id, event_fresh["grid_size"],
-                                 known_empty_f, caught_cells_f, pending_cells_f)
-    pinned_msg_id = event_fresh.get("pinned_msg_id", 0)
-    if chat_id and pinned_msg_id:
-        try:
-            await bot.edit_message_reply_markup(
-                chat_id=chat_id, message_id=pinned_msg_id, reply_markup=new_kb,
-            )
-        except Exception:
-            pass
-
-    await _hs_update_scoreboard(bot, event_fresh, all_pl, chat_id)
-
-    # Проверяем конец раунда (только если нет pending побегов)
-    still_pending = any(p.get("escape_pending") for p in all_pl
-                        if not p["eliminated"] and p["uid"] != event_fresh["seeker_uid"])
-    if not still_pending:
-        if not alive_hiders:
-            await _hs_no_survivors(bot, event_fresh)
-        elif len(alive_hiders) == 1:
-            await _hs_winner(bot, event_fresh, [alive_hiders[0]["uid"]])
-        else:
-            # Проверяем все ли клетки вскрыты
-            grid_f       = event_fresh["grid_size"]
-            total_cells  = grid_f * grid_f
-            cells_opened = len(known_empty_f) + len(caught_cells_f)
-            if cells_opened >= total_cells:
-                await _hs_round_end(bot, event_fresh, alive_hiders)
-
-async def _hs_no_survivors(bot, event: dict) -> None:
-    """Никто не выжил — ничья, объявляем."""
-    async with aiosqlite.connect(DB_PATH) as db:
-        await db.execute(
-            "UPDATE hideseek_events SET status='finished',finished_at=? WHERE id=?",
-            (time.time(), event["id"])
-        )
-        await db.commit()
-
-    chat_id = event["chat_id"]
-    msg = (
-        f"🤷 <b>Ничья!</b>\n\n"
-        f"Ищущий нашёл всех — никто не выжил.\n"
-        f"Призовой фонд остаётся в болоте."
-    )
-    if chat_id:
-        try:
-            await bot.send_message(chat_id, msg, parse_mode=ParseMode.HTML)
-            if event["pinned_msg_id"]:
-                try:
-                    await bot.unpin_chat_message(chat_id, event["pinned_msg_id"])
-                except Exception:
-                    pass
-        except Exception:
-            pass
-
-
-async def _hs_round_end(bot, event: dict, alive_hiders: list[dict]) -> None:
-    """Конец раунда — определяем победителей или запускаем финал."""
-    chat_id = event["chat_id"]
-
-    if len(alive_hiders) == 1:
-        # Один победитель
-        await _hs_winner(bot, event, [alive_hiders[0]["uid"]])
-        return
-
-    if len(alive_hiders) == 0:
-        await _hs_no_survivors(bot, event)
-        return
-
-    # Несколько выживших → финальный раунд
-    new_round = event["round"] + 1
-    async with aiosqlite.connect(DB_PATH) as db:
-        await db.execute(
-            "UPDATE hideseek_events SET status='final',round=?,grid_size=? WHERE id=?",
-            (new_round, HS_GRID_FINAL, event["id"])
-        )
-        # Добавляем выживших в новый раунд
-        for p in alive_hiders:
-            await db.execute(
-                "INSERT OR IGNORE INTO hideseek_players(event_id,uid,round,joined_at)"
-                " VALUES(?,?,?,?)",
-                (event["id"], p["uid"], new_round, time.time())
-            )
-        await db.commit()
-
-    event = await hs_get(event["id"])
-    names = []
-    for p in alive_hiders:
-        pf = await db_get(p["uid"])
-        names.append(he(fname(pf) if pf else str(p["uid"])))
-
-    final_text = (
-        f"🏁 <b>Финальный раунд!</b>\n\n"
-        f"Выжили: {', '.join(names)}\n"
-        f"Поле сужается до {HS_GRID_FINAL}×{HS_GRID_FINAL}!\n\n"
-        f"Прячьтесь — у вас <b>2 минуты</b>!"
-    )
-    final_kb = hs_hide_keyboard(event["id"], HS_GRID_FINAL)
-
-    if chat_id:
-        try:
-            final_msg = await bot.send_message(
-                chat_id, final_text,
-                parse_mode=ParseMode.HTML, reply_markup=final_kb,
-            )
-            # Обновляем pinned_msg_id на финальное поле
-            async with aiosqlite.connect(DB_PATH) as db:
-                await db.execute(
-                    "UPDATE hideseek_events SET pinned_msg_id=? WHERE id=?",
-                    (final_msg.message_id, event["id"]),
-                )
-                await db.commit()
-            try:
-                await bot.pin_chat_message(chat_id, final_msg.message_id)
-            except Exception:
-                pass
-        except Exception:
-            pass
-
-    # Ищущему в ЛС — только уведомление
-    try:
-        await bot.send_message(
-            event["seeker_uid"],
-            f"⏳ Финальный раунд! Выжившие прячутся 2 минуты...\n"
-            f"Поле опубликовано в чате.",
-            parse_mode=ParseMode.HTML,
-        )
-    except Exception:
-        pass
-
-    # Таймер финала — 2 минуты
-    asyncio.create_task(_hs_final_timeout(bot, event["id"], new_round))
-
-
-async def _hs_final_timeout(bot, event_id: int, round_n: int) -> None:
-    """Таймаут финального раунда — 2 минуты."""
-    await asyncio.sleep(120)
-
-    event = await hs_get(event_id)
-    if not event or event["status"] != "final":
-        return
-
-    players  = await hs_get_players(event_id, round_n=round_n)
-    alive    = [p for p in players if not p["eliminated"]
-                and p["uid"] != event["seeker_uid"]]
-
-    # Кто не выбрал — случайная клетка
-    for p in alive:
-        if p["cell"] == -1:
-            rand_cell = random.randint(0, HS_GRID_FINAL * HS_GRID_FINAL - 1)
-            async with aiosqlite.connect(DB_PATH) as db:
-                await db.execute(
-                    "UPDATE hideseek_players SET cell=? WHERE event_id=? AND uid=? AND round=?",
-                    (rand_cell, event_id, p["uid"], round_n)
-                )
-                await db.commit()
-            try:
-                await bot.send_message(
-                    p["uid"],
-                    "⏰ Время вышло. Тебя спрятали случайно.",
-                    parse_mode=ParseMode.HTML,
-                )
-            except Exception:
-                pass
-
-    # Отправляем финальное поле вскрытия в чат (редактируем или новое)
-    event_fresh = await hs_get(event_id)
-    chat_id_f   = event_fresh["chat_id"] if event_fresh else 0
-    pinned_f    = event_fresh["pinned_msg_id"] if event_fresh else 0
-    reveal_kb   = hs_reveal_keyboard(event_id, HS_GRID_FINAL, set(), set())
-    reveal_text = (
-        f"{_E_SEARCH} <b>Финал! Ищущий вскрывает</b>\n"
-        f"Прячется <b>{ui_plural(len(alive), 'игрок', 'игрока', 'игроков')}</b> в {HS_GRID_FINAL}×{HS_GRID_FINAL} 👇"
-    )
-
-    if chat_id_f and pinned_f:
-        try:
-            await bot.edit_message_text(
-                reveal_text, chat_id=chat_id_f, message_id=pinned_f,
-                parse_mode=ParseMode.HTML, reply_markup=reveal_kb,
-            )
-        except Exception:
-            try:
-                await bot.send_message(
-                    chat_id_f, reveal_text,
-                    parse_mode=ParseMode.HTML, reply_markup=reveal_kb,
-                )
-            except Exception:
-                pass
-
-    try:
-        await bot.send_message(
-            event["seeker_uid"],
-            "🔍 <b>Финал — начинай вскрывать!</b>\nПоле в чате.",
-            parse_mode=ParseMode.HTML,
-        )
-    except Exception:
-        pass
-
-
-async def _hs_winner(bot, event: dict, winner_uids: list[int]) -> None:
-    """Объявляем победителя и выдаём приз."""
-    async with aiosqlite.connect(DB_PATH) as db:
-        await db.execute(
-            "UPDATE hideseek_events SET status='finished',finished_at=? WHERE id=?",
-            (time.time(), event["id"])
-        )
-        await db.commit()
-
-    prize      = event["prize_coins"]
-    prize_each = prize // len(winner_uids) if winner_uids else 0
-    chat_id    = event["chat_id"]
-
-    names = []
-    for w_uid in winner_uids:
-        wf = await db_get(w_uid)
-        _wuname = wf.get("username") if wf else None
-        _wname  = f"@{_wuname}" if _wuname else f"<a href='tg://user?id={w_uid}'>{he(fname(wf) if wf else str(w_uid))}</a>"
-        names.append(_wname)
-        if prize_each > 0 and wf:
-            wf["coins"] = wf.get("coins", 0) + prize_each
-            await db_save(wf)
-        try:
-            await bot.send_message(
-                w_uid,
-                f"{_E_TROPHY} <b>Ты выжил!</b>\n\n"
-                f"Ищущий не нашёл тебя — победа!\n"
-                + (f"Приз: <b>+{prize_each}{_E_COIN}</b>" if prize_each else ""),
-                parse_mode=ParseMode.HTML,
-            )
-        except Exception:
-            pass
-
-    result_msg = (
-        f"{_E_TROPHY} <b>Прятки завершены!</b>\n\n"
-        f"Победитель{'и' if len(winner_uids) > 1 else ''}: {', '.join(names)}\n"
-        + (f"Приз: <b>{prize_each}🪙</b> каждому" if prize_each else "")
-    )
-
-    if chat_id:
-        try:
-            await bot.send_message(chat_id, result_msg, parse_mode=ParseMode.HTML)
-            if event["pinned_msg_id"]:
-                try:
-                    await bot.unpin_chat_message(chat_id, event["pinned_msg_id"])
-                except Exception:
-                    pass
-        except Exception:
-            pass
-
-    logger.info("hideseek finished event=%s winners=%s prize=%s",
-                event["id"], winner_uids, prize_each)
 
 
 # ── DB-хелперы дружбы ─────────────────────────────────────────────────────────
@@ -16199,8 +13964,6 @@ async def init_db():
         # ── Война стай v2 ────────────────────────────────────────────────────
         await war_migrate(db)
 
-        # ── Прятки ───────────────────────────────────────────────────────────
-        await hs_migrate(db)
 
 
 # ── CRUD ────────────────────────────────────────
@@ -18306,7 +16069,7 @@ async def show_settings(q, f: dict) -> None:
 
 def main_kb(f: dict, is_group: bool = False, sacrifice_active: bool = False,
             contest_active: bool = False, legend_pct: int | None = None,
-            legend_emoji: str = "📜", auction_active: bool = False,
+            legend_emoji: str = "📜",
             nft_contest_active: bool = False,
             freeze_active: bool = False) -> InlineKeyboardMarkup:
     care_ready = _care_ready(f)
@@ -18318,8 +16081,6 @@ def main_kb(f: dict, is_group: bool = False, sacrifice_active: bool = False,
     event_btns = []
     if freeze_active:
         event_btns.append(btn("Фриз-ивент", callback_data="fz_dashboard", style="primary"))
-    if auction_active:
-        event_btns.append(btn("Аукцион", callback_data="auction_menu", style="danger"))
     if sacrifice_active:
         event_btns.append(btn(t("menu_event", f), callback_data="sacrifice_menu"))
     if contest_active:
@@ -18365,7 +16126,6 @@ async def main_kb_live(f: dict, is_group: bool = False) -> InlineKeyboardMarkup:
     ev      = await _sacrifice_active_event()
     contest = await _get_active_contest()
     leg     = await legend_active()
-    auction = await _auction_get_active()
     nft_c   = await _get_active_nft_contest()
     freeze_on = await _fz_active()  # фриз-ивент активен?
 
@@ -18384,7 +16144,6 @@ async def main_kb_live(f: dict, is_group: bool = False) -> InlineKeyboardMarkup:
         contest_active=bool(contest),
         legend_pct=leg_pct,
         legend_emoji=leg_emoji,
-        auction_active=bool(auction),
         nft_contest_active=bool(nft_c),
         freeze_active=freeze_on,
     )
@@ -21143,7 +18902,7 @@ GROUP_ALLOWED_CMDS = {
     "top", "toplocal", "topw", "topm", "online",
     # Игры
     "casino", "lottery", "jackpot", "ttt", "ttt5",
-    "rps", "hangman", "checkers", "bs", "bsmini", "games",
+    "checkers", "games",
     # Розыгрыши
     "giveaway", "pgiveaway",
     # Стая и социальное
@@ -32243,11 +30002,6 @@ async def on_callback(update: Update, ctx: ContextTypes.DEFAULT_TYPE):
         "ck_mode|",  # шашки: выбор режима
         "ck_side|",  # шашки: выбор стороны (vs бот)
         "ck_stake|", # шашки: выбор ставки PvP
-        "bsj|",    # морской бой: принять вызов
-        "bsp|",    # морской бой: расстановка корабля
-        "bsc|",    # морской бой: подтвердить расстановку
-        "bsf|",    # морской бой: выстрел
-        "bsq|",    # морской бой: сдаться / отменить вызов
         "rps_cancel_",  # КНБ: отменить вызов
         "trv|",    # викторина: ответить
         "eqh|",    # эмодзи-загадка: подсказка
@@ -32332,8 +30086,6 @@ async def on_callback(update: Update, ctx: ContextTypes.DEFAULT_TYPE):
         "plaza_fish_invite",# рыбалка из меню площади
         "tip_tavern_",      # чаевые хозяину таверны
         "tip_feed_",        # чаевые после кормления / ухода
-        "auction_menu",     # просмотр аукциона — личное
-        "auction_bid_",     # ставка на аукционе — личное
         "nft_shop_",        # NFT-магазин — просмотр публичный
         "exp_announce_",    # анонс экспедиции в чат
         "exp_invite_",      # приглашение соседей/стаи
@@ -32395,7 +30147,7 @@ async def on_callback(update: Update, ctx: ContextTypes.DEFAULT_TYPE):
         # Уход — меняют монеты (heal) или статы которые влияют на rewards
         "wash", "sleep", "heal", "daily",
         # Аукцион и экспедиция
-        "auction_bid_", "exp_confirm_",
+        "exp_confirm_",
         # Магазин
         "buy_stars_", "buy_pkg_", "buy_sub_",
         # Рынок и крафт
@@ -35795,7 +33547,7 @@ async def on_callback(update: Update, ctx: ContextTypes.DEFAULT_TYPE):
 
         # ── Уровень разблокировки ─────────────────────────────────────────
         UNLOCK_ADV  = 4   # казино, лотерея, виселица, дуэль
-        UNLOCK_HARD = 8   # шашки, морской бой
+        UNLOCK_HARD = 8   # шашки
         unlocked_adv  = lvl >= UNLOCK_ADV
         unlocked_hard = lvl >= UNLOCK_HARD
 
@@ -35807,10 +33559,7 @@ async def on_callback(update: Update, ctx: ContextTypes.DEFAULT_TYPE):
             ],
             [
                 btn(t("btn_memory",  f), callback_data="memo_start"),
-                btn(t("btn_ttt",     f), callback_data="ttt_menu" if not is_private else "ttt_menu"),
-            ],
-            [
-                btn(t("btn_rps",     f), callback_data="rps_solo_menu" if is_private else "rps_menu"),
+                btn(t("btn_ttt",     f), callback_data="ttt_menu"),
             ],
         ]
 
@@ -35818,22 +33567,18 @@ async def on_callback(update: Update, ctx: ContextTypes.DEFAULT_TYPE):
         if unlocked_adv:
             adv_rows = [
                 [
-                    btn(t("btn_casino",   f), callback_data="casino_menu"),
-                    btn(t("btn_hangman",  f), callback_data="hangman_solo" if is_private else "hangman_menu"),
+                    btn(t("btn_casino",  f), callback_data="casino_menu"),
+                    btn(t("btn_duel",    f), callback_data="duel_search"),
                 ],
                 [
-                    btn(t("btn_duel",     f), callback_data="duel_search"),
-                    btn(t("btn_lottery",  f), callback_data="menu_lottery"),
-                ],
-                [
-                    btn(t("btn_jackpot",  f), callback_data="menu_jackpot"),
+                    btn(t("btn_lottery", f), callback_data="menu_lottery"),
+                    btn(t("btn_jackpot", f), callback_data="menu_jackpot"),
                 ],
             ]
             # Тяжёлые стратегии — на ур.8
             if unlocked_hard:
                 adv_rows.append([
                     btn(t("btn_checkers",   f), callback_data="checkers_menu"),
-                    btn(t("btn_battleship", f), callback_data="bs_menu"),
                 ])
             else:
                 adv_rows.append([
@@ -35869,7 +33614,7 @@ async def on_callback(update: Update, ctx: ContextTypes.DEFAULT_TYPE):
         if not unlocked_adv:
             next_up = f"🔒 Казино, дуэли и лотерея откроются на {UNLOCK_ADV} уровне."
         elif not unlocked_hard:
-            next_up = f"🔒 Шашки и морской бой откроются на {UNLOCK_HARD} уровне."
+            next_up = f"🔒 Шашки откроются на {UNLOCK_HARD} уровне."
         else:
             next_up = ""
 
@@ -37526,74 +35271,8 @@ async def on_callback(update: Update, ctx: ContextTypes.DEFAULT_TYPE):
             pass
         return
 
-    if d == "bs_menu":
-        await q.answer()
-        is_private = q.message.chat.type == "private"
-        kb_rows = [
-            [btn("🤖 Играть с ботом (/bs)", callback_data="bs_solo_start", style="primary")],
-        ]
-        if not is_private:
-            kb_rows.append([btn("👥 Вызов в чате (/bs [ставка])", callback_data="bs_pvp_info", style="success")])
-        kb_rows.append([btn("◀️ Назад", callback_data="menu_games")])
-        try:
-            await q.message.edit_text(
-                "🚢 <b>Морской бой</b>\n\n"
-                "🤖 <b>Бот</b> — расставь корабли и сыграй против ИИ\n"
-                "👥 <b>Вызов в чате</b> — победитель забирает ставки\n\n"
-                "<i>Команда: /bs [ставка]</i>",
-                parse_mode=ParseMode.HTML,
-                reply_markup=InlineKeyboardMarkup(kb_rows),
-            )
-        except Exception:
-            pass
-        return
 
-    if d == "bs_solo_start":
-        await q.answer()
-        user = q.from_user
-        f = await db_get(user.id)
-        if not f:
-            await q.message.reply_text("Сначала /start 🐸"); return
-        if not f.get("alive", 1):
-            await q.message.reply_text("💀 Лягушка мертва! /revive"); return
-        size, max_ships = 6, 8
-        gid = _new_gid(user.id)
-        bot_placed = _bs_bot_place(size, max_ships)
-        ctx.bot_data[f"bs2|{gid}"] = {
-            "p1": user.id, "p1n": user.first_name,
-            "p2": _BS_BOT_ID, "p2n": "🤖 Бот",
-            "size": size, "max_ships": max_ships,
-            "place1": set(), "place2": bot_placed,
-            "ships1": {}, "ships2": _bs_groups(bot_placed),
-            "shots1": {}, "shots2": {},
-            "phase": "place1", "turn": 1,
-            "stake": 0, "chat_id": q.message.chat.id,
-            "bot_game": True,
-        }
-        ok = await _bs_send_place_pm(gid, ctx.bot_data[f"bs2|{gid}"], ctx.bot, 1)
-        if not ok:
-            ctx.bot_data.pop(f"bs2|{gid}", None)
-            try:
-                await q.message.edit_text(
-                    "❌ Не могу отправить тебе личное сообщение!\n"
-                    "Открой ЛС боту командой /start, потом попробуй снова.",
-                    parse_mode=ParseMode.HTML,
-                )
-            except Exception: pass
-        else:
-            try:
-                await q.message.edit_text(
-                    f"🚢 <b>Морской бой vs {_E_BOT} Бот</b> · {size}×{size}\n\n"
-                    "📨 Расставь флот в <b>личных сообщениях</b> бота!",
-                    parse_mode=ParseMode.HTML,
-                    reply_markup=InlineKeyboardMarkup([[btn("◀️ Назад", callback_data="bs_menu")]]),
-                )
-            except Exception: pass
-        return
 
-    if d == "bs_pvp_info":
-        await q.answer("Используй /bs [ставка] в чате чтобы вызвать соперника", show_alert=True)
-        return
 
     if d == "ttt_menu":
         await q.answer()
@@ -38939,65 +36618,8 @@ async def on_callback(update: Update, ctx: ContextTypes.DEFAULT_TYPE):
             rows.append(row)
         return rows
 
-    if d == "hangman_group_create":
-        # Эту кнопку нажимают из личного меню — предлагаем использовать команду в чате
-        try:
-            await q.message.edit_text(
-                "🪢 <b>Групповая виселица</b>\n\n"
-                "Используй команду в чате:\n"
-                "<code>/hangman [ставка]</code>\n\n"
-                "Например: <code>/hangman 50</code>\n"
-                "Ставка спишется с тебя, победитель заберёт её целиком.\n"
-                "Минимум: 10<tg-emoji emoji-id='5341524176039615767'>🪙</tg-emoji>, максимум: 500<tg-emoji emoji-id='5341524176039615767'>🪙</tg-emoji>",
-                parse_mode=ParseMode.HTML,
-                reply_markup=InlineKeyboardMarkup([[btn("◀️ Назад", callback_data="hangman_menu")]]),
-            )
-        except Exception:
-            pass
-        return
 
-    if d == "hangman_menu":
-        kb = InlineKeyboardMarkup([
-            [btn("🤖 Играть с ботом", callback_data="hangman_solo", style="primary")],
-            [btn(t("btn_hm_group", f), callback_data="hangman_group_create")],
-            [btn("◀️ Назад", callback_data="menu_games")],
-        ])
-        try:
-            await q.message.edit_text(
-                "🪢 <b>Виселица</b>\n\n"
-                "🤖 <b>С ботом</b> — бот загадывает слово, ты угадываешь (кд 15 мин)\n"
-                "  📗 Лёгкий — слова из болота (30 слов)\n"
-                "  📕 Сложный — большой пул (130 слов, +50% монет)\n\n"
-                "👥 <b>В чате</b> — ты загадываешь слово, все угадывают. "
-                "Первый угадавший получает приз!",
-                parse_mode=ParseMode.HTML,
-                reply_markup=kb,
-            )
-        except Exception:
-            pass
-        return
 
-    if d == "hangman_solo":
-        # Показываем выбор сложности
-        kb_diff = InlineKeyboardMarkup([
-            [
-                btn(t("btn_hm_solo", f), callback_data="hangman_solo_easy"),
-                btn(t("btn_hm_solo_hard", f), callback_data="hangman_solo_hard"),
-            ],
-            [btn("◀️ Назад", callback_data="hangman_menu")],
-        ])
-        try:
-            await q.message.edit_text(
-                "🪢 <b>Виселица — выбери сложность</b>\n\n"
-                "📗 <b>Лёгкий</b> — 30 знакомых слов из болота\n"
-                "📕 <b>Сложный</b> — 130 слов (животные, еда, предметы, профессии…) "
-                "и <b>+50% к награде</b> за победу!",
-                parse_mode=ParseMode.HTML,
-                reply_markup=kb_diff,
-            )
-        except Exception:
-            pass
-        return
 
     if d in ("hangman_solo_easy", "hangman_solo_hard"):
         now = time.time()
@@ -39054,195 +36676,7 @@ async def on_callback(update: Update, ctx: ContextTypes.DEFAULT_TYPE):
             await q.answer("❌ Сначала напиши боту в личку", show_alert=True)
         return
 
-    if d.startswith("hm_letter_"):
-        # формат: hm_letter_<game_id>_<letter>
-        # game_id может содержать _ поэтому берём последний символ как букву
-        rest = d[10:]  # убираем "hm_letter_"
-        letter = rest[-1]
-        game_id = rest[:-2]  # убираем "_<letter>"
-        _hm_key = f"hm_{game_id}"
-        # Групповые игры хранятся в bot_data, соло — в user_data
-        if _hm_key in ctx.bot_data:
-            gdata = ctx.bot_data[_hm_key]
-            _hm_in_bot_data = True
-        else:
-            gdata = ctx.user_data.get(_hm_key)
-            _hm_in_bot_data = False
-        if not gdata:
-            await q.answer("Игра не найдена или уже завершена.", show_alert=True)
-            return
-        # В групповой игре может отвечать любой, кроме загадавшего
-        if gdata["mode"] == "group" and uid == gdata["owner"]:
-            await q.answer("Ты загадал слово — не подглядывай! 😄", show_alert=True)
-            return
-        word_h = gdata["word"]
-        guessed = gdata["guessed"]
-        if letter in guessed:
-            await q.answer("Эта буква уже была", show_alert=True)
-            return
 
-        # Групповая: проверяем кулдаун ДО изменения состояния игры
-        if gdata["mode"] == "group":
-            _winner_check_f = await db_get(uid)
-            _cd_hm = 30 * 60
-            _now_hm = time.time()
-            if _winner_check_f and _now_hm - _winner_check_f.get("last_hangman_group_win", 0) < _cd_hm:
-                # Проверим — угадал бы он? Если буква есть и слово угадано — покажем КД
-                _test_guessed = guessed + [letter]
-                _test_display = _hangman_display(word_h, _test_guessed)
-                if "_" not in _test_display:
-                    _rem_hm = int(_cd_hm - (_now_hm - _winner_check_f["last_hangman_group_win"]))
-                    await q.answer((f"⏳ Ты недавно уже выигрывал — подожди ещё {_rem_hm//60}мин {_rem_hm%60}с")[:200], show_alert=True)
-                    return
-
-        guessed.append(letter)
-        is_hit = letter in word_h
-        if not is_hit:
-            gdata["errors"] += 1
-        errors = gdata["errors"]
-        display = _hangman_display(word_h, guessed)
-        pic = HANGMAN_PICS[min(errors, 6)]
-        won = "_" not in display
-        lost = errors >= 6
-
-        if won:
-            prize = 0
-            winner_f = await db_get(uid)
-            if gdata["mode"] == "group":
-                prize = gdata.get("stake", 0)
-                if winner_f:
-                    winner_f["last_hangman_group_win"] = time.time()
-            else:
-                prize = max(5, (6 - errors) * 5)
-                if gdata.get("hard"):
-                    prize = int(prize * 1.5)
-                if winner_f:
-                    winner_f["last_hangman"] = time.time()
-            if winner_f:
-                if prize:
-                    winner_f["coins"] += prize
-                add_xp(winner_f, 20)
-                await levelup(winner_f, ctx.bot)
-                await db_save(winner_f)
-            if _hm_in_bot_data:
-                ctx.bot_data.pop(_hm_key, None)
-            else:
-                ctx.user_data.pop(_hm_key, None)
-            if gdata["mode"] == "group":
-                _gname = winner_f.get("first_name", "?") if winner_f else "?"
-                _prize_txt = f"+{prize}{coin_emoji()}  " if prize else ""
-                result_text = (
-                    f"🎉 <b>{he(_gname)}</b> угадал(а) слово <b>{word_h}</b>!\n"
-                    f"Ошибок: {errors}/6\n"
-                    f"{_prize_txt}{_E_XP} +20 XP"
-                )
-            else:
-                result_text = (
-                    f"🎉 <b>Угадано!</b> Слово: <b>{word_h}</b>\n\n"
-                    f"{pic}\n\n"
-                    f"Ошибок: {errors}/6\n"
-                    f"+{prize}{coin_emoji()} {_E_XP} +20 XP"
-                )
-            # q.answer: для группового — notify всех, для соло — тост
-            if gdata["mode"] == "group":
-                await q.answer(f"🎉 Слово угадано! +{prize}🪙", show_alert=False)
-            else:
-                await q.answer(f"🎉 Победа", show_alert=False)
-            try:
-                await q.message.edit_text(result_text, parse_mode=ParseMode.HTML,
-                                           reply_markup=InlineKeyboardMarkup([[btn("◀️ Назад", callback_data="menu_games")]]))
-            except Exception:
-                pass
-        elif lost:
-            if gdata["mode"] == "solo":
-                f["last_hangman"] = time.time()
-                add_xp(f, 5)
-                await db_save(f)
-            elif gdata["mode"] == "group":
-                # Возвращаем ставку создателю если слово не угадали
-                stake_back = gdata.get("stake", 0)
-                if stake_back:
-                    owner_f = await db_get(gdata["owner"])
-                    if owner_f:
-                        owner_f["coins"] += stake_back
-                        await db_save(owner_f)
-            if _hm_in_bot_data:
-                ctx.bot_data.pop(_hm_key, None)
-            else:
-                ctx.user_data.pop(_hm_key, None)
-            await q.answer("💀 Повесили", show_alert=False)
-            try:
-                await q.message.edit_text(
-                    f"{_E_SKULL} <b>Повесили!</b> Слово было: <b>{word_h}</b>\n\n"
-                    f"{pic}\n\n"
-                    f"{_E_XP} +5 XP за попытку",
-                    parse_mode=ParseMode.HTML,
-                    reply_markup=InlineKeyboardMarkup([[btn("◀️ Назад", callback_data="menu_games")]]),
-                )
-            except Exception:
-                pass
-        else:
-            # Обычный ход — обязательно отвечаем, чтобы убрать спиннер
-            if is_hit:
-                await q.answer(f"✅ «{letter}» есть в слове", show_alert=False)
-            else:
-                await q.answer(f"❌ «{letter}» — нет такой буквы", show_alert=False)
-            letter_rows = _hangman_kb(word_h, guessed, game_id)
-            letter_rows.append([btn(t("chk_surrender", f), callback_data=f"hm_give_up_{game_id}")])
-            try:
-                await q.message.edit_text(
-                    f"🪢 <b>Виселица</b> · Слово: {len(word_h)} букв\n\n"
-                    f"{pic}\n\n"
-                    f"<code>{display}</code>\n\n"
-                    f"Ошибок: {errors}/6",
-                    parse_mode=ParseMode.HTML,
-                    reply_markup=InlineKeyboardMarkup(letter_rows),
-                )
-            except Exception:
-                pass
-        return
-
-    if d.startswith("hm_give_up_"):
-        game_id = d[11:]
-        _hm_key_gu = f"hm_{game_id}"
-        if _hm_key_gu in ctx.bot_data:
-            gdata = ctx.bot_data[_hm_key_gu]
-            _hm_bot = True
-        else:
-            gdata = ctx.user_data.get(_hm_key_gu)
-            _hm_bot = False
-        if not gdata:
-            await q.answer("Игра не найдена.", show_alert=True)
-            return
-        # Только создатель или любой могут сдаться в групповой игре
-        if gdata["mode"] == "group" and uid != gdata["owner"]:
-            await q.answer("Только загадавший может завершить игру", show_alert=True)
-            return
-        if gdata["mode"] == "solo":
-            f["last_hangman"] = time.time()
-            await db_save(f)
-        elif gdata["mode"] == "group":
-            # Возвращаем ставку создателю при досрочном завершении
-            stake_back = gdata.get("stake", 0)
-            if stake_back:
-                owner_f = await db_get(gdata["owner"])
-                if owner_f:
-                    owner_f["coins"] += stake_back
-                    await db_save(owner_f)
-        word_h = gdata["word"]
-        if _hm_bot:
-            ctx.bot_data.pop(_hm_key_gu, None)
-        else:
-            ctx.user_data.pop(_hm_key_gu, None)
-        try:
-            await q.message.edit_text(
-                f"🏳 <b>Сдался!</b> Слово было: <b>{word_h}</b>",
-                parse_mode=ParseMode.HTML,
-                reply_markup=InlineKeyboardMarkup([[btn(t("btn_back_games", f), callback_data="menu_games")]]),
-            )
-        except Exception:
-            pass
-        return
 
     # ══════════════════════════════════════════
     # ✊ КАМЕНЬ-НОЖНИЦЫ-БУМАГА
@@ -39251,394 +36685,15 @@ async def on_callback(update: Update, ctx: ContextTypes.DEFAULT_TYPE):
     RPS_EMOJI = {"rock": "🪨 Камень", "scissors": "✂️ Ножницы", "paper": "📄 Бумага"}
     RPS_BEATS = {"rock": "scissors", "scissors": "paper", "paper": "rock"}
 
-    if d == "rps_menu":
-        await q.answer()
-        kb = InlineKeyboardMarkup([
-            [btn("🤖 Соло vs бот (×2 при победе)", callback_data="rps_solo_menu")],
-            [btn("👥 В чате (победитель забирает всё)", callback_data="rps_group_menu")],
-            [btn("◀️ Назад", callback_data="menu_games")],
-        ])
-        try:
-            await q.message.edit_text(
-                "✊ <b>Камень — Ножницы — Бумага</b>\n\n"
-                "🤖 <b>Соло</b> — играешь с ботом, шанс 1/3, победа ×2\n"
-                "👥 <b>В чате</b> — вызываешь другого игрока, "
-                "победитель забирает обе ставки",
-                parse_mode=ParseMode.HTML,
-                reply_markup=kb,
-            )
-        except Exception:
-            pass
-        return
 
-    if d == "rps_solo_menu":
-        stakes_rps = [10, 25, 50, 100, 200]
-        kb = InlineKeyboardMarkup([
-            [btn(f"🪙 {s}", callback_data=f"rps_solo_{s}") for s in stakes_rps],
-            [btn("◀️ Назад", callback_data="rps_menu")],
-        ])
-        try:
-            await q.message.edit_text(
-                f"✊ <b>КНБ — Соло</b>\n\nУ тебя: {f['coins']}{coin_emoji()}",
-                parse_mode=ParseMode.HTML,
-                reply_markup=kb,
-            )
-        except Exception:
-            pass
-        return
 
     # rps_solo_pick_<choice>_<stake> — ВАЖНО: проверяется ДО rps_solo_<stake>
-    if d.startswith("rps_solo_pick_"):
-        rest_rps = d[14:]
-        last_u = rest_rps.rfind("_")
-        choice_rps = rest_rps[:last_u]
-        stake_rps = int(rest_rps[last_u+1:])
-        if f["coins"] < stake_rps:
-            await q.answer((f"Нужно {stake_rps}{coin_plain()}")[:200], show_alert=True)
-            return
-        bot_rps = random.choice(["rock", "scissors", "paper"])
-        f["coins"] -= stake_rps
-        f["coins_spent"] = f.get("coins_spent", 0) + stake_rps
-        # XP начисляем только раз в 5 минут — защита от фарма
-        now_rps = time.time()
-        rps_xp_cd = 5 * 60
-        can_earn_xp = now_rps - f.get("last_rps_solo", 0) >= rps_xp_cd
-        if choice_rps == bot_rps:
-            # Ничья — возвращаем ставку
-            f["coins"] += stake_rps
-            if can_earn_xp:
-                add_xp(f, 3)
-                f["last_rps_solo"] = now_rps
-            res_rps = f"🤝 <b>Ничья!</b> Ставка возвращена."
-        elif RPS_BEATS[choice_rps] == bot_rps:
-            f["coins"] += stake_rps * 2
-            if can_earn_xp:
-                add_xp(f, 10)
-                f["last_rps_solo"] = now_rps
-            res_rps = f"{_E_TROPHY} <b>Победа! +{stake_rps}{coin_emoji()}</b>"
-        else:
-            if can_earn_xp:
-                add_xp(f, 2)
-                f["last_rps_solo"] = now_rps
-            res_rps = f"{_E_CROSS} <b>Поражение! -{stake_rps}{coin_emoji()}</b>"
-        await levelup(f, ctx.bot)
-        await db_save(f)
-        try:
-            await q.message.edit_text(
-                f"✊ Ты: <b>{RPS_EMOJI[choice_rps]}</b>\n"
-                f"{_E_BOT} Бот: <b>{RPS_EMOJI[bot_rps]}</b>\n\n"
-                f"{res_rps}\n"
-                f"💼 Баланс: {f['coins']}{coin_emoji()}",
-                parse_mode=ParseMode.HTML,
-                reply_markup=InlineKeyboardMarkup([
-                    [btn(f"↩️ Ещё ({stake_rps}🪙)", callback_data=f"rps_solo_{stake_rps}")],
-                    [btn(t("btn_back_games", f), callback_data="menu_games")],
-                ]),
-            )
-        except Exception:
-            pass
-        return
 
-    if d.startswith("rps_solo_"):
-        stake_rps = int(d[9:])
-        if f["coins"] < stake_rps:
-            await q.answer((f"Нужно {stake_rps}{coin_plain()}")[:200], show_alert=True)
-            return
-        kb = InlineKeyboardMarkup([
-            [
-                btn(t("btn_rps_rock",     f), callback_data=f"rps_solo_pick_rock_{stake_rps}"),
-                btn(t("btn_rps_scissors", f), callback_data=f"rps_solo_pick_scissors_{stake_rps}"),
-                btn(t("btn_rps_paper",    f), callback_data=f"rps_solo_pick_paper_{stake_rps}"),
-            ],
-            [btn("◀️ Назад", callback_data="rps_solo_menu")],
-        ])
-        try:
-            await q.message.edit_text(
-                f"✊ Ставка: <b>{stake_rps}{coin_emoji()}</b>\n\nВыбери свой ход:",
-                parse_mode=ParseMode.HTML,
-                reply_markup=kb,
-            )
-        except Exception:
-            pass
-        return
 
-    if d == "rps_group_menu":
-        stakes_rpsg = [25, 50, 100, 200, 500]
-        kb = InlineKeyboardMarkup([
-            [btn(f"🪙 {s}", callback_data=f"rps_group_{s}") for s in stakes_rpsg],
-            [btn("◀️ Назад", callback_data="rps_menu")],
-        ])
-        try:
-            await q.message.edit_text(
-                f"{_E_USERS} <b>КНБ в чате</b>\n\nУ тебя: {f['coins']}{coin_emoji()}",
-                parse_mode=ParseMode.HTML,
-                reply_markup=kb,
-            )
-        except Exception:
-            pass
-        return
 
-    if d.startswith("rps_group_") and not d.startswith("rps_group_pick_"):
-        stake_rpsg = int(d[10:])
-        if f["coins"] < stake_rpsg:
-            await q.answer((f"Нужно {stake_rpsg}{coin_plain()}")[:200], show_alert=True)
-            return
-        # Списываем ставку с создателя
-        f["coins"] -= stake_rpsg
-        f["coins_spent"] = f.get("coins_spent", 0) + stake_rpsg
-        await db_save(f)
-        game_id_rps = f"rps_{uid}_{int(time.time())}"
-        ctx.bot_data[f"rps_{game_id_rps}"] = {
-            "creator": uid,
-            "creator_name": q.from_user.first_name,
-            "creator_choice": None,
-            "stake": stake_rpsg,
-            "chat_id": q.message.chat.id,
-            "msg_id": None,
-        }
-        pub_kb = InlineKeyboardMarkup([[
-            btn(t("btn_rps_rock",     f), callback_data=f"rps_join_rock_{game_id_rps}"),
-            btn(t("btn_rps_scissors", f), callback_data=f"rps_join_scissors_{game_id_rps}"),
-            btn(t("btn_rps_paper",    f), callback_data=f"rps_join_paper_{game_id_rps}"),
-        ]])
-        challenge_msg = await ctx.bot.send_message(
-            q.message.chat.id,
-            f"✊ <b>{he(q.from_user.first_name)}</b> бросает вызов!\n"
-            f"Ставка: <b>{stake_rpsg}{coin_emoji()}</b> с каждого\n"
-            f"Победитель заберёт <b>{stake_rpsg*2}{coin_emoji()}</b>!\n\n"
-            f"<i>Выбери свой ход — создатель уже выбрал в личке</i>",
-            parse_mode=ParseMode.HTML,
-            reply_markup=pub_kb,
-        )
-        ctx.bot_data[f"rps_{game_id_rps}"]["msg_id"] = challenge_msg.message_id if challenge_msg else None
-        # Просим создателя выбрать ход в личке
-        try:
-            await ctx.bot.send_message(
-                uid,
-                f"✊ <b>Твой вызов опубликован!</b>\n\nВыбери свой ход (соперник не увидит до конца):",
-                parse_mode=ParseMode.HTML,
-                reply_markup=InlineKeyboardMarkup([[
-                    btn(t("btn_rps_rock",     f), callback_data=f"rps_creator_rock_{game_id_rps}"),
-                    btn(t("btn_rps_scissors", f), callback_data=f"rps_creator_scissors_{game_id_rps}"),
-                    btn(t("btn_rps_paper",    f), callback_data=f"rps_creator_paper_{game_id_rps}"),
-                ]]),
-            )
-        except Forbidden:
-            pass
-        await q.answer("✅ Вызов опубликован в чат")
-        try:
-            await q.message.edit_text(
-                "✊ Вызов опубликован! Жди соперника...",
-                parse_mode=ParseMode.HTML,
-                reply_markup=InlineKeyboardMarkup([[btn(t("btn_back_games", f), callback_data="menu_games")]]),
-            )
-        except Exception:
-            pass
-        return
 
-    if d.startswith("rps_creator_"):
-        # rps_creator_<choice>_<game_id>
-        rest_rc = d[12:]
-        for ch in ("rock_", "scissors_", "paper_"):
-            if rest_rc.startswith(ch):
-                choice_rc = ch.rstrip("_")
-                game_id_rps = rest_rc[len(ch):]
-                break
-        else:
-            return
-        gdata_rps = ctx.bot_data.get(f"rps_{game_id_rps}")
-        if not gdata_rps:
-            await q.answer("Игра не найдена.", show_alert=True)
-            return
-        if gdata_rps["creator"] != uid:
-            await q.answer("Это не твоя игра", show_alert=True)
-            return
-        if gdata_rps.get("creator_choice") is not None:
-            await q.answer("Ты уже выбрал знак", show_alert=True)
-            return
-        gdata_rps["creator_choice"] = choice_rc
-        try:
-            await q.message.edit_text(
-                f"✅ Ты выбрал <b>{RPS_EMOJI[choice_rc]}</b>. Ждём соперника...",
-                parse_mode=ParseMode.HTML,
-            )
-        except Exception:
-            pass
-        return
 
-    if d.startswith("rps_cancel_"):
-        game_id_rps = d[11:]
-        gdata_rps = ctx.bot_data.get(f"rps_{game_id_rps}")
-        if not gdata_rps:
-            await q.answer("Игра уже завершена", show_alert=True); return
-        if uid != gdata_rps["creator"]:
-            await q.answer("Только создатель может отменить", show_alert=True); return
-        stake_rps = gdata_rps["stake"]
-        f_c_rps = await db_get(uid)
-        if f_c_rps:
-            f_c_rps["coins"] += stake_rps; await db_save(f_c_rps)
-        ctx.bot_data.pop(f"rps_{game_id_rps}", None)
-        try:
-            await ctx.bot.edit_message_text(
-                "✊ Вызов отменён создателем.",
-                chat_id=gdata_rps["chat_id"],
-                message_id=gdata_rps["msg_id"],
-            )
-        except Exception: pass
-        await q.answer((f"Вызов отменён, {stake_rps}🪙 возвращено.")[:200], show_alert=True)
-        return
 
-    if d.startswith("rps_join_"):
-        # rps_join_<choice>_<game_id>
-        rest_rj = d[9:]
-        for ch in ("rock_", "scissors_", "paper_"):
-            if rest_rj.startswith(ch):
-                joiner_choice = ch.rstrip("_")
-                game_id_rps = rest_rj[len(ch):]
-                break
-        else:
-            return
-        gdata_rps = ctx.bot_data.get(f"rps_{game_id_rps}")
-        if not gdata_rps:
-            await q.answer("Игра уже завершена", show_alert=True)
-            return
-        if uid == gdata_rps["creator"]:
-            await q.answer("Нельзя принять свой вызов", show_alert=True)
-            return
-        stake_rpsg = gdata_rps["stake"]
-        f2_rps = await db_get(uid)
-        if not f2_rps or f2_rps["coins"] < stake_rpsg:
-            await q.answer((f"Нужно {stake_rpsg}{coin_plain()}")[:200], show_alert=True)
-            return
-
-        # ── Блокируем вступление пока организатор не выбрал знак ──
-        creator_choice = gdata_rps.get("creator_choice")
-        if not creator_choice:
-            await q.answer(
-                "⏳ Организатор ещё не выбрал знак. Подожди немного.",
-                show_alert=True,
-            )
-            return
-
-        # Если соперник уже есть (многораундовая игра) - это ход текущего раунда
-        if gdata_rps.get("opponent") and gdata_rps["opponent"] != uid:
-            await q.answer("В игре уже есть соперник", show_alert=True)
-            return
-
-        # Первый вход соперника — атомарно резервируем место, потом списываем монеты
-        if not gdata_rps.get("opponent"):
-            # Резервируем место сразу, чтобы второй одновременный запрос увидел opponent
-            gdata_rps["opponent"] = uid
-            gdata_rps["opponent_name"] = q.from_user.first_name
-            # Повторно читаем баланс из БД (актуальные данные)
-            f2_rps = await db_get(uid)
-            if not f2_rps or f2_rps["coins"] < stake_rpsg:
-                # Отменяем резервирование если монет не хватает
-                gdata_rps["opponent"] = None
-                gdata_rps["opponent_name"] = None
-                await q.answer((f"Нужно {stake_rpsg}{coin_plain()}")[:200], show_alert=True)
-                return
-            f2_rps["coins"] -= stake_rpsg
-            f2_rps["coins_spent"] = f2_rps.get("coins_spent", 0) + stake_rpsg
-            await db_save(f2_rps)
-            # Инициализируем счётчики раундов
-            gdata_rps.setdefault("rounds_creator", 0)
-            gdata_rps.setdefault("rounds_opponent", 0)
-            gdata_rps.setdefault("round_num", 1)
-
-        joiner_name = gdata_rps["opponent_name"]
-        creator_name = gdata_rps["creator_name"]
-        prize_rps = stake_rpsg * 2
-        creator_f_rps = await db_get(gdata_rps["creator"])
-
-        # Определяем победителя раунда
-        if creator_choice == joiner_choice:
-            round_result = f"🤝 Раунд {gdata_rps['round_num']}: <b>Ничья!</b>"
-        elif RPS_BEATS[creator_choice] == joiner_choice:
-            gdata_rps["rounds_creator"] += 1
-            round_result = f"{_E_TROPHY} Раунд {gdata_rps['round_num']}: победил <b>{he(creator_name)}</b>"
-        else:
-            gdata_rps["rounds_opponent"] += 1
-            round_result = f"{_E_TROPHY} Раунд {gdata_rps['round_num']}: победил <b>{he(joiner_name)}</b>"
-
-        rc = gdata_rps["rounds_creator"]
-        ro = gdata_rps["rounds_opponent"]
-        rounds_needed = 2  # first to 2 wins
-
-        round_info = (
-            f"✊ <b>КНБ — Раунд {gdata_rps['round_num']}</b>\n\n"
-            f"{_E_GAMES} {he(creator_name)}: <b>{RPS_EMOJI[creator_choice]}</b>\n"
-            f"{_E_GAMES} {he(joiner_name)}: <b>{RPS_EMOJI[joiner_choice]}</b>\n\n"
-            f"{round_result}\n\n"
-            f"{_E_CHART} Счёт: {he(creator_name)} <b>{rc}</b> : <b>{ro}</b> {he(joiner_name)}\n"
-        )
-
-        if rc >= rounds_needed or ro >= rounds_needed:
-            # Финал
-            ctx.bot_data.pop(f"rps_{game_id_rps}", None)
-            if rc > ro:
-                winner_uid, winner_name = gdata_rps["creator"], creator_name
-                if creator_f_rps:
-                    creator_f_rps["coins"] += prize_rps
-                    await levelup(creator_f_rps, ctx.bot)
-                    await db_save(creator_f_rps)
-                await db_save(f2_rps)
-            elif ro > rc:
-                winner_uid, winner_name = uid, joiner_name
-                f2_rps["coins"] += prize_rps
-                await levelup(f2_rps, ctx.bot)
-                await db_save(f2_rps)
-                if creator_f_rps:
-                    await db_save(creator_f_rps)
-            else:
-                winner_uid, winner_name = None, None
-                if creator_f_rps:
-                    creator_f_rps["coins"] += stake_rpsg
-                    await db_save(creator_f_rps)
-                f2_rps["coins"] += stake_rpsg
-                await db_save(f2_rps)
-
-            if winner_name:
-                final_txt = f"{round_info}{_E_TROPHY} <b>{he(winner_name)}</b> побеждает в матче и забирает <b>{prize_rps}{coin_emoji()}</b>!"
-            else:
-                final_txt = f"{round_info}🤝 <b>Матч завершён вничью!</b> Ставки возвращены."
-            try:
-                await q.message.edit_text(final_txt, parse_mode=ParseMode.HTML)
-            except Exception:
-                pass
-            try:
-                await ctx.bot.send_message(gdata_rps["creator"], final_txt, parse_mode=ParseMode.HTML)
-            except Exception:
-                pass
-        else:
-            # Следующий раунд — сбрасываем выбор организатора
-            gdata_rps["creator_choice"] = None
-            gdata_rps["round_num"] += 1
-            next_round_kb = InlineKeyboardMarkup([
-                [
-                    btn("🪨 Камень", callback_data=f"rps_join_rock_{game_id_rps}"),
-                    btn("✂️ Ножницы", callback_data=f"rps_join_scissors_{game_id_rps}"),
-                    btn("📄 Бумага", callback_data=f"rps_join_paper_{game_id_rps}"),
-                ]
-            ])
-            next_round_creator_kb = InlineKeyboardMarkup([
-                [
-                    btn(t("btn_rps_rock",     f), callback_data=f"rps_creator_rock_{game_id_rps}"),
-                    btn(t("btn_rps_scissors", f), callback_data=f"rps_creator_scissors_{game_id_rps}"),
-                    btn(t("btn_rps_paper",    f), callback_data=f"rps_creator_paper_{game_id_rps}"),
-                ]
-            ])
-            next_msg = f"{round_info}{_E_SWORDS} <b>Раунд {gdata_rps['round_num']}!</b> Организатор выбирает знак в личке, соперник ждёт..."
-            try:
-                await q.message.edit_text(next_msg + f"\n\n{_E_GAMES} {he(joiner_name)}: выбери знак для следующего раунда:", parse_mode=ParseMode.HTML, reply_markup=next_round_kb)
-            except Exception:
-                pass
-            try:
-                await ctx.bot.send_message(gdata_rps["creator"], next_msg + f"\n\n{_E_GAMES} Выбери знак для раунда {gdata_rps['round_num']}:", parse_mode=ParseMode.HTML, reply_markup=next_round_creator_kb)
-            except Exception:
-                pass
-        return
-        return
 
     # ── УГАДАЙ ЧИСЛО ───────────────────────────────
     if d == "guess_start":
@@ -50557,10 +47612,6 @@ async def on_callback(update: Update, ctx: ContextTypes.DEFAULT_TYPE):
         await handle_checkers_callback(q, d, uid, ctx)
         return
 
-    # ── Морской бой ─────────────────────────────────────────────────────────
-    if any(d.startswith(p) for p in ("bsj|", "bsp|", "bsc|", "bsf|", "bsq|")):
-        await handle_battleship_callback(q, d, uid, ctx)
-        return
 
     # ── Викторина ────────────────────────────────────────────────────────────
     if d.startswith("trv|"):
@@ -50595,10 +47646,6 @@ async def on_callback(update: Update, ctx: ContextTypes.DEFAULT_TYPE):
         if f and await _war_callbacks_v2(q, d_routed, uid, f, ctx):
             return
 
-    # ── Прятки ───────────────────────────────────────────────────────────────
-    if d.startswith("hs_"):
-        if await hs_callbacks(q, d, uid, ctx):
-            return
 
     # ── Антинакрут-панель ────────────────────────────────────────────────────
     if d.startswith("aab_"):
@@ -50621,24 +47668,7 @@ async def on_callback(update: Update, ctx: ContextTypes.DEFAULT_TYPE):
         return
 
     # ── 🔨 Аукцион ──────────────────────────────────────────────────────────
-    if d == "auction_menu":
-        await q.answer()
-        await _show_auction(q, uid, edit=True)
-        return
 
-    if d.startswith("auction_bid_"):
-        await q.answer()
-        try:
-            bid_amount = int(d.removeprefix("auction_bid_"))
-        except ValueError:
-            await q.answer("❌ Неверная сумма.", show_alert=True)
-            return
-        f_fresh = await db_get(uid)
-        if not f_fresh:
-            await q.answer("Сначала /start", show_alert=True)
-            return
-        await _place_bid(q, uid, f_fresh, bid_amount, ctx.bot)
-        return
 
 
     # ── Повтор ква за Stars / монеты ────────────────────────────────────────
@@ -51318,49 +48348,6 @@ async def on_message(update: Update, ctx: ContextTypes.DEFAULT_TYPE):
     # Определяем ключ ввода желания заранее — используется в нескольких местах функции
     _wish_key = f"casino_wish_input_{user.id}" if user else None
 
-    # ── Ввод настроек прятки (приз, лимит, chat_id) ──────────────────────────
-    if user and not is_group(update):
-        hs_pending = ctx.bot_data.get("hs_pending_input", {}).get(user.id)
-        if hs_pending and time.time() - hs_pending.get("ts", 0) < 120:
-            inp_type = hs_pending.get("type", "")
-            if inp_type.startswith("hs_"):
-                ctx.bot_data["hs_pending_input"].pop(user.id, None)
-                setup = ctx.bot_data.setdefault("hs_setup", {}).setdefault(user.id, {})
-                if inp_type == "hs_prize":
-                    setup["prize"] = text[:200]
-                    await update.message.reply_text(
-                        f"✅ Приз: <b>{he(text[:200])}</b>",
-                        parse_mode=ParseMode.HTML,
-                    )
-                elif inp_type == "hs_limit":
-                    try:
-                        n = int(text)
-                        setup["limit"] = n if n > 0 else None
-                        await update.message.reply_text(
-                            f"✅ Лимит: <b>{n if n > 0 else 'без лимита'}</b>",
-                            parse_mode=ParseMode.HTML,
-                        )
-                    except ValueError:
-                        await update.message.reply_text("❌ Введи число")
-                        return
-                elif inp_type == "hs_chat":
-                    try:
-                        cid = int(text.strip())
-                        setup["chat_id"] = cid
-                        await update.message.reply_text(
-                            f"✅ Chat ID: <code>{cid}</code>",
-                            parse_mode=ParseMode.HTML,
-                        )
-                    except ValueError:
-                        await update.message.reply_text("❌ Введи числовой chat_id")
-                        return
-                # Показываем обновлённую панель
-                await update.message.reply_text(
-                    _hs_setup_text(setup),
-                    parse_mode=ParseMode.HTML,
-                    reply_markup=_hs_setup_kb(user.id),
-                )
-                return
     if user and not is_group(update):
         bet_pending = ctx.bot_data.get("bet_pending", {}).get(user.id)
         if bet_pending and time.time() - bet_pending.get("ts", 0) < 120:
@@ -52434,7 +49421,6 @@ async def on_message(update: Update, ctx: ContextTypes.DEFAULT_TYPE):
                     row_hm = []
             if row_hm:
                 rows_hm.append(row_hm)
-            rows_hm.append([btn(t("btn_hm_surrender", f_hm), callback_data=f"hm_give_up_{game_id_hm}")])
             display_hm = " ".join("_" for _ in word_candidate)
             owner_name = f_hm.get("first_name", "?") if f_hm else "?"
             prize_line = f"💰 Приз за победу: <b>{stake_hm}{_E_COIN}</b> · " if stake_hm else ""
@@ -56756,8 +53742,6 @@ async def post_init(app: Application):
         time=dt_time(3, 0, 0, tzinfo=timezone.utc),
         name="plog_purge",
     )
-    # 🔨 Аукцион — проверка завершения каждую минуту
-    app.job_queue.run_repeating(job_auction_check, interval=60, first=60)
     # 🌦️ Болотная погода — каждый день в 07:00 МСК (04:00 UTC)
     app.job_queue.run_daily(
         job_swamp_weather,
@@ -56947,138 +53931,8 @@ async def cmd_ttt5_group(update: Update, ctx: ContextTypes.DEFAULT_TYPE):
         ctx.bot_data[f"ttt5_group_{game_id}"]["msg_id"] = pub_msg.message_id
 
 
-async def cmd_rps_group(update: Update, ctx: ContextTypes.DEFAULT_TYPE):
-    """/rps [ставка] — камень-ножницы-бумага с другим игроком (только в группе)"""
-    if not await group_cmd_guard(update, "rps", ctx):
-        return
-    if update.effective_chat.type == "private":
-        await update.message.reply_text("✊ Групповое КНБ доступно только в чате!\nИспользуй кнопку ✊ КНБ в личке.")
-        return
-    user = update.effective_user
-    f = await db_get(user.id)
-    if not f:
-        await update.message.reply_text("Сначала /start 🐸")
-        return
-    if not f["alive"]:
-        await update.message.reply_text("💀 Твоя лягушка мертва! Используй /revive")
-        return
-    stake = 50
-    if ctx.args:
-        try:
-            stake = int(ctx.args[0])
-            if stake < 10 or stake > 500:
-                await update.message.reply_text("❌ Ставка от 10 до 500 <tg-emoji emoji-id='5341524176039615767'>🪙</tg-emoji>")
-                return
-        except ValueError:
-            await update.message.reply_text("❌ Укажи число: /rps 100")
-            return
-    if f["coins"] < stake:
-        await update.message.reply_text(f"💸 Нужно {stake}{coin_emoji()}!", parse_mode=ParseMode.HTML)
-        return
-    f["coins"] -= stake
-    f["coins_spent"] = f.get("coins_spent", 0) + stake
-    await db_save(f)
-    game_id = f"rps_{user.id}_{int(time.time())}"
-    ctx.bot_data[f"rps_{game_id}"] = {
-        "creator": user.id,
-        "creator_name": user.first_name,
-        "creator_choice": None,
-        "stake": stake,
-        "chat_id": update.effective_chat.id,
-        "msg_id": None,
-    }
-    pub_kb = InlineKeyboardMarkup([
-        [
-            btn("🪨 Камень", callback_data=f"rps_join_rock_{game_id}"),
-            btn("✂️ Ножницы", callback_data=f"rps_join_scissors_{game_id}"),
-            btn("📄 Бумага", callback_data=f"rps_join_paper_{game_id}"),
-        ],
-        [btn("🚫 Отменить вызов", callback_data=f"rps_cancel_{game_id}", style="danger")],
-    ])
-    pub_msg = await update.message.reply_text(
-        f"✊ <b>{he(user.first_name)}</b> бросает вызов на КНБ!\n"
-        f"Ставка: <b>{stake}{coin_emoji()}</b> с каждого\n"
-        f"Победитель заберёт <b>{stake*2}{coin_emoji()}</b>!\n\n"
-        f"<i>Создатель выберёт ход в личке. Выбери свой</i>",
-        parse_mode=ParseMode.HTML,
-        reply_markup=pub_kb,
-    )
-    if pub_msg:
-        ctx.bot_data[f"rps_{game_id}"]["msg_id"] = pub_msg.message_id
-    try:
-        await ctx.bot.send_message(
-            user.id,
-            "✊ <b>Твой вызов опубликован!</b>\nВыбери свой ход (соперник не увидит до конца):",
-            parse_mode=ParseMode.HTML,
-            reply_markup=InlineKeyboardMarkup([[
-                btn("🪨 Камень", callback_data=f"rps_creator_rock_{game_id}"),
-                btn("✂️ Ножницы", callback_data=f"rps_creator_scissors_{game_id}"),
-                btn("📄 Бумага", callback_data=f"rps_creator_paper_{game_id}"),
-            ]]),
-        )
-    except Exception:
-        pass
 
 
-async def cmd_hangman_group(update: Update, ctx: ContextTypes.DEFAULT_TYPE):
-    """/hangman [ставка] — загадай слово для виселицы в чате (через ЛС)"""
-    if not await group_cmd_guard(update, "hangman", ctx):
-        return
-    if update.effective_chat.type == "private":
-        await update.message.reply_text("🪢 Групповая виселица доступна только в чате!")
-        return
-    user = update.effective_user
-    # Ставка от создателя (обязательно, мин 10, макс 500, дефолт 50)
-    stake = 50
-    if ctx.args:
-        try:
-            stake = int(ctx.args[0])
-            if stake < 10 or stake > 500:
-                await update.message.reply_text("❌ Ставка должна быть от 10 до 500 🪙")
-                return
-        except ValueError:
-            await update.message.reply_text("❌ Укажи число: /hangman 100")
-            return
-    creator_f = await db_get(user.id)
-    if not creator_f:
-        await update.message.reply_text("Сначала /start <tg-emoji emoji-id='5341367834935075028'>🐸</tg-emoji>")
-        return
-    if not creator_f["alive"]:
-        await update.message.reply_text("<tg-emoji emoji-id='5341573078537248907'>💀</tg-emoji> Твоя лягушка мертва! Используй /revive")
-        return
-    if creator_f["coins"] < stake:
-        await update.message.reply_text(
-            f"💸 Нужно {stake}{_E_COIN} чтобы выставить приз, у тебя {creator_f['coins']}!",
-            parse_mode=ParseMode.HTML,
-        )
-        return
-    # Списываем ставку сразу
-    creator_f["coins"] -= stake
-    creator_f["coins_spent"] = creator_f.get("coins_spent", 0) + stake
-    await db_save(creator_f)
-    try:
-        await ctx.bot.send_message(
-            user.id,
-            f"🪢 <b>Загадай слово для виселицы!</b>\n\n"
-            f"💰 Твоя ставка: <b>{stake}{_E_COIN}</b> — победитель забирает всё!\n\n"
-            "Напиши одно слово на русском языке (только буквы, от 3 до 20).\n"
-            "Бот опубликует игру в чат, и все смогут угадывать.\n\n"
-            "<i>Просто отправь слово в этот диалог:</i>",
-            parse_mode=ParseMode.HTML,
-        )
-        ctx.user_data[f"hm_create_{user.id}"] = {
-            "chat_id": update.effective_chat.id,
-            "msg_id": update.message.message_id,
-            "stake": stake,
-        }
-        await update.message.reply_text("📨 Проверь личку — там нужно написать слово!")
-    except Forbidden:
-        # Возвращаем монеты если не смогли открыть ЛС
-        creator_f2 = await db_get(user.id)
-        if creator_f2:
-            creator_f2["coins"] += stake
-            await db_save(creator_f2)
-        await update.message.reply_text("❌ Сначала напиши боту в личку — нажми /start там")
 
 
 
@@ -60316,9 +57170,7 @@ async def cmd_games(update: Update, ctx: ContextTypes.DEFAULT_TYPE):
         "🎮 <b>Игры — все команды</b>\n\n"
         "<b>🕹 Одиночные (работают везде):</b>\n"
         "• /checkers — ♟️ Шашки (vs бот)\n"
-        "• /bs — 🚢 Морской бой (vs бот)\n"
         "• /casino — 🎲 Казино\n"
-        "• /hangman — 🪢 Виселица\n"
         "• /ttt — ❌ Крестики-нолики vs бот\n"
         "• /ttt5 — ❌ Крестики-нолики 5×5 vs бот\n"
         "• /duel — ⚔️ Дуэль (кубик)\n\n"
@@ -60326,11 +57178,8 @@ async def cmd_games(update: Update, ctx: ContextTypes.DEFAULT_TYPE):
     group_games = (
         "<b>👥 Мультиплеер (в чате со ставкой):</b>\n"
         "• /checkers [ставка] — ♟️ Шашки vs игрок\n"
-        "• /bs [ставка] — 🚢 Морской бой vs игрок\n"
         "• /ttt [ставка] — ❌ Крестики-нолики 3×3\n"
         "• /ttt5 [ставка] — ❌ Крестики-нолики 5×5\n"
-        "• /rps [ставка] — ✊ Камень-ножницы-бумага\n"
-        "• /hangman [ставка] — 🪢 Виселица в чате\n"
         "• /duel [@user] [ставка] — ⚔️ Дуэль\n\n"
     ) if is_group else (
         "<b>👥 Мультиплеер:</b> доступны в группах!\n"
@@ -60348,7 +57197,6 @@ async def cmd_games(update: Update, ctx: ContextTypes.DEFAULT_TYPE):
     kb = InlineKeyboardMarkup([
         [
             btn("♟️ Шашки", callback_data="checkers_menu", style="primary"),
-            btn("🚢 Морской бой", callback_data="bs_menu", style="primary"),
         ],
         [
             btn("🎮 Все игры", callback_data="menu_games"),
@@ -60929,615 +57777,34 @@ async def handle_checkers_callback(q, d, uid, ctx):
 #    🟦 = промах | 🟨 = попал (часть корабля жива) | 🟥 = потопил
 # ══════════════════════════════════════════════════════════════════════════════
 
-_BS_BOT_ID = -999  # Специальный ID бота-соперника
-
-def _bs_bot_place(size: int, max_ships: int) -> set:
-    """Случайно расставляет max_ships клеток для бота."""
-    placed: set = set()
-    attempts = 0
-    while len(placed) < max_ships and attempts < 10000:
-        attempts += 1
-        r, c = random.randrange(size), random.randrange(size)
-        placed.add((r, c))
-    return placed
-
-def _bs_bot_shoot(ships_opp: dict, shots_bot: dict, size: int) -> tuple:
-    """
-    ИИ бота: если есть незатопленные попадания — добивает соседние клетки.
-    Иначе — случайный ход по непроверенным клеткам (с шахматным паттерном).
-    """
-    # Найти незатопленные попавшие клетки
-    hit_cells = [c for c, s in shots_bot.items() if s == "hit"]
-    if hit_cells:
-        # Попробовать соседей первого попадания
-        neighbors = []
-        for (hr, hc) in hit_cells:
-            for dr, dc in [(0,1),(0,-1),(1,0),(-1,0)]:
-                nb = (hr+dr, hc+dc)
-                if 0 <= nb[0] < size and 0 <= nb[1] < size and nb not in shots_bot:
-                    neighbors.append(nb)
-        if neighbors:
-            return random.choice(neighbors)
-    # Шахматный паттерн: сначала клетки с (r+c) % 2 == 0
-    unshot_chess = [(r, c) for r in range(size) for c in range(size)
-                    if (r, c) not in shots_bot and (r + c) % 2 == 0]
-    if unshot_chess:
-        return random.choice(unshot_chess)
-    # Все остальные
-    unshot = [(r, c) for r in range(size) for c in range(size) if (r, c) not in shots_bot]
-    return random.choice(unshot) if unshot else (0, 0)
 
 
-def _bs_groups(placed: set) -> dict:
-    """BFS: вычисляет связные компоненты (корабли). Возвращает {(r,c): group_id}."""
-    visited: dict = {}
-    gid = 0
-    for cell in sorted(placed):
-        if cell in visited:
-            continue
-        gid += 1
-        queue = [cell]
-        while queue:
-            cur = queue.pop()
-            if cur in visited:
-                continue
-            visited[cur] = gid
-            r, c = cur
-            for dr, dc in [(0, 1), (0, -1), (1, 0), (-1, 0)]:
-                nb = (r + dr, c + dc)
-                if nb in placed and nb not in visited:
-                    queue.append(nb)
-    return visited
 
 
-def _bs_cell_state(ships: dict, shots: dict, r: int, c: int):
-    """Вычисляет визуальное состояние клетки вражеского поля.
-    Возвращает: 'unseen'|'miss'|'hit'|'sunk'
-    """
-    cell = (r, c)
-    if cell not in shots:
-        return "unseen"
-    if shots[cell] == "miss":
-        return "miss"
-    # Попадание — проверяем утоплен ли корабль
-    gid = ships.get(cell)
-    if not gid:
-        return "hit"
-    # Все клетки этого корабля подбиты?
-    ship_cells = [k for k, g in ships.items() if g == gid]
-    if all(k in shots and shots[k] == "hit" for k in ship_cells):
-        return "sunk"
-    return "hit"
 
 
-_BS_EMOJI = {"unseen": "⬜", "miss": "🟦", "hit": "🟨", "sunk": "🟥"}
-_BS_COLS_MAP = {6: "ABCDEF", 4: "ABCD"}
 
 
-def _bs_place_kb(gid: str, placed: set, size: int, max_ships: int) -> InlineKeyboardMarkup:
-    """Клавиатура расстановки кораблей: доска без текстового рендера.
-    🟩 = выбранная клетка (корабль), ⬜ = пусто. Шапка — буквы колонок."""
-    COLS = _BS_COLS_MAP[size]
-    rows = []
-    # Строка-заголовок с буквами колонок
-    header = [btn(COLS[c], callback_data="noop") for c in range(size)]
-    rows.append(header)
-    for r in range(size):
-        row = []
-        for c in range(size):
-            cell = (r, c)
-            lbl = "🟩" if cell in placed else "⬜"
-            row.append(btn(lbl, callback_data=f"bsp|{gid}|{r}|{c}"))
-        rows.append(row)
-    count = len(placed)
-    if count == max_ships:
-        rows.append([btn("✅ Готово", callback_data=f"bsc|{gid}", style="success")])
-    else:
-        rows.append([btn(f"🟩 Выбрано {count}/{max_ships}", callback_data="noop")])
-    rows.append([btn("🚫 Отменить вызов", callback_data=f"bsq|{gid}", style="danger")])
-    return InlineKeyboardMarkup(rows)
 
 
-def _bs_fire_kb(gid: str, ships: dict, shots: dict, size: int, lang: str = "ru") -> InlineKeyboardMarkup:
-    """Клавиатура выстрела — поле противника с шапкой колонок.
-    ⬜ = не стреляли (тапни!), 🟦 = промах, 🟨 = попал, 🟥 = потопил."""
-    COLS = _BS_COLS_MAP[size]
-    rows = []
-    # Шапка: номер строки + буквы колонок
-    header = [btn("·", callback_data="noop")]
-    header += [btn(COLS[c], callback_data="noop") for c in range(size)]
-    rows.append(header)
-    for r in range(size):
-        # Первая кнопка в строке — номер строки
-        row = [btn(str(r + 1), callback_data="noop")]
-        for c in range(size):
-            state = _bs_cell_state(ships, shots, r, c)
-            if state == "unseen":
-                lbl = "⬜"
-                cb = f"bsf|{gid}|{r}|{c}"
-            else:
-                lbl = _BS_EMOJI[state]
-                cb = "noop"
-            row.append(btn(lbl, callback_data=cb))
-        rows.append(row)
-    rows.append([btn(t("chk_surrender", lang), callback_data=f"bsq|{gid}", style="danger")])
-    return InlineKeyboardMarkup(rows)
 
 
-def _bs_render_fire(ships: dict, shots: dict, size: int) -> str:
-    """Текстовый рендер поля противника (для подписи над клавиатурой)."""
-    COLS = _BS_COLS_MAP[size]
-    lines = ["    " + "  ".join(COLS)]
-    for r in range(size):
-        row = f"{r + 1}  "
-        for c in range(size):
-            row += _BS_EMOJI[_bs_cell_state(ships, shots, r, c)]
-        lines.append(row)
-    return "\n".join(lines)
 
 
-def _bs_render_place(placed: set, size: int) -> str:
-    """Текстовый рендер своего поля во время расстановки."""
-    COLS = _BS_COLS_MAP[size]
-    lines = ["    " + "  ".join(COLS)]
-    for r in range(size):
-        row = f"{r + 1}  "
-        for c in range(size):
-            row += "🟩" if (r, c) in placed else "⬜"
-        lines.append(row)
-    return "\n".join(lines)
 
 
-async def _bs_send_place_pm(gid: str, gd: dict, bot, player: int) -> bool:
-    """Отправляет клавиатуру расстановки в ЛС игроку. Возвращает True если успешно."""
-    uid = gd[f"p{player}"]
-    name = gd[f"p{player}n"]
-    size, ms = gd["size"], gd["max_ships"]
-    placed = gd[f"place{player}"]
-    stake = gd["stake"]
-    kb = _bs_place_kb(gid, placed, size, ms)
-    text = (
-        f"🚢 <b>Морской бой</b> · Банк: {stake * 2}{_E_COIN} {size}×{size}\n"
-        f"⚓ {_html.escape(gd['p1n'])} vs ⚓ {_html.escape(gd['p2n'])}\n\n"
-        f"📍 <b>{_html.escape(name)}</b> — расставь <b>{ms}</b> клеток кораблей.\n"
-        f"Тапни по ячейкам ⬜ → 🟩. Соперник не видит!"
-    )
-    try:
-        msg = await bot.send_message(uid, text, parse_mode=ParseMode.HTML, reply_markup=kb)
-        gd[f"place_msg{player}"] = msg.message_id
-        return True
-    except Forbidden:
-        return False
 
 
-async def _bs_start_game(gid: str, gd: dict, message, bot) -> None:
-    """Запускает фазу расстановки для P1 — отправляет клавиатуру в ЛС."""
-    gd["phase"] = "place1"
-    size = gd["size"]
-    stake = gd["stake"]
-    ok = await _bs_send_place_pm(gid, gd, bot, 1)
-    if not ok:
-        # Не смогли отправить ЛС — возвращаем ставки обоим
-        for pid in (gd["p1"], gd["p2"]):
-            pf = await db_get(pid)
-            if pf: pf["coins"] += stake; await db_save(pf)
-        try:
-            await message.edit_text(
-                f"{_E_CROSS} <b>{_html.escape(gd['p1n'])}</b> не открыл личку боту!\n"
-                f"Ставки возвращены. Сначала напиши /start боту в ЛС, потом снова /bs.",
-                parse_mode=ParseMode.HTML,
-            )
-        except Exception:
-            pass
-        return
-    try:
-        await message.edit_text(
-            f"🚢 <b>Морской бой</b> · Банк: {stake * 2}{_E_COIN} {size}×{size}\n"
-            f"⚓ {_html.escape(gd['p1n'])} vs ⚓ {_html.escape(gd['p2n'])}\n\n"
-            f"📨 <b>{_html.escape(gd['p1n'])}</b> расставляет флот в личке…\n"
-            f"<i>Соперник не видит расстановку</i>",
-            parse_mode=ParseMode.HTML,
-        )
-    except Exception:
-        pass
 
 
-async def cmd_battleship(update: Update, ctx: ContextTypes.DEFAULT_TYPE):
-    """/bs [ставка] — морской бой 6×6"""
-    await _bs_cmd(update, ctx, size=6, max_ships=8)
 
 
-async def cmd_bsmini(update: Update, ctx: ContextTypes.DEFAULT_TYPE):
-    """/bsmini [ставка] — мини морской бой 4×4"""
-    await _bs_cmd(update, ctx, size=4, max_ships=4)
 
 
-async def _bs_cmd(update: Update, ctx: ContextTypes.DEFAULT_TYPE, size: int, max_ships: int):
-    cmd = "bs" if size == 6 else "bsmini"
-    if not await group_cmd_guard(update, cmd): return
-    user = update.effective_user
-    args = update.message.text.split()
-    stake = 50
-    if len(args) > 1:
-        try:
-            stake = int(args[1])
-            if stake < 10 or stake > 500:
-                await update.message.reply_text("❌ Ставка от 10 до 500 🪙"); return
-        except ValueError:
-            await update.message.reply_text(f"{_E_CROSS} Укажи число: /{cmd} 100"); return
-    f = await db_get(user.id)
-    if not f: await update.message.reply_text("Сначала /start 🐸"); return
-    if not f.get("alive", 1):
-        await update.message.reply_text("💀 Лягушка мертва! /revive"); return
-    if f["coins"] < stake:
-        await update.message.reply_text(f"💸 Нужно {stake}🪙, у тебя {f['coins']}🪙!"); return
-    # Ставка списывается сразу при создании вызова
-    f["coins"] -= stake
-    f["coins_spent"] = f.get("coins_spent", 0) + stake
-    await db_save(f)
-    gid = _new_gid(user.id)
-    ctx.bot_data[f"bs2|{gid}"] = {
-        "p1": user.id, "p1n": user.first_name, "p2": None, "p2n": None,
-        "size": size, "max_ships": max_ships,
-        "place1": set(), "place2": set(),
-        "ships1": {}, "ships2": {},
-        "shots1": {}, "shots2": {},
-        "phase": "join", "turn": 1,
-        "stake": stake, "chat_id": update.effective_chat.id,
-    }
-    kb = InlineKeyboardMarkup([
-        [btn(f"🚢 Принять вызов ({stake}🪙)", callback_data=f"bsj|{gid}", style="success")],
-        [btn("🚫 Отменить вызов", callback_data=f"bsq|{gid}", style="danger")],
-    ])
-    msg = await update.message.reply_text(
-        f"🚢 <b>{_html.escape(user.first_name)}</b> вызывает на морской бой {size}×{size}!\n"
-        f"Ставка: <b>{stake}{_E_COIN}</b> с каждого · банк: <b>{stake * 2}{_E_COIN}</b>\n\n"
-        f"⬜ = пусто · 🟩 = корабль (расстановка в личке)\n"
-        f"🟦 = промах · 🟨 = попал · 🟥 = потопил",
-        parse_mode=ParseMode.HTML, reply_markup=kb,
-    )
-    if msg:
-        ctx.bot_data[f"bs2|{gid}"]["pub_msg_id"] = msg.message_id
 
 
-async def handle_battleship_callback(q, d, uid, ctx):
-    parts = d.split("|")
-    action = parts[0]
 
-    # ── Присоединение ────────────────────────────────────────────────────────
-    if action == "bsj":
-        gid = parts[1]
-        gd = ctx.bot_data.get(f"bs2|{gid}")
-        if not gd: await q.answer("Игра не найдена", show_alert=True); return
-        if gd["phase"] != "join": await q.answer("Игра уже началась!", show_alert=True); return
-        if uid == gd["p1"]: await q.answer("Нельзя играть с собой", show_alert=True); return
-        f2 = await db_get(uid)
-        if not f2: await q.answer("Сначала /start 🐸", show_alert=True); return
-        if not f2.get("alive", 1): await q.answer("💀 Лягушка мертва! /revive", show_alert=True); return
-        stake = gd["stake"]
-        if f2["coins"] < stake:
-            await q.answer((f"Нужно {stake}🪙 для принятия вызова")[:200], show_alert=True); return
-        f2["coins"] -= stake
-        f2["coins_spent"] = f2.get("coins_spent", 0) + stake
-        await db_save(f2)
-        gd["p2"] = uid; gd["p2n"] = f2.get("first_name", "?")
-        await q.answer(f"✅ Принято. Ставка {stake}🪙 внесена.")
-        await _bs_start_game(gid, gd, q.message, ctx.bot)
-        return
 
-    # ── Расстановка: клик по ячейке ──────────────────────────────────────────
-    if action == "bsp":
-        gid, r, c = parts[1], int(parts[2]), int(parts[3])
-        gd = ctx.bot_data.get(f"bs2|{gid}")
-        if not gd: await q.answer("Игра не найдена", show_alert=True); return
-        if gd["phase"] == "place1":
-            if uid != gd["p1"]: await q.answer((f"Сейчас расставляет {gd['p1n']}!")[:200], show_alert=True); return
-            placed = gd["place1"]; player = 1
-        elif gd["phase"] == "place2":
-            if uid != gd["p2"]: await q.answer((f"Сейчас расставляет {gd['p2n']}!")[:200], show_alert=True); return
-            placed = gd["place2"]; player = 2
-        else:
-            await q.answer("Расстановка уже закончена", show_alert=True); return
-        cell = (r, c)
-        if cell in placed:
-            placed.discard(cell)
-        else:
-            if len(placed) < gd["max_ships"]:
-                placed.add(cell)
-            else:
-                await q.answer((f"Уже {gd['max_ships']} клеток. Сними лишнюю или нажми Готово.")[:200], show_alert=True); return
-        size, ms = gd["size"], gd["max_ships"]
-        stake = gd["stake"]
-        p_name = gd[f"p{player}n"]
-        kb = _bs_place_kb(gid, placed, size, ms)
-        await q.answer()
-        try:
-            await q.message.edit_text(
-                f"🚢 <b>Морской бой</b> · Банк: {stake * 2}{_E_COIN} {size}×{size}\n"
-                f"⚓ {_html.escape(gd['p1n'])} vs ⚓ {_html.escape(gd['p2n'])}\n\n"
-                f"📍 <b>{_html.escape(p_name)}</b> расставляет флот.\n"
-                f"Выбрано: {len(placed)}/{ms} · тапни 🟩 чтобы убрать",
-                parse_mode=ParseMode.HTML, reply_markup=kb,
-            )
-        except Exception:
-            pass
-        return
-
-    # ── Подтверждение расстановки ────────────────────────────────────────────
-    if action == "bsc":
-        gid = parts[1]
-        gd = ctx.bot_data.get(f"bs2|{gid}")
-        if not gd: await q.answer("Игра не найдена", show_alert=True); return
-        size, ms = gd["size"], gd["max_ships"]
-        chat_id = gd["chat_id"]
-        stake = gd["stake"]
-        if gd["phase"] == "place1":
-            if uid != gd["p1"]: await q.answer("Это не твоя очередь!", show_alert=True); return
-            if len(gd["place1"]) != ms: await q.answer((f"Нужно ровно {ms} клеток!")[:200], show_alert=True); return
-            gd["ships1"] = _bs_groups(gd["place1"])
-
-            # ── Режим против бота: сразу начинаем бой ──────────────────────
-            if gd.get("bot_game"):
-                gd["phase"] = "battle"; gd["turn"] = 1
-                await q.answer("✅ Флот расставлен. Бой начинается")
-                ships_opp = gd["ships2"]
-                shots_cur = gd["shots1"]
-                kb = _bs_fire_kb(gid, ships_opp, shots_cur, size)
-                try:
-                    await q.message.edit_text(
-                        f"🚢 <b>Морской бой vs {_E_BOT} Бот</b> · {size}×{size}\n\n"
-                        f"💥 Твой ход — тапни ⬜ чтобы выстрелить!",
-                        parse_mode=ParseMode.HTML, reply_markup=kb,
-                    )
-                except Exception: pass
-                return
-
-            gd["phase"] = "place2"
-            await q.answer("✅ Флот расставлен")
-            try:
-                await q.message.edit_text(
-                    f"✅ Флот расставлен! Ждём пока <b>{_html.escape(gd['p2n'])}</b> расставит свои корабли…",
-                    parse_mode=ParseMode.HTML,
-                )
-            except Exception:
-                pass
-            # Обновляем публичное сообщение
-            try:
-                await ctx.bot.edit_message_text(
-                    f"🚢 <b>Морской бой</b> · Банк: {stake * 2}{_E_COIN} {size}×{size}\n"
-                    f"⚓ {_html.escape(gd['p1n'])} vs ⚓ {_html.escape(gd['p2n'])}\n\n"
-                    f"✅ {_html.escape(gd['p1n'])} расставил флот!\n"
-                    f"📨 <b>{_html.escape(gd['p2n'])}</b> расставляет флот в личке…",
-                    chat_id=chat_id,
-                    message_id=gd.get("pub_msg_id"),
-                    parse_mode=ParseMode.HTML,
-                )
-            except Exception:
-                pass
-            ok = await _bs_send_place_pm(gid, gd, ctx.bot, 2)
-            if not ok:
-                for pid in (gd["p1"], gd["p2"]):
-                    pf = await db_get(pid)
-                    if pf: pf["coins"] += stake; await db_save(pf)
-                ctx.bot_data.pop(f"bs2|{gid}", None)
-                try:
-                    await ctx.bot.send_message(
-                        chat_id,
-                        f"{_E_CROSS} <b>{_html.escape(gd['p2n'])}</b> не открыл личку боту! Игра отменена, ставки возвращены.\n"
-                        "Напиши /start боту в ЛС, потом снова /bs.",
-                        parse_mode=ParseMode.HTML,
-                    )
-                except Exception:
-                    pass
-            return
-        elif gd["phase"] == "place2":
-            if uid != gd["p2"]: await q.answer("Это не твоя очередь!", show_alert=True); return
-            if len(gd["place2"]) != ms: await q.answer((f"Нужно ровно {ms} клеток!")[:200], show_alert=True); return
-            gd["ships2"] = _bs_groups(gd["place2"])
-            gd["phase"] = "battle"; gd["turn"] = 1
-            await q.answer("✅ Флот расставлен. Бой начинается")
-            try:
-                await q.message.edit_text(
-                    "✅ Флот расставлен! Следи за сообщением в чате.",
-                    parse_mode=ParseMode.HTML,
-                )
-            except Exception:
-                pass
-            ships_opp = gd["ships2"]
-            shots_cur = gd["shots1"]
-            kb = _bs_fire_kb(gid, ships_opp, shots_cur, size)
-            try:
-                await ctx.bot.send_message(
-                    chat_id,
-                    f"🚢 <b>Бой начался!</b> · Банк: {stake * 2}{_E_COIN}\n"
-                    f"⚓ {_html.escape(gd['p1n'])} vs ⚓ {_html.escape(gd['p2n'])}\n\n"
-                    f"💥 Ход <b>{_html.escape(gd['p1n'])}</b> — тапни ⬜ чтобы выстрелить!",
-                    parse_mode=ParseMode.HTML, reply_markup=kb,
-                )
-            except Exception:
-                pass
-            return
-        return
-
-    # ── Выстрел ──────────────────────────────────────────────────────────────
-    if action == "bsf":
-        gid, r, c = parts[1], int(parts[2]), int(parts[3])
-        gd = ctx.bot_data.get(f"bs2|{gid}")
-        if not gd: await q.answer("Игра не найдена", show_alert=True); return
-        if gd["phase"] != "battle": await q.answer("Игра ещё не началась!", show_alert=True); return
-        cur_p = gd["p1"] if gd["turn"] == 1 else gd["p2"]
-        if uid != cur_p: await q.answer("Сейчас не твой ход!", show_alert=True); return
-        shots = gd["shots1"] if gd["turn"] == 1 else gd["shots2"]
-        ships_opp = gd["ships2"] if gd["turn"] == 1 else gd["ships1"]
-        cell = (r, c)
-        if cell in shots: await q.answer("Сюда уже стреляли", show_alert=True); return
-        hit = cell in ships_opp
-        shots[cell] = "hit" if hit else "miss"
-        size = gd["size"]
-        total_ship_cells = len(ships_opp)
-        hits_count = sum(1 for s in shots.values() if s == "hit")
-        stake = gd["stake"]
-        is_bot_game = gd.get("bot_game", False)
-        cur_name = gd["p1n"] if gd["turn"] == 1 else gd["p2n"]
-        opp_name = gd["p2n"] if gd["turn"] == 1 else gd["p1n"]
-        state = _bs_cell_state(ships_opp, shots, r, c)
-
-        if hits_count >= total_ship_cells:
-            # ── Победа игрока ──────────────────────────────────────────────
-            w_id = gd["p1"] if gd["turn"] == 1 else gd["p2"]
-            prize = stake * 2
-            _bs_chat_id = gd.get("chat_id") or 0
-            if not is_bot_game:
-                prize = await apply_chat_tax(_bs_chat_id, w_id, prize, ctx)
-                w_f = await db_get(w_id)
-                if w_f: w_f["coins"] += prize; await db_save(w_f)
-                await log_chat_activity(_bs_chat_id, w_id, cur_name, "морской бой победа", prize)
-            ctx.bot_data.pop(f"bs2|{gid}", None)
-            await q.answer(f"🏆 {cur_name} потопил весь флот")
-            board_txt = _bs_render_fire(ships_opp, shots, size)
-            if is_bot_game:
-                try:
-                    await q.message.edit_text(
-                        f"🚢 <b>Морской бой vs {_E_BOT} Бот</b>\n\n"
-                        f"{_E_TROPHY} <b>Ты победил!</b> Весь флот потоплен!\n\n{board_txt}",
-                        parse_mode=ParseMode.HTML,
-                    )
-                except Exception: pass
-            else:
-                try:
-                    await q.message.edit_text(
-                        f"🚢 <b>Морской бой завершён!</b>\n"
-                        f"⚓ {_html.escape(gd['p1n'])} vs ⚓ {_html.escape(gd['p2n'])}\n\n"
-                        f"{_E_TROPHY} <b>{_html.escape(cur_name)}</b> потопил весь флот!\n"
-                        f"+{prize}{_E_COIN}",
-                        parse_mode=ParseMode.HTML,
-                    )
-                except Exception: pass
-            return
-
-        if state == "sunk":
-            result_txt = "🟥 <b>Потопил корабль!</b> Стреляй ещё."
-            await q.answer("🟥 Потопил")
-        elif state == "hit":
-            result_txt = "🟨 <b>Попал!</b> Стреляй ещё."
-            await q.answer("🟨 Попал")
-        else:
-            result_txt = f"🟦 <b>Промах.</b> Ход → <b>{_html.escape(opp_name)}</b>"
-            await q.answer("🟦 Промах")
-        if state == "miss":
-            gd["turn"] = 2 if gd["turn"] == 1 else 1
-
-        # ── Ход бота после промаха игрока ────────────────────────────────
-        if is_bot_game and gd["turn"] == 2:
-            bot_log = []
-            # Бот стреляет пока попадает
-            while True:
-                br, bc = _bs_bot_shoot(gd["ships1"], gd["shots2"], size)
-                b_cell = (br, bc)
-                b_hit = b_cell in gd["ships1"]
-                gd["shots2"][b_cell] = "hit" if b_hit else "miss"
-                b_state = _bs_cell_state(gd["ships1"], gd["shots2"], br, bc)
-                if b_state == "sunk":
-                    bot_log.append("🟥 потопил")
-                elif b_state == "hit":
-                    bot_log.append("🟨 попал")
-                else:
-                    bot_log.append("🟦 промах")
-                # Проверка: бот победил?
-                b_hits = sum(1 for s in gd["shots2"].values() if s == "hit")
-                if b_hits >= len(gd["ships1"]):
-                    ctx.bot_data.pop(f"bs2|{gid}", None)
-                    board_txt2 = _bs_render_fire(gd["ships1"], gd["shots2"], size)
-                    try:
-                        await q.message.edit_text(
-                            f"🚢 <b>Морской бой vs {_E_BOT} Бот</b>\n\n"
-                            f"{_E_SKULL} <b>Бот потопил твой флот!</b>\n"
-                            f"Ходы бота: {', '.join(bot_log)}\n\n{board_txt2}",
-                            parse_mode=ParseMode.HTML,
-                        )
-                    except Exception: pass
-                    return
-                if b_state == "miss":
-                    break  # промах — ход переходит к игроку
-            gd["turn"] = 1
-            # Строим доску для следующего хода игрока
-            bot_summary = f"{_E_BOT} Бот: {', '.join(bot_log)}\n" if bot_log else ""
-            next_shots = gd["shots1"]
-            next_ships_opp = gd["ships2"]
-            kb = _bs_fire_kb(gid, next_ships_opp, next_shots, size)
-            board_txt3 = _bs_render_fire(next_ships_opp, next_shots, size)
-            try:
-                await q.message.edit_text(
-                    f"🚢 <b>Морской бой vs {_E_BOT} Бот</b> · {size}×{size}\n\n"
-                    f"{result_txt}\n{bot_summary}\n"
-                    f"💥 Твой ход — тапни ⬜!\n\n{board_txt3}",
-                    parse_mode=ParseMode.HTML, reply_markup=kb,
-                )
-            except Exception: pass
-            return
-
-        # ── Обычный ход (PvP или продолжение после попадания) ─────────────
-        next_shooter = gd["turn"]
-        next_name = gd["p1n"] if next_shooter == 1 else gd["p2n"]
-        next_shots = gd["shots1"] if next_shooter == 1 else gd["shots2"]
-        next_ships_opp = gd["ships2"] if next_shooter == 1 else gd["ships1"]
-        kb = _bs_fire_kb(gid, next_ships_opp, next_shots, size)
-        if is_bot_game:
-            board_txt4 = _bs_render_fire(next_ships_opp, next_shots, size)
-            try:
-                await q.message.edit_text(
-                    f"🚢 <b>Морской бой vs {_E_BOT} Бот</b> · {size}×{size}\n\n"
-                    f"{result_txt}\n\n"
-                    f"💥 Стреляй ещё — тапни ⬜!\n\n{board_txt4}",
-                    parse_mode=ParseMode.HTML, reply_markup=kb,
-                )
-            except Exception: pass
-        else:
-            try:
-                await q.message.edit_text(
-                    f"🚢 <b>Морской бой</b> · Банк: {stake * 2}{_E_COIN}\n"
-                    f"⚓ {_html.escape(gd['p1n'])} vs ⚓ {_html.escape(gd['p2n'])}\n\n"
-                    f"{result_txt}\n"
-                    f"💥 Ход <b>{_html.escape(next_name)}</b> — тапни ⬜!",
-                    parse_mode=ParseMode.HTML, reply_markup=kb,
-                )
-            except Exception: pass
-        return
-
-    # ── Сдаться / Отменить вызов ─────────────────────────────────────────────
-    if action == "bsq":
-        gid = parts[1]
-        gd = ctx.bot_data.pop(f"bs2|{gid}", None)
-        if not gd: await q.answer("Игра не найдена", show_alert=True); return
-        stake = gd["stake"]
-        if gd["p2"] is None:
-            # Отмена до принятия — только создатель
-            if uid != gd["p1"]: await q.answer("Только создатель может отменить!", show_alert=True); return
-            p1f = await db_get(gd["p1"])
-            if p1f: p1f["coins"] += stake; await db_save(p1f)
-            await q.answer(f"Вызов отменён, {stake}🪙 возвращено.")
-            try: await q.message.edit_text(f"🚢 Вызов отменён. +{stake}{_E_COIN} возвращено.", parse_mode=ParseMode.HTML)
-            except Exception: pass
-            return
-        # Сдача во время игры
-        is_p1 = uid == gd["p1"]
-        w_id = gd["p2"] if is_p1 else gd["p1"]
-        w_name = gd["p2n"] if is_p1 else gd["p1n"]
-        l_name = gd["p1n"] if is_p1 else gd["p2n"]
-        prize = stake * 2
-        w_f = await db_get(w_id)
-        if w_f: w_f["coins"] += prize; await db_save(w_f)
-        await q.answer()
-        try:
-            await q.message.edit_text(
-                f"🚢 <b>Морской бой</b>\n"
-                f"🏳 <b>{_html.escape(l_name)}</b> сдался!\n"
-                f"{_E_TROPHY} Победа <b>{_html.escape(w_name)}</b>! +{prize}{_E_COIN}",
-                parse_mode=ParseMode.HTML,
-            )
-        except Exception:
-            pass
-        return
 
 
 
@@ -71371,454 +67638,31 @@ async def cmd_m_new(update: Update, ctx: ContextTypes.DEFAULT_TYPE):
 # ══════════════════════════════════════════════════════════════════════════════
 
 # ══════════════════════════════════════════════════════════════════════════════
-# 🔨  АУКЦИОН ОБЛИКОВ
-#
-#  Механика:
-#    - Ставка списывается СРАЗУ при подаче
-#    - Победитель (макс. ставка) получает облик, его монеты сгорают
-#    - Проигравшие получают 60% ставки обратно (40% сгорает)
-#    - При равных ставках — кто раньше поставил
-#    - Повторная ставка от того же игрока — суммируется к предыдущей
-#
-#  Команды:
-#    /auction_start <облик> <часы> — запустить аукцион (только админ)
-#    /auction_end                  — досрочно завершить (только админ)
-#    /auction                      — показать аукцион
-#    /bid <сумма>                  — сделать ставку (в ЛС)
-#    callback: auction_menu, auction_bid_<сумма>
-# ══════════════════════════════════════════════════════════════════════════════
-
-async def _auction_get_active() -> dict | None:
-    async with aiosqlite.connect(DB_PATH) as db:
-        db.row_factory = aiosqlite.Row
-        async with db.execute(
-            "SELECT * FROM auctions WHERE status='active' ORDER BY id DESC LIMIT 1"
-        ) as c:
-            row = await c.fetchone()
-    return dict(row) if row else None
-
-async def _auction_top_bids(auction_id: int, n: int = 5) -> list[dict]:
-    """Возвращает топ ставок — по одной от каждого игрока."""
-    async with aiosqlite.connect(DB_PATH) as db:
-        db.row_factory = aiosqlite.Row
-        async with db.execute(
-            """SELECT user_id, SUM(amount) as amount, MIN(placed_at) as placed_at
-               FROM auction_bids WHERE auction_id=?
-               GROUP BY user_id
-               ORDER BY amount DESC, placed_at ASC
-               LIMIT ?""",
-            (auction_id, n)
-        ) as c:
-            rows = await c.fetchall()
-    return [dict(r) for r in rows]
-
-async def _auction_user_total(auction_id: int, uid: int) -> int:
-    async with aiosqlite.connect(DB_PATH) as db:
-        async with db.execute(
-            "SELECT COALESCE(SUM(amount),0) FROM auction_bids WHERE auction_id=? AND user_id=?",
-            (auction_id, uid)
-        ) as c:
-            row = await c.fetchone()
-    return row[0] or 0
-
-def _auction_skin_line(skin: str) -> str:
-    """Строка с отображением облика — premium emoji + кликабельная ссылка."""
-    return slink_html(skin)
-
-def _auction_kb(auction_id: int, my_bid: int, top1: int) -> InlineKeyboardMarkup:
-    """Клавиатура аукциона с быстрыми ставками."""
-    beats = top1 + 100 if top1 else 100
-    rows = []
-    if my_bid:
-        rows.append([btn(f"➕ Добавить 500🪙 (итого {my_bid+500:,})", callback_data=f"auction_bid_500", style="primary")])
-        rows.append([btn(f"➕ Добавить 1 000🪙 (итого {my_bid+1000:,})", callback_data="auction_bid_1000")])
-        rows.append([btn(f"➕ Добавить 5 000🪙 (итого {my_bid+5000:,})", callback_data="auction_bid_5000")])
-    else:
-        rows.append([btn(f"🔨 Поставить {beats:,}🪙", callback_data=f"auction_bid_{beats}", style="primary")])
-        rows.append([btn("🔨 Поставить 1 000🪙", callback_data="auction_bid_1000")])
-        rows.append([btn("🔨 Поставить 5 000🪙", callback_data="auction_bid_5000")])
-    rows.append([
-        btn("🔄 Обновить", callback_data="auction_menu"),
-        btn("◀️ Главное меню", callback_data="refresh"),
-    ])
-    return InlineKeyboardMarkup(rows)
-
-async def _auction_text(auction: dict, uid: int) -> str:
-    skin = auction["skin"]
-    info = SKINS.get(skin, {})
-    rarity_lbl = R_NAME.get(info.get("rarity", "common"), "?")
-    rarity_icon = R_ICON.get(info.get("rarity", "common"), "⚪")
-    left_s = max(0, int(auction["ends_at"] - time.time()))
-    left_h, left_rem = divmod(left_s, 3600)
-    left_m = left_rem // 60
-
-    top = await _auction_top_bids(auction["id"], 3)
-    my_bid = await _auction_user_total(auction["id"], uid)
-
-    medals = ["🥇", "🥈", "🥉"]
-    top_lines = ""
-    for i, b in enumerate(top, 1):
-        bf = await db_get(b["user_id"])
-        bname = fname(bf) if bf else f"uid:{b['user_id']}"
-        you = " ← ты" if b["user_id"] == uid else ""
-        top_lines += f"\n{medals[i-1]} {he(bname)} — {int(b['amount']):,}🪙{you}"
-
-    my_line = f"\n\n💰 Твоя ставка: <b>{my_bid:,}🪙</b>" if my_bid else "\n\n<i>Ты ещё не ставил</i>"
-    burn_note = "\n🏅 Топ-3 по ставкам получают облик\n🔥 Остальные возвращают 60% ставки"
-
-    return (
-        f"{_E_HAMMER} <b>Аукцион</b>\n\n"
-        f"Лот: {_auction_skin_line(skin)}\n"
-        f"Редкость: {rarity_icon} <b>{rarity_lbl}</b>\n\n"
-        f"⏳ До конца: <b>{left_h}ч {left_m}м</b>\n\n"
-        f"<b>Топ-3:</b>{top_lines if top_lines else ' пусто'}"
-        f"{my_line}"
-        f"{burn_note}\n"
-        f"<i>Ставки списываются сразу</i>"
-    )
-
-async def _auction_finish(auction_id: int, bot) -> None:
-    async with aiosqlite.connect(DB_PATH) as db:
-        await db.execute("UPDATE auctions SET status='finished' WHERE id=?", (auction_id,))
-        await db.commit()
-
-    top = await _auction_top_bids(auction_id, 100)
-    async with aiosqlite.connect(DB_PATH) as db:
-        db.row_factory = aiosqlite.Row
-        async with db.execute("SELECT skin FROM auctions WHERE id=?", (auction_id,)) as c:
-            row = await c.fetchone()
-    skin = row["skin"] if row else "?"
-
-    if not top:
-        await announce(bot, f"{_E_HAMMER} Аукцион на {_auction_skin_line(skin)} завершён — ставок не было.")
-        return
-
-    WINNER_SPOTS = 3  # топ-3 получают облик
-    winners = top[:WINNER_SPOTS]
-    losers  = top[WINNER_SPOTS:]
-
-    medals = ["🥇", "🥈", "🥉"]
-
-    # ── Начисляем облик победителям ───────────────────────────────────
-    winner_names = []
-    total_burned = 0
-    for i, w in enumerate(winners):
-        wuid   = w["user_id"]
-        wamount = int(w["amount"])
-        total_burned += wamount  # ставка победителя не возвращается
-        wf = await db_get(wuid)
-        if wf:
-            await db_add_skin(wuid, skin)
-            winner_names.append(fname(wf))
-            try:
-                await bot.send_message(
-                    wuid,
-                    f"{medals[i]} <b>Поздравляем! Ты в топ-{i+1} аукциона!</b>\n\n"
-                    f"Лот: {_auction_skin_line(skin)}\n"
-                    f"Твоя ставка: <b>{wamount:,}{_E_COIN}</b>\n\n"
-                    f"Облик уже добавлен в коллекцию! Надень через /frog → Облики.",
-                    parse_mode=ParseMode.HTML,
-                )
-            except Exception:
-                pass
-        else:
-            winner_names.append(f"uid:{wuid}")
-
-    # Записываем первого победителя в БД
-    if winners:
-        w1 = winners[0]
-        async with aiosqlite.connect(DB_PATH) as db:
-            await db.execute(
-                "UPDATE auctions SET winner_id=?, win_bid=? WHERE id=?",
-                (w1["user_id"], int(w1["amount"]), auction_id)
-            )
-            await db.commit()
-
-    # ── Возвращаем 60% проигравшим ────────────────────────────────────
-    win_top_name = winner_names[0] if winner_names else "?"
-    for loser in losers:
-        luid    = loser["user_id"]
-        lamount = int(loser["amount"])
-        refund  = int(lamount * 0.6)
-        burned  = lamount - refund
-        total_burned += burned
-        # Атомарное начисление возврата — не через db_save чтобы не перезаписать кэш
-        async with aiosqlite.connect(DB_PATH) as _rdb:
-            await _rdb.execute(
-                "UPDATE frogs SET coins = coins + ? WHERE user_id = ?",
-                (refund, luid)
-            )
-            await _rdb.commit()
-        _user_cache.invalidate(luid)
-        lf = await db_get(luid)
-        try:
-            await bot.send_message(
-                luid,
-                f"{_E_HAMMER} <b>Аукцион завершён</b>\n\n"
-                f"Твоя ставка: <b>{lamount:,}{_E_COIN}</b>\n"
-                f"Возврат (60%): <b>+{refund:,}{_E_COIN}</b>\n"
-                f"Сгорело (40%): <b>{burned:,}{_E_COIN}</b>\n\n"
-                f"Победители: {', '.join(he(n) for n in winner_names[:3])}",
-                parse_mode=ParseMode.HTML,
-            )
-        except Exception:
-            pass
-
-    # ── Публичный анонс итогов ────────────────────────────────────────
-    top_lines = ""
-    for i, r in enumerate(top[:5], 1):
-        rf = await db_get(r["user_id"])
-        rname = fname(rf) if rf else f"uid:{r['user_id']}"
-        mark = medals[i-1] if i <= 3 else f"{i}."
-        won = " ✅ облик" if i <= WINNER_SPOTS else ""
-        top_lines += f"\n{mark} {he(rname)} — {int(r['amount']):,}🪙{won}"
-
-    await announce(
-        bot,
-        f"{_E_HAMMER} <b>Аукцион завершён!</b>\n\n"
-        f"Лот: {_auction_skin_line(skin)}\n\n"
-        f"<b>Победители (топ-{WINNER_SPOTS}):</b>{top_lines}\n\n"
-        f"🔥 Сгорело монет: <b>{total_burned:,}🪙</b>",
-    )
 
 
-async def job_auction_check(ctx: ContextTypes.DEFAULT_TYPE) -> None:
-    auction = await _auction_get_active()
-    if not auction:
-        return
-    if time.time() >= auction["ends_at"]:
-        await _auction_finish(auction["id"], ctx.bot)
 
 
-async def _show_auction(target, uid: int, edit: bool = False) -> None:
-    """Показать меню аукциона — Message или CallbackQuery."""
-    auction = await _auction_get_active()
-    if not auction:
-        text = (
-            "🔨 <b>Аукцион</b>\n\n"
-            "Сейчас аукционов нет.\n"
-            "<i>Следи за объявлениями — редкие облики появляются неожиданно</i>"
-        )
-        kb = InlineKeyboardMarkup([[btn("◀️ Назад", callback_data="refresh")]])
-    else:
-        top = await _auction_top_bids(auction["id"], 1)
-        top1 = int(top[0]["amount"]) if top else 0
-        my_bid = await _auction_user_total(auction["id"], uid)
-        text = await _auction_text(auction, uid)
-        kb = _auction_kb(auction["id"], my_bid, top1)
-
-    if edit and hasattr(target, "edit_message_text"):
-        try:
-            await target.edit_message_text(text, parse_mode=ParseMode.HTML, reply_markup=kb)
-        except Exception:
-            pass
-    elif hasattr(target, "reply_text"):
-        await target.reply_text(text, parse_mode=ParseMode.HTML, reply_markup=kb)
-    else:
-        try:
-            await target.edit_message_text(text, parse_mode=ParseMode.HTML, reply_markup=kb)
-        except Exception:
-            if hasattr(target, "message") and target.message:
-                await target.message.reply_text(text, parse_mode=ParseMode.HTML, reply_markup=kb)
 
 
-async def cmd_auction_start(update: Update, ctx: ContextTypes.DEFAULT_TYPE) -> None:
-    user = update.effective_user
-    if user.id not in ADMIN_IDS:
-        await update.message.reply_text("⛔ Только для администраторов.")
-        return
-    args = ctx.args
-    if not args or len(args) < 2:
-        auction_skins = ", ".join(
-            f"{v.get('emoji','')} {k}" for k, v in SKINS.items()
-            if v.get("rarity") in ("rare", "epic", "legendary", "mythic", "secret")
-        )
-        await update.message.reply_text(
-            f"Использование: <code>/auction_start &lt;облик&gt; &lt;часы&gt;</code>\n\n"
-            f"Доступные облики:\n<code>{auction_skins[:1000]}</code>",
-            parse_mode=ParseMode.HTML,
-        )
-        return
-    hours_str = args[-1]
-    skin_name = " ".join(args[:-1])
-    matched = None
-    for k in SKINS:
-        if k.lower() == skin_name.lower():
-            matched = k
-            break
-    if not matched:
-        await update.message.reply_text(f"{_E_CROSS} Облик «{skin_name}» не найден.")
-        return
-    try:
-        hours = float(hours_str)
-        if hours <= 0 or hours > 168:
-            raise ValueError
-    except ValueError:
-        await update.message.reply_text("❌ Укажи количество часов (от 0.5 до 168).")
-        return
-
-    existing = await _auction_get_active()
-    if existing:
-        await update.message.reply_text("❌ Аукцион уже идёт! /auction_end чтобы завершить.")
-        return
-
-    now = time.time()
-    ends_at = now + hours * 3600
-    async with aiosqlite.connect(DB_PATH) as db:
-        await db.execute(
-            "INSERT INTO auctions(skin, started_at, ends_at, status) VALUES(?,?,?,'active')",
-            (matched, now, ends_at)
-        )
-        await db.commit()
-
-    ends_dt = datetime.fromtimestamp(ends_at, tz=timezone.utc).strftime("%d.%m в %H:%M UTC")
-    await announce(
-        ctx.bot,
-        f"{_E_HAMMER} <b>Аукцион начался!</b>\n\n"
-        f"Лот: {_auction_skin_line(matched)}\n"
-        f"Редкость: <b>{R_NAME.get(SKINS[matched].get('rarity','common'),'?')}</b>\n"
-        f"Выдаётся ТОЛЬКО через аукцион — нигде больше не получить!\n\n"
-        f"Победитель получает облик. Проигравшие получают <b>60%</b> ставки обратно, 40% сгорает.\n"
-        f"<b>Ставки списываются сразу!</b>\n\n"
-        f"Конец: <b>{ends_dt}</b>\n\n"
-        f"Участвовать: /auction или кнопка {_E_HAMMER} в главном меню",
-    )
-    await update.message.reply_text(f"✅ Аукцион «{matched}» запущен на {hours}ч.")
 
 
-async def cmd_auction_end(update: Update, ctx: ContextTypes.DEFAULT_TYPE) -> None:
-    user = update.effective_user
-    if user.id not in ADMIN_IDS:
-        await update.message.reply_text("⛔ Только для администраторов.")
-        return
-    auction = await _auction_get_active()
-    if not auction:
-        await update.message.reply_text("❌ Нет активного аукциона.")
-        return
-    await _auction_finish(auction["id"], ctx.bot)
-    await update.message.reply_text("✅ Аукцион досрочно завершён.")
 
 
-async def cmd_auction(update: Update, ctx: ContextTypes.DEFAULT_TYPE) -> None:
-    uid = update.effective_user.id
-    f = await db_get(uid)
-    if not f:
-        await update.message.reply_text("Сначала /start 🐸")
-        return
-    await _show_auction(update.message, uid, edit=False)
 
 
-async def cmd_bid(update: Update, ctx: ContextTypes.DEFAULT_TYPE) -> None:
-    user = update.effective_user
-    f = await db_get(user.id)
-    if not f:
-        await update.message.reply_text("Сначала /start 🐸")
-        return
-    if not args_ok(ctx.args):
-        await update.message.reply_text("Укажи сумму: <code>/bid 5000</code>", parse_mode=ParseMode.HTML)
-        return
-    try:
-        amount = int(ctx.args[0].replace(",", "").replace(" ", ""))
-        if amount <= 0:
-            raise ValueError
-    except ValueError:
-        await update.message.reply_text("❌ Укажи целое положительное число.")
-        return
-    await _place_bid(update.message, user.id, f, amount, ctx.bot)
+
+
+
+
+
+
+
 
 
 def args_ok(args) -> bool:
     return bool(args and args[0])
 
 
-async def _place_bid(msg_or_q, uid: int, f: dict, amount: int, bot) -> None:
-    """Общая логика размещения ставки — используется из /bid и inline-кнопок."""
-    MIN_BID = 100
-    if amount < MIN_BID:
-        text = f"{_E_CROSS} Минимальная ставка — {MIN_BID:,}🪙."
-        if hasattr(msg_or_q, "answer"):
-            await msg_or_q.answer(text, show_alert=True)
-        else:
-            await msg_or_q.reply_text(text)
-        return
-
-    auction = await _auction_get_active()
-    if not auction:
-        text = "🔨 Аукцион не проводится."
-        if hasattr(msg_or_q, "answer"):
-            await msg_or_q.answer(text, show_alert=True)
-        else:
-            await msg_or_q.reply_text(text)
-        return
-    if time.time() >= auction["ends_at"]:
-        text = "⏰ Время ставок истекло!"
-        if hasattr(msg_or_q, "answer"):
-            await msg_or_q.answer(text, show_alert=True)
-        else:
-            await msg_or_q.reply_text(text)
-        return
-
-    if f.get("coins", 0) < amount:
-        text = f"{_E_CROSS} Недостаточно монет. У тебя {f.get('coins',0):,}🪙, нужно {amount:,}🪙."
-        if hasattr(msg_or_q, "answer"):
-            await msg_or_q.answer(text, show_alert=True)
-        else:
-            await msg_or_q.reply_text(text)
-        return
-
-    # Списываем монеты сразу
-    f["coins"] = f.get("coins", 0) - amount
-    await db_save(f)
-
-    # Записываем ставку
-    async with aiosqlite.connect(DB_PATH) as db:
-        await db.execute(
-            "INSERT INTO auction_bids(auction_id, user_id, amount, placed_at) VALUES(?,?,?,?)",
-            (auction["id"], uid, amount, time.time())
-        )
-        await db.commit()
-
-    my_total = await _auction_user_total(auction["id"], uid)
-    top = await _auction_top_bids(auction["id"], 1)
-    top1 = int(top[0]["amount"]) if top else 0
-    is_leader = top and top[0]["user_id"] == uid
-
-    skin = auction["skin"]
-    left_s = max(0, int(auction["ends_at"] - time.time()))
-    left_h, left_rem = divmod(left_s, 3600)
-    left_m = left_rem // 60
-
-    leader_note = "🏆 Ты сейчас лидируешь!" if is_leader else f"Лидер: <b>{top1:,}🪙</b>"
-    result_text = (
-        f"✅ <b>Ставка принята!</b>\n\n"
-        f"Лот: {_auction_skin_line(skin)}\n"
-        f"Твоя суммарная ставка: <b>{my_total:,}🪙</b>\n"
-        f"{leader_note}\n"
-        f"До конца: {left_h}ч {left_m}м\n\n"
-        f"<i>Монеты уже списаны. Победитель получает облик, остальным возвращают 60%.</i>"
-    )
-
-    if hasattr(msg_or_q, "answer"):
-        await msg_or_q.answer(f"✅ Ставка {amount:,}🪙 принята", show_alert=False)
-        await _show_auction(msg_or_q, uid, edit=True)
-    else:
-        await msg_or_q.reply_text(result_text, parse_mode=ParseMode.HTML)
-
-    # Уведомляем предыдущего лидера если его перебили
-    if not is_leader and top and len(top) > 1:
-        prev_leader = top[0]
-        if prev_leader["user_id"] != uid:
-            try:
-                await bot.send_message(
-                    prev_leader["user_id"],
-                    f"⚠️ <b>Тебя перебили на аукционе!</b>\n\n"
-                    f"Новая максимальная ставка: <b>{my_total:,}{_E_COIN}</b>\n"
-                    f"Твоя ставка: {int(prev_leader['amount']):,}{_E_COIN}\n\n"
-                    f"Подними ставку: /auction",
-                    parse_mode=ParseMode.HTML,
-                )
-            except Exception:
-                pass
 
     # fz_ dispatch перенесён в начало on_callback
 
@@ -71957,10 +67801,6 @@ def main():
         ("draw_lottery", cmd_draw_lottery),
         ("reset_jackpot", cmd_reset_jackpot),
         ("add_to_jackpot", cmd_add_to_jackpot),
-        ("auction", cmd_auction),
-        ("auction_start", cmd_auction_start),
-        ("auction_end", cmd_auction_end),
-        ("bid", cmd_bid),
         ("donate", cmd_donate),
         ("ref_approve", cmd_ref_approve),
         ("ref_decline", cmd_ref_decline),
@@ -71999,8 +67839,6 @@ def main():
     # Новые групповые команды
     app.add_handler(CommandHandler("ttt", cmd_ttt_group))
     app.add_handler(CommandHandler("ttt5", cmd_ttt5_group))
-    app.add_handler(CommandHandler("rps", cmd_rps_group))
-    app.add_handler(CommandHandler("hangman", cmd_hangman_group))
     app.add_handler(CommandHandler("giveaway",  cmd_giveaway))
     app.add_handler(CommandHandler("pgiveaway", cmd_pgiveaway))
     app.add_handler(CommandHandler("farewell", cmd_farewell))
@@ -72072,8 +67910,6 @@ def main():
     # ── Новые игры v7 ──────────────────────────────────────────────────────
     app.add_handler(CommandHandler("checkers", cmd_checkers))
     app.add_handler(CommandHandler("games", cmd_games))
-    app.add_handler(CommandHandler("bs", cmd_battleship))
-    app.add_handler(CommandHandler("bsmini", cmd_bsmini))
 
     # ── Антинакрут и бэкап ────────────────────────────────────────────────
     app.add_handler(CommandHandler("adminantibot", cmd_adminantibot))
