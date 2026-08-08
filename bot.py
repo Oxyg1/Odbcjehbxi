@@ -14032,6 +14032,24 @@ async def plog_get(uid: int, days: int = 3, limit: int = 500) -> list[dict]:
         return []
 
 
+# Базовое состояние строки кладётся в сам словарь под ключом _orig: db_save()
+# по нему считает, какие колонки изменил ИМЕННО этот обработчик. Ключи на "_"
+# в SQL не попадают. Хранить снимок по user_id нельзя — второй читатель
+# перезаписал бы базу сравнения первому, и правка снова терялась бы.
+# Накопительные поля: их значение всегда «прибавь столько-то», поэтому
+# db_save() пишет их дельтой и параллельные изменения не затирают друг друга.
+# Поля, которые именно ПРИСВАИВАЮТ (уровень, облик, таймстампы), сюда не входят.
+_ACCUMULATORS = frozenset({
+    "coins", "xp", "xp_week", "xp_month",
+    "total_feeds", "total_plays", "total_washes", "total_sleeps",
+    "total_gacha", "total_mosquitoes", "total_duels", "total_duel_wins",
+    "total_casino", "total_casino_wins", "total_battles", "total_battle_wins",
+    "coins_spent", "stars_spent",
+})
+
+_MISSING = object()
+
+
 async def db_get(uid: int) -> dict | None:
     # Сначала проверяем кэш — нет нужды идти на диск
     cached = _user_cache.get(uid)
@@ -14052,6 +14070,8 @@ async def db_get(uid: int) -> dict | None:
             _db_pool.release(conn, temporary=temporary)
     result = await loop.run_in_executor(None, _read)
     if result is not None:
+        # Базовое состояние для db_save(): что было в БД на момент чтения
+        result["_orig"] = {k: v for k, v in result.items() if not k.startswith("_")}
         _user_cache.set(uid, result)
     return result
 
@@ -14423,24 +14443,66 @@ async def is_banned(uid: int) -> bool:
 
 
 async def db_save(f: dict):
+    """
+    Сохраняет игрока, записывая ТОЛЬКО изменившиеся колонки.
+
+    Раньше writeback шёл по всем 137 колонкам сразу. Из-за этого два
+    параллельных обработчика затирали друг другу не только монеты, а заодно
+    уровень, опыт, инвентарь и кулдауны: последний сохранивший переписывал
+    поля значениями, прочитанными до чужой правки.
+
+    Теперь при каждом чтении запоминается снимок строки, и UPDATE трогает
+    лишь те колонки, что реально поменялись. Обработчик, менявший только
+    монеты, больше не может откатить чужой уровень.
+
+    Снимка нет (новая запись) — пишем всё, это путь INSERT.
+    """
     # Сбрасываем накопленный XP стаи (если есть)
     _pending_staya = f.pop("_pending_staya_xp", 0)
     if _pending_staya and f.get("staya_id"):
         asyncio.create_task(staya_add_xp(f["staya_id"], _pending_staya))
     # Убираем временные ключи (начинающиеся с '_'), чтобы они не попали в SQL
     f_clean = {k: v for k, v in f.items() if not k.startswith("_")}
-    keys = list(f_clean.keys())
+    uid = f_clean.get("user_id")
+
+    snapshot = f.get("_orig")
+    if snapshot is None:
+        write = f_clean                                   # новая запись
+    else:
+        write = {k: v for k, v in f_clean.items() if snapshot.get(k, _MISSING) != v}
+        if not write:
+            return                       # менять нечего
+        write["user_id"] = uid                            # нужен для ON CONFLICT
+
+    keys = list(write.keys())
     ph = ",".join(["?"] * len(keys))
-    upd = ",".join([f"{k}=excluded.{k}" for k in keys])
+
+    # Накопительные поля пишем ПРИБАВКОЙ, а не присваиванием.
+    # Обработчик считает «стало 700», но между чтением и записью баланс мог
+    # измениться. Из _orig известно, сколько он хотел прибавить или списать,
+    # и SQL применяет именно дельту — параллельная трата не теряется.
+    upd_parts, extra_vals = [], []
+    for k in keys:
+        if k == "user_id":
+            continue
+        if snapshot is not None and k in _ACCUMULATORS:
+            base = snapshot.get(k)
+            if isinstance(base, (int, float)) and isinstance(write[k], (int, float)):
+                delta = write[k] - base
+                upd_parts.append(f"{k}=MAX(0, frogs.{k} + ?)")
+                extra_vals.append(delta)
+                continue
+        upd_parts.append(f"{k}=excluded.{k}")
+    upd = ",".join(upd_parts)
     sql = (
         f"INSERT INTO frogs ({','.join(keys)}) VALUES ({ph}) "
         f"ON CONFLICT(user_id) DO UPDATE SET {upd}"
     )
-    vals = list(f_clean.values())
-    uid = f_clean.get("user_id")
+    vals = list(write.values()) + extra_vals
     # Обновляем кэш немедленно — последующие db_get этого юзера не пойдут на диск
     if uid is not None:
-        _user_cache.set(uid, f_clean)
+        f["_orig"] = dict(f_clean)      # с этого момента текущее состояние — базовое
+        _user_cache.set(uid, f)
     loop = asyncio.get_event_loop()
     def _write():
         conn = _db_pool.acquire()
