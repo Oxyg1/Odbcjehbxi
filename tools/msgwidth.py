@@ -189,14 +189,21 @@ _ESCAPED = re.compile(r"\\u[0-9a-fA-F]{4}")
 _BAR = re.compile(r"[█░▓▒]")
 
 
+_SENTENCE = re.compile(r"[.!?]\s+[А-ЯЁA-Z]|[а-яё]{4,}\s+[а-яё]{4,}\s+[а-яё]{4,}")
+
+
 def _is_structural(s: str) -> bool:
-    """Строка, для которой перенос — дефект, а не норма."""
-    if " · " in s or _BAR.search(s):
-        return True
-    # заголовок вида «эмодзи <b>Название</b> · счётчик»
-    if s.lstrip().startswith("<b>") and len(s) < 90:
-        return True
-    return False
+    """
+    Строка, для которой перенос — дефект, а не норма.
+
+    Колонка отличается от фразы тем, что в ней нет связного текста: подряд
+    идущие длинные слова или граница предложения выдают прозу, и её перенос
+    ничего не ломает.
+    """
+    plain = re.sub(r"<[^>]+>", "", s)
+    if _SENTENCE.search(plain):
+        return False
+    return " · " in s or bool(_BAR.search(s))
 
 
 def scan(path: str = "bot.py"):

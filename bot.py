@@ -94,7 +94,7 @@ FREEZE_PACKAGES = [
         "stars":      1,
         "cubes":      1,
         "label":      "🐣 Тестовый",
-        "desc":       "1 кубик  ·  1 Star  (без ограничений — просто попробуй!)",
+        "desc":       "1 кубик · 1 Star\nБез ограничений — попробуй",
         "heat_bonus": 0,
         "one_time":   False,
     },
@@ -103,7 +103,7 @@ FREEZE_PACKAGES = [
         "stars":      15,
         "cubes":      17,
         "label":      "🧊 Попробовать",
-        "desc":       "17 кубиков  ·  15 Stars  (0.88⭐/бросок  ·  EV 880⭐)",
+        "desc":       "17 кубиков · 15 Stars\n0.88⭐/бросок · EV 880⭐",
         "heat_bonus": 0,
         "one_time":   False,
     },
@@ -112,7 +112,7 @@ FREEZE_PACKAGES = [
         "stars":      50,
         "cubes":      60,
         "label":      "🧊 Стандарт",
-        "desc":       "60 кубиков  ·  50 Stars  (0.83⭐/бросок  ·  EV 830⭐)",
+        "desc":       "60 кубиков · 50 Stars\n0.83⭐/бросок · EV 830⭐",
         "heat_bonus": 0,
         "one_time":   False,
     },
@@ -121,7 +121,7 @@ FREEZE_PACKAGES = [
         "stars":      120,
         "cubes":      150,
         "label":      "🔥 Морозилка",
-        "desc":       "150 кубиков  ·  120 Stars  (0.80⭐/бросок  ·  EV 800⭐ — лучший выбор!)",
+        "desc":       "150 кубиков · 120 Stars\n0.80⭐/бросок · EV 800⭐ · лучший выбор",
         "heat_bonus": 0,
         "one_time":   False,
     },
@@ -130,7 +130,7 @@ FREEZE_PACKAGES = [
         "stars":      250,
         "cubes":      310,
         "label":      "🧊 Ледник",
-        "desc":       "310 кубиков  ·  250 Stars  (0.81⭐/бросок  ·  EV 810⭐  −5% жары болота)",
+        "desc":       "310 кубиков · 250 Stars\n0.81⭐/бросок · EV 810⭐ · −5% жары",
         "heat_bonus": -5,
         "one_time":   False,
     },
@@ -139,7 +139,7 @@ FREEZE_PACKAGES = [
         "stars":      500,
         "cubes":      625,
         "label":      "❄️ Вечная мерзлота",
-        "desc":       "625 кубиков  ·  500 Stars  (0.80⭐/бросок  ·  EV 800⭐  −10% жары болота)",
+        "desc":       "625 кубиков · 500 Stars\n0.80⭐/бросок · EV 800⭐ · −10% жары",
         "heat_bonus": -10,
         "one_time":   False,
     },
@@ -194,7 +194,7 @@ FZ_MSG_SOLD_OUT = (
     "<b>Все NFT ViceCream выбиты!</b>\n\n"
     "Пул закрыт, но броски продолжаются.\n"
     "Каждые {pool_skin_every} бросков — разыгрывается commemorative skin.\n"
-    "За каждый бросок в пуле: +{pool_coins} монет.\n\n"
+    "За каждый бросок в пуле: +{pool_coins}🪙.\n\n"
     "/icecube — участвовать"
 )
 
@@ -871,7 +871,7 @@ async def _fz_handle_payment(update, ctx) -> None:
         f"💳 <b>Покупка пакета кубиков</b>\n\n"
         f"👤 {uname}  <code>[{uid}]</code>\n"
         f"📦 {pkg['label']} — {stars_paid}⭐  ({cubes} кубиков)\n"
-        f"🏆 Побед в сессии: {wins} · 🍦 NFT осталось: {remaining}\n"
+        f"🏆 побед {wins} · 🍦 NFT {remaining}\n"
         f"⭐ Итого Stars за ивент: {f.get('fz_stars_spent', stars_paid) if f else stars_paid}"
     )
 
@@ -1531,7 +1531,7 @@ async def cmd_icecube(update: Update, ctx: ContextTypes.DEFAULT_TYPE) -> None:
     if status == FZ_SOLD_OUT:
         sold_out_note = (
             "\n\n⚠️ <b>Все NFT выбиты!</b> Броски идут в Sold-Out пул.\n"
-            f"За каждый бросок: +{FZ_POOL_COINS_PER_THROW} монет 🪙"
+            f"За каждый бросок: +{FZ_POOL_COINS_PER_THROW}{_E_COIN}"
         )
 
     pkg_rows = []
@@ -2517,7 +2517,7 @@ async def _fz_on_callback(update: Update, ctx: ContextTypes.DEFAULT_TYPE) -> Non
         if status == FZ_SOLD_OUT:
             sold_note = (
                 f"\n\n⚠️ <b>Sold-Out пул активен.</b> "
-                f"Каждый бросок: +{FZ_POOL_COINS_PER_THROW} монет 🪙"
+                f"Каждый бросок: +{FZ_POOL_COINS_PER_THROW}{_E_COIN}"
             )
 
         pkg_rows = []
@@ -6155,17 +6155,17 @@ _admin_gift_waiting_pass: set = set()
 STAR_PACKAGES = [
     # Новичковый пакет — только для тех, кто ещё не донатил (stars_spent == 0)
     # 1⭐ = 10 монет — сильный «якорь», задаёт высокую планку
-    {"stars": 10,   "coins": 100,  "label": "100 КваКоинов 🎁 Новичок", "newbie": True, "farm_min": 17},
+    {"stars": 10,   "coins": 100,  "label": "100🪙 🎁 Новичок", "newbie": True, "farm_min": 17},
     # Ежедневное предложение — раз в сутки, скидка ~20%
-    {"stars": 8,    "coins": 50,   "label": "50 КваКоинов 🌅 Ежедневное предложение", "daily_deal": True, "farm_min": 8},
+    {"stars": 8,    "coins": 50,   "label": "50🪙 🌅 Ежедневное предложение", "daily_deal": True, "farm_min": 8},
     # Обычные пакеты с бонусом за объём (база 1⭐ = 5, бонус за объём → эффективный курс 1⭐ = 5.2–5.3)
-    {"stars": 10,   "coins": 50,   "label": "50 КваКоинов",   "farm_min": 8},
-    {"stars": 25,   "coins": 130,  "label": "130 КваКоинов",  "farm_min": 22},
-    {"stars": 50,   "coins": 260,  "label": "260 КваКоинов",  "farm_min": 44},
-    {"stars": 100,  "coins": 520,  "label": "520 КваКоинов",  "farm_min": 90},
-    {"stars": 250,  "coins": 1300, "label": "1300 КваКоинов", "farm_min": 222},
-    {"stars": 500,  "coins": 2600, "label": "2600 КваКоинов", "farm_min": 444},
-    {"stars": 1000, "coins": 5300, "label": "5300 КваКоинов", "farm_min": 909},
+    {"stars": 10,   "coins": 50,   "label": "50🪙",   "farm_min": 8},
+    {"stars": 25,   "coins": 130,  "label": "130🪙",  "farm_min": 22},
+    {"stars": 50,   "coins": 260,  "label": "260🪙",  "farm_min": 44},
+    {"stars": 100,  "coins": 520,  "label": "520🪙",  "farm_min": 90},
+    {"stars": 250,  "coins": 1300, "label": "1300🪙", "farm_min": 222},
+    {"stars": 500,  "coins": 2600, "label": "2600🪙", "farm_min": 444},
+    {"stars": 1000, "coins": 5300, "label": "5300🪙", "farm_min": 909},
     # ── Подписки ──────────────────────────────────────────────────────────
     # Болотная Няня: пробный пакет на 7 дней (~$1.2)
     {"stars": 50,   "coins": 0,  "label": "🧑‍🍼 Болотная Няня — 7 дней",  "subscription": "nanny",  "days": 7},
@@ -6754,7 +6754,7 @@ def build_work_report(frog_name: str) -> tuple[str, dict]:
         f"{story}\n\n"
         f"{event}\n\n"
         f"{outcome}\n\n"
-        f"🪙 Принесла домой: <b>+{earned} КваКоинов</b>{bonus_line}\n\n"
+        f"Принесла домой: <b>+{earned}{_E_COIN}</b>{bonus_line}\n\n"
         f"<i>«Ква! Устала, но довольна!» 🐸</i>"
     )
     stats = {
@@ -7602,11 +7602,11 @@ STAYA_EVENT_POOL = [
         "text": "К болоту вышел огромный крокодил! Стая должна решить как поступить:",
         "choices": [
             {"key": "run",    "label": "🏃 Разбежаться",       "win": False,
-             "win_text": "", "lose_text": "Разбежались — крокодил скушал припасы. Котёл -1 000 монет.", "coins": -1000},
+             "win_text": "", "lose_text": "Разбежались — крокодил скушал припасы. Котёл -1 000🪙.", "coins": -1000},
             {"key": "sing",   "label": "🎵 Петь песни",        "win": True,
-             "win_text": "Пение растрогало крокодила. Он ушёл и оставил кошель! Котёл +2 000 монет.", "lose_text": "", "coins": 2000},
+             "win_text": "Пение растрогало крокодила. Он ушёл и оставил кошель! Котёл +2 000🪙.", "lose_text": "", "coins": 2000},
             {"key": "attack", "label": "⚔️ Атаковать",         "win": False,
-             "win_text": "", "lose_text": "Крокодил оказался сильнее. Котёл -500 монет.", "coins": -500},
+             "win_text": "", "lose_text": "Крокодил оказался сильнее. Котёл -500🪙.", "coins": -500},
         ],
     },
     {
@@ -7615,9 +7615,9 @@ STAYA_EVENT_POOL = [
         "text": "На дне болота нашли старый сундук. Что делать?",
         "choices": [
             {"key": "open",   "label": "🔓 Открыть сразу",     "win": True,
-             "win_text": "Внутри монеты и редкий кристалл! Котёл +3 000 монет.", "lose_text": "", "coins": 3000},
+             "win_text": "Внутри монеты и редкий кристалл! Котёл +3 000🪙.", "lose_text": "", "coins": 3000},
             {"key": "sell",   "label": "💰 Продать целым",     "win": True,
-             "win_text": "Коллекционер заплатил щедро. Котёл +2 000 монет.", "lose_text": "", "coins": 2000},
+             "win_text": "Коллекционер заплатил щедро. Котёл +2 000🪙.", "lose_text": "", "coins": 2000},
             {"key": "leave",  "label": "🚶 Оставить",          "win": False,
              "win_text": "", "lose_text": "Другая стая нашла сундук. Упустили шанс.", "coins": 0},
         ],
@@ -7628,11 +7628,11 @@ STAYA_EVENT_POOL = [
         "text": "Надвигается страшная гроза! Как подготовиться?",
         "choices": [
             {"key": "hide",   "label": "🏠 Укрыться в норах",  "win": True,
-             "win_text": "Переждали в уюте. Все целы, котёл без потерь. +500 монет.", "lose_text": "", "coins": 500},
+             "win_text": "Переждали в уюте. Все целы, котёл без потерь. +500🪙.", "lose_text": "", "coins": 500},
             {"key": "dance",  "label": "💃 Танцевать под дождём", "win": True,
-             "win_text": "Веселились всю ночь! Котёл +1 000 монет.", "lose_text": "", "coins": 1000},
+             "win_text": "Веселились всю ночь! Котёл +1 000🪙.", "lose_text": "", "coins": 1000},
             {"key": "guard",  "label": "🛡️ Охранять болото",   "win": False,
-             "win_text": "", "lose_text": "Промокли насквозь, у всех -10 HP. Котёл -800 монет.", "coins": -800},
+             "win_text": "", "lose_text": "Промокли насквозь, у всех -10 HP. Котёл -800🪙.", "coins": -800},
         ],
     },
     {
@@ -7641,9 +7641,9 @@ STAYA_EVENT_POOL = [
         "text": "Загадочный торговец предлагает сделку всей стае.",
         "choices": [
             {"key": "buy",    "label": "💰 Купить товар",      "win": True,
-             "win_text": "Эликсир оказался настоящим! Котёл +1 500 монет.", "lose_text": "", "coins": 1500},
+             "win_text": "Эликсир оказался настоящим! Котёл +1 500🪙.", "lose_text": "", "coins": 1500},
             {"key": "trade",  "label": "🔄 Предложить обмен",  "win": True,
-             "win_text": "Выгодный обмен! Котёл +800 монет.", "lose_text": "", "coins": 800},
+             "win_text": "Выгодный обмен! Котёл +800🪙.", "lose_text": "", "coins": 800},
             {"key": "refuse", "label": "🚫 Отказать",          "win": False,
              "win_text": "", "lose_text": "Осторожность — хорошо. Но ничего не получили.", "coins": 0},
         ],
@@ -7654,9 +7654,9 @@ STAYA_EVENT_POOL = [
         "text": "Болотный фестиваль! Стая может принять участие.",
         "choices": [
             {"key": "perform","label": "🎭 Выступить на сцене","win": True,
-             "win_text": "Овации! Призовой фонд в котёл +2 500 монет.", "lose_text": "", "coins": 2500},
+             "win_text": "Овации! Призовой фонд в котёл +2 500🪙.", "lose_text": "", "coins": 2500},
             {"key": "judge",  "label": "⚖️ Стать судьями",     "win": True,
-             "win_text": "Почётный гонорар судей. Котёл +1 200 монет.", "lose_text": "", "coins": 1200},
+             "win_text": "Почётный гонорар судей. Котёл +1 200🪙.", "lose_text": "", "coins": 1200},
             {"key": "watch",  "label": "👀 Просто смотреть",   "win": False,
              "win_text": "", "lose_text": "Хорошо провели время, но без дохода.", "coins": 0},
         ],
@@ -7667,11 +7667,11 @@ STAYA_EVENT_POOL = [
         "text": "Армия уток захватывает берег болота! Стая на военном совете:",
         "choices": [
             {"key": "fight",  "label": "⚔️ Дать отпор",        "win": True,
-             "win_text": "Утки отступили! Болото отстояли. Котёл +2 000 монет.", "lose_text": "", "coins": 2000},
+             "win_text": "Утки отступили! Болото отстояли. Котёл +2 000🪙.", "lose_text": "", "coins": 2000},
             {"key": "bribe",  "label": "🪙 Задобрить хлебом",  "win": True,
-             "win_text": "Утки ушли довольные. Дёшево отделались. Котёл +500 монет.", "lose_text": "", "coins": 500},
+             "win_text": "Утки ушли довольные. Дёшево отделались. Котёл +500🪙.", "lose_text": "", "coins": 500},
             {"key": "flee",   "label": "🏃 Временно отступить","win": False,
-             "win_text": "", "lose_text": "Утки хозяйничали неделю. Котёл -1 200 монет.", "coins": -1200},
+             "win_text": "", "lose_text": "Утки хозяйничали неделю. Котёл -1 200🪙.", "coins": -1200},
         ],
     },
     {
@@ -7680,11 +7680,11 @@ STAYA_EVENT_POOL = [
         "text": "Засуха! Болото мелеет. Стая решает как выжить:",
         "choices": [
             {"key": "dig",    "label": "⛏️ Копать новые пруды","win": True,
-             "win_text": "Нашли подземный источник! Болото спасено. Котёл +3 000 монет.", "lose_text": "", "coins": 3000},
+             "win_text": "Нашли подземный источник! Болото спасено. Котёл +3 000🪙.", "lose_text": "", "coins": 3000},
             {"key": "migrate","label": "🗺️ Найти временное место","win": True,
-             "win_text": "Нашли тенистую лощину. Переждали. Котёл +800 монет.", "lose_text": "", "coins": 800},
+             "win_text": "Нашли тенистую лощину. Переждали. Котёл +800🪙.", "lose_text": "", "coins": 800},
             {"key": "wait",   "label": "⏳ Ждать дождя",       "win": False,
-             "win_text": "", "lose_text": "Ждали слишком долго. Потери запасов. Котёл -600 монет.", "coins": -600},
+             "win_text": "", "lose_text": "Ждали слишком долго. Потери запасов. Котёл -600🪙.", "coins": -600},
         ],
     },
 ]
@@ -8464,7 +8464,7 @@ async def _raid_build_vote_text(raid: dict, target: dict, att_staya: dict,
 
     return (
         f"🏹  {he(att_staya['name'])}  →  {he(target['name'])}\n"
-        f"котёл цели — {target['cauldron']}🪙  ·  можно унести до {steal_max}🪙\n"
+        f"котёл цели {target['cauldron']}{_E_COIN}\nунести до {steal_max}{_E_COIN}\n"
         f"\n"
         f"Где монеты? Голосуйте вместе.{pot_lines}\n"
         f"\n"
@@ -8518,7 +8518,7 @@ async def _raid_scout_phase(bot, raid_id: int, att_staya: dict, target: dict,
         f"🏹  НАБЕГ\n"
         f"\n"
         f"{he(att_staya['name'])}  →  {he(target['name'])}\n"
-        f"котёл цели — {target['cauldron']}🪙  ·  можно унести до {steal_max}🪙{guard_note}\n"
+        f"котёл цели {target['cauldron']}🪙\nунести до {steal_max}🪙{guard_note}\n"
         f"\n"
         f"⏳ минута на разведку — потом голосование"
     )
@@ -11498,7 +11498,7 @@ async def cmd_hsstatus(update: Update, ctx: ContextTypes.DEFAULT_TYPE) -> None:
         f"🙈 <b>Ивент прятки #{event['id']}</b>\n"
         f"Статус: <b>{st}</b>  ·  Раунд: <b>{event['round']}</b>\n"
         f"Ищущий: <b>{seeker_name}</b>\n"
-        f"Участников: <b>{len(players)}</b>  ·  Выжило: <b>{len(alive)}</b>  ·  Вылетело: <b>{len(elim)}</b>\n"
+        f"👥 <b>{len(players)}</b> · 🐸 <b>{len(alive)}</b> · 💀 <b>{len(elim)}</b>\n"
         + (f"Выбрали клетку: <b>{len(chose)}/{len(alive)}</b>\n" if event["status"] == "hiding" else "")
         + (f"⏳ До вскрытия: <b>{m}м {s}с</b>" if time_left else ""),
         parse_mode=ParseMode.HTML,
@@ -11738,7 +11738,7 @@ async def cmd_newsdigest(update: Update, ctx: ContextTypes.DEFAULT_TYPE) -> None
                 cnt = len(parts)
             except Exception:
                 cnt = "?"
-            lines.append(f"  · Победитель: {wname}  ·  участников: {cnt}  ·  ставка: {t['stake']}🪙")
+            lines.append(f"  · {wname} · {cnt} уч. · {t['stake']}{_E_COIN}")
 
     # ПОДАРКИ
     if gifts:
@@ -14804,7 +14804,7 @@ PERSONALITIES = {
         "emoji": "🌸",
         "desc": "Тихая, но очень внимательная. Замечает детали.",
         "daily_coins_bonus": 10,      # +10 монет к ежедневному бонусу
-        "passive": "+10 монет к ежедневному бонусу",
+        "passive": "+10🪙 к ежедневному бонусу",
     },
     "greedy": {
         "name": "Жадная",
@@ -15263,14 +15263,14 @@ ACHIEVEMENTS = {
     "battle_win_5":  {"name": "Батл-ветеран",            "emoji": "🥋",  "desc": "Выиграй 5 групповых батлов",       "cat": "games"},
 
     # ── 💰 Экономика ─────────────────────────────────────────────────────────
-    "rich_500":      {"name": "Копилка",                 "emoji": "🐷",  "desc": "Накопи 500 КваКоинов",             "cat": "economy"},
-    "rich_2000":     {"name": "Богач",                   "emoji": "💎",  "desc": "Накопи 2000 КваКоинов",            "cat": "economy"},
-    "rich_10000":    {"name": "Болотный Миллионер",      "emoji": "💰",  "desc": "Накопи 10 000 КваКоинов",          "cat": "economy"},
-    "rich_50000":    {"name": "Магнат топей",            "emoji": "🏦",  "desc": "Накопи 50 000 КваКоинов",          "cat": "economy"},
-    "rich_200000":   {"name": "Болотный Рокфеллер",      "emoji": "💵",  "desc": "Накопи 200 000 КваКоинов",         "cat": "economy", "secret": True},
-    "spender_1000":  {"name": "Транжира",                "emoji": "💸",  "desc": "Потрать 1000 КваКоинов",           "cat": "economy"},
-    "spender_10000": {"name": "Щедрая душа",             "emoji": "🤑",  "desc": "Потрать 10 000 КваКоинов",         "cat": "economy"},
-    "spender_50000": {"name": "Болотный Меценат",        "emoji": "🎁",  "desc": "Потрать 50 000 КваКоинов",         "cat": "economy"},
+    "rich_500":      {"name": "Копилка",                 "emoji": "🐷",  "desc": "Накопи 500🪙",             "cat": "economy"},
+    "rich_2000":     {"name": "Богач",                   "emoji": "💎",  "desc": "Накопи 2000🪙",            "cat": "economy"},
+    "rich_10000":    {"name": "Болотный Миллионер",      "emoji": "💰",  "desc": "Накопи 10 000🪙",          "cat": "economy"},
+    "rich_50000":    {"name": "Магнат топей",            "emoji": "🏦",  "desc": "Накопи 50 000🪙",          "cat": "economy"},
+    "rich_200000":   {"name": "Болотный Рокфеллер",      "emoji": "💵",  "desc": "Накопи 200 000🪙",         "cat": "economy", "secret": True},
+    "spender_1000":  {"name": "Транжира",                "emoji": "💸",  "desc": "Потрать 1000🪙",           "cat": "economy"},
+    "spender_10000": {"name": "Щедрая душа",             "emoji": "🤑",  "desc": "Потрать 10 000🪙",         "cat": "economy"},
+    "spender_50000": {"name": "Болотный Меценат",        "emoji": "🎁",  "desc": "Потрать 50 000🪙",         "cat": "economy"},
     "social_10":     {"name": "Добрый сосед",            "emoji": "🤝",  "desc": "Покорми чужих 10 раз",             "cat": "economy"},
     "social_50":     {"name": "Болотный меценат",        "emoji": "🫶",  "desc": "Покорми чужих 50 раз",             "cat": "economy"},
     "social_200":    {"name": "Ангел болота",            "emoji": "😇",  "desc": "Покорми чужих 200 раз",            "cat": "economy"},
@@ -19806,7 +19806,7 @@ async def cmd_nftadmin(update: Update, ctx: ContextTypes.DEFAULT_TYPE):
     elif cmd == "coins" and len(args) > 1:
         try:
             NFT_KVA_COINS = max(1, int(args[1]))
-            await update.message.reply_text(f"{_E_COIN} Цена повтора: <b>{NFT_KVA_COINS} монет</b>.", parse_mode=ParseMode.HTML)
+            await update.message.reply_text(f"{_E_COIN} Цена повтора: <b>{NFT_KVA_COINS}{_E_COIN}</b>.", parse_mode=ParseMode.HTML)
         except ValueError:
             await update.message.reply_text("⚠️ Укажи число: /nftadmin coins 1000")
     elif cmd == "delreply" and len(args) > 1:
@@ -20090,7 +20090,7 @@ async def _handle_chatadmin_callback(q, uid: int, ctx):
              btn(f"💰 Монеты: {cv}", callback_data=f"ca_toggle_coins_{cid}")],
         ]
         if susp:
-            rows.append([InlineKeyboardButton("⏸ Анонсы приостановлены (горячий чат)", callback_data="ca_noop")])
+            rows.append([InlineKeyboardButton("⏸ Анонсы на паузе", callback_data="ca_noop")])
         rows.append([btn("◀️ Назад", callback_data=f"ca_main_{cid}")])
         return InlineKeyboardMarkup(rows)
 
@@ -20986,7 +20986,7 @@ REFERRAL_STAGES = [
     (0, "Реферал зарегистрировался", 50, None, "register", 1),
     (1, "Реферал покормил 5 раз", 100, "fly", "feeds", 5),
     (2, "Реферал достиг 5 уровня", 200, None, "level", 5),
-    (3, "Реферал потратил 1500 КваКоинов", 300, None, "coins_spent", 1500),
+    (3, "Реферал потратил 1500🪙", 300, None, "coins_spent", 1500),
 ]
 MAX_REFERRAL_COINS = 650  # максимум КваКоинов с одного реферала
 
@@ -21157,7 +21157,7 @@ async def cmd_referral(update: Update, ctx: ContextTypes.DEFAULT_TYPE):
         f"\n<i>Максимум {MAX_REFERRAL_COINS}{coin_emoji()} с одного реферала. </i>\n",
         f"👥 Приглашено: <b>{total}</b>",
         f"✅ Этапов выполнено: <b>{total_stages}</b>",
-        f"{coin_emoji()} КваКоинов заработано: <b>{total_earned}</b>",
+        f"{coin_emoji()}{_E_COIN} заработано: <b>{total_earned}</b>",
     ]
     if refs:
         lines.append("\n<b>Твои рефералы:</b>")
@@ -21755,7 +21755,7 @@ async def handle_antibot_callback(q, d, uid, ctx):
         )
         kb = InlineKeyboardMarkup([
             [btn("🔍 1. Сухой откат (посмотреть)", callback_data=f"aab_dryrb_{ref_er}", style="primary")],
-            [btn(f"🚫 2. Забанить мошенника + {len(suspects)} ботов", callback_data=f"aab_banfraud_{ref_er}", style="danger")],
+            [btn(f"🚫 Забанить + {len(suspects)} ботов", callback_data=f"aab_banfraud_{ref_er}", style="danger")],
             [btn("🔨 3. Откатить монеты и скины", callback_data=f"aab_rollbackonly_{ref_er}", style="danger")],
             [btn("⚡ Всё сразу (бан + откат)", callback_data=f"aab_fullban_{ref_er}", style="danger")],
             [InlineKeyboardButton("◀️ Назад", callback_data="aab_pending_0")],
@@ -22709,8 +22709,8 @@ async def cmd_adminrisk(update: Update, ctx: ContextTypes.DEFAULT_TYPE) -> None:
         f"Причина: <i>{_html.escape(str(reason))}</i>\n"
         f"Обновлён: {updated_str}\n\n"
         f"<b>Статистика за 24ч:</b>\n"
-        f"📤 Исходящих: {out_sum} монет → {out_cnt} игрокам\n"
-        f"📥 Входящих: {in_sum} монет ← {in_cnt} игроков\n"
+        f"📤 Исходящих: {out_sum}{_E_COIN} → {out_cnt} игрокам\n"
+        f"📥 Входящих: {in_sum}{_E_COIN} ← {in_cnt} игроков\n"
         f"⚔️ Дуэлей: {duel_cnt}"
         f"{senders_txt}{receivers_txt}\n\n"
         f"🔧 <code>/adminrisk_set {uid} 0|1|2|3</code>\n"
@@ -22723,7 +22723,7 @@ async def cmd_adminrisk(update: Update, ctx: ContextTypes.DEFAULT_TYPE) -> None:
             InlineKeyboardButton("🔴 Risk +1", callback_data=f"risk_bump_{uid}"),
             InlineKeyboardButton("🟢 Сбросить риск", callback_data=f"risk_reset_{uid}"),
         ],
-        [InlineKeyboardButton("🤖 Пометить ботом + показать контакты", callback_data=f"risk_markbot_{uid}")],
+        [InlineKeyboardButton("🤖 Пометить ботом", callback_data=f"risk_markbot_{uid}")],
         [InlineKeyboardButton("🔗 Цепочка переводов (72ч)", callback_data=f"risk_chain_{uid}")],
     ])
     await update.message.reply_text(text, parse_mode=ParseMode.HTML, reply_markup=kb)
@@ -23877,7 +23877,7 @@ async def cmd_start(update: Update, ctx: ContextTypes.DEFAULT_TYPE):
                         icon_id="6028338546736107668"
                     )],
                     [InlineKeyboardButton(
-                        f"🪙 {_coins_cost} монет",
+                        f"{_coins_cost}{_E_COIN}",
                         callback_data="kva_retry_coins"
                     )],
                     [InlineKeyboardButton("❌ Закрыть", callback_data="kva_retry_cancel")],
@@ -24609,7 +24609,7 @@ async def cmd_rename(update: Update, ctx: ContextTypes.DEFAULT_TYPE):
 
 
 async def cmd_heal(update: Update, ctx: ContextTypes.DEFAULT_TYPE):
-    """/heal — вылечить лягушку (15 монет, кд 1 час)."""
+    """/heal — вылечить лягушку (15🪙, кд 1 час)."""
     if not await group_cmd_guard(update, "heal", ctx):
         return
     user = update.effective_user
@@ -24741,7 +24741,7 @@ async def cmd_revive(update: Update, ctx: ContextTypes.DEFAULT_TYPE):  # plog in
         f"<i>{history_text}</i>\n"
         f"Уровень: <b>{level}</b> · Облик: {skin_line}\n\n"
         f"<b>Выбери способ воскрешения:</b>\n\n"
-        f"🪙 За <b>{cost} монет</b> — лягушка ожьёт с 50% показателей\n"
+        f"За <b>{cost}{_E_COIN}</b> — лягушка ожьёт с 50% показателей\n"
         f"  {coins_txt}\n\n"
         f"⭐ За <b>15 Stars</b> — мгновенно, 100% показателей\n\n"
         f"⚔️ <b>Испытание</b> — бесплатно, выполни 3 задания→ полные показатели + бонусы"
@@ -26901,7 +26901,7 @@ async def cmd_trial(update: Update, ctx: ContextTypes.DEFAULT_TYPE):
     await update.message.reply_text(
         f"🎉 <b>1 день Трудяги — бесплатно!</b>\n\n"
         f"🏪 <b>{he(frog_name)}</b> уже собирает корзинку и идёт на Болотный Рынок!\n\n"
-        f"Каждый вечер она будет приносить домой <b>300–400 монет</b>.\n"
+        f"Каждый вечер она будет приносить домой <b>300–400{_E_COIN}</b>.\n"
         f"Дожди, ярмарки, выгодные сделки — каждый день своя история 🌿\n\n"
         f"📅 Пробный период до: <b>{until_dt}</b>\n\n"
         f"<i>После окончания продлить можно через /subscribe</i>",
@@ -26947,7 +26947,7 @@ async def cmd_broadcast_sub(update: Update, ctx: ContextTypes.DEFAULT_TYPE):
             f"Никаких смертей от забывчивости.\n\n"
             f"🏪 <b>Трудяга</b> — \n"
             f"<b>{name_esc}</b> ходит на <b>Болотный Рынок</b> и каждый вечер\n"
-            f"приносит домой <b>400–700 монет</b>.\n"
+            f"приносит домой <b>400–700{_E_COIN}</b>.\n"
             f"Дожди, ярмарки, богатые тритоны — каждый день своя история 🌿\n\n"
             "\n"
             f"🎁 Хочешь попробовать? <b>3 дня Трудяги — бесплатно</b>\n\n"
@@ -32551,7 +32551,7 @@ async def on_callback(update: Update, ctx: ContextTypes.DEFAULT_TYPE):
         is_overfeed = f.get("death_reason", "") == "overfeed"
         cost = OVERFEED_REVIVE_COST if is_overfeed else 100
         if f["coins"] < cost:
-            await q.answer((f"💸 Нужно {cost} монет, у тебя {f['coins']}.")[:200], show_alert=True)
+            await q.answer((f"💸 Нужно {cost}{_E_COIN}, у тебя {f['coins']}.")[:200], show_alert=True)
             return
         revive_data = {
             "alive": 1,
@@ -34559,7 +34559,7 @@ async def on_callback(update: Update, ctx: ContextTypes.DEFAULT_TYPE):
             await ctx.bot.send_invoice(
                 chat_id=uid,
                 title=f"{sdata['emoji']} {sname_raw}",
-                description=f"{sdata['desc']} · Сезонный эксклюзив — исчезнет навсегда!",
+                description=f"{sdata['desc']}\nСезонный эксклюзив — исчезнет навсегда",
                 payload=f"seasonal_skin_{sname_raw.replace(' ', '_')}",
                 currency="XTR",
                 prices=[LabeledPrice(label=f"{sdata['emoji']} {sname_raw}", amount=sdata["stars"])],
@@ -34663,7 +34663,7 @@ async def on_callback(update: Update, ctx: ContextTypes.DEFAULT_TYPE):
                 f"Тётя Жаба кормит, моет и укладывает спать <b>{he(frog_name_ss)}</b>.\n"
                 f"Параметры держатся на 85% — тебе всегда есть чем заняться.\n\n"
                 f"🏪 <b>Трудяга</b> — 800{_E_XP}/мес\n"
-                f"Всё то же + <b>{he(frog_name_ss)}</b> каждый вечер приносит <b>400–700 монет</b>\n"
+                f"Всё то же + <b>{he(frog_name_ss)}</b> каждый вечер приносит <b>400–700{_E_COIN}</b>\n"
                 f"с Болотного Рынка и рассказывает что там было 🌿\n\n"
                 "\n"
                 f"{status_ss}"
@@ -35610,7 +35610,7 @@ async def on_callback(update: Update, ctx: ContextTypes.DEFAULT_TYPE):
             else:
                 adv_rows.append([
                     InlineKeyboardButton(
-                        f"🔒 Шашки · Морской бой  (ур.{UNLOCK_HARD})",
+                        f"🔒 Откроется на {UNLOCK_HARD} уровне",
                         callback_data="games_locked_hard",
                     )
                 ])
@@ -35619,7 +35619,7 @@ async def on_callback(update: Update, ctx: ContextTypes.DEFAULT_TYPE):
             adv_rows = [
                 [
                     InlineKeyboardButton(
-                        f"🔒 Казино · Лотерея · Дуэль · и ещё…  (ур.{UNLOCK_ADV})",
+                        f"🔒 Откроется на {UNLOCK_ADV} уровне",
                         callback_data="games_locked_adv",
                     )
                 ]
@@ -35927,11 +35927,11 @@ async def on_callback(update: Update, ctx: ContextTypes.DEFAULT_TYPE):
             await ctx.bot.send_invoice(
                 chat_id=uid,
                 title=f"🪙 {pkg['label']} — Frog Tamagotchi",
-                description=f"Получить {pkg['coins']} КваКоинов · {farm_label}",
+                description=f"Получить {pkg['coins']}{_E_COIN} · {farm_label}",
                 payload=f"coins_{pkg_idx}",
                 provider_token="",
                 currency="XTR",
-                prices=[LabeledPrice(label=f"{pkg['coins']} КваКоинов", amount=price_stars)],
+                prices=[LabeledPrice(label=f"{pkg['coins']}{_E_COIN}", amount=price_stars)],
             )
             try:
                 await q.message.edit_text(
@@ -38797,7 +38797,7 @@ async def on_callback(update: Update, ctx: ContextTypes.DEFAULT_TYPE):
         letter_rows = _hangman_kb(word, [], game_id)
         letter_rows.append([InlineKeyboardButton(t("chk_surrender", f), callback_data=f"hm_give_up_{game_id}")])
         diff_label = "📕 Сложный" if is_hard else "📗 Лёгкий"
-        bonus_hint = " (x1.5 монет за победу)" if is_hard else ""
+        bonus_hint = " (x1.5🪙 за победу)" if is_hard else ""
         try:
             await q.message.edit_text(
                 f"🪢 <b>Виселица</b> · {diff_label}{bonus_hint}\n"
@@ -40945,7 +40945,7 @@ async def on_callback(update: Update, ctx: ContextTypes.DEFAULT_TYPE):
             sent = await ctx.bot.send_message(
                 target_id,
                 f"⚔️ <b>{he(my_name)}</b> зовёт в болотный поход!\n\n"
-                f"📜 Логи каждые 15 мин · 🎲 Развилки · 🏆 Награды в конце\n"
+                f"📜 Логи каждые 15 мин · 🎲 Развилки\n🏆 Награды в конце\n"
                 f"🔒 Лягушки заняты на всё время похода.\n\n"
                 f"<b>Выбери длительность:</b> (есть 15 минут)",
                 parse_mode=ParseMode.HTML, reply_markup=kb,
@@ -44519,7 +44519,7 @@ async def on_callback(update: Update, ctx: ContextTypes.DEFAULT_TYPE):
         text = (
             f"📊 <b>{fname(f)}</b>\n\n"
             f"⭐ Уровень: {f['level']}\n"
-            f"{coin_emoji()} КваКоинов: {f['coins']}\n"
+            f"{coin_emoji()}{_E_COIN}: {f['coins']}\n"
             f"💸 Потрачено: {f.get('coins_spent', 0)}{coin_emoji()}\n"
             f"⭐ Stars потрачено: {f.get('stars_spent', 0)}\n"
             f"🔥 Стрик: {f['streak']} дней\n"
@@ -44725,7 +44725,7 @@ async def on_callback(update: Update, ctx: ContextTypes.DEFAULT_TYPE):
         }
         header = (
             f"🐸 <b>NFT KissedFrog</b>  ·  {flt_labels.get(flt, flt)}\n"
-            f"<i>Стр. {page+1}/{total_pages}  ·  {total} лотов  ·  нажми → купить</i>"
+            f"<i>Стр. {page+1}/{total_pages} · {total} лотов</i>"
         )
 
         buttons = []
@@ -44788,7 +44788,7 @@ async def on_callback(update: Update, ctx: ContextTypes.DEFAULT_TYPE):
             boost_line = f"\n✨ <b>Золотая лягушка:</b> 1⭐ = {int(5 * stars_mult)}{coin_emoji()} (+{int((stars_mult-1)*100)}%)\n"
 
         header = "💫 <b>Магазин Telegram Stars</b>\n\n"
-        header += f"{coin_emoji()} КваКоинов: {f['coins']}\n"
+        header += f"{coin_emoji()}{_E_COIN}: {f['coins']}\n"
         if boost_line:
             header += boost_line
         else:
@@ -44864,13 +44864,13 @@ async def on_callback(update: Update, ctx: ContextTypes.DEFAULT_TYPE):
         try:
             await ctx.bot.send_invoice(
                 chat_id=uid,
-                title=f"🪙 {coins_display} КваКоинов — Frog Tamagotchi",
-                description=f"Получить {coins_display} КваКоинов · {farm_label}{boost_desc}",
+                title=f"{coins_display}{_E_COIN} — Frog Tamagotchi",
+                description=f"Получить {coins_display}{_E_COIN} · {farm_label}{boost_desc}",
                 payload=f"coins_{pkg_idx}",
                 provider_token="",  # Telegram Stars не требует токена провайдера
                 currency="XTR",
                 prices=[
-                    LabeledPrice(label=f"{pkg['coins']} КваКоинов", amount=price_stars)
+                    LabeledPrice(label=f"{pkg['coins']}{_E_COIN}", amount=price_stars)
                 ],
             )
             # Редактируем сообщение чтобы показать статус
@@ -45430,7 +45430,7 @@ async def on_callback(update: Update, ctx: ContextTypes.DEFAULT_TYPE):
         sale_price = offer.get("price", 640 if is_worker else 160)
         sub_name = "🏪 Трудяга — 30 дней" if is_worker else "🧑‍🍼 Болотная Няня — 30 дней"
         description = (
-            "Автоуход + 400–700 монет/день с Болотного Рынка 🐸"
+            "Автоуход + 400–700🪙/день с Болотного Рынка 🐸"
             if is_worker else
             "Автоматический уход за лягушкой — кормление, купание, сон 🐸"
         )
@@ -45492,7 +45492,7 @@ async def on_callback(update: Update, ctx: ContextTypes.DEFAULT_TYPE):
         pkg = STAR_PACKAGES[pkg_idx]
         sub_name = "🏪 Трудяга — 30 дней" if is_worker else "🧑‍🍼 Болотная Няня — 30 дней"
         description = (
-            "Автоуход + 400–700 монет/день с Болотного Рынка 🐸"
+            "Автоуход + 400–700🪙/день с Болотного Рынка 🐸"
             if is_worker else
             "Автоматический уход за лягушкой — кормление, купание, сон 🐸"
         )
@@ -46126,7 +46126,7 @@ async def on_callback(update: Update, ctx: ContextTypes.DEFAULT_TYPE):
             f"📊 Итоговые шансы: @{he(c_user)} {int(final_p*100)}% / @{he(t_user)} {100-int(final_p*100)}%"
             f"{stake_result}\n"
             f"\n"
-            f"⚡ @{he(w_user)}: +0.3 Power → {w_final_power}  ·  @{he(l_user)}: +0.1 Power → {l_final_power}"
+            f"⚡ @{he(w_user)} +0.3 → {w_final_power}\n⚡ @{he(l_user)} +0.1 → {l_final_power}"
         )
         kb_result = InlineKeyboardMarkup(
             [[InlineKeyboardButton(t("btn_my_frog", f), callback_data="refresh")]]
@@ -49077,7 +49077,7 @@ async def on_callback(update: Update, ctx: ContextTypes.DEFAULT_TYPE):
             # Списываем ровно столько, сколько заработано с рефералов
             await db.execute("UPDATE frogs SET coins = MAX(0, coins - ?) WHERE user_id=?", (earned, suspect_id))
             await db.commit()
-        await q.answer((f"💸 Списано {earned} монет с ID:{suspect_id}")[:200], show_alert=True)
+        await q.answer((f"💸 Списано {earned}{_E_COIN} с ID:{suspect_id}")[:200], show_alert=True)
         await admin_log(uid, "strip_refcoins", suspect_id, details=f"stripped {earned} ref coins")
         return
 
@@ -50531,7 +50531,7 @@ async def on_callback(update: Update, ctx: ContextTypes.DEFAULT_TYPE):
                 icon_id="6028338546736107668"
             )],
             [InlineKeyboardButton(
-                f"🪙 {NFT_KVA_COINS} монет",
+                f"{NFT_KVA_COINS}{_E_COIN}",
                 callback_data="kva_retry_coins"
             )],
             [InlineKeyboardButton("❌ Закрыть", callback_data="kva_retry_cancel")],
@@ -50724,7 +50724,7 @@ async def successful_payment(update: Update, ctx: ContextTypes.DEFAULT_TYPE):
         _retry_markup_10 = InlineKeyboardMarkup([
             [btn(f"{NFT_KVA_STARS} Stars", callback_data="kva_retry_stars", icon_id="6028338546736107668"),
              btn(f"{NFT_KVA_STARS * 10} Stars ×10", callback_data="kva_retry_stars_10", icon_id="6028338546736107668")],
-            [InlineKeyboardButton(f"🪙 {NFT_KVA_COINS} монет", callback_data="kva_retry_coins")],
+            [InlineKeyboardButton(f"{NFT_KVA_COINS}{_E_COIN}", callback_data="kva_retry_coins")],
             [InlineKeyboardButton("❌ Закрыть", callback_data="kva_retry_cancel")],
         ])
         await update.message.reply_text(
@@ -50802,7 +50802,7 @@ async def successful_payment(update: Update, ctx: ContextTypes.DEFAULT_TYPE):
         _retry_markup_stars = InlineKeyboardMarkup([
             [btn(f"{NFT_KVA_STARS} Stars", callback_data="kva_retry_stars", icon_id="6028338546736107668"),
              btn(f"{NFT_KVA_STARS * 10} Stars ×10", callback_data="kva_retry_stars_10", icon_id="6028338546736107668")],
-            [InlineKeyboardButton(f"🪙 {NFT_KVA_COINS} монет", callback_data="kva_retry_coins")],
+            [InlineKeyboardButton(f"{NFT_KVA_COINS}{_E_COIN}", callback_data="kva_retry_coins")],
             [InlineKeyboardButton("❌ Закрыть", callback_data="kva_retry_cancel")],
         ])
         await update.message.reply_text(
@@ -51045,7 +51045,7 @@ async def successful_payment(update: Update, ctx: ContextTypes.DEFAULT_TYPE):
     )
     await update.message.reply_text(
         f"✅ <b>Оплата получена!</b>\n\n"
-        f"{coin_emoji()} Зачислено <b>{coins_to_add} КваКоинов</b>{boost_note}\n"
+        f"{coin_emoji()} Зачислено <b>{coins_to_add}{_E_COIN}</b>{boost_note}\n"
         f"Текущий баланс: {f['coins']}{coin_emoji()}",
         parse_mode=ParseMode.HTML,
     )
@@ -54050,7 +54050,7 @@ async def job_adventure_tick(ctx: ContextTypes.DEFAULT_TYPE):
                                     _t_uid,
                                     f"⚔️ <b>Поход завершён!</b>\n\n"
                                     f"Твоя лягушка вернулась из похода.\n"
-                                    f"🪙 <b>+{_t_reward} монет</b>  ⭐ <b>+{_t_xp} XP</b>\n"
+                                    f"<b>+{_t_reward}{_E_COIN}</b>  ⭐ <b>+{_t_xp} XP</b>\n"
                                     f"<i>(Автозавершение — превышено максимальное время)</i>",
                                     parse_mode=ParseMode.HTML,
                                 )
@@ -54116,7 +54116,7 @@ async def job_adventure_tick(ctx: ContextTypes.DEFAULT_TYPE):
                     f"{ending}\n\n"
                     f"<b>Итоги решений:</b>\n{result_text}"
                     f"{agree_note}\n\n"
-                    f"🪙 Каждый получает: <b>+{total_reward} монет</b>\n"
+                    f"Каждый получает: <b>+{total_reward}{_E_COIN}</b>\n"
                     f"⭐ <b>+{xp_reward} XP</b>"
                 )
 
@@ -54262,7 +54262,7 @@ async def job_sub_expiry_offer(ctx: ContextTypes.DEFAULT_TYPE):
                 orig_price  = 800   # обычная цена Трудяги
                 sale_price  = 640   # скидка 20%
                 sub_name    = "🏪 Трудяга"
-                benefit     = "400–700 монет каждый вечер + автоуход"
+                benefit     = "400–700🪙 каждый вечер + автоуход"
                 cb_buy      = "sub_renewal_offer_worker"
             else:
                 orig_price  = 200   # обычная цена Няни (как в STAR_PACKAGES)
@@ -54381,7 +54381,7 @@ async def job_birthday_check(ctx: ContextTypes.DEFAULT_TYPE):
             await ctx.bot.send_message(
                 uid,
                 f"🎂 <b>День рождения!</b>\n\n{text}\n\n"
-                f"🎁 Подарок: <b>+100 КваКоинов</b> и <b>+30 настроения</b>!",
+                f"🎁 Подарок: <b>+100{_E_COIN}</b> и <b>+30 настроения</b>!",
                 parse_mode=ParseMode.HTML,
             )
             # Анонс в чат
@@ -54923,7 +54923,7 @@ async def job_background_decay(ctx: ContextTypes.DEFAULT_TYPE):
                         f"<i>Если некогда следить — Болотная Няня покормит её пока ты занят.</i>",
                         parse_mode=ParseMode.HTML,
                         reply_markup=InlineKeyboardMarkup([[
-                            InlineKeyboardButton("🧑‍🍼 Попробовать Няню (7 дней — 75⭐)", callback_data="sub_buy_nanny_7"),
+                            InlineKeyboardButton("🧑‍🍼 Няня · 7 дней · 75⭐", callback_data="sub_buy_nanny_7"),
                         ]])
                     )
                 except Exception:
@@ -54952,7 +54952,7 @@ async def job_background_decay(ctx: ContextTypes.DEFAULT_TYPE):
                     if not _has_sub_death:
                         death_msg += "\n\n<i>Болотная Няня следила бы за ней пока ты был занят.</i>"
                         death_kb = InlineKeyboardMarkup([[
-                            InlineKeyboardButton("🧑‍🍼 Попробовать Няню (7 дней — 75⭐)", callback_data="sub_buy_nanny_7"),
+                            InlineKeyboardButton("🧑‍🍼 Няня · 7 дней · 75⭐", callback_data="sub_buy_nanny_7"),
                         ]])
                     await ctx.bot.send_message(
                         uid_dec,
@@ -55415,7 +55415,7 @@ async def _work_phase_evening(now: float, bot):
                 bot, uid,
                 f"{scene['prof_emoji']} <b>{name} вернулась с работы!</b>\n\n"
                 f"{outcome}\n\n"
-                f"{_E_COIN} Принесла домой: <b>+{earned} КваКоинов</b>{bonus_line}\n\n"
+                f"{_E_COIN} Принесла домой: <b>+{earned}{_E_COIN}</b>{bonus_line}\n\n"
                 f"<i>«Ква! Устала, но довольна!» <tg-emoji emoji-id='5341367834935075028'>🐸</tg-emoji></i>",
                 parse_mode=ParseMode.HTML,
             )
@@ -55555,14 +55555,14 @@ async def job_risk_analyzer(ctx: ContextTypes.DEFAULT_TYPE) -> None:
                     continue  # Админы освобождены от авто-риска
                 cur_risk = await get_user_risk(uid_d)
                 if cur_risk < 2:
-                    reason = f"Переводы {cnt_d} уникальным получателям за 24ч ({total_d} монет)"
+                    reason = f"Переводы {cnt_d} уникальным получателям за 24ч ({total_d}{_E_COIN})"
                     await set_user_risk(uid_d, 2, reason)
                     f_d = await db_get(uid_d)
                     name_d = (f_d.get("first_name") or str(uid_d)) if f_d else str(uid_d)
                     alerts.append(
                         f"🔴 <b>Риск 2</b> — распределитель\n"
                         f"👤 <code>{uid_d}</code> ({_html.escape(name_d)})\n"
-                        f"📤 {cnt_d} получателей, {total_d} монет за 24ч"
+                        f"📤 {cnt_d} получателей, {total_d}{_E_COIN} за 24ч"
                     )
 
             # ── 2. Концентраторы: много источников → один получатель ─────────
@@ -55583,14 +55583,14 @@ async def job_risk_analyzer(ctx: ContextTypes.DEFAULT_TYPE) -> None:
                     continue  # Админы освобождены от авто-риска
                 cur_risk = await get_user_risk(uid_c)
                 if cur_risk < 2:
-                    reason = f"Получил переводы от {cnt_c} уникальных отправителей за 24ч ({total_c} монет)"
+                    reason = f"Получил переводы от {cnt_c} уникальных отправителей за 24ч ({total_c}{_E_COIN})"
                     await set_user_risk(uid_c, 2, reason)
                     f_c = await db_get(uid_c)
                     name_c = (f_c.get("first_name") or str(uid_c)) if f_c else str(uid_c)
                     alerts.append(
                         f"🔴 <b>Риск 2</b> — концентратор\n"
                         f"👤 <code>{uid_c}</code> ({_html.escape(name_c)})\n"
-                        f"📥 {cnt_c} отправителей, {total_c} монет за 24ч"
+                        f"📥 {cnt_c} отправителей, {total_c}{_E_COIN} за 24ч"
                     )
 
             # ── 3. Массовое кормление одной цели за 1 час ────────────────────
@@ -56342,7 +56342,7 @@ async def post_init(app: Application):
                                     _sa_uid,
                                     f"⚔️ <b>Поход завершён!</b>\n\n"
                                     f"Твоя лягушка вернулась.\n"
-                                    f"🪙 <b>+{_sa_reward} монет</b>  ⭐ <b>+{_sa_xp} XP</b>\n"
+                                    f"<b>+{_sa_reward}{_E_COIN}</b>  ⭐ <b>+{_sa_xp} XP</b>\n"
                                     f"<i>(Автозавершение при перезапуске бота)</i>",
                                     parse_mode="HTML",
                                 )
@@ -57539,7 +57539,7 @@ async def farewell_phase2(ctx: ContextTypes.DEFAULT_TYPE):
 
     kb = InlineKeyboardMarkup([
         [InlineKeyboardButton("🕯️ Зажечь свечу", callback_data=f"farewell_candle_{fw['uid']}")],
-        [btn("🌿 Воскресить свою лягушку (бесплатно)", callback_data=f"farewell_revive_{fw['uid']}", style="success")],
+        [btn("🌿 Воскресить бесплатно", callback_data=f"farewell_revive_{fw['uid']}", style="success")],
     ])
     try:
         msg = await ctx.bot.send_message(
@@ -58841,7 +58841,7 @@ async def cmd_fix_workers(update: Update, ctx: ContextTypes.DEFAULT_TYPE):
                     ctx.bot, uid,
                     f"{scene['prof_emoji']} <b>{name} вернулась с работы!</b>\n\n"
                     f"{outcome}\n\n"
-                    f"{_E_COIN} Принесла домой: <b>+{earned} КваКоинов</b>{bonus_line}\n\n"
+                    f"{_E_COIN} Принесла домой: <b>+{earned}{_E_COIN}</b>{bonus_line}\n\n"
                     f"<i>«Ква! Устала, но довольна!» <tg-emoji emoji-id='5341367834935075028'>🐸</tg-emoji></i>",
                     parse_mode=ParseMode.HTML,
                 )
@@ -60325,7 +60325,7 @@ async def handle_checkers_callback(q, d, uid, ctx):
             await q.message.edit_text(
                 f"♟️ <b>{_html.escape(user.first_name)}</b> вызывает на шашки!\n"
                 f"Ставка: <b>{stake}{_E_COIN}</b> с каждого · банк: <b>{stake * 2}{_E_COIN}</b>\n\n"
-                f"⚫ = чёрные · ⚪ = белые · 🔵🟡 = дамки · ✅ = возможный ход",
+                f"⚫ чёрные · ⚪ белые\n🔵🟡 дамки · ✅ ход",
                 parse_mode=ParseMode.HTML, reply_markup=kb,
             )
         except Exception: pass
@@ -60806,7 +60806,7 @@ def _bs_place_kb(gid: str, placed: set, size: int, max_ships: int) -> InlineKeyb
     if count == max_ships:
         rows.append([btn("✅ Готово", callback_data=f"bsc|{gid}", style="success")])
     else:
-        rows.append([InlineKeyboardButton(f"🟩 Выбрано {count}/{max_ships} — тапни клетки", callback_data="noop")])
+        rows.append([InlineKeyboardButton(f"🟩 Выбрано {count}/{max_ships}", callback_data="noop")])
     rows.append([btn("🚫 Отменить вызов", callback_data=f"bsq|{gid}", style="danger")])
     return InlineKeyboardMarkup(rows)
 
@@ -68967,7 +68967,7 @@ async def _war_callbacks_v2(q, d: str, uid: int, f: dict, ctx) -> bool:
 
         if not both_full:
             join_kb_upd = InlineKeyboardMarkup([[
-                btn(f"⚔️ Вступить ({att_fighters}/{size} бойцов, {att_total} всего)",
+                btn(f"⚔️ Вступить{SEP}{att_fighters}/{size}",
                     callback_data=f"sk_join_{sk_id}"),
             ]])
         else:
@@ -68975,7 +68975,7 @@ async def _war_callbacks_v2(q, d: str, uid: int, f: dict, ctx) -> bool:
 
         status_upd = (
             f"⚔️ <b>СТЫЧКА — сбор</b>\n"
-            f"⚔️ Нападение: <b>{att_fighters}/{size}</b> · 🛡️ Защита: <b>{def_fighters}/{size}</b>\n"
+            f"⚔️ <b>{att_fighters}/{size}</b> · 🛡️ <b>{def_fighters}/{size}</b>\n"
             f"✅ {he(fname(f))} вступил за <b>{side_ru}</b>!"
             + ("\n\n🔔 <b>Оба отряда готовы — стычка начинается!</b>" if both_full else "")
         )
@@ -70629,7 +70629,7 @@ async def _war_callbacks(q, d, uid, f, ctx):
         try:
             await q.message.edit_text(
                 f"⚔️ <b>Стычка: нападение vs защита</b>\n"
-                f"Нападающие: <b>{att_cnt}/{size}</b> · Защитники: <b>{def_cnt}/{size}</b>\n\n"
+                f"⚔️ <b>{att_cnt}/{size}</b> · 🛡️ <b>{def_cnt}/{size}</b>\n\n"
                 f"✅ {he(fname(await db_get(uid)))} записан в отряд <b>{side_ru}</b>."
                 + ("\n\n🔔 Оба отряда готовы — стычка начинается!" if _both_full else ""),
                 parse_mode=ParseMode.HTML,
@@ -71207,7 +71207,7 @@ def _auction_kb(auction_id: int, my_bid: int, top1: int) -> InlineKeyboardMarkup
         rows.append([btn(f"➕ Добавить 1 000🪙 (итого {my_bid+1000:,})", callback_data="auction_bid_1000")])
         rows.append([btn(f"➕ Добавить 5 000🪙 (итого {my_bid+5000:,})", callback_data="auction_bid_5000")])
     else:
-        rows.append([btn(f"🔨 Поставить {beats:,}🪙 (обогнать лидера)", callback_data=f"auction_bid_{beats}", style="primary")])
+        rows.append([btn(f"🔨 Поставить {beats:,}🪙", callback_data=f"auction_bid_{beats}", style="primary")])
         rows.append([btn("🔨 Поставить 1 000🪙", callback_data="auction_bid_1000")])
         rows.append([btn("🔨 Поставить 5 000🪙", callback_data="auction_bid_5000")])
     rows.append([
