@@ -29931,6 +29931,2749 @@ async def build_feed_kb(uid: int, f: dict) -> InlineKeyboardMarkup:
     return InlineKeyboardMarkup(rows)
 
 
+# ══════════════════════════════════════════════════════════════════════════════
+# 🛠  РОУТЕР АДМИНКИ
+# ══════════════════════════════════════════════════════════════════════════════
+# Вынесен из on_callback. Регистрируется с pattern=, поэтому админские нажатия
+# больше не проходят через сотни чужих условий, а чужие — через админские.
+#
+# Все ветки здесь самодостаточны и заканчиваются return, так что порядок между
+# ними значения не имеет.
+async def admin_router(update: Update, ctx: ContextTypes.DEFAULT_TYPE):
+    q = update.callback_query
+    uid = q.from_user.id
+    d = q.data
+
+    # Права проверяются внутри каждой ветки: часть экранов (cs_, ca_) доступна
+    # администраторам чата, а не только владельцам бота.
+    f = await db_get(uid)
+    if not f:
+        await q.answer("Сначала напиши /start", show_alert=True)
+        return
+    f = decay(f)
+
+    # ── admin_msg — написать игроку из adminlookup ──────────────────────────
+    if d.startswith("admin_msg_"):
+        if uid not in ADMIN_IDS:
+            await q.answer("Нет доступа", show_alert=True); return
+        target_uid_msg = int(d[10:])
+        ctx.user_data[f"admin_msg_{uid}"] = target_uid_msg
+        await q.answer()
+        try:
+            await q.message.edit_text(
+                "✉️ <b>Сообщение игроку от администрации</b>\n\nНапиши текст сообщения:",
+                parse_mode=ParseMode.HTML,
+                reply_markup=InlineKeyboardMarkup([[btn("❌ Отмена", callback_data="admin_refresh")]])
+            )
+        except Exception: pass
+        return
+    if d.startswith("admin_ban_toggle_"):
+        if uid not in ADMIN_IDS:
+            await q.answer("Нет доступа", show_alert=True); return
+        target_uid_bt = int(d[17:])
+        tf_bt = await db_get(target_uid_bt)
+        if not tf_bt:
+            await q.answer("Игрок не найден", show_alert=True); return
+        tf_bt["banned"] = 0 if tf_bt.get("banned") else 1
+        await db_save(tf_bt)
+        status = "забанен 🚫" if tf_bt["banned"] else "разбанен ✅"
+        await q.answer((f"{fname(tf_bt)} {status}")[:200], show_alert=True)
+        return
+    if d == "admin_boost_menu":
+        if uid not in ADMIN_IDS:
+            await q.answer("⛔", show_alert=True)
+            return
+        await q.answer()
+        active = await boost_is_active()
+        rem = await boost_remaining_secs()
+        h_rem, m_rem = divmod(int(rem) // 60, 60)
+        status_str = (
+            f"✅ Активно — осталось {h_rem}ч {m_rem}м"
+            if active else "⛔ Не активно"
+        )
+        kb_boost = InlineKeyboardMarkup([
+            [
+                btn("1 ч",  callback_data="admin_boost_start_1"),
+                btn("3 ч",  callback_data="admin_boost_start_3"),
+                btn("6 ч",  callback_data="admin_boost_start_6"),
+            ],
+            [
+                btn("12 ч", callback_data="admin_boost_start_12"),
+                btn("24 ч", callback_data="admin_boost_start_24"),
+            ],
+            [btn("⏹ Остановить событие", callback_data="admin_boost_stop")],
+            [btn("◀️ Назад", callback_data="admin_events")],
+        ])
+        try:
+            await q.message.edit_text(
+                f"✨ <b>Событие «Золотая лягушка»</b>\n\n"
+                f"Статус: {status_str}\n\n"
+                f"Эффекты:\n"
+                f"  💫 Stars → КваКоины: ×1.5 (1{_E_XP}=3{_E_COIN})\n"
+                f"  🍀 Легендарки в гаче: ×2\n"
+                f"  🔴 Мифики в гаче: ×2\n\n"
+                f"Выбери длительность для запуска:",
+                parse_mode=ParseMode.HTML,
+                reply_markup=kb_boost,
+            )
+        except Exception:
+            pass
+        return
+    if d.startswith("admin_boost_start_"):
+        if uid not in ADMIN_IDS:
+            await q.answer("⛔", show_alert=True)
+            return
+        try:
+            hours = int(d.split("_")[-1])
+        except ValueError:
+            return
+        await boost_set(hours)
+        await db_setting("boost_reminded", "0")
+        await q.answer((f"✨ Золотая лягушка активна на {hours}ч")[:200], show_alert=True)
+        # Анонс в общий чат
+        try:
+            await ctx.bot.send_message(
+                CHAT_ID,
+                f"✨ <b>Событие «Золотая лягушка» началось!</b>\n\n"
+                f"⏳ Длительность: <b>{hours} ч</b>\n\n"
+                f"💫 Курс Stars повышен: <b>1{_E_XP} = 3{coin_emoji()}</b>\n"
+                f"🍀 Шансы на легендарные облики в гаче: <b>×2</b>\n"
+                f"🔴 Шансы на мифические: <b>×2</b>\n\n"
+                f"<i>Скорее в магазин и гачу! <tg-emoji emoji-id='5341367834935075028'>🐸</tg-emoji></i>",
+                parse_mode=ParseMode.HTML,
+            )
+        except Exception:
+            pass
+        # ЛС-рассылка
+        async with aiosqlite.connect(DB_PATH) as db:
+            async with db.execute("SELECT user_id FROM frogs WHERE alive=1") as c:
+                uids_boost = [r[0] for r in await c.fetchall()]
+        for buid in uids_boost:
+            try:
+                await ctx.bot.send_message(
+                    buid,
+                    f"✨ <b>Золотая лягушка!</b>\n\n"
+                    f"Сейчас выгодно: 1{_E_XP} = 3{coin_emoji()}, леги ×2 в гаче!\n"
+                    f"Событие идёт <b>{hours} ч</b>. Заходи!",
+                    parse_mode=ParseMode.HTML,
+                )
+            except Exception:
+                pass
+            await asyncio.sleep(0.05)
+        return
+    if d == "admin_boost_stop":
+        if uid not in ADMIN_IDS:
+            await q.answer("⛔", show_alert=True)
+            return
+        await boost_clear()
+        await db_setting("boost_reminded", "0")
+        await q.answer("⏹ Событие остановлено.", show_alert=True)
+        try:
+            await ctx.bot.send_message(
+                CHAT_ID,
+                "🌙 <b>Событие «Золотая лягушка» завершено досрочно.</b>\n"
+                "Курсы и шансы вернулись в норму. <tg-emoji emoji-id='5341367834935075028'>🐸</tg-emoji>",
+                parse_mode=ParseMode.HTML,
+            )
+        except Exception:
+            pass
+        return
+    if d.startswith("nft_approve_") and not d.startswith("nft_approve_list_"):
+        nft_id = int(d.split("_")[2])
+        async with aiosqlite.connect(DB_PATH) as db:
+            db.row_factory = aiosqlite.Row
+            async with db.execute("SELECT * FROM nft_frogs WHERE id=?", (nft_id,)) as c:
+                nft = await c.fetchone()
+        if not nft:
+            await q.answer("Заявка не найдена", show_alert=True)
+            return
+        nft = dict(nft)
+        if nft["verified"] == 1:
+            await q.answer("Уже подтверждено", show_alert=True)
+            return
+        async with aiosqlite.connect(DB_PATH) as db:
+            await db.execute("UPDATE nft_frogs SET verified=1 WHERE id=?", (nft_id,))
+            await db.commit()
+        model_name = (nft.get("model_name") or "").strip()
+        nft_url = nft.get("nft_url") or f"https://t.me/nft/KissedFrog-{nft['nft_number']}"
+        if model_name and model_name in SKINS:
+            skin_to_give = model_name
+            # Запоминаем nft_url для этого облика в памяти (per-user будет через equipped_nft_url)
+        else:
+            skin_to_give = f"KissedFrog #{nft['nft_number']}"
+            if skin_to_give not in SKINS:
+                SKINS[skin_to_give] = {
+                    "chance": 0,
+                    "sid": 0,
+                    "rarity": "legendary",
+                    "emoji": "🪸",
+                    "nft_url": nft_url,
+                }
+        await db_add_skin(nft["user_id"], skin_to_give)
+        await ach_grant(nft["user_id"], "nft_owner", ctx.bot)
+        try:
+            await ctx.bot.send_message(
+                nft["user_id"],
+                f"✅ <b>Ваша NFT подтверждена!</b>\n\n"
+                f"🪸 <a href=\"{nft_url}\">KissedFrog #{nft['nft_number']}</a>\n"
+                f"🎨 Облик <b>{skin_to_give}</b> добавлен в коллекцию!\n"
+                f"Надеть: /frog → 🎒 Инвентарь",
+                parse_mode=ParseMode.HTML,
+                link_preview_options=LinkPreviewOptions(),
+            )
+        except Exception:
+            pass
+        # Приглашение в закрытый NFT-клуб
+        if NFT_CLUB_CHAT_ID:
+            try:
+                invite_link = await ctx.bot.create_chat_invite_link(
+                    chat_id=NFT_CLUB_CHAT_ID,
+                    member_limit=1,
+                    name=f"invite_{nft['user_id']}_{int(time.time())}",
+                )
+                await ctx.bot.send_message(
+                    nft["user_id"],
+                    f"🎉 <b>Добро пожаловать в клуб NFT-холдеров!</b>\n\n"
+                    f"🪸 Присоединяйся к закрытому сообществу KissedFrog:\n"
+                    f"{invite_link.invite_link}\n\n"
+                    f"<i>Ссылка одноразовая, не передавай её другим.</i>",
+                    parse_mode=ParseMode.HTML,
+                )
+            except Exception as e:
+                print(f"Ошибка отправки приглашения в NFT-клуб: {e}")
+        await q.answer((f"✅ Подтверждено. Выдан: {skin_to_give}")[:200], show_alert=True)
+        try:
+            await q.edit_message_reply_markup(reply_markup=None)
+        except Exception:
+            pass
+        return
+    if d.startswith("nft_reject_") and not d.startswith("nft_reject_list_"):
+        nft_id = int(d.split("_")[2])
+        async with aiosqlite.connect(DB_PATH) as db:
+            async with db.execute(
+                "SELECT user_id, nft_number FROM nft_frogs WHERE id=?", (nft_id,)
+            ) as c:
+                row = await c.fetchone()
+            await db.execute("UPDATE nft_frogs SET verified=-1 WHERE id=?", (nft_id,))
+            await db.commit()
+        if row:
+            try:
+                await ctx.bot.send_message(
+                    row[0],
+                    f"{_E_CROSS} Заявка на KissedFrog #{row[1]} отклонена администратором.\n"
+                    f"Если считаете это ошибкой — напишите /nft с правильной ссылкой.",
+                )
+            except Exception:
+                pass
+        await q.answer("❌ Отклонено", show_alert=True)
+        try:
+            await q.edit_message_reply_markup(reply_markup=None)
+        except Exception:
+            pass
+        return
+    # ── /chatsettings и /chatadmin колбэки (единая панель) ──────────────
+    if d.startswith("cs_") or d == "cs_close" or d.startswith("ca_") or d == "ca_close":
+        await _handle_chatadmin_callback(q, uid, ctx)
+        return
+    # ── /chatadmin колбэки ───────────────────────────────────────────
+    if d.startswith("ca_") or d == "ca_close":
+        await _handle_chatadmin_callback(q, uid, ctx)
+        return
+    # Подтверждение заявки из списка
+    if d.startswith("nft_approve_list_"):
+        # формат: nft_approve_list_<id>_<page>
+        parts = d.split("_")
+        nft_id = int(parts[3])
+        page = int(parts[4])
+
+        # Получаем заявку
+        async with aiosqlite.connect(DB_PATH) as db:
+            db.row_factory = aiosqlite.Row
+            async with db.execute("SELECT * FROM nft_frogs WHERE id=?", (nft_id,)) as c:
+                nft = await c.fetchone()
+
+        if not nft:
+            await q.answer("Заявка не найдена", show_alert=True)
+            return
+
+        nft = dict(nft)
+        if nft["verified"] == 1:
+            await q.answer("Уже подтверждено", show_alert=True)
+            await show_nft_list(q, ctx, page, edit=True)
+            return
+
+        # Подтверждаем
+        async with aiosqlite.connect(DB_PATH) as db:
+            await db.execute("UPDATE nft_frogs SET verified=1 WHERE id=?", (nft_id,))
+            await db.commit()
+
+        # Определяем скин: если model_name есть и он в SKINS — используем его
+        model_name = (nft.get("model_name") or "").strip()
+        nft_url = nft.get("nft_url") or f"https://t.me/nft/KissedFrog-{nft['nft_number']}"
+        if model_name and model_name in SKINS:
+            skin_to_give = model_name
+        else:
+            # Фолбек: создаём уникальный скин KissedFrog #N
+            skin_to_give = f"KissedFrog #{nft['nft_number']}"
+            if skin_to_give not in SKINS:
+                SKINS[skin_to_give] = {
+                    "chance": 0,
+                    "sid": 0,
+                    "rarity": "legendary",
+                    "emoji": "🪸",
+                    "nft_url": nft_url,
+                }
+        await db_add_skin(nft["user_id"], skin_to_give)
+        await ach_grant(nft["user_id"], "nft_owner", ctx.bot)
+
+        # Уведомляем пользователя
+        try:
+            await ctx.bot.send_message(
+                nft["user_id"],
+                f"✅ <b>Ваша NFT подтверждена!</b>\n\n"
+                f"🪸 <a href=\"{nft_url}\">KissedFrog #{nft['nft_number']}</a>\n"
+                f"🎨 Облик <b>{skin_to_give}</b> добавлен в коллекцию!\n"
+                f"Надеть: /frog → 🎒 Инвентарь",
+                parse_mode=ParseMode.HTML,
+                link_preview_options=LinkPreviewOptions(),
+            )
+        except Exception:
+            pass
+        # Приглашение в закрытый NFT-клуб
+        if NFT_CLUB_CHAT_ID:
+            try:
+                invite_link = await ctx.bot.create_chat_invite_link(
+                    chat_id=NFT_CLUB_CHAT_ID,
+                    member_limit=1,
+                    name=f"invite_{nft['user_id']}_{int(time.time())}",
+                )
+                await ctx.bot.send_message(
+                    nft["user_id"],
+                    f"🎉 <b>Добро пожаловать в клуб NFT-холдеров!</b>\n\n"
+                    f"🪸 Присоединяйся к закрытому сообществу KissedFrog:\n"
+                    f"{invite_link.invite_link}\n\n"
+                    f"<i>Ссылка одноразовая, не передавай её другим.</i>",
+                    parse_mode=ParseMode.HTML,
+                )
+            except Exception as e:
+                print(f"Ошибка отправки приглашения в NFT-клуб: {e}")
+
+        await q.answer("✅ Заявка подтверждена", show_alert=True)
+        # Обновляем список
+        await show_nft_list(q, ctx, page, edit=True)
+        return
+    # Отклонение заявки из списка
+    if d.startswith("nft_reject_list_"):
+        parts = d.split("_")
+        nft_id = int(parts[3])
+        page = int(parts[4])
+
+        async with aiosqlite.connect(DB_PATH) as db:
+            # Помечаем как отклонённую (verified = -1)
+            await db.execute("UPDATE nft_frogs SET verified=-1 WHERE id=?", (nft_id,))
+            await db.commit()
+
+        await q.answer("❌ Заявка отклонена", show_alert=True)
+        # Обновляем список
+        await show_nft_list(q, ctx, page, edit=True)
+        return
+    # ── ADMIN PANEL ──────────────────────────────────
+    if d in ("admin_refresh", "admin_panel") or d == "admin_nft":
+        if uid not in ADMIN_IDS:
+            await q.answer("⛔", show_alert=True)
+            return
+        if d == "admin_nft":
+            await show_nft_list(q, ctx, 0, edit=True)
+        else:
+            await show_admin_panel(q.message, edit=True, bot_data=ctx.bot_data)
+        await q.answer()
+        return
+    if d == "admin_stats":
+        if uid not in ADMIN_IDS:
+            await q.answer("⛔", show_alert=True)
+            return
+        now_ts = time.time()
+        day_ago = now_ts - 86400
+        week_ago = now_ts - 7 * 86400
+
+        # Обновляем пиковый онлайн при просмотре статистики
+        _update_peak_online(0)  # текущий подсчёт идёт ниже, пока 0
+
+        async with aiosqlite.connect(DB_PATH) as db:
+            # Везде исключаем забаненых и ботов — они считаются только в своём пункте
+            _REAL = "banned=0 AND is_bot=0"
+            async with db.execute(f"SELECT COUNT(*) FROM frogs WHERE {_REAL}") as c:
+                total = (await c.fetchone())[0]
+            async with db.execute(f"SELECT COUNT(*) FROM frogs WHERE alive=1 AND {_REAL}") as c:
+                alive = (await c.fetchone())[0]
+            async with db.execute(f"SELECT COUNT(*) FROM frogs WHERE alive=0 AND {_REAL}") as c:
+                dead = (await c.fetchone())[0]
+            async with db.execute("SELECT COUNT(*) FROM frogs WHERE banned=1") as c:
+                banned_cnt = (await c.fetchone())[0] or 0
+            async with db.execute(f"SELECT COUNT(*) FROM frogs WHERE born_at>? AND {_REAL}", (day_ago,)) as c:
+                new_24h = (await c.fetchone())[0] or 0
+            async with db.execute(f"SELECT COUNT(*) FROM frogs WHERE born_at>? AND {_REAL}", (week_ago,)) as c:
+                new_7d = (await c.fetchone())[0] or 0
+            async with db.execute(f"SELECT COUNT(*) FROM frogs WHERE (last_feed>? OR last_play>?) AND {_REAL}", (day_ago, day_ago)) as c:
+                active_24h = (await c.fetchone())[0] or 0
+            async with db.execute(f"SELECT COUNT(*) FROM frogs WHERE (last_feed>? OR last_play>?) AND {_REAL}", (week_ago, week_ago)) as c:
+                active_7d = (await c.fetchone())[0] or 0
+            async with db.execute(f"SELECT SUM(coins) FROM frogs WHERE {_REAL}") as c:
+                total_coins = (await c.fetchone())[0] or 0
+            async with db.execute(f"SELECT AVG(coins) FROM frogs WHERE alive=1 AND {_REAL}") as c:
+                avg_coins = (await c.fetchone())[0] or 0
+            async with db.execute(f"SELECT SUM(coins_spent) FROM frogs WHERE {_REAL}") as c:
+                total_spent = (await c.fetchone())[0] or 0
+            async with db.execute(f"SELECT SUM(total_feeds) FROM frogs WHERE {_REAL}") as c:
+                total_feeds = (await c.fetchone())[0] or 0
+            async with db.execute(f"SELECT SUM(total_casino) FROM frogs WHERE {_REAL}") as c:
+                total_casino = (await c.fetchone())[0] or 0
+            async with db.execute(f"SELECT SUM(total_casino_wins) FROM frogs WHERE {_REAL}") as c:
+                total_casino_wins = (await c.fetchone())[0] or 0
+            async with db.execute(f"SELECT SUM(total_duels) FROM frogs WHERE {_REAL}") as c:
+                total_duels = (await c.fetchone())[0] or 0
+            async with db.execute(f"SELECT SUM(total_duel_wins) FROM frogs WHERE {_REAL}") as c:
+                total_duel_wins = (await c.fetchone())[0] or 0
+            async with db.execute(f"SELECT SUM(total_gacha) FROM frogs WHERE {_REAL}") as c:
+                total_gacha = (await c.fetchone())[0] or 0
+            async with db.execute(f"SELECT SUM(total_mosquitoes) FROM frogs WHERE {_REAL}") as c:
+                total_mosquitoes = (await c.fetchone())[0] or 0
+            async with db.execute(f"SELECT SUM(stars_spent) FROM frogs WHERE {_REAL}") as c:
+                total_stars = (await c.fetchone())[0] or 0
+            async with db.execute(f"SELECT MAX(level) FROM frogs WHERE {_REAL}") as c:
+                max_level = (await c.fetchone())[0] or 0
+            async with db.execute(f"SELECT AVG(level) FROM frogs WHERE alive=1 AND {_REAL}") as c:
+                avg_level = (await c.fetchone())[0] or 0
+            async with db.execute("SELECT COUNT(*) FROM nft_frogs WHERE verified=1") as c:
+                nft_ok = (await c.fetchone())[0]
+            async with db.execute("SELECT COUNT(*) FROM nft_frogs WHERE verified=0") as c:
+                nft_pending = (await c.fetchone())[0]
+            async with db.execute("SELECT COUNT(*) FROM gift_log WHERE ts>?", (day_ago,)) as c:
+                gifts_24h = (await c.fetchone())[0] or 0
+            async with db.execute("SELECT SUM(amount) FROM gift_log WHERE ts>?", (day_ago,)) as c:
+                gifts_vol_24h = (await c.fetchone())[0] or 0
+            async with db.execute("SELECT COUNT(*) FROM referrals WHERE joined_at>?", (day_ago,)) as c:
+                refs_24h = (await c.fetchone())[0] or 0
+            async with db.execute("SELECT COUNT(*) FROM referrals") as c:
+                refs_total = (await c.fetchone())[0] or 0
+            async with db.execute("SELECT COUNT(*) FROM lottery_tickets WHERE purchased_at>?", (day_ago,)) as c:
+                lottery_24h = (await c.fetchone())[0] or 0
+            async with db.execute("SELECT COUNT(*) FROM mosquito_events WHERE created_at>?", (day_ago,)) as c:
+                mosquito_events_24h = (await c.fetchone())[0] or 0
+            async with db.execute("SELECT COUNT(*) FROM mosquito_events WHERE caught_by IS NOT NULL AND caught_by != -1") as c:
+                mosquito_caught = (await c.fetchone())[0] or 0
+            async with db.execute(
+                f"SELECT first_name, level FROM frogs WHERE {_REAL} ORDER BY level DESC LIMIT 5"
+            ) as c:
+                top5 = await c.fetchall()
+            async with db.execute(
+                f"SELECT first_name, coins FROM frogs WHERE alive=1 AND {_REAL} ORDER BY coins DESC LIMIT 3"
+            ) as c:
+                top3_rich = await c.fetchall()
+            async with db.execute(
+                f"SELECT first_name, total_gacha FROM frogs WHERE {_REAL} ORDER BY total_gacha DESC LIMIT 3"
+            ) as c:
+                top3_gacha = await c.fetchall()
+            # Топ скинов в коллекциях (только реальные игроки)
+            async with db.execute(
+                f"SELECT c.skin, COUNT(*) as cnt FROM collections c "
+                f"JOIN frogs f ON f.user_id=c.user_id WHERE f.{_REAL} "
+                f"GROUP BY c.skin ORDER BY cnt DESC LIMIT 5"
+            ) as c:
+                top5_skins = await c.fetchall()
+            # ── Статистика языков (без банов и ботов) ──
+            async with db.execute(f"SELECT COUNT(*) FROM frogs WHERE (lang='ru' OR lang IS NULL OR lang='') AND {_REAL}") as c:
+                lang_ru = (await c.fetchone())[0] or 0
+            async with db.execute(f"SELECT COUNT(*) FROM frogs WHERE lang='en' AND {_REAL}") as c:
+                lang_en = (await c.fetchone())[0] or 0
+            async with db.execute(f"SELECT COUNT(*) FROM frogs WHERE lang='zh' AND {_REAL}") as c:
+                lang_zh = (await c.fetchone())[0] or 0
+            # Активные за 7д по языкам
+            async with db.execute(f"SELECT COUNT(*) FROM frogs WHERE (lang='ru' OR lang IS NULL OR lang='') AND (last_feed>? OR last_play>?) AND {_REAL}", (week_ago, week_ago)) as c:
+                lang_ru_active = (await c.fetchone())[0] or 0
+            async with db.execute(f"SELECT COUNT(*) FROM frogs WHERE lang='en' AND (last_feed>? OR last_play>?) AND {_REAL}", (week_ago, week_ago)) as c:
+                lang_en_active = (await c.fetchone())[0] or 0
+            async with db.execute(f"SELECT COUNT(*) FROM frogs WHERE lang='zh' AND (last_feed>? OR last_play>?) AND {_REAL}", (week_ago, week_ago)) as c:
+                lang_zh_active = (await c.fetchone())[0] or 0
+            # ── Статистика застрявших на воскрешении (без банов и ботов) ──
+            async with db.execute(f"SELECT COUNT(*) FROM frogs WHERE alive=0 AND trial_active=0 AND {_REAL}") as c:
+                stuck_dead_notrial = (await c.fetchone())[0] or 0
+            async with db.execute(f"SELECT COUNT(*) FROM frogs WHERE alive=0 AND trial_active=1 AND {_REAL}") as c:
+                stuck_trial = (await c.fetchone())[0] or 0
+            async with db.execute(f"SELECT COUNT(*) FROM frogs WHERE alive=0 AND {_REAL}") as c:
+                total_dead_for_stuck = (await c.fetchone())[0] or 0
+            # Зарегистрировались но никогда не кормили (last_feed=0 и мертвы)
+            async with db.execute(f"SELECT COUNT(*) FROM frogs WHERE alive=0 AND (last_feed IS NULL OR last_feed=0) AND {_REAL}") as c:
+                stuck_never_fed = (await c.fetchone())[0] or 0
+            # Последний раз заходили > 7 дней назад и мертвы
+            async with db.execute(f"SELECT COUNT(*) FROM frogs WHERE alive=0 AND last_seen < ? AND {_REAL}", (week_ago,)) as c:
+                stuck_inactive_7d = (await c.fetchone())[0] or 0
+
+        top_txt = "\n".join(f"  {i+1}. {r[0]} — ур.{r[1]}" for i, r in enumerate(top5))
+        top_rich_txt = "\n".join(f"  {i+1}. {r[0]} — {r[1]:,}🪙" for i, r in enumerate(top3_rich))
+        top_gacha_txt = "\n".join(f"  {i+1}. {r[0]} — {r[1]} круток" for i, r in enumerate(top3_gacha))
+        top_skins_txt = "\n".join(f"  {s[0]}: {s[1]} владельцев" for s in top5_skins)
+        casino_wr = f"{total_casino_wins*100//total_casino}%" if total_casino > 0 else "—"
+        duel_wr = f"{total_duel_wins*100//total_duels}%" if total_duels > 0 else "—"
+
+        def _fmt_peak_stat(period: str) -> str:
+            count, ts = _peak_online.get(period, (0, 0))
+            return str(count) if count > 0 else "—"
+
+        # Язык: визуальный прогресс-бар
+        _lang_total = max(lang_ru + lang_en + lang_zh, 1)
+        def _lang_pct(n): return f"{n*100//_lang_total}%"
+        def _lang_bar(n):
+            filled = round(n / _lang_total * 10)
+            return "█" * filled + "░" * (10 - filled)
+
+        text = (
+            f"{_E_CHART} <b>Статистика бота</b>\n\n"
+            f"<b>{_E_USERS} Игроки</b> <i>(без банов и ботов)</i>\n"
+            f"Всего: <b>{total}</b> · 🐸 Живых: <b>{alive}</b> · 💀 Мёртвых: <b>{dead}</b>\n"
+            f"{_E_BAN} Забанено (отдельно, не в счёт): <b>{banned_cnt}</b>\n"
+            f"Новых за 24ч: <b>{new_24h}</b> · за 7д: <b>{new_7d}</b>\n"
+            f"Активных за 24ч: <b>{active_24h}</b> · за 7д: <b>{active_7d}</b>\n"
+            f"Макс. уровень: <b>{max_level}</b> · Средний: <b>{avg_level:.1f}</b>\n\n"
+            f"<b>🌐 Языки интерфейса</b>\n"
+            f"🇷🇺 Русский: <code>{_lang_bar(lang_ru)}</code> <b>{lang_ru}</b> ({_lang_pct(lang_ru)}) активных 7д: {lang_ru_active}\n"
+            f"🇬🇧 English: <code>{_lang_bar(lang_en)}</code> <b>{lang_en}</b> ({_lang_pct(lang_en)}) активных 7д: {lang_en_active}\n"
+            f"🇨🇳 中文: <code>{_lang_bar(lang_zh)}</code> <b>{lang_zh}</b> ({_lang_pct(lang_zh)}) активных 7д: {lang_zh_active}\n\n"
+            f"<b>📈 Пиковый онлайн (10 мин окно):</b>\n"
+            f"  Сутки: <b>{_fmt_peak_stat('day')}</b> · Неделя: <b>{_fmt_peak_stat('week')}</b> · Месяц: <b>{_fmt_peak_stat('month')}</b>\n\n"
+            f"<b>🪙 Экономика</b>\n"
+            f"КваКоинов в обороте: <b>{total_coins:,}</b>\n"
+            f"Среднее у живого: <b>{avg_coins:.0f}🪙</b>\n"
+            f"Всего потрачено: <b>{total_spent:,}🪙</b>\n"
+            f"{_E_STARS} Stars: <b>{total_stars}</b>\n\n"
+            f"<b>{_E_GAMES} Активность</b>\n"
+            f"🍎 Кормлений: <b>{total_feeds:,}</b>\n"
+            f"{_E_CASINO} Гача: <b>{total_gacha:,}</b>\n"
+            f"🎲 Казино: <b>{total_casino:,}</b> (побед: {total_casino_wins:,} / {casino_wr})\n"
+            f"{_E_SWORDS} Дуэлей: <b>{total_duels:,}</b> (побед: {total_duel_wins:,} / {duel_wr})\n"
+            f"🦟 Комаров поймано: <b>{total_mosquitoes:,}</b> · событий 24ч: {mosquito_events_24h} · поймано событий: {mosquito_caught}\n"
+            f"🎟 Лотерея за 24ч: <b>{lottery_24h}</b> билетов\n\n"
+            f"<b>🔗 Прочее</b>\n"
+            f"Рефералов: <b>{refs_total}</b> (за 24ч: {refs_24h})\n"
+            f"{_E_GIFT} Переводов за 24ч: <b>{gifts_24h}</b> ({gifts_vol_24h:,}🪙)\n"
+            f"🪸 NFT: подтверждено {nft_ok}, на проверке {nft_pending}\n\n"
+            f"<b>💀 Застрявшие на воскрешении</b>\n"
+            f"Всего мёртвых: <b>{total_dead_for_stuck}</b>\n"
+            f"  ├ Ждут выбора (без испытания): <b>{stuck_dead_notrial}</b>\n"
+            f"  ├ В испытании (не завершили): <b>{stuck_trial}</b>\n"
+            f"  ├ Никогда не кормили (брошены): <b>{stuck_never_fed}</b>\n"
+            f"  └ Неактивны > 7д (вероятно ушли): <b>{stuck_inactive_7d}</b>\n"
+            f"% от всех игроков: <b>{total_dead_for_stuck*100//max(total,1)}%</b>\n\n"
+            f"<b>{_E_TROPHY} Топ-5 по уровню:</b>\n{top_txt}\n\n"
+            f"<b>💰 Топ-3 богатейших:</b>\n{top_rich_txt}\n\n"
+            f"<b>{_E_CASINO} Топ-3 по гаче:</b>\n{top_gacha_txt}\n\n"
+            f"<b>👗 Топ-5 популярных скинов:</b>\n{top_skins_txt}"
+        )
+        try:
+            await q.message.edit_text(
+                text,
+                parse_mode=ParseMode.HTML,
+                reply_markup=InlineKeyboardMarkup([
+                    [btn("👗 Статистика обликов", callback_data="admin_skin_stats")],
+                    [btn("🔍 Поиск по облику", callback_data="admin_skin_browse_")],
+                    [btn("💀 Детали застрявших", callback_data="admin_stuck_stats")],
+                    [btn("◀️ Назад", callback_data="admin_refresh")],
+                ]),
+            )
+        except Exception:
+            pass
+        await q.answer()
+        return
+    # ── Просмотр обликов по редкости → облик → владельцы ──────────────
+    if d.startswith("admin_skin_browse_"):
+        if uid not in ADMIN_IDS:
+            await q.answer("⛔", show_alert=True); return
+        await q.answer()
+        suffix = d[len("admin_skin_browse_"):]
+
+        # Уровень 1: выбор редкости
+        if suffix == "" or suffix == "back":
+            rarity_order = ["secret", "mythic", "legendary", "epic", "rare", "uncommon", "common"]
+            kb = []
+            for r in rarity_order:
+                icon = R_ICON.get(r, "⚪")
+                name = R_NAME.get(r, r)
+                kb.append([btn(f"{icon} {name}", callback_data=f"admin_skin_browse_r_{r}")])
+            kb.append([btn("◀️ Назад", callback_data="admin_stats")])
+            try:
+                await q.message.edit_text(
+                    "🔍 <b>Поиск по облику</b>\n\nВыбери редкость:",
+                    parse_mode=ParseMode.HTML,
+                    reply_markup=InlineKeyboardMarkup(kb),
+                )
+            except Exception:
+                pass
+            return
+
+        # Уровень 2: список обликов выбранной редкости
+        if suffix.startswith("r_") and not suffix.startswith("r_s_"):
+            rarity = suffix[2:]
+            skins_of_rarity = [(sname, sdata) for sname, sdata in SKINS.items()
+                                if sdata.get("rarity") == rarity]
+            skins_of_rarity.sort(key=lambda x: x[0])
+            if not skins_of_rarity:
+                await q.answer("Нет обликов этой редкости.", show_alert=True); return
+            icon = R_ICON.get(rarity, "⚪")
+            name_r = R_NAME.get(rarity, rarity)
+            kb = []
+            for sname, _ in skins_of_rarity:
+                kb.append([btn(
+                    f"{sname}", callback_data=f"admin_skin_browse_r_s_{rarity}|{sname[:40]}"
+                )])
+            kb.append([btn("◀️ Назад", callback_data="admin_skin_browse_")])
+            try:
+                await q.message.edit_text(
+                    f"{_E_SEARCH} {icon} <b>{name_r}</b> — выбери облик:",
+                    parse_mode=ParseMode.HTML,
+                    reply_markup=InlineKeyboardMarkup(kb),
+                )
+            except Exception:
+                pass
+            return
+
+        # Уровень 3: список владельцев выбранного облика
+        if suffix.startswith("r_s_"):
+            parts = suffix[4:].split("|", 1)
+            if len(parts) != 2:
+                await q.answer(); return
+            rarity, skin_name = parts[0], parts[1]
+            async with aiosqlite.connect(DB_PATH) as _db:
+                _db.row_factory = aiosqlite.Row
+                async with _db.execute(
+                    "SELECT f.user_id, f.first_name, f.username, f.frog_name, f.level, f.alive "
+                    "FROM frogs f "
+                    "JOIN collections c ON c.user_id = f.user_id "
+                    "WHERE c.skin = ? AND c.qty > 0 AND f.banned = 0 "
+                    "ORDER BY f.level DESC LIMIT 50",
+                    (skin_name,)
+                ) as _c:
+                    owners = [dict(r) for r in await _c.fetchall()]
+            icon = R_ICON.get(rarity, "⚪")
+            if not owners:
+                lines = [f"{_E_SEARCH} {icon} <b>{he(skin_name)}</b>\n\n😶 Владельцев не найдено."]
+            else:
+                lines = [f"{_E_SEARCH} {icon} <b>{he(skin_name)}</b> — владельцы ({len(owners)}):\n"]
+                for o in owners:
+                    alive_icon = "🐸" if o["alive"] else "💀"
+                    fname_o = he(o["frog_name"] or o["first_name"] or "?")
+                    uname_o = f"@{o['username']}" if o["username"] else f"ID:{o['user_id']}"
+                    lines.append(f"{alive_icon} <b>{fname_o}</b> ({uname_o}) ур.{o['level']}")
+            kb = [[btn("◀️ Назад", callback_data=f"admin_skin_browse_r_{rarity}")]]
+            try:
+                await q.message.edit_text(
+                    "\n".join(lines),
+                    parse_mode=ParseMode.HTML,
+                    reply_markup=InlineKeyboardMarkup(kb),
+                )
+            except Exception:
+                pass
+            return
+    if d == "admin_stuck_stats":
+        if uid not in ADMIN_IDS:
+            await q.answer("⛔", show_alert=True)
+            return
+        await q.answer()
+        week_ago_s = time.time() - 7 * 86400
+        async with aiosqlite.connect(DB_PATH) as db:
+            # Застряли без испытания (просто мертвы и ждут)
+            async with db.execute(
+                "SELECT user_id, first_name, username, coins, level, last_seen "
+                "FROM frogs WHERE alive=0 AND trial_active=0 AND banned=0 AND is_bot=0 "
+                "ORDER BY last_seen DESC LIMIT 20"
+            ) as c:
+                stuck_rows = await c.fetchall()
+            # Застряли в испытании
+            async with db.execute(
+                "SELECT user_id, first_name, username, trial_quests, trial_progress, last_seen "
+                "FROM frogs WHERE alive=0 AND trial_active=1 AND banned=0 AND is_bot=0 "
+                "ORDER BY last_seen DESC LIMIT 10"
+            ) as c:
+                trial_rows = await c.fetchall()
+            # Итого
+            async with db.execute("SELECT COUNT(*) FROM frogs WHERE alive=0 AND banned=0 AND is_bot=0") as c:
+                total_dead = (await c.fetchone())[0] or 0
+            async with db.execute("SELECT COUNT(*) FROM frogs WHERE banned=0 AND is_bot=0") as c:
+                total_players = (await c.fetchone())[0] or 0
+
+        lines = [f"💀 <b>Детали застрявших на воскрешении</b>\n"]
+        lines.append(f"Всего мёртвых: <b>{total_dead}</b> из <b>{total_players}</b> ({total_dead*100//max(total_players,1)}%)\n")
+
+        lines.append("<b>Без испытания</b> · последние 20")
+        if stuck_rows:
+            for r in stuck_rows:
+                uid_r, fname_r, uname_r, coins_r, lvl_r, last_seen_r = r
+                uname_s = f"@{uname_r}" if uname_r else f"ID:{uid_r}"
+                days_ago = int((time.time() - (last_seen_r or 0)) / 86400) if last_seen_r else "?"
+                lines.append(f"• {fname_r} ({uname_s}) ур.{lvl_r} 🪙{coins_r} — был {days_ago}д назад")
+        else:
+            lines.append("  (нет)")
+
+        lines.append("\n<b>В испытании</b> · последние 10")
+        if trial_rows:
+            for r in trial_rows:
+                uid_r, fname_r, uname_r, tq_json, tp_json, last_seen_r = r
+                uname_s = f"@{uname_r}" if uname_r else f"ID:{uid_r}"
+                days_ago = int((time.time() - (last_seen_r or 0)) / 86400) if last_seen_r else "?"
+                try:
+                    tq = json.loads(tq_json or "[]")
+                    tp = json.loads(tp_json or "{}")
+                    done = sum(1 for q2 in tq if tp.get(q2["id"], 0) >= q2["goal"])
+                    total_q = len(tq)
+                    progress_s = f"{done}/{total_q}"
+                except Exception:
+                    progress_s = "?"
+                lines.append(f"• {fname_r} ({uname_s}) прогресс:{progress_s} — был {days_ago}д назад")
+        else:
+            lines.append("  (нет)")
+
+        try:
+            await q.message.edit_text(
+                "\n".join(lines),
+                parse_mode=ParseMode.HTML,
+                reply_markup=InlineKeyboardMarkup([
+                    [btn("◀️ Назад", callback_data="admin_stats")],
+                ]),
+            )
+        except Exception:
+            pass
+        return
+    if d.startswith("admin_players_") and not d.startswith("admin_players_p_"):
+        if uid not in ADMIN_IDS:
+            await q.answer("⛔", show_alert=True)
+            return
+        page = int(d.split("_")[-1])
+        per = 8
+        async with aiosqlite.connect(DB_PATH) as db:
+            async with db.execute("SELECT COUNT(*) FROM frogs WHERE is_bot=0") as c:
+                total = (await c.fetchone())[0]
+            async with db.execute(
+                "SELECT user_id, first_name, username, level, coins, alive, banned, is_bot FROM frogs WHERE is_bot=0 ORDER BY level DESC LIMIT ? OFFSET ?",
+                (per, page * per),
+            ) as c:
+                rows = await c.fetchall()
+        import math as _math
+
+        total_pages = max(1, _math.ceil(total / per))
+        text = f"{_E_USERS} <b>Игроки (стр. {page+1}/{total_pages})</b>\nНажми на игрока — открыть карточку\n💀 = мёртвый {_E_BAN} = забанен\n(Боты скрыты → раздел {_E_BOT} Управление ботами)\n"
+        kb_rows = []
+        for r in rows:
+            alive_icon = "🐸" if r[5] else "💀"
+            ban_icon = " 🚫" if r[6] else ""
+            uname = f"@{r[2]}" if r[2] else f"id{r[0]}"
+            label = f"{alive_icon}{ban_icon} {r[1]} ({uname}) ур.{r[3]}"
+            # Используем простой формат callback без _p чтобы избежать парсинг-баги
+            kb_rows.append(
+                [
+                    btn(
+                        label, callback_data=f"admin_pcard_{r[0]}_{page}"
+                    )
+                ]
+            )
+        nav = []
+        if page > 0:
+            nav.append(
+                btn("◀️", callback_data=f"admin_players_{page-1}")
+            )
+        if page < total_pages - 1:
+            nav.append(
+                btn("▶️", callback_data=f"admin_players_{page+1}")
+            )
+        if nav:
+            kb_rows.append(nav)
+        kb_rows.append(
+            [btn("◀️ Назад в панель", callback_data="admin_refresh")]
+        )
+        try:
+            await q.message.edit_text(
+                text,
+                parse_mode=ParseMode.HTML,
+                reply_markup=InlineKeyboardMarkup(kb_rows),
+            )
+        except Exception:
+            pass
+        await q.answer()
+        return
+    # ── КАРТОЧКА ИГРОКА (новый callback format) ──
+    if d.startswith("admin_pcard_"):
+        if uid not in ADMIN_IDS:
+            await q.answer("⛔", show_alert=True)
+            return
+        try:
+            parts_pc = d[len("admin_pcard_"):].split("_")
+            target_uid_pc = int(parts_pc[0])
+            back_page_pc = parts_pc[1] if len(parts_pc) > 1 else "0"
+            back_cb_pc = f"admin_players_{back_page_pc}"
+        except (ValueError, IndexError):
+            await q.answer("Ошибка", show_alert=True)
+            return
+        await show_player_card(q.message, target_uid_pc, edit=True, back_cb=back_cb_pc)
+        await q.answer()
+        return
+    # ── БАН ИГРОКА ──────────────────────────────
+    if d.startswith("admin_ban_") or d.startswith("admin_unban_"):
+        if uid not in ADMIN_IDS:
+            await q.answer("⛔", show_alert=True)
+            return
+        is_unban = d.startswith("admin_unban_")
+        target_uid_ban = int(d.split("_")[-1])
+        new_ban = 0 if is_unban else 1
+        async with aiosqlite.connect(DB_PATH) as db:
+            await db.execute(
+                "UPDATE frogs SET banned=? WHERE user_id=?", (new_ban, target_uid_ban)
+            )
+            await db.commit()
+        action_txt = "разбанен" if is_unban else "забанен"
+        await admin_log(uid, "unban" if is_unban else "ban", target_uid_ban)
+        await q.answer((f"✅ Игрок {action_txt}")[:200], show_alert=True)
+        # Обновить карточку
+        await show_player_card(q.message, target_uid_ban, edit=True)
+        return
+    # ── ПОМЕТИТЬ / СНЯТЬ МЕТКУ БОТА ─────────────
+    if d.startswith("admin_markbot_") or d.startswith("admin_unmarkbot_"):
+        if uid not in ADMIN_IDS:
+            await q.answer("⛔", show_alert=True)
+            return
+        is_unmark = d.startswith("admin_unmarkbot_")
+        target_uid_bot = int(d.split("_")[-1])
+        new_bot = 0 if is_unmark else 1
+        async with aiosqlite.connect(DB_PATH) as db:
+            await db.execute(
+                "UPDATE frogs SET is_bot=? WHERE user_id=?", (new_bot, target_uid_bot)
+            )
+            await db.commit()
+        _user_cache.invalidate(target_uid_bot)
+        action_txt = "снята метка бота" if is_unmark else "помечен как бот (скрыт из топов)"
+        await admin_log(uid, "unmarkbot" if is_unmark else "markbot", target_uid_bot)
+        await q.answer((f"✅ Игрок {action_txt}")[:200], show_alert=True)
+        await show_player_card(q.message, target_uid_bot, edit=True)
+        return
+    # ── УДАЛИТЬ ИГРОКА (запрос подтверждения) ───
+    if d.startswith("admin_deleteplayer_") and not d.startswith("admin_deleteplayer_confirm_"):
+        if uid not in ADMIN_IDS:
+            await q.answer("⛔", show_alert=True)
+            return
+        target_uid_del = int(d.split("_")[-1])
+        p_del = await db_get(target_uid_del)
+        uname_del = f"@{p_del['username']}" if p_del and p_del.get("username") else f"ID:{target_uid_del}"
+        name_del = he(p_del.get("first_name", "?")) if p_del else "?"
+        try:
+            await q.message.edit_text(
+                f"⚠️ <b>Подтверди удаление игрока</b>\n\n"
+                f"👤 <b>{name_del}</b> ({uname_del})\n"
+                f"ID: <code>{target_uid_del}</code>\n\n"
+                f"<b>Будут удалены:</b> запись в frogs, коллекция, достижения, квесты, NFT, дуэли, рефералы, инвентарь.\n\n"
+                f"⚠️ <b>Это действие необратимо!</b>",
+                parse_mode=ParseMode.HTML,
+                reply_markup=InlineKeyboardMarkup([
+                    [
+                        btn("✅ Да, удалить", callback_data=f"admin_deleteplayer_confirm_{target_uid_del}", style="danger"),
+                        btn("❌ Отмена", callback_data=f"admin_pcard_{target_uid_del}_0", style="primary"),
+                    ]
+                ]),
+            )
+        except Exception:
+            pass
+        await q.answer()
+        return
+    # ── УДАЛИТЬ ИГРОКА (подтверждено) ───────────
+    if d.startswith("admin_deleteplayer_confirm_"):
+        if uid not in ADMIN_IDS:
+            await q.answer("⛔", show_alert=True)
+            return
+        target_uid_del = int(d.split("_")[-1])
+        # Сначала отвечаем — иначе Telegram покажет спиннер вечно
+        await q.answer(f"🗑 Удаляю игрока {target_uid_del}…", show_alert=False)
+        _user_cache.invalidate(target_uid_del)
+        try:
+            async with aiosqlite.connect(DB_PATH) as db:
+                await db.execute("DELETE FROM frogs WHERE user_id=?", (target_uid_del,))
+                await db.execute("DELETE FROM collections WHERE user_id=?", (target_uid_del,))
+                await db.execute("DELETE FROM achievements WHERE user_id=?", (target_uid_del,))
+                await db.execute("DELETE FROM daily_quests WHERE user_id=?", (target_uid_del,))
+                await db.execute("DELETE FROM nft_frogs WHERE user_id=?", (target_uid_del,))
+                try:
+                    await db.execute("DELETE FROM duels WHERE challenger_id=? OR target_id=?", (target_uid_del, target_uid_del))
+                except Exception:
+                    pass
+                try:
+                    await db.execute("DELETE FROM referrals WHERE referrer_id=? OR referred_id=?", (target_uid_del, target_uid_del))
+                except Exception:
+                    pass
+                try:
+                    await db.execute("DELETE FROM shop_inventory WHERE user_id=?", (target_uid_del,))
+                except Exception:
+                    pass
+                try:
+                    await db.execute("DELETE FROM lottery_tickets WHERE user_id=?", (target_uid_del,))
+                except Exception:
+                    pass
+                try:
+                    await db.execute("DELETE FROM gift_log WHERE sender_id=? OR receiver_id=?", (target_uid_del, target_uid_del))
+                except Exception:
+                    pass
+                await db.commit()
+            await admin_log(uid, "delete_player", target_uid_del)
+            try:
+                await q.message.edit_text(
+                    f"🗑 <b>Игрок <code>{target_uid_del}</code> полностью удалён из базы данных.</b>",
+                    parse_mode=ParseMode.HTML,
+                    reply_markup=InlineKeyboardMarkup([
+                        [btn("◀️ К списку игроков", callback_data="admin_players_0")]
+                    ]),
+                )
+            except Exception:
+                pass
+        except Exception as e:
+            try:
+                await q.message.edit_text(
+                    f"{_E_CROSS} <b>Ошибка при удалении игрока <code>{target_uid_del}</code>:</b>\n<code>{e}</code>",
+                    parse_mode=ParseMode.HTML,
+                    reply_markup=InlineKeyboardMarkup([
+                        [btn("◀️ К списку игроков", callback_data="admin_players_0")]
+                    ]),
+                )
+            except Exception:
+                pass
+        return
+    # ── СПИСОК БОТОВ ────────────────────────────
+    if d.startswith("admin_bots_"):
+        if uid not in ADMIN_IDS:
+            await q.answer("⛔", show_alert=True)
+            return
+        page_b = int(d.split("_")[-1])
+        per_b = 8
+        async with aiosqlite.connect(DB_PATH) as db:
+            async with db.execute("SELECT COUNT(*) FROM frogs WHERE is_bot=1") as c:
+                total_b = (await c.fetchone())[0]
+            async with db.execute(
+                "SELECT user_id, first_name, username, level, coins FROM frogs WHERE is_bot=1 ORDER BY user_id DESC LIMIT ? OFFSET ?",
+                (per_b, page_b * per_b),
+            ) as c:
+                rows_b = await c.fetchall()
+        import math as _math
+        total_pages_b = max(1, _math.ceil(total_b / per_b))
+        text_b = (
+            f"{_E_BOT} <b>Помеченные боты ({total_b} шт., стр. {page_b+1}/{total_pages_b})</b>\n"
+            f"Боты скрыты из топов /top /topw /topm.\n"
+            f"Нажми на бота — открыть карточку (снять метку или удалить).\n"
+        )
+        kb_rows_b = []
+        for r in rows_b:
+            uname_b = f"@{r[2]}" if r[2] else f"id{r[0]}"
+            label_b = f"{_E_BOT} {r[1]} ({uname_b}) ур.{r[3]}"
+            kb_rows_b.append([
+                btn(label_b, callback_data=f"admin_pcard_{r[0]}_{page_b}")
+            ])
+        nav_b = []
+        if page_b > 0:
+            nav_b.append(btn("◀️", callback_data=f"admin_bots_{page_b-1}"))
+        if page_b < total_pages_b - 1:
+            nav_b.append(btn("▶️", callback_data=f"admin_bots_{page_b+1}"))
+        if nav_b:
+            kb_rows_b.append(nav_b)
+        kb_rows_b.append([btn("◀️ Назад в панель", callback_data="admin_refresh")])
+        try:
+            await q.message.edit_text(
+                text_b,
+                parse_mode=ParseMode.HTML,
+                reply_markup=InlineKeyboardMarkup(kb_rows_b),
+            )
+        except Exception:
+            pass
+        await q.answer()
+        return
+    if d.startswith("admin_revive_"):
+        if uid not in ADMIN_IDS:
+            await q.answer("⛔", show_alert=True)
+            return
+        target_uid_rev = int(d.split("_")[-1])
+        p_rev = await db_get(target_uid_rev)
+        if p_rev:
+            p_rev["alive"] = 1
+            p_rev["health"] = 100
+            p_rev["hunger"] = 100
+            p_rev["happiness"] = 100
+            await db_save(p_rev)
+            await admin_log(uid, "revive", target_uid_rev)
+            try:
+                await ctx.bot.send_message(
+                    target_uid_rev,
+                    "💚 <b>Тебя воскресила администрация!</b>\n\nТвоя лягушка снова жива! <tg-emoji emoji-id='5341367834935075028'>🐸</tg-emoji>",
+                    parse_mode=ParseMode.HTML,
+                )
+            except Exception:
+                pass
+        await q.answer("💚 Воскрешено", show_alert=True)
+        await show_player_card(q.message, target_uid_rev, edit=True)
+        return
+    # ── УБИТЬ ЛЯГУШКУ (АДМИН) ───────────────────
+    if d.startswith("admin_kill_"):
+        if uid not in ADMIN_IDS:
+            await q.answer("⛔", show_alert=True)
+            return
+        target_uid_kill = int(d.split("_")[-1])
+        p_kill = await db_get(target_uid_kill)
+        if p_kill:
+            p_kill["alive"] = 0
+            p_kill["health"] = 0
+            p_kill["trial_active"] = 0
+            p_kill["trial_quests"] = "[]"
+            p_kill["trial_progress"] = "{}"
+            await db_save(p_kill)
+            await admin_log(uid, "kill", target_uid_kill)
+            try:
+                await ctx.bot.send_message(
+                    target_uid_kill,
+                    "<tg-emoji emoji-id='5341573078537248907'>💀</tg-emoji> <b>Твоя лягушка была убита администрацией.</b>\n\nИспользуй /revive чтобы воскресить её.",
+                    parse_mode=ParseMode.HTML,
+                )
+            except Exception:
+                pass
+        await q.answer("💀 Убито", show_alert=True)
+        await show_player_card(q.message, target_uid_kill, edit=True)
+        return
+    # ── ЛОГИ КОНКРЕТНОГО ИГРОКА ─────────────────
+    if d.startswith("admin_logs_uid_"):
+        if uid not in ADMIN_IDS:
+            await q.answer("⛔", show_alert=True)
+            return
+        target_uid_log = int(d.split("_")[-1])
+        p_log = await db_get(target_uid_log)
+        async with aiosqlite.connect(DB_PATH) as db:
+            db.row_factory = aiosqlite.Row
+            # Берём ВСЕ логи — без лимита, отдаём файлом
+            async with db.execute(
+                "SELECT * FROM admin_logs WHERE target_id=? ORDER BY ts DESC",
+                (target_uid_log,)
+            ) as c:
+                log_rows = await c.fetchall()
+            # Также coin_log
+            async with db.execute(
+                "SELECT amount, reason, ts FROM coin_log WHERE user_id=? ORDER BY ts DESC LIMIT 200",
+                (target_uid_log,)
+            ) as c:
+                coin_rows = await c.fetchall()
+        pname = (p_log.get("frog_name") or p_log.get("first_name") or str(target_uid_log)) if p_log else str(target_uid_log)
+        uname = (f"@{p_log['username']}" if p_log and p_log.get("username") else "") if p_log else ""
+        lines = [
+            f"=== ЛОГИ ИГРОКА {pname} {uname} (ID: {target_uid_log}) ===",
+            f"Экспорт: {datetime.now(timezone.utc).strftime('%Y-%m-%d %H:%M UTC')}",
+            "",
+            "--- ADMIN LOG ---",
+        ]
+        if log_rows:
+            for r in log_rows:
+                ts_str = datetime.fromtimestamp(r["ts"], tz=timezone.utc).strftime("%Y-%m-%d %H:%M:%S")
+                lines.append(f"[{ts_str}] admin={r['admin_id']} action={r['action']} details={r.get('details','')}")
+        else:
+            lines.append("(пусто)")
+        lines += ["", "--- COIN LOG (последние 200) ---"]
+        if coin_rows:
+            for r in coin_rows:
+                ts_str = datetime.fromtimestamp(r["ts"], tz=timezone.utc).strftime("%Y-%m-%d %H:%M:%S")
+                sign = "+" if r["amount"] > 0 else ""
+                lines.append(f"[{ts_str}] {sign}{r['amount']} {r['reason']}")
+        else:
+            lines.append("(пусто)")
+        file_content = "\n".join(lines).encode("utf-8")
+        import io
+        file_obj = io.BytesIO(file_content)
+        file_obj.name = f"logs_{target_uid_log}.txt"
+        await q.answer()
+        try:
+            await q.message.reply_document(
+                document=file_obj,
+                caption=f"📋 Логи игрока <b>{he(pname)}</b> (ID: <code>{target_uid_log}</code>)\n"
+                        f"Admin log: {len(log_rows)} записей | Coin log: {len(coin_rows)} записей",
+                parse_mode=ParseMode.HTML,
+            )
+        except Exception as _le:
+            await q.answer((f"Ошибка отправки файла: {_le}")[:200], show_alert=True)
+        return
+    # ── СБРОС КУЛДАУНОВ ─────────────────────────
+    if d.startswith("admin_reset_cd_"):
+        if uid not in ADMIN_IDS:
+            await q.answer("⛔", show_alert=True)
+            return
+        target_uid_cd = int(d.split("_")[-1])
+        p_cd = await db_get(target_uid_cd)
+        if p_cd:
+            for cd_key in (
+                "last_feed",
+                "last_play",
+                "last_wash",
+                "last_sleep",
+                "last_pet",
+                "last_guess",
+                "last_casino",
+                "last_daily",
+                "last_expedition",
+            ):
+                p_cd[cd_key] = 0
+            await db_save(p_cd)
+            await admin_log(uid, "reset_cd", target_uid_cd)
+        await q.answer("✅ Кулдауны сброшены", show_alert=True)
+        await show_player_card(q.message, target_uid_cd, edit=True)
+        return
+    # ── ВЫДАТЬ ДОП. СЛОТ ПОХОДА ──────────────────────────
+    if d.startswith("admin_give_advslot_"):
+        if uid not in ADMIN_IDS:
+            await q.answer("⛔", show_alert=True)
+            return
+        target_uid_as = int(d.split("_")[-1])
+        p_as = await db_get(target_uid_as)
+        if p_as:
+            p_as["adventure_extra_slots_bought"] = p_as.get("adventure_extra_slots_bought", 0) + 1
+            p_as["adventure_extra_slot"] = 1
+            await db_save(p_as)
+            await admin_log(uid, "give_advslot", target_uid_as)
+            slots = p_as["adventure_extra_slots_bought"]
+            await q.answer((f"✅ Выдан доп. слот похода. Всего куплено: {slots}")[:200], show_alert=True)
+        else:
+            await q.answer("❌ Игрок не найден", show_alert=True)
+        await show_player_card(q.message, target_uid_as, edit=True)
+        return
+    # ── СБРОСИТЬ КД ПОХОДА И ЭКСПЕДИЦИИ ──────────────────────────
+    if d.startswith("admin_reset_advcd_"):
+        if uid not in ADMIN_IDS:
+            await q.answer("⛔", show_alert=True)
+            return
+        target_uid_ra = int(d.split("_")[-1])
+        p_ra = await db_get(target_uid_ra)
+        if p_ra:
+            p_ra["last_expedition"] = 0
+            p_ra["adventure_hours_today"] = 0.0
+            p_ra["adventure_hours_reset"] = 0.0
+            p_ra["adventure_extra_slots_bought"] = 0
+            await db_save(p_ra)
+            await admin_log(uid, "reset_advcd", target_uid_ra)
+            await q.answer("✅ КД похода и экспедиции сброшены. Лимит часов обнулён.", show_alert=True)
+        else:
+            await q.answer("❌ Игрок не найден", show_alert=True)
+        await show_player_card(q.message, target_uid_ra, edit=True)
+        return
+    # ── ИЗМЕНЕНИЕ МОНЕТ ──────────────────────────
+    if d.startswith("admin_coins_p") or d.startswith("admin_coins_m"):
+        if uid not in ADMIN_IDS:
+            await q.answer("⛔", show_alert=True)
+            return
+        parts_coin = d.split("_")
+        # admin_coins_p100_12345 → direction=p, amount=100, target_uid=12345
+        op = "p" if d.startswith("admin_coins_p") else "m"
+        # Find amount: between op and last _
+        rest = d[len(f"admin_coins_{op}") :]
+        amt_str, sep, tuid_str = rest.partition("_")
+        try:
+            amount_coin = int(amt_str)
+            target_uid_coin = int(tuid_str)
+        except ValueError:
+            await q.answer("Ошибка", show_alert=True)
+            return
+        if op == "m":
+            amount_coin = -amount_coin
+        p_coin = await db_get(target_uid_coin)
+        if p_coin:
+            p_coin["coins"] = max(0, p_coin["coins"] + amount_coin)
+            await db_save(p_coin)
+            await admin_log(
+                uid,
+                f"coins_{'+' if amount_coin>=0 else ''}{amount_coin}",
+                target_uid_coin,
+                f"bal→{p_coin['coins']}",
+            )
+        direction = "+" if amount_coin > 0 else ""
+        await q.answer((f"✅ {direction}{amount_coin}{coin_plain()}")[:200], show_alert=True)
+        await show_player_card(q.message, target_uid_coin, edit=True)
+        return
+    # ── ИЗМЕНЕНИЕ XP ───────────────────────────
+    if d.startswith("admin_xp_p") or d.startswith("admin_xp_m"):
+        if uid not in ADMIN_IDS:
+            await q.answer("⛔", show_alert=True)
+            return
+        op_xp = "p" if d.startswith("admin_xp_p") else "m"
+        rest_xp = d[len(f"admin_xp_{op_xp}") :]
+        amt_xp_str, _, tuid_xp_str = rest_xp.partition("_")
+        try:
+            amount_xp = int(amt_xp_str)
+            target_uid_xp = int(tuid_xp_str)
+        except ValueError:
+            await q.answer("Ошибка", show_alert=True)
+            return
+        if op_xp == "m":
+            amount_xp = -amount_xp
+        p_xp = await db_get(target_uid_xp)
+        if p_xp:
+            p_xp["xp"] = max(0, p_xp.get("xp", 0) + amount_xp)
+            await levelup(p_xp, ctx.bot)
+            await db_save(p_xp)
+            await admin_log(uid, f"xp_{'+' if amount_xp>=0 else ''}{amount_xp}", target_uid_xp, f"xp→{p_xp['xp']}")
+            try:
+                await ctx.bot.send_message(
+                    target_uid_xp,
+                    f"{_E_XP} Администратор {'начислил' if amount_xp >= 0 else 'списал'} <b>{abs(amount_xp)} XP</b>!\n"
+                    f"Текущий опыт: {p_xp['xp']} XP (уровень {p_xp['level']})",
+                    parse_mode=ParseMode.HTML,
+                )
+            except Exception:
+                pass
+        direction_xp = "+" if amount_xp > 0 else ""
+        await q.answer((f"✅ {direction_xp}{amount_xp} XP")[:200], show_alert=True)
+        await show_player_card(q.message, target_uid_xp, edit=True)
+        return
+    # ── УСТАНОВИТЬ МОНЕТЫ (меню ввода) ─────────
+    if d.startswith("admin_setcoins_menu_"):
+        if uid not in ADMIN_IDS:
+            await q.answer("⛔", show_alert=True)
+            return
+        try:
+            target_uid_sc = int(d[len("admin_setcoins_menu_"):])
+        except ValueError:
+            await q.answer("Ошибка", show_alert=True)
+            return
+        p_sc = await db_get(target_uid_sc)
+        current_coins = p_sc["coins"] if p_sc else 0
+        kb_sc = InlineKeyboardMarkup([
+            [
+                btn("💰 +500", callback_data=f"admin_coins_p500_{target_uid_sc}"),
+                btn("💰 +5000", callback_data=f"admin_coins_p5000_{target_uid_sc}"),
+            ],
+            [
+                btn("💰 -500", callback_data=f"admin_coins_m500_{target_uid_sc}"),
+                btn("💰 -5000", callback_data=f"admin_coins_m5000_{target_uid_sc}"),
+            ],
+            [btn("◀️ Назад", callback_data=f"admin_player_{target_uid_sc}_p0")],
+        ])
+        try:
+            await q.message.edit_text(
+                f"{_E_COIN} <b>Управление монетами</b>\n"
+                f"Игрок ID: <code>{target_uid_sc}</code>\n"
+                f"Текущий баланс: <b>{current_coins:,}</b> {_E_COIN}\n\n"
+                f"Выбери действие:",
+                parse_mode=ParseMode.HTML,
+                reply_markup=kb_sc,
+            )
+        except Exception:
+            pass
+        await q.answer()
+        return
+    # ── ЗАБРАТЬ ОБЛИК — МЕНЮ ───────────────────
+    if d.startswith("admin_takeskin_menu_"):
+        if uid not in ADMIN_IDS:
+            await q.answer("⛔", show_alert=True)
+            return
+        try:
+            target_uid_ts = int(d[len("admin_takeskin_menu_"):])
+        except ValueError:
+            await q.answer("Ошибка", show_alert=True)
+            return
+        # Получаем коллекцию игрока
+        coll_ts = await db_coll(target_uid_ts)
+        if not coll_ts:
+            await q.answer("У игрока нет обликов", show_alert=True)
+            await show_player_card(q.message, target_uid_ts, edit=True)
+            return
+        skin_rows_ts = []
+        for skin_ts in sorted(coll_ts)[:12]:  # до 12 скинов
+            s_ts = SKINS.get(skin_ts, {})
+            plain_emoji_ts = s_ts.get("emoji", "🐸")  # plain emoji, не HTML-тег
+            skin_rows_ts.append([btn(
+                f"{plain_emoji_ts} {skin_ts[:20]} ({s_ts.get('rarity','?')[:3]})",
+                callback_data=f"admin_takeskin_do_{target_uid_ts}_{skin_ts[:30]}",
+            )])
+        skin_rows_ts.append([btn("◀️ Назад", callback_data=f"admin_player_{target_uid_ts}_p0")])
+        try:
+            await q.message.edit_text(
+                f"🗑 <b>Забрать облик</b>\n"
+                f"Игрок ID: <code>{target_uid_ts}</code>\n\n"
+                f"Выбери облик для изъятия (первые 12):",
+                parse_mode=ParseMode.HTML,
+                reply_markup=InlineKeyboardMarkup(skin_rows_ts),
+            )
+        except Exception:
+            pass
+        await q.answer()
+        return
+    # ── ЗАБРАТЬ ОБЛИК — ДЕЙСТВИЕ ───────────────
+    if d.startswith("admin_takeskin_do_"):
+        if uid not in ADMIN_IDS:
+            await q.answer("⛔", show_alert=True)
+            return
+        try:
+            rest_ts = d[len("admin_takeskin_do_"):]
+            parts_ts = rest_ts.split("_", 1)
+            target_uid_tsd = int(parts_ts[0])
+            skin_name_ts = parts_ts[1] if len(parts_ts) > 1 else ""
+        except (ValueError, IndexError):
+            await q.answer("Ошибка", show_alert=True)
+            return
+        full_skin_ts = next((s for s in SKINS if s.startswith(skin_name_ts) or s == skin_name_ts), None)
+        if not full_skin_ts:
+            await q.answer((f"Облик не найден: {skin_name_ts}")[:200], show_alert=True)
+            return
+        async with aiosqlite.connect(DB_PATH) as db:
+            await db.execute(
+                "DELETE FROM collections WHERE user_id=? AND skin=?",
+                (target_uid_tsd, full_skin_ts),
+            )
+            await db.commit()
+        _user_cache.invalidate(target_uid_tsd)
+        # Если это активный облик — сбрасываем на Brownie
+        p_ts = await db_get(target_uid_tsd)
+        if p_ts and p_ts.get("skin") == full_skin_ts:
+            p_ts["skin"] = "Brownie"
+            await db_save(p_ts)
+        await admin_log(uid, f"take_skin_{full_skin_ts}", target_uid_tsd, "")
+        try:
+            await ctx.bot.send_message(
+                target_uid_tsd,
+                f"⚠️ Администратор изъял облик <b>{he(full_skin_ts)}</b> {pemoji(full_skin_ts)} из вашей коллекции.",
+                parse_mode=ParseMode.HTML,
+            )
+        except Exception:
+            pass
+        await q.answer((f"✅ Облик {full_skin_ts} изъят")[:200], show_alert=True)
+        await show_player_card(q.message, target_uid_tsd, edit=True)
+        return
+    # ── ADMIN: ВЫДАТЬ ПРЕДМЕТ — МЕНЮ ────────────────────────
+    if d.startswith("admin_giveitem_menu_"):
+        if uid not in ADMIN_IDS:
+            await q.answer("⛔", show_alert=True)
+            return
+        try:
+            target_uid_gi = int(d[len("admin_giveitem_menu_"):])
+        except ValueError:
+            await q.answer("Ошибка", show_alert=True)
+            return
+        # Показываем меню выбора предмета
+        item_rows = []
+        all_items = list(FOOD.items()) + [("gacha_ticket", {"name": "Тикет гачи", "emoji": "🎟"})]
+        for fid, fdata in all_items:
+            emoji = fdata.get("emoji", "🎁")
+            name = fdata.get("name", fid)
+            item_rows.append([
+                btn(f"{emoji} {name} ×1", callback_data=f"admin_giveitem_do_{target_uid_gi}_{fid}_1"),
+                btn(f"×5", callback_data=f"admin_giveitem_do_{target_uid_gi}_{fid}_5"),
+                btn(f"×10", callback_data=f"admin_giveitem_do_{target_uid_gi}_{fid}_10"),
+            ])
+        item_rows.append([btn("◀️ Назад", callback_data=f"admin_give_uid_{target_uid_gi}")])
+        try:
+            await q.message.edit_text(
+                f"{_E_GIFT} <b>Выдача предмета</b>\nИгрок ID: <code>{target_uid_gi}</code>\n\nВыбери предмет и количество:",
+                parse_mode=ParseMode.HTML,
+                reply_markup=InlineKeyboardMarkup(item_rows),
+            )
+        except Exception:
+            pass
+        return
+    # ── ADMIN: ВЫДАТЬ ПРЕДМЕТ — ДЕЙСТВИЕ ────────────────────
+    if d.startswith("admin_giveitem_do_"):
+        if uid not in ADMIN_IDS:
+            await q.answer("⛔", show_alert=True)
+            return
+        try:
+            parts_gi = d[len("admin_giveitem_do_"):].split("_")
+            # format: admin_giveitem_do_<uid>_<item_id>_<qty>
+            # item_id may have underscores but is last before qty
+            target_uid_gid = int(parts_gi[0])
+            qty_gi = int(parts_gi[-1])
+            item_id_gi = "_".join(parts_gi[1:-1])
+        except (ValueError, IndexError):
+            await q.answer("Ошибка", show_alert=True)
+            return
+        await inv_add(target_uid_gid, item_id_gi, qty_gi)
+        await admin_log(uid, f"give_item_{item_id_gi}", target_uid_gid, f"qty={qty_gi}")
+        await q.answer((f"✅ Выдано {qty_gi}×{item_id_gi}")[:200], show_alert=True)
+        await show_player_card(q.message, target_uid_gid, edit=True)
+        return
+    # ── ADMIN: ВЫДАТЬ ОБЛИК — МЕНЮ ──────────────────────────
+    if d.startswith("admin_giveskin_menu_"):
+        if uid not in ADMIN_IDS:
+            await q.answer("⛔", show_alert=True)
+            return
+        try:
+            target_uid_gs = int(d[len("admin_giveskin_menu_"):])
+        except ValueError:
+            await q.answer("Ошибка", show_alert=True)
+            return
+        # Пагинация скинов: показываем по 8 штук
+        offset_gs = 0
+        skin_list = [s for s in SKINS.keys() if SKINS[s].get("chance", 0) > 0 or SKINS[s].get("rarity") in ("legendary", "mythic", "secret")]
+        skin_list = sorted(skin_list, key=lambda s: SKINS[s].get("rarity", "common"))
+        skin_rows = []
+        for skin_n in skin_list[offset_gs:offset_gs + 8]:
+            s_data = SKINS[skin_n]
+            skin_rows.append([btn(
+                f"{pemoji(skin_n)} {skin_n[:20]} ({s_data.get('rarity','?')[:3]})",
+                callback_data=f"admin_giveskin_do_{target_uid_gs}_{skin_n[:30]}",
+            )])
+        skin_rows.append([btn("◀️ Назад", callback_data=f"admin_give_uid_{target_uid_gs}")])
+        try:
+            await q.message.edit_text(
+                f"🎨 <b>Выдача облика</b>\nИгрок ID: <code>{target_uid_gs}</code>\n\nВыбери облик:",
+                parse_mode=ParseMode.HTML,
+                reply_markup=InlineKeyboardMarkup(skin_rows),
+            )
+        except Exception:
+            pass
+        return
+    # ── ADMIN: ВЫДАТЬ ОБЛИК — ДЕЙСТВИЕ ──────────────────────
+    if d.startswith("admin_giveskin_do_"):
+        if uid not in ADMIN_IDS:
+            await q.answer("⛔", show_alert=True)
+            return
+        try:
+            rest_gs = d[len("admin_giveskin_do_"):]
+            # format: admin_giveskin_do_<uid>_<skin_name>
+            parts_gs = rest_gs.split("_", 1)
+            target_uid_gsd = int(parts_gs[0])
+            skin_name_gs = parts_gs[1] if len(parts_gs) > 1 else ""
+        except (ValueError, IndexError):
+            await q.answer("Ошибка", show_alert=True)
+            return
+        # Найти полное имя скина (может быть обрезано до 30 символов)
+        full_skin_name = next((s for s in SKINS if s.startswith(skin_name_gs) or s == skin_name_gs), None)
+        if not full_skin_name:
+            await q.answer((f"Облик не найден: {skin_name_gs}")[:200], show_alert=True)
+            return
+        await db_add_skin(target_uid_gsd, full_skin_name)
+        await admin_log(uid, f"give_skin_{full_skin_name}", target_uid_gsd, "")
+        await q.answer((f"✅ Облик {full_skin_name} выдан")[:200], show_alert=True)
+        # Уведомить игрока
+        try:
+            await ctx.bot.send_message(
+                target_uid_gsd,
+                f"{_E_GIFT} Администратор выдал вам облик <b>{he(full_skin_name)}</b> {pemoji(full_skin_name)}!\n"
+                f"Надеть: /frog → 👗 Облики",
+                parse_mode=ParseMode.HTML,
+            )
+        except Exception:
+            pass
+        await show_player_card(q.message, target_uid_gsd, edit=True)
+        return
+    if d == "admin_dead":
+        if uid not in ADMIN_IDS:
+            await q.answer("⛔", show_alert=True)
+            return
+        async with aiosqlite.connect(DB_PATH) as db:
+            async with db.execute(
+                "SELECT first_name, username, user_id, level FROM frogs WHERE alive=0 ORDER BY level DESC LIMIT 20"
+            ) as c:
+                rows = await c.fetchall()
+        if not rows:
+            text = "💚 Все лягушки живы!"
+        else:
+            lines = [f"{_E_SKULL} <b>Мёртвые лягушки ({len(rows)})</b>\n"]
+            for r in rows:
+                uname = f"@{r[1]}" if r[1] else f"ID:{r[2]}"
+                lines.append(f"{_E_SKULL} {r[0]} ({uname}) ур.{r[3]}")
+            text = "\n".join(lines)
+        try:
+            await q.message.edit_text(
+                text,
+                parse_mode=ParseMode.HTML,
+                reply_markup=InlineKeyboardMarkup(
+                    [[btn("◀️ Назад", callback_data="admin_refresh")]]
+                ),
+            )
+        except Exception:
+            pass
+        await q.answer()
+        return
+    if d == "admin_search_hint":
+        if uid not in ADMIN_IDS:
+            await q.answer("⛔", show_alert=True)
+            return
+        await q.answer()
+        try:
+            await q.message.edit_text(
+                "🔍 <b>Поиск игрока</b>\n\n"
+                "Используй команду:\n"
+                "<code>/adminlookup @username</code>\n"
+                "или\n"
+                "<code>/adminlookup 123456789</code> (по ID)\n\n"
+                "<i>Покажет полную информацию об игроке.</i>",
+                parse_mode=ParseMode.HTML,
+                reply_markup=InlineKeyboardMarkup(
+                    [[btn("◀️ Назад", callback_data="admin_refresh")]]
+                ),
+            )
+        except Exception:
+            pass
+        return
+    if d == "admin_casino_stats":
+        if uid not in ADMIN_IDS:
+            await q.answer("⛔", show_alert=True)
+            return
+        now_ts = time.time()
+        day_ago  = now_ts - 86400
+        week_ago = now_ts - 604800
+        async with aiosqlite.connect(DB_PATH) as db:
+            # Общая статистика из frogs
+            async with db.execute(
+                "SELECT SUM(total_casino), SUM(total_casino_wins), SUM(coins_spent), SUM(coins) FROM frogs WHERE is_bot=0"
+            ) as c:
+                row = await c.fetchone()
+            total_games = row[0] or 0
+            total_wins  = row[1] or 0
+            total_spent = row[2] or 0
+            total_balance = row[3] or 0
+
+            # Уникальных игроков казино за сутки / неделю
+            async with db.execute(
+                "SELECT COUNT(DISTINCT user_id) FROM game_logs WHERE game_type='casino' AND ts>=?", (day_ago,)
+            ) as c:
+                active_day = (await c.fetchone())[0] or 0
+            async with db.execute(
+                "SELECT COUNT(DISTINCT user_id) FROM game_logs WHERE game_type='casino' AND ts>=?", (week_ago,)
+            ) as c:
+                active_week = (await c.fetchone())[0] or 0
+
+            # Игры за сутки / неделю
+            async with db.execute(
+                "SELECT COUNT(*), SUM(bet_amount), SUM(win_amount) FROM game_logs WHERE game_type='casino' AND ts>=?", (day_ago,)
+            ) as c:
+                r_day = await c.fetchone()
+            games_day   = r_day[0] or 0
+            bet_day     = r_day[1] or 0
+            win_day     = r_day[2] or 0
+            async with db.execute(
+                "SELECT COUNT(*), SUM(bet_amount), SUM(win_amount) FROM game_logs WHERE game_type='casino' AND ts>=?", (week_ago,)
+            ) as c:
+                r_week = await c.fetchone()
+            games_week  = r_week[0] or 0
+            bet_week    = r_week[1] or 0
+            win_week    = r_week[2] or 0
+
+            # Топ-5 выигрышей всех времён
+            async with db.execute(
+                "SELECT f.first_name, f.username, gl.win_amount, gl.bet_amount "
+                "FROM game_logs gl LEFT JOIN frogs f ON f.user_id=gl.user_id "
+                "WHERE gl.game_type='casino' AND gl.result='win' "
+                "ORDER BY gl.win_amount DESC LIMIT 5"
+            ) as c:
+                top_wins_rows = await c.fetchall()
+
+            # Топ-5 игроков по количеству игр
+            async with db.execute(
+                "SELECT f.first_name, f.username, COUNT(*) as cnt "
+                "FROM game_logs gl LEFT JOIN frogs f ON f.user_id=gl.user_id "
+                "WHERE gl.game_type='casino' "
+                "GROUP BY gl.user_id ORDER BY cnt DESC LIMIT 5"
+            ) as c:
+                top_players_rows = await c.fetchall()
+
+            # Самый большой выигрыш за сутки
+            async with db.execute(
+                "SELECT f.first_name, gl.win_amount FROM game_logs gl "
+                "LEFT JOIN frogs f ON f.user_id=gl.user_id "
+                "WHERE gl.game_type='casino' AND gl.result='win' AND gl.ts>=? "
+                "ORDER BY gl.win_amount DESC LIMIT 1", (day_ago,)
+            ) as c:
+                best_today = await c.fetchone()
+
+        wr = int(total_wins / total_games * 100) if total_games else 0
+        house_profit_day  = bet_day  - win_day
+        house_profit_week = bet_week - win_week
+
+        lines = [
+            "🃏 <b>Статистика казино</b>\n",
+            "📊 <b>Общее (всё время)</b>",
+            f"  Игр: <b>{total_games:,}</b> │ Побед: <b>{total_wins:,}</b> ({wr}%)",
+            f"  КваКоинов поставлено: <b>{total_spent:,}</b>",
+            f"  КваКоинов в экономике: <b>{total_balance:,}</b>",
+            "",
+            "🕐 <b>За 24 часа</b>",
+            f"  Игр: <b>{games_day:,}</b> │ Активных игроков: <b>{active_day}</b>",
+            f"  Поставлено: <b>{bet_day:,}</b> │ Выиграно: <b>{win_day:,}</b>",
+            f"  Доход казино: <b>{'+'if house_profit_day>=0 else ''}{house_profit_day:,}</b>🪙",
+        ]
+        if best_today:
+            name_bt = f"@{best_today[1]}" if best_today[1] else he(best_today[0] or "?")
+            lines.append(f"  {_E_TROPHY} Лучший выигрыш: <b>{best_today[1]:,}</b>🪙 ({name_bt})")
+        lines += [
+            "",
+            "📅 <b>За 7 дней</b>",
+            f"  Игр: <b>{games_week:,}</b> │ Активных игроков: <b>{active_week}</b>",
+            f"  Поставлено: <b>{bet_week:,}</b> │ Выиграно: <b>{win_week:,}</b>",
+            f"  Доход казино: <b>{'+'if house_profit_week>=0 else ''}{house_profit_week:,}</b>🪙",
+        ]
+        if top_wins_rows:
+            lines += ["", "💰 <b>Топ-5 выигрышей (всё время)</b>"]
+            for i, r in enumerate(top_wins_rows, 1):
+                nm = f"@{r[1]}" if r[1] else he(r[0] or "?")
+                lines.append(f"  {i}. {nm} — <b>{r[2]:,}</b>🪙 (ставка {r[3]:,})")
+        if top_players_rows:
+            lines += ["", "🎰 <b>Топ-5 по числу игр</b>"]
+            for i, r in enumerate(top_players_rows, 1):
+                nm = f"@{r[1]}" if r[1] else he(r[0] or "?")
+                lines.append(f"  {i}. {nm} — <b>{r[2]:,}</b> игр")
+
+        text = "\n".join(lines)
+        try:
+            await q.message.edit_text(
+                text,
+                parse_mode=ParseMode.HTML,
+                reply_markup=InlineKeyboardMarkup([
+                    [btn("🔴 Владельцы мифических обликов", callback_data="admin_mythic_owners")],
+                    [btn("◀️ Назад", callback_data="admin_refresh")],
+                ]),
+            )
+        except Exception:
+            pass
+        await q.answer()
+        return
+    if d == "admin_mythic_owners":
+        if uid not in ADMIN_IDS:
+            await q.answer("⛔", show_alert=True)
+            return
+        # Все мифические обликиу
+        mythic_skin_names = [sname for sname, sdata in SKINS.items() if sdata.get("rarity") == "mythic"]
+        if not mythic_skin_names:
+            await q.answer("Мифических обликов нет в конфиге.", show_alert=True)
+            return
+        placeholders = ",".join("?" * len(mythic_skin_names))
+        async with aiosqlite.connect(DB_PATH) as db:
+            db.row_factory = aiosqlite.Row
+            # Активный облик
+            async with db.execute(
+                f"SELECT user_id, first_name, username, skin FROM frogs "
+                f"WHERE skin IN ({placeholders}) AND is_bot=0 AND banned=0 "
+                f"ORDER BY skin",
+                mythic_skin_names,
+            ) as c:
+                active_rows = await c.fetchall()
+            # В коллекции (не обязательно активный)
+            async with db.execute(
+                f"SELECT c.user_id, f.first_name, f.username, c.skin "
+                f"FROM collections c LEFT JOIN frogs f ON f.user_id=c.user_id "
+                f"WHERE c.skin IN ({placeholders}) AND (f.is_bot IS NULL OR f.is_bot=0) "
+                f"AND (f.banned IS NULL OR f.banned=0) "
+                f"ORDER BY c.skin",
+                mythic_skin_names,
+            ) as c:
+                owned_rows = await c.fetchall()
+
+        # Построим карту: skin → {uid: (name, active)}
+        from collections import defaultdict
+        skin_map: dict = defaultdict(dict)
+        for r in owned_rows:
+            skin_map[r["skin"]][r["user_id"]] = [r["first_name"] or "?", r["username"] or "", False]
+        for r in active_rows:
+            if r["user_id"] in skin_map[r["skin"]]:
+                skin_map[r["skin"]][r["user_id"]][2] = True
+            else:
+                skin_map[r["skin"]][r["user_id"]] = [r["first_name"] or "?", r["username"] or "", True]
+
+        lines = ["🔴 <b>Владельцы мифических обликов</b>\n"]
+        total_owners = 0
+        for sname in sorted(skin_map.keys()):
+            sdata = SKINS.get(sname, {})
+            emoji = sdata.get("emoji", "🔴")
+            owners = skin_map[sname]
+            total_owners += len(owners)
+            lines.append(f"{emoji} <b>{_html.escape(sname)}</b> — {len(owners)} владельца(ев)")
+            for entry_uid, (frog_fname, uname, is_active) in owners.items():
+                disp = f"@{uname}" if uname else _html.escape(frog_fname)
+                active_mark = " ✅" if is_active else ""
+                lines.append(f"  · {disp} (<code>{entry_uid}</code>){active_mark}")
+        if not lines[1:]:
+            lines.append("Никто ещё не владеет мифическими обликами.")
+        lines.append(f"\n👑 Всего уникальных владельцев: <b>{total_owners}</b>")
+        lines.append("<i>✅ = облик сейчас активен</i>")
+
+        text = "\n".join(lines)
+        # Если текст слишком длинный, обрезаем
+        if len(text) > 4000:
+            text = text[:3950] + "\n<i>... (список обрезан)</i>"
+        try:
+            await q.message.edit_text(
+                text,
+                parse_mode=ParseMode.HTML,
+                reply_markup=InlineKeyboardMarkup([
+                    [btn("◀️ Назад к казино", callback_data="admin_casino_stats")],
+                    [btn("🏠 Главное меню", callback_data="admin_refresh")],
+                ]),
+            )
+        except Exception:
+            pass
+        await q.answer()
+        return
+    if d == "admin_stickers":
+        if uid not in ADMIN_IDS:
+            await q.answer("⛔", show_alert=True)
+            return
+        lines = ["🎭 <b>Настройка стикеров действий</b>\n"]
+        lines.append("Текущие индексы PREMIUM_STICKER_IDS для каждого действия:\n")
+        kb_rows = []
+        for action, label in ACTION_STICKER_LABELS.items():
+            custom_val = await db_setting(f"sticker_{action}")
+            current = (
+                custom_val
+                if custom_val
+                else ",".join(str(i) for i in ACTION_STICKERS[action])
+            )
+            lines.append(f"<b>{label}</b>: <code>{current}</code>")
+            kb_rows.append(
+                [
+                    btn(
+                        f"{_E_PENCIL} {label}", callback_data=f"admin_sticker_edit_{action}"
+                    )
+                ]
+            )
+        kb_rows.append([btn("◀️ Назад", callback_data="admin_refresh")])
+        lines.append(
+            "\n<i>Нажми на действие чтобы изменить индексы.\n"
+            "Индексы 0-49 соответствуют PREMIUM_STICKER_IDS.</i>"
+        )
+        try:
+            await q.message.edit_text(
+                "\n".join(lines),
+                parse_mode=ParseMode.HTML,
+                reply_markup=InlineKeyboardMarkup(kb_rows),
+            )
+        except Exception:
+            pass
+        await q.answer()
+        return
+    if d.startswith("admin_sticker_edit_"):
+        if uid not in ADMIN_IDS:
+            await q.answer("⛔", show_alert=True)
+            return
+        action = d[19:]
+        label = ACTION_STICKER_LABELS.get(action, action)
+        custom_val = await db_setting(f"sticker_{action}")
+        current = (
+            custom_val
+            if custom_val
+            else ",".join(str(i) for i in ACTION_STICKERS.get(action, []))
+        )
+        await q.answer()
+        try:
+            await q.message.edit_text(
+                f"{_E_PENCIL} <b>Редактирование: {label}</b>\n\n"
+                f"Текущие индексы: <code>{current}</code>\n\n"
+                f"Чтобы изменить, используй команду:\n"
+                f"<code>/setsticker {action} 0,1,2,3</code>\n\n"
+                f"Индексы 0-49 соответствуют PREMIUM_STICKER_IDS.\n"
+                f"Всего стикеров: {len(PREMIUM_STICKER_IDS)}",
+                parse_mode=ParseMode.HTML,
+                reply_markup=InlineKeyboardMarkup(
+                    [
+                        [
+                            btn(
+                                "◀️ Назад к стикерам", callback_data="admin_stickers"
+                            )
+                        ]
+                    ]
+                ),
+            )
+        except Exception:
+            pass
+        return
+    if d == "admin_referrals":
+        if uid not in ADMIN_IDS:
+            await q.answer("⛔", show_alert=True)
+            return
+        await q.answer()
+        async with aiosqlite.connect(DB_PATH) as db:
+            async with db.execute("SELECT COUNT(*) FROM referrals") as c:
+                total_refs = (await c.fetchone())[0] or 0
+            async with db.execute("SELECT SUM(rewarded_coins) FROM referrals") as c:
+                total_coins = (await c.fetchone())[0] or 0
+            # Топ-рефереры
+            async with db.execute(
+                "SELECT referrer_id, COUNT(*) as cnt, SUM(rewarded_coins) as earned "
+                "FROM referrals GROUP BY referrer_id ORDER BY cnt DESC LIMIT 15"
+            ) as c:
+                top_refs = await c.fetchall()
+        lines = [
+            f"🔗 <b>Реферальная статистика</b>\n\n"
+            f"Всего рефералов: <b>{total_refs}</b>\n"
+            f"КваКоинов выдано: <b>{total_coins}{coin_emoji()}</b>\n\n"
+            f"<b>Топ-рефереры (🚨 &gt;50 = подозрительно):</b>"
+        ]
+        kb_rows_ref = []
+        for ref_uid, cnt, earned in top_refs:
+            rf = await db_get(ref_uid)
+            name = he(rf["first_name"]) if rf else f"ID:{ref_uid}"
+            uname = f"@{rf['username']}" if rf and rf.get("username") else f"id{ref_uid}"
+            flag = " 🚨" if cnt > 50 else ""
+            lines.append(f"{'⚠️' if cnt > 50 else '👤'} <b>{name}</b> ({uname}) — {cnt} чел., {earned or 0}{coin_emoji()}{flag}")
+            if cnt > 50:
+                kb_rows_ref.append([btn(
+                    f"{_E_SEARCH} {name[:20]} ({cnt} реф.)",
+                    callback_data=f"admin_refdetail_{ref_uid}"
+                )])
+        if not kb_rows_ref:
+            lines.append("\n✅ <i>Подозрительных реферальных схем не обнаружено</i>")
+        else:
+            lines.append("\n⚠️ <b>Нажми на подозрительного пользователя для расследования:</b>")
+        kb_rows_ref.append([btn("◀️ Назад", callback_data="admin_refresh")])
+        try:
+            await q.message.edit_text(
+                "\n".join(lines),
+                parse_mode=ParseMode.HTML,
+                reply_markup=InlineKeyboardMarkup(kb_rows_ref),
+            )
+        except Exception:
+            pass
+        return
+    if d.startswith("admin_refdetail_"):
+        if uid not in ADMIN_IDS:
+            await q.answer("⛔", show_alert=True)
+            return
+        await q.answer()
+        try:
+            suspect_id = int(d.split("_")[-1])
+        except ValueError:
+            await q.answer("❌ Неверный ID", show_alert=True)
+            return
+        try:
+            rf = await db_get(suspect_id)
+            name = he(str(rf["first_name"] or f"ID:{suspect_id}")) if rf else f"ID:{suspect_id}"
+            uname = he("@" + rf["username"]) if rf and rf.get("username") else he(f"id{suspect_id}")
+            async with aiosqlite.connect(DB_PATH) as db:
+                async with db.execute(
+                    "SELECT referred_id, joined_at, stage_mask, rewarded_coins FROM referrals WHERE referrer_id=? ORDER BY joined_at DESC",
+                    (suspect_id,)
+                ) as c:
+                    ref_list = await c.fetchall()
+            # NULL-безопасное суммирование
+            total_earned = sum((r[3] or 0) for r in ref_list)
+            # Анализ подозрительных: регистрации < 5 минут между собой
+            suspicious_ids = []
+            prev_ts = 0.0
+            for rr in sorted(ref_list, key=lambda x: (x[1] or 0)):
+                ts = rr[1] or 0
+                diff = ts - prev_ts
+                if prev_ts and diff < 300:
+                    suspicious_ids.append(rr[0])
+                prev_ts = ts
+            lines = [
+                f"{_E_SEARCH} <b>Расследование: {name} ({uname})</b>\n",
+                f"ID: <code>{suspect_id}</code>",
+                f"💰 Баланс: {rf['coins'] if rf else '?'} 🪙",
+                f"{_E_USERS} Всего рефералов: <b>{len(ref_list)}</b>",
+                f"🪙 Заработано с рефералов: <b>{total_earned} 🪙</b>",
+                f"{_E_BOT} Подозрительных (регистрации &lt; 5 мин): <b>{len(suspicious_ids)}</b>\n",
+                f"<b>Последние 20 рефералов:</b>",
+            ]
+            for rr in ref_list[:20]:
+                # NULL-безопасные значения
+                joined_at = rr[1] or 0
+                stage_mask = rr[2] or 0
+                rewarded = rr[3] or 0
+                ts_s = time.strftime("%d.%m %H:%M", time.localtime(joined_at)) if joined_at else "—"
+                mask_s = bin(stage_mask).count("1")
+                flag = " 🤖" if rr[0] in suspicious_ids else ""
+                lines.append(f"• <code>{rr[0]}</code> [{ts_s}] эт.{mask_s} {rewarded} 🪙{flag}")
+            if len(ref_list) > 20:
+                lines.append(f"<i>...и ещё {len(ref_list)-20}</i>")
+            ban_s = rf.get("banned", 0) if rf else 0
+            ban_lbl = "🔓 Разбанить" if ban_s else "🚫 Забанить мошенника"
+            ban_cb = f"admin_unban_{suspect_id}" if ban_s else f"admin_ban_{suspect_id}"
+            kb_det = InlineKeyboardMarkup([
+                [btn(ban_lbl, callback_data=ban_cb, style="danger")],
+                [btn(f"🗑 Удалить {len(suspicious_ids)} бот-рефералов", callback_data=f"admin_purge_botrefs_{suspect_id}")],
+                [btn(f"💸 Списать реф. монеты ({total_earned})", callback_data=f"admin_strip_refcoins_{suspect_id}")],
+                [btn("◀️ Назад к рефералам", callback_data="admin_referrals")],
+            ])
+            await q.message.edit_text("\n".join(lines), parse_mode=ParseMode.HTML, reply_markup=kb_det)
+        except Exception as e:
+            print(f"{_E_CROSS} admin_refdetail error: {e}")
+            try:
+                await q.message.edit_text(
+                    f"{_E_CROSS} <b>Ошибка при загрузке расследования</b>\n\n<code>{_html.escape(str(e))}</code>",
+                    parse_mode=ParseMode.HTML,
+                    reply_markup=InlineKeyboardMarkup(
+                        [[btn("◀️ Назад", callback_data="admin_referrals")]]
+                    ),
+                )
+            except Exception:
+                pass
+        return
+    if d.startswith("admin_purge_botrefs_"):
+        if uid not in ADMIN_IDS:
+            await q.answer("⛔", show_alert=True)
+            return
+        try:
+            suspect_id = int(d.split("_")[-1])
+        except ValueError:
+            return
+        async with aiosqlite.connect(DB_PATH) as db:
+            async with db.execute(
+                "SELECT referred_id, joined_at FROM referrals WHERE referrer_id=? ORDER BY joined_at",
+                (suspect_id,)
+            ) as c:
+                ref_list = await c.fetchall()
+        suspicious_ids = []
+        prev_ts = 0.0
+        for rr in sorted(ref_list, key=lambda x: (x[1] or 0)):
+            ts = rr[1] or 0
+            diff = ts - prev_ts
+            if prev_ts and diff < 300:
+                suspicious_ids.append(rr[0])
+            prev_ts = ts
+        if not suspicious_ids:
+            await q.answer("✅ Бот-рефералов не найдено", show_alert=True)
+            return
+        async with aiosqlite.connect(DB_PATH) as db:
+            for bot_id in suspicious_ids:
+                await db.execute("DELETE FROM referrals WHERE referrer_id=? AND referred_id=?", (suspect_id, bot_id))
+                await db.execute("UPDATE frogs SET banned=1 WHERE user_id=?", (bot_id,))
+            await db.commit()
+        await q.answer((f"🗑 Удалено {len(suspicious_ids)} бот-рефералов, аккаунты забанены")[:200], show_alert=True)
+        await admin_log(uid, "purge_botrefs", suspect_id, details=f"purged {len(suspicious_ids)} bot referrals")
+        return
+    if d.startswith("admin_strip_refcoins_"):
+        if uid not in ADMIN_IDS:
+            await q.answer("⛔", show_alert=True)
+            return
+        try:
+            suspect_id = int(d.split("_")[-1])
+        except ValueError:
+            return
+        async with aiosqlite.connect(DB_PATH) as db:
+            async with db.execute("SELECT SUM(rewarded_coins) FROM referrals WHERE referrer_id=?", (suspect_id,)) as c:
+                earned = (await c.fetchone())[0] or 0
+            # Списываем ровно столько, сколько заработано с рефералов
+            await db.execute("UPDATE frogs SET coins = MAX(0, coins - ?) WHERE user_id=?", (earned, suspect_id))
+            await db.commit()
+        await q.answer((f"💸 Списано {earned}🪙 с ID:{suspect_id}")[:200], show_alert=True)
+        await admin_log(uid, "strip_refcoins", suspect_id, details=f"stripped {earned} ref coins")
+        return
+    # ── ПОИСК ИГРОКА ───────────────────────────────────
+    if d == "admin_search_hint":
+        if uid not in ADMIN_IDS:
+            await q.answer("⛔", show_alert=True)
+            return
+        await q.answer()
+        try:
+            await q.message.edit_text(
+                "🔍 <b>Поиск игрока</b>\n\n"
+                "По username:\n<code>/adminlookup @username</code>\n\n"
+                "По Telegram ID:\n<code>/adminlookup 123456789</code>\n\n"
+                "<i>Откроется карточка игрока с возможностью бана, выдачи монет и сброса КД.</i>",
+                parse_mode=ParseMode.HTML,
+                reply_markup=InlineKeyboardMarkup(
+                    [[btn("◀️ Назад", callback_data="admin_refresh")]]
+                ),
+            )
+        except Exception:
+            pass
+        return
+    # ── ТОП БОГАЧИ ─────────────────────────────────────
+    if d == "admin_rich":
+        if uid not in ADMIN_IDS:
+            await q.answer("⛔", show_alert=True)
+            return
+        await q.answer()
+        async with aiosqlite.connect(DB_PATH) as db:
+            db.row_factory = aiosqlite.Row
+            async with db.execute(
+                "SELECT user_id, first_name, username, coins, level, banned FROM frogs ORDER BY coins DESC LIMIT 20"
+            ) as c:
+                rich_list = await c.fetchall()
+        medals = ["🥇","🥈","🥉"] + ["💰"] * 17
+        lines = ["💎 <b>Топ-20 богатейших игроков</b>\n"]
+        for i, r in enumerate(rich_list):
+            uname = f"@{r['username']}" if r["username"] else f"id{r['user_id']}"
+            ban_mark = " 🚫" if r["banned"] else ""
+            lines.append(
+                f"{medals[i]} <b>{he(r['first_name'])}</b> ({uname}){ban_mark}\n"
+                f"   {_E_COIN} {r['coins']:,} · ур.{r['level']} · <code>{r['user_id']}</code>"
+            )
+        try:
+            await q.message.edit_text(
+                "\n".join(lines),
+                parse_mode=ParseMode.HTML,
+                reply_markup=InlineKeyboardMarkup(
+                    [[btn("◀️ Назад", callback_data="admin_refresh")]]
+                ),
+            )
+        except Exception:
+            pass
+        return
+    # ── ПАРТНЁРСКИЕ ЧАТЫ ──────────────────────────────
+    if d == "admin_partner_chats":
+        if uid not in ADMIN_IDS:
+            await q.answer("⛔", show_alert=True)
+            return
+        await q.answer()
+        chats = await partner_chat_list_active()
+        if not chats:
+            lines = ["🏘 <b>Партнёрские чаты</b>\n\nНет активных партнёрских чатов.\nДобавь бота в группу — она автоматически появится здесь."]
+        else:
+            lines = [f"🏘 <b>Партнёрские чаты ({len(chats)} активных)</b>\n"]
+            for ch in chats:
+                cnt = await partner_chat_count_members(ch["chat_id"])
+                title = he(ch.get("chat_title") or str(ch["chat_id"]))
+                uname = f" (@{ch['chat_username']})" if ch.get("chat_username") else ""
+                added_dt = datetime.fromtimestamp(ch["added_at"], timezone.utc).strftime("%d.%m.%Y") if ch.get("added_at") else "?"
+                lines.append(
+                    f"• <b>{title}</b>{uname}\n"
+                    f"  id: <code>{ch['chat_id']}</code> · игроков: <b>{cnt}</b> · добавлен: {added_dt}\n"
+                    f"  🔗 <a href=\"{ch.get('bot_link','')}\">Ссылка для игроков</a>"
+                )
+        try:
+            await q.message.edit_text(
+                "\n".join(lines),
+                parse_mode=ParseMode.HTML,
+                reply_markup=InlineKeyboardMarkup(
+                    [[btn("◀️ Назад", callback_data="admin_refresh")]]
+                ),
+                link_preview_options=LinkPreviewOptions(is_disabled=True),
+            )
+        except Exception:
+            pass
+        return
+    # ── ПЕРЕВОДЫ /gift ──────────────────────────────────
+    if d == "admin_gifts_0" or d.startswith("admin_gifts_"):
+        if uid not in ADMIN_IDS:
+            await q.answer("⛔", show_alert=True)
+            return
+        await q.answer()
+        try:
+            offset_g = int(d.split("_")[-1])
+        except (ValueError, IndexError):
+            offset_g = 0
+        async with aiosqlite.connect(DB_PATH) as db:
+            db.row_factory = aiosqlite.Row
+            async with db.execute(
+                "SELECT g.id, g.from_id, g.to_id, g.amount, g.ts, "
+                "f1.first_name as from_name, f1.username as from_uname, "
+                "f2.first_name as to_name, f2.username as to_uname "
+                "FROM gift_log g "
+                "LEFT JOIN frogs f1 ON f1.user_id=g.from_id "
+                "LEFT JOIN frogs f2 ON f2.user_id=g.to_id "
+                "ORDER BY g.ts DESC LIMIT 15 OFFSET ?",
+                (offset_g,)
+            ) as c:
+                gift_rows = await c.fetchall()
+            async with db.execute("SELECT COUNT(*), SUM(amount) FROM gift_log") as c:
+                cnt_g, sum_g = await c.fetchone()
+                cnt_g = cnt_g or 0
+                sum_g = sum_g or 0
+        lines_g = [f"{_E_GIFT} <b>Переводы /gift</b> (всего: {cnt_g}, сумма: {sum_g:,}{coin_emoji()})\n"]
+        if not gift_rows:
+            lines_g.append("<i>Переводов пока нет</i>")
+        for gr in gift_rows:
+            ts_s = time.strftime("%d.%m %H:%M", time.localtime(gr["ts"]))
+            fn = he(gr["from_name"] or f"id{gr['from_id']}")
+            fu = f"@{gr['from_uname']}" if gr["from_uname"] else f"<code>{gr['from_id']}</code>"
+            tn = he(gr["to_name"] or f"id{gr['to_id']}")
+            tu = f"@{gr['to_uname']}" if gr["to_uname"] else f"<code>{gr['to_id']}</code>"
+            lines_g.append(
+                f"<code>{ts_s}</code> {fn}({fu}) → {tn}({tu}): <b>+{gr['amount']}{coin_emoji()}</b>"
+            )
+        nav_g = []
+        if offset_g > 0:
+            nav_g.append(btn("◀️ Новее", callback_data=f"admin_gifts_{max(0, offset_g-15)}"))
+        if offset_g + 15 < cnt_g:
+            nav_g.append(btn("▶️ Старее", callback_data=f"admin_gifts_{offset_g+15}"))
+        kb_g_rows = []
+        if nav_g:
+            kb_g_rows.append(nav_g)
+        kb_g_rows.append([btn("◀️ Назад", callback_data="admin_refresh")])
+        try:
+            await q.message.edit_text(
+                "\n".join(lines_g),
+                parse_mode=ParseMode.HTML,
+                reply_markup=InlineKeyboardMarkup(kb_g_rows),
+            )
+        except Exception:
+            pass
+        return
+    # ── ЛОТЕРЕЯ (АДМИН) ──────────────────────────────────
+    if d == "admin_lottery":
+        if uid not in ADMIN_IDS:
+            await q.answer("⛔", show_alert=True)
+            return
+        await q.answer()
+        draw_date = lottery_today()
+        async with aiosqlite.connect(DB_PATH) as db:
+            db.row_factory = aiosqlite.Row
+            # Все билеты текущего розыгрыша
+            async with db.execute(
+                "SELECT user_id, COUNT(*) as cnt FROM lottery_tickets "
+                "WHERE draw_date=? GROUP BY user_id ORDER BY cnt DESC",
+                (draw_date,)
+            ) as c:
+                participants = await c.fetchall()
+            async with db.execute(
+                "SELECT COUNT(*) FROM lottery_tickets WHERE draw_date=?", (draw_date,)
+            ) as c:
+                total_tickets = (await c.fetchone())[0] or 0
+
+        pool = total_tickets * LOTTERY_TICKET_COST
+        lines = [
+            f"🎟 <b>Лотерея — панель управления</b>\n",
+            f"📅 Розыгрыш: <b>{draw_date}</b>",
+            f"🎫 Билетов: <b>{total_tickets}</b> · 💰 Банк: <b>{pool}{coin_emoji()}</b>",
+            f"{_E_USERS} Участников: <b>{len(participants)}</b>\n",
+        ]
+        if participants:
+            lines.append("<b>Участники (имя в игре — билетов):</b>")
+            for row in participants:
+                p_uid = row["user_id"]
+                p_cnt = row["cnt"]
+                pf = await db_get(p_uid)
+                if pf:
+                    pname = he(pf.get("frog_name") or pf.get("first_name") or f"ID:{p_uid}")
+                else:
+                    pname = f"ID:{p_uid}"
+                lines.append(f"• {pname} — <b>{p_cnt}</b> 🎟")
+        else:
+            lines.append("<i>Билеты ещё не куплены</i>")
+
+        kb_lot = InlineKeyboardMarkup([
+            [btn("🎲 Провести розыгрыш сейчас", callback_data="admin_lottery_draw_now")],
+            [btn("🗑 Сбросить билеты", callback_data="admin_lottery_reset")],
+            [btn("◀️ Назад", callback_data="admin_refresh")],
+        ])
+        try:
+            await q.message.edit_text(
+                "\n".join(lines), parse_mode=ParseMode.HTML, reply_markup=kb_lot
+            )
+        except Exception:
+            pass
+        return
+    if d == "admin_lottery_draw_now":
+        if uid not in ADMIN_IDS:
+            await q.answer("⛔", show_alert=True)
+            return
+        await q.answer("🎲 Розыгрыш запускается...", show_alert=True)
+        asyncio.create_task(job_lottery_draw(ctx))
+        await admin_log(uid, "lottery_draw_now")
+        return
+    if d == "admin_lottery_reset":
+        if uid not in ADMIN_IDS:
+            await q.answer("⛔", show_alert=True)
+            return
+        draw_date = lottery_today()
+        async with aiosqlite.connect(DB_PATH) as db:
+            async with db.execute(
+                "SELECT COUNT(*) FROM lottery_tickets WHERE draw_date=?", (draw_date,)
+            ) as c:
+                cnt = (await c.fetchone())[0] or 0
+            await db.execute("DELETE FROM lottery_tickets WHERE draw_date=?", (draw_date,))
+            await db.commit()
+        await q.answer((f"🗑 Удалено {cnt} билетов за {draw_date}")[:200], show_alert=True)
+        await admin_log(uid, "lottery_reset", details=f"deleted {cnt} tickets for {draw_date}")
+        # Обновим страницу лотереи
+        kb_lot = InlineKeyboardMarkup([
+            [btn("🎲 Провести розыгрыш сейчас", callback_data="admin_lottery_draw_now")],
+            [btn("🗑 Сбросить билеты", callback_data="admin_lottery_reset")],
+            [btn("◀️ Назад", callback_data="admin_refresh")],
+        ])
+        try:
+            await q.message.edit_text(
+                f"{_E_TICKET} <b>Лотерея — панель управления</b>\n\n"
+                f"📅 Розыгрыш: <b>{draw_date}</b>\n"
+                f"🗑 Билеты сброшены (удалено: {cnt})\n\n"
+                f"<i>Участников нет</i>",
+                parse_mode=ParseMode.HTML,
+                reply_markup=kb_lot,
+            )
+        except Exception:
+            pass
+        return
+    if d == "admin_broadcast":
+        if uid not in ADMIN_IDS:
+            await q.answer("⛔", show_alert=True)
+            return
+        await q.answer()
+        try:
+            await q.message.edit_text(
+                "📢 <b>Рассылка</b>\n\n"
+                "Отправь текст сообщения командой:\n"
+                "<code>/broadcast Текст сообщения</code>\n\n"
+                "<i>Сообщение получат все активные игроки.</i>",
+                parse_mode=ParseMode.HTML,
+                reply_markup=InlineKeyboardMarkup(
+                    [[btn("◀️ Назад", callback_data="admin_refresh")]]
+                ),
+            )
+        except Exception:
+            pass
+        return
+    if d in ("admin_give_coins", "admin_give_skin"):
+        if uid not in ADMIN_IDS:
+            await q.answer("⛔", show_alert=True)
+            return
+        await q.answer()
+        if d == "admin_give_coins":
+            await q.answer()
+            hint = "Дать КваКоины: <code>/givecoin @username 500</code>"
+        else:
+            hint = "Дать облик: <code>/giveskin @username Brownie</code>"
+        try:
+            await q.message.edit_text(
+                f"{_E_GIFT} <b>Выдача игрокам</b>\n\n{hint}",
+                parse_mode=ParseMode.HTML,
+                reply_markup=InlineKeyboardMarkup(
+                    [[btn("◀️ Назад", callback_data="admin_refresh")]]
+                ),
+            )
+        except Exception:
+            pass
+        return
+    # ── ЭКОНОМИКА ────────────────────────────────
+    if d == "admin_eco":
+        if uid not in ADMIN_IDS:
+            await q.answer("⛔", show_alert=True)
+            return
+        await q.answer()
+        # Читаем основные настройки из БД (с дефолтами)
+        async with aiosqlite.connect(DB_PATH) as db:
+            async with db.execute(
+                "SELECT key, value FROM settings WHERE key IN (?,?,?,?,?,?,?,?)",
+                (
+                    "gacha_cost",
+                    "revive_cost",
+                    "heal_cost",
+                    "daily_base",
+                    "casino_jackpot_pool",
+                    "feed_reward",
+                    "play_reward",
+                    "wash_reward",
+                ),
+            ) as c:
+                srows = {r[0]: r[1] for r in await c.fetchall()}
+        total_coins_eco = 0
+        async with aiosqlite.connect(DB_PATH) as db:
+            async with db.execute("SELECT SUM(coins) FROM frogs") as c:
+                total_coins_eco = (await c.fetchone())[0] or 0
+
+        def sv(key, default):
+            return srows.get(key, str(default))
+
+        text_eco = (
+            f"💰 <b>Экономика и цены</b>\n\n"
+            f"🪙 В экономике: <b>{total_coins_eco:,}</b>\n\n"
+            f"<b>Цены (изменить: /setprice ключ значение):</b>\n"
+            f"• gacha_cost = {sv('gacha_cost','50')} (гача)\n"
+            f"• revive_cost = {sv('revive_cost','100')} (воскрешение)\n"
+            f"• heal_cost = {sv('heal_cost','30')} (лечение)\n"
+            f"• daily_base = {sv('daily_base','50')} (ежедневный бонус)\n\n"
+            f"<b>Награды:</b>\n"
+            f"• feed_reward = {sv('feed_reward','10')} (кормление)\n"
+            f"• play_reward = {sv('play_reward','8')} (игра)\n"
+            f"• wash_reward = {sv('wash_reward','5')} (купание)\n\n"
+            f"<b>Казино:</b>\n"
+            f"• Джекпот-пул: {sv('casino_jackpot_pool','0')}{coin_emoji()}\n\n"
+            f"<i>Пример: /setprice gacha_cost 75</i>"
+        )
+        kb_eco = InlineKeyboardMarkup(
+            [
+                [
+                    btn(
+                        "📊 Гача-стат", callback_data="admin_casino_stats"
+                    )
+                ],
+                [btn("◀️ Назад", callback_data="admin_refresh")],
+            ]
+        )
+        try:
+            await q.message.edit_text(
+                text_eco, parse_mode=ParseMode.HTML, reply_markup=kb_eco
+            )
+        except Exception:
+            pass
+        return
+    # ── ИВЕНТЫ ───────────────────────────────────
+    if d == "admin_events":
+        if uid not in ADMIN_IDS:
+            await q.answer("⛔", show_alert=True)
+            return
+        await q.answer()
+        leg = await legend_active()
+        if leg:
+            ends_dt = datetime.utcfromtimestamp(leg["ends_at"] + 3*3600).strftime("%d.%m в %H:%M")
+            goals   = leg["goals"]
+            prog    = leg["progress"]
+            pct_parts = []
+            for action, goal in goals.items():
+                cur = prog.get(action, 0)
+                icon, label = _LEGEND_ACTION_LABELS.get(action, ("▫️", action))
+                pct_parts.append(f"{icon}{cur}/{goal}")
+            leg_status = (
+                f"📜 <b>Легенда активна:</b> {leg['emoji']} {leg['title']}\n"
+                f"Прогресс: {' | '.join(pct_parts)}\n"
+                f"Финал: {ends_dt} МСК"
+            )
+            legend_btns = [
+                [btn("🔄 Обновить прогресс в чате", callback_data="admin_legend_update")],
+                [btn("🏁 Завершить легенду досрочно", callback_data="admin_legend_finish")],
+                [btn("✏️ Изменить цели", callback_data="admin_legend_edit_goals")],
+            ]
+        else:
+            leg_status = "📜 <b>Легенда:</b> не активна"
+            legend_btns = [
+                [btn("🚀 Запустить легенду сейчас", callback_data="admin_legend_start")],
+            ]
+
+        text_ev = (
+            f"🎲 <b>Ивенты и события</b>\n\n"
+            f"🦟 Комар: запускается случайно каждые 1–6ч\n"
+            f"🎲 Интерактивные события: каждые 8ч, 30% шанс\n\n"
+            f"{leg_status}\n\n"
+            f"<i>Действия доступны ниже:</i>"
+        )
+        kb_ev = InlineKeyboardMarkup(
+            legend_btns + [
+                [btn("🦟 Запустить комара", callback_data="admin_launch_mosquito")],
+                [btn("🎲 Разослать интерактивное событие", callback_data="admin_launch_iev")],
+                [btn("✨ Золотая лягушка", callback_data="admin_boost_menu")],
+                [btn("📢 Рассылка", callback_data="admin_broadcast")],
+                [btn("◀️ Назад", callback_data="admin_refresh")],
+            ]
+        )
+        try:
+            await q.message.edit_text(text_ev, parse_mode=ParseMode.HTML, reply_markup=kb_ev)
+        except Exception:
+            pass
+        return
+    if d == "admin_launch_mosquito":
+        if uid not in ADMIN_IDS:
+            await q.answer("⛔", show_alert=True)
+            return
+        asyncio.create_task(job_mosquito(ctx))
+        await admin_log(uid, "launch_mosquito")
+        await q.answer("🦟 Комар запущен", show_alert=True)
+        return
+    if d == "admin_launch_iev":
+        if uid not in ADMIN_IDS:
+            await q.answer("⛔", show_alert=True)
+            return
+        # Сбрасываем КД у всех живых, потом запускаем job_events
+        async with aiosqlite.connect(DB_PATH) as db:
+            await db.execute("UPDATE frogs SET last_interactive_event=0, last_event=0 WHERE alive=1")
+            await db.commit()
+        asyncio.create_task(job_events(ctx))
+        await admin_log(uid, "launch_iev")
+        await q.answer("🎲 Интерактивные события разосланы", show_alert=True)
+        return
+    if d == "admin_legend_start":
+        if uid not in ADMIN_IDS:
+            await q.answer("⛔", show_alert=True)
+            return
+        await _legend_start(ctx.bot)
+        await admin_log(uid, "legend_start")
+        await q.answer("📜 Легенда запущена", show_alert=True)
+        # Обновляем панель
+        try:
+            await q.message.edit_reply_markup(reply_markup=None)
+        except Exception:
+            pass
+        # Раньше здесь стояло `q.data = "admin_events"` в расчёте перерисовать
+        # панель. В PTB объект CallbackQuery неизменяем, поэтому строка не
+        # перерисовывала экран, а роняла обработчик с AttributeError.
+        try:
+            await q.message.edit_text(
+                f"📜 <b>Легенда запущена</b>",
+                parse_mode=ParseMode.HTML,
+                reply_markup=InlineKeyboardMarkup(
+                    [[btn("◀️ К событиям", callback_data="admin_events")]]
+                ),
+            )
+        except Exception as e:
+            logger.warning("admin_legend_start: не удалось перерисовать панель: %s", e)
+        return
+    if d == "admin_legend_update":
+        if uid not in ADMIN_IDS:
+            await q.answer("⛔", show_alert=True)
+            return
+        leg = await legend_active()
+        if leg:
+            await _legend_announce(ctx.bot, leg)
+            await admin_log(uid, "legend_update")
+            await q.answer("🔄 Прогресс обновлён в чате", show_alert=True)
+        else:
+            await q.answer("Нет активной легенды.", show_alert=True)
+        return
+    if d == "admin_legend_finish":
+        if uid not in ADMIN_IDS:
+            await q.answer("⛔", show_alert=True)
+            return
+        leg = await legend_active()
+        if leg:
+            await _legend_finish(ctx.bot, leg)
+            await admin_log(uid, "legend_finish")
+            await q.answer("🏁 Легенда завершена", show_alert=True)
+        else:
+            await q.answer("Нет активной легенды.", show_alert=True)
+        return
+    if d == "admin_legend_edit_goals":
+        if uid not in ADMIN_IDS:
+            await q.answer("⛔", show_alert=True)
+            return
+        leg = await legend_active()
+        if not leg:
+            await q.answer("Нет активной легенды.", show_alert=True)
+            return
+        goals_str = " | ".join(f"{a}:{g}" for a, g in leg["goals"].items())
+        await q.answer()
+        try:
+            await q.message.edit_text(
+                f"{_E_PENCIL} <b>Изменить цели легенды</b>\n\n"
+                f"Текущие цели:\n<code>{goals_str}</code>\n\n"
+                f"Отправь новые цели командой:\n"
+                f"<code>/legend_goals feeds:300 washes:50 plays:40</code>\n\n"
+                f"Доступные действия: feeds, washes, plays, heals, sleeps, gacha, casino",
+                parse_mode=ParseMode.HTML,
+                reply_markup=InlineKeyboardMarkup([
+                    [btn("◀️ Назад", callback_data="admin_events")]
+                ]),
+            )
+        except Exception:
+            pass
+        return
+    # ── СИСТЕМА ─────────────────────────────────
+    if d == "admin_system":
+        if uid not in ADMIN_IDS:
+            await q.answer("⛔", show_alert=True)
+            return
+        await q.answer()
+        import os as _os
+
+        db_size = _os.path.getsize(DB_PATH) if _os.path.exists(DB_PATH) else 0
+        db_size_kb = db_size // 1024
+        # Собираем быструю сводку нагрузки для отображения в системной панели
+        try:
+            import psutil as _psu
+            _cpu = _psu.cpu_percent(interval=0.2)
+            _mem = _psu.virtual_memory()
+            _disk = _psu.disk_usage("/")
+            _load_line = (
+                f"🖥 CPU: <b>{_cpu:.1f}%</b>  "
+                f"🧠 RAM: <b>{_mem.percent:.1f}%</b> "
+                f"({_mem.used // 1024**2}/{_mem.total // 1024**2} МБ)  "
+                f"💽 Диск: <b>{_disk.percent:.1f}%</b>"
+            )
+        except ImportError:
+            _load_line = "⚠️ psutil не установлен (<code>pip install psutil</code>)"
+        text_sys = (
+            f"🔧 <b>Системные инструменты</b>\n\n"
+            f"📦 Размер БД: <b>{db_size_kb} КБ</b>\n"
+            f"{_load_line}\n\n"
+            f"<b>Доступные действия:</b>\n"
+            f"• 💾 Бекап — отправит БД в личку\n"
+            f"• {_E_CHART} Нагрузка — CPU/RAM/диск + пиковые значения\n"
+            f"• {_E_REFRESH} Обновить панель\n\n"
+            f"<b>Команды для выдачи игрокам:</b>\n"
+            f"<code>/givecoin @username 500</code>\n"
+            f"<code>/giveskin @username Brownie</code>\n"
+            f"<code>/adminlookup @username</code>\n"
+            f"<code>/setprice key value</code>"
+        )
+        kb_sys = InlineKeyboardMarkup(
+            [
+                [btn("💾 Бекап БД", callback_data="admin_backup")],
+                [
+                    btn("📊 Статистика", callback_data="admin_stats"),
+                    btn("🎭 Стикеры", callback_data="admin_stickers"),
+                ],
+                [
+                    btn(
+                        "🔍 Поиск игрока", callback_data="admin_search_hint"
+                    ),
+                    btn("💀 Мёртвые", callback_data="admin_dead"),
+                ],
+                [btn("🔄 Сбросить топ недели", callback_data="admin_reset_topw")],
+                [btn("🟢 Онлайн", callback_data="admin_online")],
+                [btn("📈 Нагрузка сервера", callback_data="admin_server_load")],
+                [btn("◀️ Назад", callback_data="admin_refresh")],
+            ]
+        )
+        try:
+            await q.message.edit_text(
+                text_sys, parse_mode=ParseMode.HTML, reply_markup=kb_sys
+            )
+        except Exception:
+            pass
+        return
+    # ── СБРОС ТОПА НЕДЕЛИ (ДОСРОЧНО) ─────────────
+    if d == "admin_reset_topw":
+        if uid not in ADMIN_IDS:
+            await q.answer("⛔", show_alert=True)
+            return
+        await q.answer("✅ Топ недели сброшен", show_alert=True)
+        # Выдаём достижение top_weekly топ-3 ПЕРЕД сбросом
+        try:
+            top3w = await db_top_weekly(3)
+            for _r in top3w:
+                _uid_w = _r.get("user_id")
+                if _uid_w:
+                    await ach_grant(_uid_w, "top_weekly", ctx.bot)
+        except Exception as _e:
+            logger.warning("admin_reset_topw ach_grant error: %s", _e)
+        async with aiosqlite.connect(DB_PATH) as db:
+            await db.execute("UPDATE frogs SET xp_week = 0")
+            await db.commit()
+        await admin_log(uid, "reset_topw")
+        try:
+            await q.message.edit_text(
+                "✅ <b>Топ недели сброшен досрочно.</b>\n\nВсе xp_week обнулены.",
+                parse_mode=ParseMode.HTML,
+                reply_markup=InlineKeyboardMarkup([[btn("◀️ Назад", callback_data="admin_system")]]),
+            )
+        except Exception:
+            pass
+        return
+    # ── ОНЛАЙН СТАТИСТИКА ───────────────────────
+    if d == "admin_online":
+        if uid not in ADMIN_IDS:
+            await q.answer("⛔", show_alert=True)
+            return
+        await q.answer()
+        global _peak_last_save
+        now_ao = time.time()
+        cutoff_10 = now_ao - 10 * 60
+        cutoff_60 = now_ao - 60 * 60
+        async with aiosqlite.connect(DB_PATH) as db:
+            async with db.execute("SELECT COUNT(*) FROM frogs WHERE last_seen >= ? AND alive=1", (cutoff_10,)) as c:
+                online_10 = (await c.fetchone())[0] or 0
+            async with db.execute("SELECT COUNT(*) FROM frogs WHERE last_seen >= ? AND alive=1", (cutoff_60,)) as c:
+                online_60 = (await c.fetchone())[0] or 0
+            async with db.execute("SELECT COUNT(*) FROM frogs WHERE alive=1") as c:
+                total_alive = (await c.fetchone())[0] or 0
+            async with db.execute("SELECT COUNT(*) FROM frogs") as c:
+                total_all = (await c.fetchone())[0] or 0
+
+        # Обновляем пик
+        _update_peak_online(online_10)
+        if now_ao - _peak_last_save > _PEAK_SAVE_INTERVAL:
+            await _save_peak_online()
+
+        def _fmt_peak(period: str) -> str:
+            count, ts = _peak_online.get(period, (0, 0))
+            if ts == 0:
+                return "—"
+            dt = now_ao - ts
+            if dt < 3600:
+                ago = f"{int(dt//60)}м назад"
+            elif dt < 86400:
+                ago = f"{int(dt//3600)}ч назад"
+            else:
+                ago = f"{int(dt//86400)}д назад"
+            return f"<b>{count}</b> ({ago})"
+
+        try:
+            await q.message.edit_text(
+                f"🟢 <b>Онлайн статистика</b>\n\n"
+                f"🟢 Сейчас (10 мин): <b>{online_10}</b>\n"
+                f"🟡 За час: <b>{online_60}</b>\n"
+                f"<tg-emoji emoji-id='5341367834935075028'>🐸</tg-emoji> Живых: <b>{total_alive}</b> · Всего: <b>{total_all}</b>\n\n"
+                f"<b>📈 Пиковый онлайн:</b>\n"
+                f"  За сутки: {_fmt_peak('day')}\n"
+                f"  За неделю: {_fmt_peak('week')}\n"
+                f"  За месяц: {_fmt_peak('month')}",
+                parse_mode=ParseMode.HTML,
+                reply_markup=InlineKeyboardMarkup([
+                    [btn("🔄 Обновить", callback_data="admin_online")],
+                    [btn("◀️ Назад", callback_data="admin_system")],
+                ]),
+            )
+        except Exception:
+            pass
+        return
+    # ── НАГРУЗКА СЕРВЕРА ─────────────────────────────────
+    if d == "admin_server_load" or d == "admin_server_load_refresh":
+        if uid not in ADMIN_IDS:
+            await q.answer("⛔", show_alert=True)
+            return
+        await q.answer()
+        try:
+            import psutil as _psu
+            # CPU — 0.5 сек замер (неблокирующий в asyncio через executor)
+            loop = asyncio.get_event_loop()
+            _cpu_pct = await loop.run_in_executor(None, lambda: _psu.cpu_percent(interval=0.5))
+            _cpu_count = _psu.cpu_count(logical=True)
+            _cpu_freq = _psu.cpu_freq()
+            _freq_str = f"{_cpu_freq.current:.0f} МГц" if _cpu_freq else "—"
+
+            _mem = _psu.virtual_memory()
+            _swap = _psu.swap_memory()
+            _disk = _psu.disk_usage("/")
+
+            # Uptime процесса бота
+            _proc = _psu.Process()
+            _proc_create = _proc.create_time()
+            _uptime_sec = int(time.time() - _proc_create)
+            _uptime_str = (
+                f"{_uptime_sec // 3600}ч {(_uptime_sec % 3600) // 60}м"
+                if _uptime_sec >= 3600
+                else f"{_uptime_sec // 60}м {_uptime_sec % 60}с"
+            )
+            _proc_mem = _proc.memory_info().rss // 1024 ** 2
+
+            # Сетевой трафик
+            _net = _psu.net_io_counters()
+            _net_sent = _net.bytes_sent // 1024 ** 2
+            _net_recv = _net.bytes_recv // 1024 ** 2
+
+            # Пиковые CPU/RAM — храним в bot_data
+            _sl = ctx.bot_data.setdefault("server_load_peak", {
+                "cpu_max": 0.0, "cpu_max_ts": 0,
+                "ram_max": 0.0, "ram_max_ts": 0,
+            })
+            _now_sl = time.time()
+            if _cpu_pct > _sl["cpu_max"]:
+                _sl["cpu_max"] = _cpu_pct
+                _sl["cpu_max_ts"] = _now_sl
+            if _mem.percent > _sl["ram_max"]:
+                _sl["ram_max"] = _mem.percent
+                _sl["ram_max_ts"] = _now_sl
+
+            def _ago(ts):
+                if ts == 0:
+                    return "—"
+                d_ = int(_now_sl - ts)
+                if d_ < 3600:
+                    return f"{d_ // 60}м назад"
+                elif d_ < 86400:
+                    return f"{d_ // 3600}ч назад"
+                return f"{d_ // 86400}д назад"
+
+            text_load = (
+                f"📈 <b>Нагрузка сервера</b>\n\n"
+                f"🖥 <b>CPU</b>\n"
+                f"  Сейчас: <b>{_cpu_pct:.1f}%</b> ({_cpu_count} ядер, {_freq_str})\n"
+                f"  🔺 Пик: <b>{_sl['cpu_max']:.1f}%</b> ({_ago(_sl['cpu_max_ts'])})\n\n"
+                f"🧠 <b>RAM</b>\n"
+                f"  Сейчас: <b>{_mem.percent:.1f}%</b>  "
+                f"({_mem.used // 1024**2}/{_mem.total // 1024**2} МБ)\n"
+                f"  🔺 Пик: <b>{_sl['ram_max']:.1f}%</b> ({_ago(_sl['ram_max_ts'])})\n"
+                f"  SWAP: {_swap.used // 1024**2}/{_swap.total // 1024**2} МБ "
+                f"({_swap.percent:.1f}%)\n\n"
+                f"💽 <b>Диск</b>\n"
+                f"  Занято: <b>{_disk.percent:.1f}%</b>  "
+                f"({_disk.used // 1024**3}/{_disk.total // 1024**3} ГБ)\n\n"
+                f"{_E_BOT} <b>Процесс бота</b>\n"
+                f"  Uptime: <b>{_uptime_str}</b>\n"
+                f"  RAM процесса: <b>{_proc_mem} МБ</b>\n\n"
+                f"🌐 <b>Сеть</b>\n"
+                f"  Отправлено: {_net_sent} МБ · Получено: {_net_recv} МБ\n\n"
+                f"<i>Пики сбрасываются при перезапуске бота</i>"
+            )
+        except ImportError:
+            text_load = (
+                "⚠️ <b>psutil не установлен</b>\n\n"
+                "Для мониторинга нагрузки выполните:\n"
+                "<code>pip install psutil</code>\n"
+                "и перезапустите бота."
+            )
+        except Exception as _e:
+            text_load = f"{_E_CROSS} Ошибка получения данных: <code>{_html.escape(str(_e))}</code>"
+
+        try:
+            await q.message.edit_text(
+                text_load,
+                parse_mode=ParseMode.HTML,
+                reply_markup=InlineKeyboardMarkup([
+                    [btn("🔄 Обновить", callback_data="admin_server_load_refresh")],
+                    [btn("◀️ Назад", callback_data="admin_system")],
+                ]),
+            )
+        except Exception:
+            pass
+        return
+    # ── БЕКАП БД ─────────────────────────────────
+    if d == "admin_backup":
+        if uid not in ADMIN_IDS:
+            await q.answer("⛔", show_alert=True)
+            return
+        await q.answer("⏳ Создаю бекап...", show_alert=False)
+        try:
+            import shutil as _shutil, os as _os, gzip as _gzip
+
+            backup_path = f"/tmp/frog_backup_{int(time.time())}.db"
+            _shutil.copy2(DB_PATH, backup_path)
+            gz_path = backup_path + ".gz"
+            with open(backup_path, "rb") as _f_in, _gzip.open(gz_path, "wb") as _f_out:
+                _f_out.write(_f_in.read())
+            size_kb = _os.path.getsize(backup_path) // 1024
+            gz_size_kb = _os.path.getsize(gz_path) // 1024
+            with open(gz_path, "rb") as bf:
+                await ctx.bot.send_document(
+                    uid,
+                    bf,
+                    filename=f"frog_backup_{int(time.time())}.db.gz",
+                    caption=f"💾 Бекап базы данных\n🕐 {time.strftime('%Y-%m-%d %H:%M:%S')}\n📦 {size_kb} KB → сжато: {gz_size_kb} KB",
+                )
+            _os.remove(backup_path)
+            _os.remove(gz_path)
+            await admin_log(uid, "backup")
+        except Exception as e:
+            await ctx.bot.send_message(uid, f"{_E_CROSS} Ошибка бекапа: {e}")
+        return
+    # ── ЛОГИ АДМИНИСТРАТОРА ──────────────────────
+    if d == "admin_logs_view" or d.startswith("admin_logs_view_"):
+        if uid not in ADMIN_IDS:
+            await q.answer("⛔", show_alert=True)
+            return
+        await q.answer()
+        async with aiosqlite.connect(DB_PATH) as db:
+            db.row_factory = aiosqlite.Row
+            async with db.execute(
+                "SELECT a.admin_id, a.action, a.target_id, a.details, a.ts FROM admin_logs a ORDER BY a.ts DESC LIMIT 500"
+            ) as c:
+                log_rows = await c.fetchall()
+            async with db.execute("SELECT COUNT(*) FROM admin_logs") as c:
+                total_logs = (await c.fetchone())[0] or 0
+        if not log_rows:
+            await q.answer("Логов нет.", show_alert=True)
+            return
+        import io as _io
+        lines_log = [f"=== ADMIN LOG (последние {len(log_rows)} из {total_logs}) ===",
+                     f"Экспорт: {datetime.now(timezone.utc).strftime('%Y-%m-%d %H:%M UTC')}", ""]
+        for lr in log_rows:
+            ts_str = datetime.fromtimestamp(lr["ts"], tz=timezone.utc).strftime("%Y-%m-%d %H:%M:%S")
+            target_s = f" → uid={lr['target_id']}" if lr["target_id"] else ""
+            det = f" | {lr['details']}" if lr["details"] else ""
+            lines_log.append(f"[{ts_str}] admin={lr['admin_id']} {lr['action']}{target_s}{det}")
+        bio = _io.BytesIO("\n".join(lines_log).encode("utf-8"))
+        bio.name = "admin_log.txt"
+        try:
+            await q.message.reply_document(
+                document=bio,
+                caption=f"📋 <b>Журнал администратора</b>\n{total_logs} записей, показано {len(log_rows)}",
+                parse_mode=ParseMode.HTML,
+            )
+        except Exception as _e:
+            await q.answer((f"Ошибка: {_e}")[:200], show_alert=True)
+        return
+    if d.startswith("admin_give_uid_"):
+        if uid not in ADMIN_IDS:
+            await q.answer("⛔", show_alert=True)
+            return
+        target_uid_give = int(d[len("admin_give_uid_") :])
+        await q.answer()
+        try:
+            await q.message.edit_text(
+                f"{_E_GIFT} <b>Выдача монет игроку (ID {target_uid_give})</b>\n\n"
+                f"<code>/givecoin @username 500</code>\n\n"
+                f"Или используй кнопки в карточке игрока ({_E_COIN} +100 / +1000 / -100)\n\n"
+                f"<i>Для открытия карточки: /adminlookup {target_uid_give}</i>",
+                parse_mode=ParseMode.HTML,
+                reply_markup=InlineKeyboardMarkup(
+                    [[btn("◀️ Назад", callback_data="admin_refresh")]]
+                ),
+            )
+        except Exception:
+            pass
+        return
+
+    # Ни одна ветка не подошла — отдаём нажатие общему обработчику.
+    await on_callback(update, ctx)
+
+
 async def on_callback(update: Update, ctx: ContextTypes.DEFAULT_TYPE):
     q = update.callback_query
     uid = q.from_user.id
@@ -30099,10 +32842,11 @@ async def on_callback(update: Update, ctx: ContextTypes.DEFAULT_TYPE):
         "fzquiz_",  # квиз ивента
         "fz_bc_",   # подтверждение рассылки ивента (проверка uid внутри)
     )
-    ADMIN_PREFIXES = ("nft_approve", "nft_reject", "admin_"
-    "admin_give_advslot_",
-    "admin_reset_advcd_",
-)
+    ADMIN_PREFIXES = (
+        "nft_approve",
+        "nft_reject",
+        "admin_",                # покрывает admin_give_advslot_ и admin_reset_advcd_
+    )
     is_public = any(d.startswith(p) for p in PUBLIC_PREFIXES)
     is_admin_action = any(d.startswith(p) for p in ADMIN_PREFIXES)
 
@@ -39268,34 +42012,7 @@ async def on_callback(update: Update, ctx: ContextTypes.DEFAULT_TYPE):
             pass
         return
 
-    # ── admin_msg — написать игроку из adminlookup ──────────────────────────
-    if d.startswith("admin_msg_"):
-        if uid not in ADMIN_IDS:
-            await q.answer("Нет доступа", show_alert=True); return
-        target_uid_msg = int(d[10:])
-        ctx.user_data[f"admin_msg_{uid}"] = target_uid_msg
-        await q.answer()
-        try:
-            await q.message.edit_text(
-                "✉️ <b>Сообщение игроку от администрации</b>\n\nНапиши текст сообщения:",
-                parse_mode=ParseMode.HTML,
-                reply_markup=InlineKeyboardMarkup([[btn("❌ Отмена", callback_data="admin_refresh")]])
-            )
-        except Exception: pass
-        return
 
-    if d.startswith("admin_ban_toggle_"):
-        if uid not in ADMIN_IDS:
-            await q.answer("Нет доступа", show_alert=True); return
-        target_uid_bt = int(d[17:])
-        tf_bt = await db_get(target_uid_bt)
-        if not tf_bt:
-            await q.answer("Игрок не найден", show_alert=True); return
-        tf_bt["banned"] = 0 if tf_bt.get("banned") else 1
-        await db_save(tf_bt)
-        status = "забанен 🚫" if tf_bt["banned"] else "разбанен ✅"
-        await q.answer((f"{fname(tf_bt)} {status}")[:200], show_alert=True)
-        return
 
     # ── Рейтинг стай inline ──────────────────────────────────────────────────
     if d == "staya_top_inline":
@@ -40776,107 +43493,8 @@ async def on_callback(update: Update, ctx: ContextTypes.DEFAULT_TYPE):
             pass
         return
 
-    if d == "admin_boost_menu":
-        if uid not in ADMIN_IDS:
-            await q.answer("⛔", show_alert=True)
-            return
-        await q.answer()
-        active = await boost_is_active()
-        rem = await boost_remaining_secs()
-        h_rem, m_rem = divmod(int(rem) // 60, 60)
-        status_str = (
-            f"✅ Активно — осталось {h_rem}ч {m_rem}м"
-            if active else "⛔ Не активно"
-        )
-        kb_boost = InlineKeyboardMarkup([
-            [
-                btn("1 ч",  callback_data="admin_boost_start_1"),
-                btn("3 ч",  callback_data="admin_boost_start_3"),
-                btn("6 ч",  callback_data="admin_boost_start_6"),
-            ],
-            [
-                btn("12 ч", callback_data="admin_boost_start_12"),
-                btn("24 ч", callback_data="admin_boost_start_24"),
-            ],
-            [btn("⏹ Остановить событие", callback_data="admin_boost_stop")],
-            [btn("◀️ Назад", callback_data="admin_events")],
-        ])
-        try:
-            await q.message.edit_text(
-                f"✨ <b>Событие «Золотая лягушка»</b>\n\n"
-                f"Статус: {status_str}\n\n"
-                f"Эффекты:\n"
-                f"  💫 Stars → КваКоины: ×1.5 (1{_E_XP}=3{_E_COIN})\n"
-                f"  🍀 Легендарки в гаче: ×2\n"
-                f"  🔴 Мифики в гаче: ×2\n\n"
-                f"Выбери длительность для запуска:",
-                parse_mode=ParseMode.HTML,
-                reply_markup=kb_boost,
-            )
-        except Exception:
-            pass
-        return
 
-    if d.startswith("admin_boost_start_"):
-        if uid not in ADMIN_IDS:
-            await q.answer("⛔", show_alert=True)
-            return
-        try:
-            hours = int(d.split("_")[-1])
-        except ValueError:
-            return
-        await boost_set(hours)
-        await db_setting("boost_reminded", "0")
-        await q.answer((f"✨ Золотая лягушка активна на {hours}ч")[:200], show_alert=True)
-        # Анонс в общий чат
-        try:
-            await ctx.bot.send_message(
-                CHAT_ID,
-                f"✨ <b>Событие «Золотая лягушка» началось!</b>\n\n"
-                f"⏳ Длительность: <b>{hours} ч</b>\n\n"
-                f"💫 Курс Stars повышен: <b>1{_E_XP} = 3{coin_emoji()}</b>\n"
-                f"🍀 Шансы на легендарные облики в гаче: <b>×2</b>\n"
-                f"🔴 Шансы на мифические: <b>×2</b>\n\n"
-                f"<i>Скорее в магазин и гачу! <tg-emoji emoji-id='5341367834935075028'>🐸</tg-emoji></i>",
-                parse_mode=ParseMode.HTML,
-            )
-        except Exception:
-            pass
-        # ЛС-рассылка
-        async with aiosqlite.connect(DB_PATH) as db:
-            async with db.execute("SELECT user_id FROM frogs WHERE alive=1") as c:
-                uids_boost = [r[0] for r in await c.fetchall()]
-        for buid in uids_boost:
-            try:
-                await ctx.bot.send_message(
-                    buid,
-                    f"✨ <b>Золотая лягушка!</b>\n\n"
-                    f"Сейчас выгодно: 1{_E_XP} = 3{coin_emoji()}, леги ×2 в гаче!\n"
-                    f"Событие идёт <b>{hours} ч</b>. Заходи!",
-                    parse_mode=ParseMode.HTML,
-                )
-            except Exception:
-                pass
-            await asyncio.sleep(0.05)
-        return
 
-    if d == "admin_boost_stop":
-        if uid not in ADMIN_IDS:
-            await q.answer("⛔", show_alert=True)
-            return
-        await boost_clear()
-        await db_setting("boost_reminded", "0")
-        await q.answer("⏹ Событие остановлено.", show_alert=True)
-        try:
-            await ctx.bot.send_message(
-                CHAT_ID,
-                "🌙 <b>Событие «Золотая лягушка» завершено досрочно.</b>\n"
-                "Курсы и шансы вернулись в норму. <tg-emoji emoji-id='5341367834935075028'>🐸</tg-emoji>",
-                parse_mode=ParseMode.HTML,
-            )
-        except Exception:
-            pass
-        return
 
     # ════════════════════════════════════════════════
     # 🔥  CALLBACKS ИВЕНТА «ЖЕРТВОПРИНОШЕНИЕ ЭПИКОВ»
@@ -42345,100 +44963,7 @@ async def on_callback(update: Update, ctx: ContextTypes.DEFAULT_TYPE):
             pass
         return
 
-    if d.startswith("nft_approve_") and not d.startswith("nft_approve_list_"):
-        nft_id = int(d.split("_")[2])
-        async with aiosqlite.connect(DB_PATH) as db:
-            db.row_factory = aiosqlite.Row
-            async with db.execute("SELECT * FROM nft_frogs WHERE id=?", (nft_id,)) as c:
-                nft = await c.fetchone()
-        if not nft:
-            await q.answer("Заявка не найдена", show_alert=True)
-            return
-        nft = dict(nft)
-        if nft["verified"] == 1:
-            await q.answer("Уже подтверждено", show_alert=True)
-            return
-        async with aiosqlite.connect(DB_PATH) as db:
-            await db.execute("UPDATE nft_frogs SET verified=1 WHERE id=?", (nft_id,))
-            await db.commit()
-        model_name = (nft.get("model_name") or "").strip()
-        nft_url = nft.get("nft_url") or f"https://t.me/nft/KissedFrog-{nft['nft_number']}"
-        if model_name and model_name in SKINS:
-            skin_to_give = model_name
-            # Запоминаем nft_url для этого облика в памяти (per-user будет через equipped_nft_url)
-        else:
-            skin_to_give = f"KissedFrog #{nft['nft_number']}"
-            if skin_to_give not in SKINS:
-                SKINS[skin_to_give] = {
-                    "chance": 0,
-                    "sid": 0,
-                    "rarity": "legendary",
-                    "emoji": "🪸",
-                    "nft_url": nft_url,
-                }
-        await db_add_skin(nft["user_id"], skin_to_give)
-        await ach_grant(nft["user_id"], "nft_owner", ctx.bot)
-        try:
-            await ctx.bot.send_message(
-                nft["user_id"],
-                f"✅ <b>Ваша NFT подтверждена!</b>\n\n"
-                f"🪸 <a href=\"{nft_url}\">KissedFrog #{nft['nft_number']}</a>\n"
-                f"🎨 Облик <b>{skin_to_give}</b> добавлен в коллекцию!\n"
-                f"Надеть: /frog → 🎒 Инвентарь",
-                parse_mode=ParseMode.HTML,
-                link_preview_options=LinkPreviewOptions(),
-            )
-        except Exception:
-            pass
-        # Приглашение в закрытый NFT-клуб
-        if NFT_CLUB_CHAT_ID:
-            try:
-                invite_link = await ctx.bot.create_chat_invite_link(
-                    chat_id=NFT_CLUB_CHAT_ID,
-                    member_limit=1,
-                    name=f"invite_{nft['user_id']}_{int(time.time())}",
-                )
-                await ctx.bot.send_message(
-                    nft["user_id"],
-                    f"🎉 <b>Добро пожаловать в клуб NFT-холдеров!</b>\n\n"
-                    f"🪸 Присоединяйся к закрытому сообществу KissedFrog:\n"
-                    f"{invite_link.invite_link}\n\n"
-                    f"<i>Ссылка одноразовая, не передавай её другим.</i>",
-                    parse_mode=ParseMode.HTML,
-                )
-            except Exception as e:
-                print(f"Ошибка отправки приглашения в NFT-клуб: {e}")
-        await q.answer((f"✅ Подтверждено. Выдан: {skin_to_give}")[:200], show_alert=True)
-        try:
-            await q.edit_message_reply_markup(reply_markup=None)
-        except Exception:
-            pass
-        return
 
-    if d.startswith("nft_reject_") and not d.startswith("nft_reject_list_"):
-        nft_id = int(d.split("_")[2])
-        async with aiosqlite.connect(DB_PATH) as db:
-            async with db.execute(
-                "SELECT user_id, nft_number FROM nft_frogs WHERE id=?", (nft_id,)
-            ) as c:
-                row = await c.fetchone()
-            await db.execute("UPDATE nft_frogs SET verified=-1 WHERE id=?", (nft_id,))
-            await db.commit()
-        if row:
-            try:
-                await ctx.bot.send_message(
-                    row[0],
-                    f"{_E_CROSS} Заявка на KissedFrog #{row[1]} отклонена администратором.\n"
-                    f"Если считаете это ошибкой — напишите /nft с правильной ссылкой.",
-                )
-            except Exception:
-                pass
-        await q.answer("❌ Отклонено", show_alert=True)
-        try:
-            await q.edit_message_reply_markup(reply_markup=None)
-        except Exception:
-            pass
-        return
 
     # ── НАСТРОЙКИ ──────────────────────────────────
     if d == "settings":
@@ -44320,10 +46845,6 @@ async def on_callback(update: Update, ctx: ContextTypes.DEFAULT_TYPE):
         await q.answer()
         return
 
-    # ── /chatsettings и /chatadmin колбэки (единая панель) ──────────────
-    if d.startswith("cs_") or d == "cs_close" or d.startswith("ca_") or d == "ca_close":
-        await _handle_chatadmin_callback(q, uid, ctx)
-        return
     if d.startswith("lang_set_"):
         if d == "lang_set_menu":
             # Показываем выбор языка инлайн
@@ -44365,10 +46886,6 @@ async def on_callback(update: Update, ctx: ContextTypes.DEFAULT_TYPE):
                 pass
         return
 
-    # ── /chatadmin колбэки ───────────────────────────────────────────
-    if d.startswith("ca_") or d == "ca_close":
-        await _handle_chatadmin_callback(q, uid, ctx)
-        return
 
     # ── /partnerinfo колбэки (суперадмин) ────────────────────────────
     if d.startswith("pi_"):
@@ -44382,313 +46899,8 @@ async def on_callback(update: Update, ctx: ContextTypes.DEFAULT_TYPE):
         await q.answer()
         return
 
-    # Подтверждение заявки из списка
-    if d.startswith("nft_approve_list_"):
-        # формат: nft_approve_list_<id>_<page>
-        parts = d.split("_")
-        nft_id = int(parts[3])
-        page = int(parts[4])
 
-        # Получаем заявку
-        async with aiosqlite.connect(DB_PATH) as db:
-            db.row_factory = aiosqlite.Row
-            async with db.execute("SELECT * FROM nft_frogs WHERE id=?", (nft_id,)) as c:
-                nft = await c.fetchone()
 
-        if not nft:
-            await q.answer("Заявка не найдена", show_alert=True)
-            return
-
-        nft = dict(nft)
-        if nft["verified"] == 1:
-            await q.answer("Уже подтверждено", show_alert=True)
-            await show_nft_list(q, ctx, page, edit=True)
-            return
-
-        # Подтверждаем
-        async with aiosqlite.connect(DB_PATH) as db:
-            await db.execute("UPDATE nft_frogs SET verified=1 WHERE id=?", (nft_id,))
-            await db.commit()
-
-        # Определяем скин: если model_name есть и он в SKINS — используем его
-        model_name = (nft.get("model_name") or "").strip()
-        nft_url = nft.get("nft_url") or f"https://t.me/nft/KissedFrog-{nft['nft_number']}"
-        if model_name and model_name in SKINS:
-            skin_to_give = model_name
-        else:
-            # Фолбек: создаём уникальный скин KissedFrog #N
-            skin_to_give = f"KissedFrog #{nft['nft_number']}"
-            if skin_to_give not in SKINS:
-                SKINS[skin_to_give] = {
-                    "chance": 0,
-                    "sid": 0,
-                    "rarity": "legendary",
-                    "emoji": "🪸",
-                    "nft_url": nft_url,
-                }
-        await db_add_skin(nft["user_id"], skin_to_give)
-        await ach_grant(nft["user_id"], "nft_owner", ctx.bot)
-
-        # Уведомляем пользователя
-        try:
-            await ctx.bot.send_message(
-                nft["user_id"],
-                f"✅ <b>Ваша NFT подтверждена!</b>\n\n"
-                f"🪸 <a href=\"{nft_url}\">KissedFrog #{nft['nft_number']}</a>\n"
-                f"🎨 Облик <b>{skin_to_give}</b> добавлен в коллекцию!\n"
-                f"Надеть: /frog → 🎒 Инвентарь",
-                parse_mode=ParseMode.HTML,
-                link_preview_options=LinkPreviewOptions(),
-            )
-        except Exception:
-            pass
-        # Приглашение в закрытый NFT-клуб
-        if NFT_CLUB_CHAT_ID:
-            try:
-                invite_link = await ctx.bot.create_chat_invite_link(
-                    chat_id=NFT_CLUB_CHAT_ID,
-                    member_limit=1,
-                    name=f"invite_{nft['user_id']}_{int(time.time())}",
-                )
-                await ctx.bot.send_message(
-                    nft["user_id"],
-                    f"🎉 <b>Добро пожаловать в клуб NFT-холдеров!</b>\n\n"
-                    f"🪸 Присоединяйся к закрытому сообществу KissedFrog:\n"
-                    f"{invite_link.invite_link}\n\n"
-                    f"<i>Ссылка одноразовая, не передавай её другим.</i>",
-                    parse_mode=ParseMode.HTML,
-                )
-            except Exception as e:
-                print(f"Ошибка отправки приглашения в NFT-клуб: {e}")
-
-        await q.answer("✅ Заявка подтверждена", show_alert=True)
-        # Обновляем список
-        await show_nft_list(q, ctx, page, edit=True)
-        return
-
-    # Отклонение заявки из списка
-    if d.startswith("nft_reject_list_"):
-        parts = d.split("_")
-        nft_id = int(parts[3])
-        page = int(parts[4])
-
-        async with aiosqlite.connect(DB_PATH) as db:
-            # Помечаем как отклонённую (verified = -1)
-            await db.execute("UPDATE nft_frogs SET verified=-1 WHERE id=?", (nft_id,))
-            await db.commit()
-
-        await q.answer("❌ Заявка отклонена", show_alert=True)
-        # Обновляем список
-        await show_nft_list(q, ctx, page, edit=True)
-        return
-    # ── ADMIN PANEL ──────────────────────────────────
-    if d in ("admin_refresh", "admin_panel") or d == "admin_nft":
-        if uid not in ADMIN_IDS:
-            await q.answer("⛔", show_alert=True)
-            return
-        if d == "admin_nft":
-            await show_nft_list(q, ctx, 0, edit=True)
-        else:
-            await show_admin_panel(q.message, edit=True, bot_data=ctx.bot_data)
-        await q.answer()
-        return
-
-    if d == "admin_stats":
-        if uid not in ADMIN_IDS:
-            await q.answer("⛔", show_alert=True)
-            return
-        now_ts = time.time()
-        day_ago = now_ts - 86400
-        week_ago = now_ts - 7 * 86400
-
-        # Обновляем пиковый онлайн при просмотре статистики
-        _update_peak_online(0)  # текущий подсчёт идёт ниже, пока 0
-
-        async with aiosqlite.connect(DB_PATH) as db:
-            # Везде исключаем забаненых и ботов — они считаются только в своём пункте
-            _REAL = "banned=0 AND is_bot=0"
-            async with db.execute(f"SELECT COUNT(*) FROM frogs WHERE {_REAL}") as c:
-                total = (await c.fetchone())[0]
-            async with db.execute(f"SELECT COUNT(*) FROM frogs WHERE alive=1 AND {_REAL}") as c:
-                alive = (await c.fetchone())[0]
-            async with db.execute(f"SELECT COUNT(*) FROM frogs WHERE alive=0 AND {_REAL}") as c:
-                dead = (await c.fetchone())[0]
-            async with db.execute("SELECT COUNT(*) FROM frogs WHERE banned=1") as c:
-                banned_cnt = (await c.fetchone())[0] or 0
-            async with db.execute(f"SELECT COUNT(*) FROM frogs WHERE born_at>? AND {_REAL}", (day_ago,)) as c:
-                new_24h = (await c.fetchone())[0] or 0
-            async with db.execute(f"SELECT COUNT(*) FROM frogs WHERE born_at>? AND {_REAL}", (week_ago,)) as c:
-                new_7d = (await c.fetchone())[0] or 0
-            async with db.execute(f"SELECT COUNT(*) FROM frogs WHERE (last_feed>? OR last_play>?) AND {_REAL}", (day_ago, day_ago)) as c:
-                active_24h = (await c.fetchone())[0] or 0
-            async with db.execute(f"SELECT COUNT(*) FROM frogs WHERE (last_feed>? OR last_play>?) AND {_REAL}", (week_ago, week_ago)) as c:
-                active_7d = (await c.fetchone())[0] or 0
-            async with db.execute(f"SELECT SUM(coins) FROM frogs WHERE {_REAL}") as c:
-                total_coins = (await c.fetchone())[0] or 0
-            async with db.execute(f"SELECT AVG(coins) FROM frogs WHERE alive=1 AND {_REAL}") as c:
-                avg_coins = (await c.fetchone())[0] or 0
-            async with db.execute(f"SELECT SUM(coins_spent) FROM frogs WHERE {_REAL}") as c:
-                total_spent = (await c.fetchone())[0] or 0
-            async with db.execute(f"SELECT SUM(total_feeds) FROM frogs WHERE {_REAL}") as c:
-                total_feeds = (await c.fetchone())[0] or 0
-            async with db.execute(f"SELECT SUM(total_casino) FROM frogs WHERE {_REAL}") as c:
-                total_casino = (await c.fetchone())[0] or 0
-            async with db.execute(f"SELECT SUM(total_casino_wins) FROM frogs WHERE {_REAL}") as c:
-                total_casino_wins = (await c.fetchone())[0] or 0
-            async with db.execute(f"SELECT SUM(total_duels) FROM frogs WHERE {_REAL}") as c:
-                total_duels = (await c.fetchone())[0] or 0
-            async with db.execute(f"SELECT SUM(total_duel_wins) FROM frogs WHERE {_REAL}") as c:
-                total_duel_wins = (await c.fetchone())[0] or 0
-            async with db.execute(f"SELECT SUM(total_gacha) FROM frogs WHERE {_REAL}") as c:
-                total_gacha = (await c.fetchone())[0] or 0
-            async with db.execute(f"SELECT SUM(total_mosquitoes) FROM frogs WHERE {_REAL}") as c:
-                total_mosquitoes = (await c.fetchone())[0] or 0
-            async with db.execute(f"SELECT SUM(stars_spent) FROM frogs WHERE {_REAL}") as c:
-                total_stars = (await c.fetchone())[0] or 0
-            async with db.execute(f"SELECT MAX(level) FROM frogs WHERE {_REAL}") as c:
-                max_level = (await c.fetchone())[0] or 0
-            async with db.execute(f"SELECT AVG(level) FROM frogs WHERE alive=1 AND {_REAL}") as c:
-                avg_level = (await c.fetchone())[0] or 0
-            async with db.execute("SELECT COUNT(*) FROM nft_frogs WHERE verified=1") as c:
-                nft_ok = (await c.fetchone())[0]
-            async with db.execute("SELECT COUNT(*) FROM nft_frogs WHERE verified=0") as c:
-                nft_pending = (await c.fetchone())[0]
-            async with db.execute("SELECT COUNT(*) FROM gift_log WHERE ts>?", (day_ago,)) as c:
-                gifts_24h = (await c.fetchone())[0] or 0
-            async with db.execute("SELECT SUM(amount) FROM gift_log WHERE ts>?", (day_ago,)) as c:
-                gifts_vol_24h = (await c.fetchone())[0] or 0
-            async with db.execute("SELECT COUNT(*) FROM referrals WHERE joined_at>?", (day_ago,)) as c:
-                refs_24h = (await c.fetchone())[0] or 0
-            async with db.execute("SELECT COUNT(*) FROM referrals") as c:
-                refs_total = (await c.fetchone())[0] or 0
-            async with db.execute("SELECT COUNT(*) FROM lottery_tickets WHERE purchased_at>?", (day_ago,)) as c:
-                lottery_24h = (await c.fetchone())[0] or 0
-            async with db.execute("SELECT COUNT(*) FROM mosquito_events WHERE created_at>?", (day_ago,)) as c:
-                mosquito_events_24h = (await c.fetchone())[0] or 0
-            async with db.execute("SELECT COUNT(*) FROM mosquito_events WHERE caught_by IS NOT NULL AND caught_by != -1") as c:
-                mosquito_caught = (await c.fetchone())[0] or 0
-            async with db.execute(
-                f"SELECT first_name, level FROM frogs WHERE {_REAL} ORDER BY level DESC LIMIT 5"
-            ) as c:
-                top5 = await c.fetchall()
-            async with db.execute(
-                f"SELECT first_name, coins FROM frogs WHERE alive=1 AND {_REAL} ORDER BY coins DESC LIMIT 3"
-            ) as c:
-                top3_rich = await c.fetchall()
-            async with db.execute(
-                f"SELECT first_name, total_gacha FROM frogs WHERE {_REAL} ORDER BY total_gacha DESC LIMIT 3"
-            ) as c:
-                top3_gacha = await c.fetchall()
-            # Топ скинов в коллекциях (только реальные игроки)
-            async with db.execute(
-                f"SELECT c.skin, COUNT(*) as cnt FROM collections c "
-                f"JOIN frogs f ON f.user_id=c.user_id WHERE f.{_REAL} "
-                f"GROUP BY c.skin ORDER BY cnt DESC LIMIT 5"
-            ) as c:
-                top5_skins = await c.fetchall()
-            # ── Статистика языков (без банов и ботов) ──
-            async with db.execute(f"SELECT COUNT(*) FROM frogs WHERE (lang='ru' OR lang IS NULL OR lang='') AND {_REAL}") as c:
-                lang_ru = (await c.fetchone())[0] or 0
-            async with db.execute(f"SELECT COUNT(*) FROM frogs WHERE lang='en' AND {_REAL}") as c:
-                lang_en = (await c.fetchone())[0] or 0
-            async with db.execute(f"SELECT COUNT(*) FROM frogs WHERE lang='zh' AND {_REAL}") as c:
-                lang_zh = (await c.fetchone())[0] or 0
-            # Активные за 7д по языкам
-            async with db.execute(f"SELECT COUNT(*) FROM frogs WHERE (lang='ru' OR lang IS NULL OR lang='') AND (last_feed>? OR last_play>?) AND {_REAL}", (week_ago, week_ago)) as c:
-                lang_ru_active = (await c.fetchone())[0] or 0
-            async with db.execute(f"SELECT COUNT(*) FROM frogs WHERE lang='en' AND (last_feed>? OR last_play>?) AND {_REAL}", (week_ago, week_ago)) as c:
-                lang_en_active = (await c.fetchone())[0] or 0
-            async with db.execute(f"SELECT COUNT(*) FROM frogs WHERE lang='zh' AND (last_feed>? OR last_play>?) AND {_REAL}", (week_ago, week_ago)) as c:
-                lang_zh_active = (await c.fetchone())[0] or 0
-            # ── Статистика застрявших на воскрешении (без банов и ботов) ──
-            async with db.execute(f"SELECT COUNT(*) FROM frogs WHERE alive=0 AND trial_active=0 AND {_REAL}") as c:
-                stuck_dead_notrial = (await c.fetchone())[0] or 0
-            async with db.execute(f"SELECT COUNT(*) FROM frogs WHERE alive=0 AND trial_active=1 AND {_REAL}") as c:
-                stuck_trial = (await c.fetchone())[0] or 0
-            async with db.execute(f"SELECT COUNT(*) FROM frogs WHERE alive=0 AND {_REAL}") as c:
-                total_dead_for_stuck = (await c.fetchone())[0] or 0
-            # Зарегистрировались но никогда не кормили (last_feed=0 и мертвы)
-            async with db.execute(f"SELECT COUNT(*) FROM frogs WHERE alive=0 AND (last_feed IS NULL OR last_feed=0) AND {_REAL}") as c:
-                stuck_never_fed = (await c.fetchone())[0] or 0
-            # Последний раз заходили > 7 дней назад и мертвы
-            async with db.execute(f"SELECT COUNT(*) FROM frogs WHERE alive=0 AND last_seen < ? AND {_REAL}", (week_ago,)) as c:
-                stuck_inactive_7d = (await c.fetchone())[0] or 0
-
-        top_txt = "\n".join(f"  {i+1}. {r[0]} — ур.{r[1]}" for i, r in enumerate(top5))
-        top_rich_txt = "\n".join(f"  {i+1}. {r[0]} — {r[1]:,}🪙" for i, r in enumerate(top3_rich))
-        top_gacha_txt = "\n".join(f"  {i+1}. {r[0]} — {r[1]} круток" for i, r in enumerate(top3_gacha))
-        top_skins_txt = "\n".join(f"  {s[0]}: {s[1]} владельцев" for s in top5_skins)
-        casino_wr = f"{total_casino_wins*100//total_casino}%" if total_casino > 0 else "—"
-        duel_wr = f"{total_duel_wins*100//total_duels}%" if total_duels > 0 else "—"
-
-        def _fmt_peak_stat(period: str) -> str:
-            count, ts = _peak_online.get(period, (0, 0))
-            return str(count) if count > 0 else "—"
-
-        # Язык: визуальный прогресс-бар
-        _lang_total = max(lang_ru + lang_en + lang_zh, 1)
-        def _lang_pct(n): return f"{n*100//_lang_total}%"
-        def _lang_bar(n):
-            filled = round(n / _lang_total * 10)
-            return "█" * filled + "░" * (10 - filled)
-
-        text = (
-            f"{_E_CHART} <b>Статистика бота</b>\n\n"
-            f"<b>{_E_USERS} Игроки</b> <i>(без банов и ботов)</i>\n"
-            f"Всего: <b>{total}</b> · 🐸 Живых: <b>{alive}</b> · 💀 Мёртвых: <b>{dead}</b>\n"
-            f"{_E_BAN} Забанено (отдельно, не в счёт): <b>{banned_cnt}</b>\n"
-            f"Новых за 24ч: <b>{new_24h}</b> · за 7д: <b>{new_7d}</b>\n"
-            f"Активных за 24ч: <b>{active_24h}</b> · за 7д: <b>{active_7d}</b>\n"
-            f"Макс. уровень: <b>{max_level}</b> · Средний: <b>{avg_level:.1f}</b>\n\n"
-            f"<b>🌐 Языки интерфейса</b>\n"
-            f"🇷🇺 Русский: <code>{_lang_bar(lang_ru)}</code> <b>{lang_ru}</b> ({_lang_pct(lang_ru)}) активных 7д: {lang_ru_active}\n"
-            f"🇬🇧 English: <code>{_lang_bar(lang_en)}</code> <b>{lang_en}</b> ({_lang_pct(lang_en)}) активных 7д: {lang_en_active}\n"
-            f"🇨🇳 中文: <code>{_lang_bar(lang_zh)}</code> <b>{lang_zh}</b> ({_lang_pct(lang_zh)}) активных 7д: {lang_zh_active}\n\n"
-            f"<b>📈 Пиковый онлайн (10 мин окно):</b>\n"
-            f"  Сутки: <b>{_fmt_peak_stat('day')}</b> · Неделя: <b>{_fmt_peak_stat('week')}</b> · Месяц: <b>{_fmt_peak_stat('month')}</b>\n\n"
-            f"<b>🪙 Экономика</b>\n"
-            f"КваКоинов в обороте: <b>{total_coins:,}</b>\n"
-            f"Среднее у живого: <b>{avg_coins:.0f}🪙</b>\n"
-            f"Всего потрачено: <b>{total_spent:,}🪙</b>\n"
-            f"{_E_STARS} Stars: <b>{total_stars}</b>\n\n"
-            f"<b>{_E_GAMES} Активность</b>\n"
-            f"🍎 Кормлений: <b>{total_feeds:,}</b>\n"
-            f"{_E_CASINO} Гача: <b>{total_gacha:,}</b>\n"
-            f"🎲 Казино: <b>{total_casino:,}</b> (побед: {total_casino_wins:,} / {casino_wr})\n"
-            f"{_E_SWORDS} Дуэлей: <b>{total_duels:,}</b> (побед: {total_duel_wins:,} / {duel_wr})\n"
-            f"🦟 Комаров поймано: <b>{total_mosquitoes:,}</b> · событий 24ч: {mosquito_events_24h} · поймано событий: {mosquito_caught}\n"
-            f"🎟 Лотерея за 24ч: <b>{lottery_24h}</b> билетов\n\n"
-            f"<b>🔗 Прочее</b>\n"
-            f"Рефералов: <b>{refs_total}</b> (за 24ч: {refs_24h})\n"
-            f"{_E_GIFT} Переводов за 24ч: <b>{gifts_24h}</b> ({gifts_vol_24h:,}🪙)\n"
-            f"🪸 NFT: подтверждено {nft_ok}, на проверке {nft_pending}\n\n"
-            f"<b>💀 Застрявшие на воскрешении</b>\n"
-            f"Всего мёртвых: <b>{total_dead_for_stuck}</b>\n"
-            f"  ├ Ждут выбора (без испытания): <b>{stuck_dead_notrial}</b>\n"
-            f"  ├ В испытании (не завершили): <b>{stuck_trial}</b>\n"
-            f"  ├ Никогда не кормили (брошены): <b>{stuck_never_fed}</b>\n"
-            f"  └ Неактивны > 7д (вероятно ушли): <b>{stuck_inactive_7d}</b>\n"
-            f"% от всех игроков: <b>{total_dead_for_stuck*100//max(total,1)}%</b>\n\n"
-            f"<b>{_E_TROPHY} Топ-5 по уровню:</b>\n{top_txt}\n\n"
-            f"<b>💰 Топ-3 богатейших:</b>\n{top_rich_txt}\n\n"
-            f"<b>{_E_CASINO} Топ-3 по гаче:</b>\n{top_gacha_txt}\n\n"
-            f"<b>👗 Топ-5 популярных скинов:</b>\n{top_skins_txt}"
-        )
-        try:
-            await q.message.edit_text(
-                text,
-                parse_mode=ParseMode.HTML,
-                reply_markup=InlineKeyboardMarkup([
-                    [btn("👗 Статистика обликов", callback_data="admin_skin_stats")],
-                    [btn("🔍 Поиск по облику", callback_data="admin_skin_browse_")],
-                    [btn("💀 Детали застрявших", callback_data="admin_stuck_stats")],
-                    [btn("◀️ Назад", callback_data="admin_refresh")],
-                ]),
-            )
-        except Exception:
-            pass
-        await q.answer()
-        return
 
     # ── Подтверждение / отмена возвратной рассылки ──────────────────────────
     if d == "broadcast_return_confirm":
@@ -44765,529 +46977,18 @@ async def on_callback(update: Update, ctx: ContextTypes.DEFAULT_TYPE):
             pass
         return
 
-    # ── Просмотр обликов по редкости → облик → владельцы ──────────────
-    if d.startswith("admin_skin_browse_"):
-        if uid not in ADMIN_IDS:
-            await q.answer("⛔", show_alert=True); return
-        await q.answer()
-        suffix = d[len("admin_skin_browse_"):]
-
-        # Уровень 1: выбор редкости
-        if suffix == "" or suffix == "back":
-            rarity_order = ["secret", "mythic", "legendary", "epic", "rare", "uncommon", "common"]
-            kb = []
-            for r in rarity_order:
-                icon = R_ICON.get(r, "⚪")
-                name = R_NAME.get(r, r)
-                kb.append([btn(f"{icon} {name}", callback_data=f"admin_skin_browse_r_{r}")])
-            kb.append([btn("◀️ Назад", callback_data="admin_stats")])
-            try:
-                await q.message.edit_text(
-                    "🔍 <b>Поиск по облику</b>\n\nВыбери редкость:",
-                    parse_mode=ParseMode.HTML,
-                    reply_markup=InlineKeyboardMarkup(kb),
-                )
-            except Exception:
-                pass
-            return
-
-        # Уровень 2: список обликов выбранной редкости
-        if suffix.startswith("r_") and not suffix.startswith("r_s_"):
-            rarity = suffix[2:]
-            skins_of_rarity = [(sname, sdata) for sname, sdata in SKINS.items()
-                                if sdata.get("rarity") == rarity]
-            skins_of_rarity.sort(key=lambda x: x[0])
-            if not skins_of_rarity:
-                await q.answer("Нет обликов этой редкости.", show_alert=True); return
-            icon = R_ICON.get(rarity, "⚪")
-            name_r = R_NAME.get(rarity, rarity)
-            kb = []
-            for sname, _ in skins_of_rarity:
-                kb.append([btn(
-                    f"{sname}", callback_data=f"admin_skin_browse_r_s_{rarity}|{sname[:40]}"
-                )])
-            kb.append([btn("◀️ Назад", callback_data="admin_skin_browse_")])
-            try:
-                await q.message.edit_text(
-                    f"{_E_SEARCH} {icon} <b>{name_r}</b> — выбери облик:",
-                    parse_mode=ParseMode.HTML,
-                    reply_markup=InlineKeyboardMarkup(kb),
-                )
-            except Exception:
-                pass
-            return
-
-        # Уровень 3: список владельцев выбранного облика
-        if suffix.startswith("r_s_"):
-            parts = suffix[4:].split("|", 1)
-            if len(parts) != 2:
-                await q.answer(); return
-            rarity, skin_name = parts[0], parts[1]
-            async with aiosqlite.connect(DB_PATH) as _db:
-                _db.row_factory = aiosqlite.Row
-                async with _db.execute(
-                    "SELECT f.user_id, f.first_name, f.username, f.frog_name, f.level, f.alive "
-                    "FROM frogs f "
-                    "JOIN collections c ON c.user_id = f.user_id "
-                    "WHERE c.skin = ? AND c.qty > 0 AND f.banned = 0 "
-                    "ORDER BY f.level DESC LIMIT 50",
-                    (skin_name,)
-                ) as _c:
-                    owners = [dict(r) for r in await _c.fetchall()]
-            icon = R_ICON.get(rarity, "⚪")
-            if not owners:
-                lines = [f"{_E_SEARCH} {icon} <b>{he(skin_name)}</b>\n\n😶 Владельцев не найдено."]
-            else:
-                lines = [f"{_E_SEARCH} {icon} <b>{he(skin_name)}</b> — владельцы ({len(owners)}):\n"]
-                for o in owners:
-                    alive_icon = "🐸" if o["alive"] else "💀"
-                    fname_o = he(o["frog_name"] or o["first_name"] or "?")
-                    uname_o = f"@{o['username']}" if o["username"] else f"ID:{o['user_id']}"
-                    lines.append(f"{alive_icon} <b>{fname_o}</b> ({uname_o}) ур.{o['level']}")
-            kb = [[btn("◀️ Назад", callback_data=f"admin_skin_browse_r_{rarity}")]]
-            try:
-                await q.message.edit_text(
-                    "\n".join(lines),
-                    parse_mode=ParseMode.HTML,
-                    reply_markup=InlineKeyboardMarkup(kb),
-                )
-            except Exception:
-                pass
-            return
-
-    if d == "admin_stuck_stats":
-        if uid not in ADMIN_IDS:
-            await q.answer("⛔", show_alert=True)
-            return
-        await q.answer()
-        week_ago_s = time.time() - 7 * 86400
-        async with aiosqlite.connect(DB_PATH) as db:
-            # Застряли без испытания (просто мертвы и ждут)
-            async with db.execute(
-                "SELECT user_id, first_name, username, coins, level, last_seen "
-                "FROM frogs WHERE alive=0 AND trial_active=0 AND banned=0 AND is_bot=0 "
-                "ORDER BY last_seen DESC LIMIT 20"
-            ) as c:
-                stuck_rows = await c.fetchall()
-            # Застряли в испытании
-            async with db.execute(
-                "SELECT user_id, first_name, username, trial_quests, trial_progress, last_seen "
-                "FROM frogs WHERE alive=0 AND trial_active=1 AND banned=0 AND is_bot=0 "
-                "ORDER BY last_seen DESC LIMIT 10"
-            ) as c:
-                trial_rows = await c.fetchall()
-            # Итого
-            async with db.execute("SELECT COUNT(*) FROM frogs WHERE alive=0 AND banned=0 AND is_bot=0") as c:
-                total_dead = (await c.fetchone())[0] or 0
-            async with db.execute("SELECT COUNT(*) FROM frogs WHERE banned=0 AND is_bot=0") as c:
-                total_players = (await c.fetchone())[0] or 0
-
-        lines = [f"💀 <b>Детали застрявших на воскрешении</b>\n"]
-        lines.append(f"Всего мёртвых: <b>{total_dead}</b> из <b>{total_players}</b> ({total_dead*100//max(total_players,1)}%)\n")
-
-        lines.append("<b>Без испытания</b> · последние 20")
-        if stuck_rows:
-            for r in stuck_rows:
-                uid_r, fname_r, uname_r, coins_r, lvl_r, last_seen_r = r
-                uname_s = f"@{uname_r}" if uname_r else f"ID:{uid_r}"
-                days_ago = int((time.time() - (last_seen_r or 0)) / 86400) if last_seen_r else "?"
-                lines.append(f"• {fname_r} ({uname_s}) ур.{lvl_r} 🪙{coins_r} — был {days_ago}д назад")
-        else:
-            lines.append("  (нет)")
-
-        lines.append("\n<b>В испытании</b> · последние 10")
-        if trial_rows:
-            for r in trial_rows:
-                uid_r, fname_r, uname_r, tq_json, tp_json, last_seen_r = r
-                uname_s = f"@{uname_r}" if uname_r else f"ID:{uid_r}"
-                days_ago = int((time.time() - (last_seen_r or 0)) / 86400) if last_seen_r else "?"
-                try:
-                    tq = json.loads(tq_json or "[]")
-                    tp = json.loads(tp_json or "{}")
-                    done = sum(1 for q2 in tq if tp.get(q2["id"], 0) >= q2["goal"])
-                    total_q = len(tq)
-                    progress_s = f"{done}/{total_q}"
-                except Exception:
-                    progress_s = "?"
-                lines.append(f"• {fname_r} ({uname_s}) прогресс:{progress_s} — был {days_ago}д назад")
-        else:
-            lines.append("  (нет)")
-
-        try:
-            await q.message.edit_text(
-                "\n".join(lines),
-                parse_mode=ParseMode.HTML,
-                reply_markup=InlineKeyboardMarkup([
-                    [btn("◀️ Назад", callback_data="admin_stats")],
-                ]),
-            )
-        except Exception:
-            pass
-        return
-
-    if d.startswith("admin_players_") and not d.startswith("admin_players_p_"):
-        if uid not in ADMIN_IDS:
-            await q.answer("⛔", show_alert=True)
-            return
-        page = int(d.split("_")[-1])
-        per = 8
-        async with aiosqlite.connect(DB_PATH) as db:
-            async with db.execute("SELECT COUNT(*) FROM frogs WHERE is_bot=0") as c:
-                total = (await c.fetchone())[0]
-            async with db.execute(
-                "SELECT user_id, first_name, username, level, coins, alive, banned, is_bot FROM frogs WHERE is_bot=0 ORDER BY level DESC LIMIT ? OFFSET ?",
-                (per, page * per),
-            ) as c:
-                rows = await c.fetchall()
-        import math as _math
-
-        total_pages = max(1, _math.ceil(total / per))
-        text = f"{_E_USERS} <b>Игроки (стр. {page+1}/{total_pages})</b>\nНажми на игрока — открыть карточку\n💀 = мёртвый {_E_BAN} = забанен\n(Боты скрыты → раздел {_E_BOT} Управление ботами)\n"
-        kb_rows = []
-        for r in rows:
-            alive_icon = "🐸" if r[5] else "💀"
-            ban_icon = " 🚫" if r[6] else ""
-            uname = f"@{r[2]}" if r[2] else f"id{r[0]}"
-            label = f"{alive_icon}{ban_icon} {r[1]} ({uname}) ур.{r[3]}"
-            # Используем простой формат callback без _p чтобы избежать парсинг-баги
-            kb_rows.append(
-                [
-                    btn(
-                        label, callback_data=f"admin_pcard_{r[0]}_{page}"
-                    )
-                ]
-            )
-        nav = []
-        if page > 0:
-            nav.append(
-                btn("◀️", callback_data=f"admin_players_{page-1}")
-            )
-        if page < total_pages - 1:
-            nav.append(
-                btn("▶️", callback_data=f"admin_players_{page+1}")
-            )
-        if nav:
-            kb_rows.append(nav)
-        kb_rows.append(
-            [btn("◀️ Назад в панель", callback_data="admin_refresh")]
-        )
-        try:
-            await q.message.edit_text(
-                text,
-                parse_mode=ParseMode.HTML,
-                reply_markup=InlineKeyboardMarkup(kb_rows),
-            )
-        except Exception:
-            pass
-        await q.answer()
-        return
-
-    # ── КАРТОЧКА ИГРОКА (новый callback format) ──
-    if d.startswith("admin_pcard_"):
-        if uid not in ADMIN_IDS:
-            await q.answer("⛔", show_alert=True)
-            return
-        try:
-            parts_pc = d[len("admin_pcard_"):].split("_")
-            target_uid_pc = int(parts_pc[0])
-            back_page_pc = parts_pc[1] if len(parts_pc) > 1 else "0"
-            back_cb_pc = f"admin_players_{back_page_pc}"
-        except (ValueError, IndexError):
-            await q.answer("Ошибка", show_alert=True)
-            return
-        await show_player_card(q.message, target_uid_pc, edit=True, back_cb=back_cb_pc)
-        await q.answer()
-        return
-
-    # ── БАН ИГРОКА ──────────────────────────────
-    if d.startswith("admin_ban_") or d.startswith("admin_unban_"):
-        if uid not in ADMIN_IDS:
-            await q.answer("⛔", show_alert=True)
-            return
-        is_unban = d.startswith("admin_unban_")
-        target_uid_ban = int(d.split("_")[-1])
-        new_ban = 0 if is_unban else 1
-        async with aiosqlite.connect(DB_PATH) as db:
-            await db.execute(
-                "UPDATE frogs SET banned=? WHERE user_id=?", (new_ban, target_uid_ban)
-            )
-            await db.commit()
-        action_txt = "разбанен" if is_unban else "забанен"
-        await admin_log(uid, "unban" if is_unban else "ban", target_uid_ban)
-        await q.answer((f"✅ Игрок {action_txt}")[:200], show_alert=True)
-        # Обновить карточку
-        await show_player_card(q.message, target_uid_ban, edit=True)
-        return
-
-    # ── ПОМЕТИТЬ / СНЯТЬ МЕТКУ БОТА ─────────────
-    if d.startswith("admin_markbot_") or d.startswith("admin_unmarkbot_"):
-        if uid not in ADMIN_IDS:
-            await q.answer("⛔", show_alert=True)
-            return
-        is_unmark = d.startswith("admin_unmarkbot_")
-        target_uid_bot = int(d.split("_")[-1])
-        new_bot = 0 if is_unmark else 1
-        async with aiosqlite.connect(DB_PATH) as db:
-            await db.execute(
-                "UPDATE frogs SET is_bot=? WHERE user_id=?", (new_bot, target_uid_bot)
-            )
-            await db.commit()
-        _user_cache.invalidate(target_uid_bot)
-        action_txt = "снята метка бота" if is_unmark else "помечен как бот (скрыт из топов)"
-        await admin_log(uid, "unmarkbot" if is_unmark else "markbot", target_uid_bot)
-        await q.answer((f"✅ Игрок {action_txt}")[:200], show_alert=True)
-        await show_player_card(q.message, target_uid_bot, edit=True)
-        return
-
-    # ── УДАЛИТЬ ИГРОКА (запрос подтверждения) ───
-    if d.startswith("admin_deleteplayer_") and not d.startswith("admin_deleteplayer_confirm_"):
-        if uid not in ADMIN_IDS:
-            await q.answer("⛔", show_alert=True)
-            return
-        target_uid_del = int(d.split("_")[-1])
-        p_del = await db_get(target_uid_del)
-        uname_del = f"@{p_del['username']}" if p_del and p_del.get("username") else f"ID:{target_uid_del}"
-        name_del = he(p_del.get("first_name", "?")) if p_del else "?"
-        try:
-            await q.message.edit_text(
-                f"⚠️ <b>Подтверди удаление игрока</b>\n\n"
-                f"👤 <b>{name_del}</b> ({uname_del})\n"
-                f"ID: <code>{target_uid_del}</code>\n\n"
-                f"<b>Будут удалены:</b> запись в frogs, коллекция, достижения, квесты, NFT, дуэли, рефералы, инвентарь.\n\n"
-                f"⚠️ <b>Это действие необратимо!</b>",
-                parse_mode=ParseMode.HTML,
-                reply_markup=InlineKeyboardMarkup([
-                    [
-                        btn("✅ Да, удалить", callback_data=f"admin_deleteplayer_confirm_{target_uid_del}", style="danger"),
-                        btn("❌ Отмена", callback_data=f"admin_pcard_{target_uid_del}_0", style="primary"),
-                    ]
-                ]),
-            )
-        except Exception:
-            pass
-        await q.answer()
-        return
-
-    # ── УДАЛИТЬ ИГРОКА (подтверждено) ───────────
-    if d.startswith("admin_deleteplayer_confirm_"):
-        if uid not in ADMIN_IDS:
-            await q.answer("⛔", show_alert=True)
-            return
-        target_uid_del = int(d.split("_")[-1])
-        # Сначала отвечаем — иначе Telegram покажет спиннер вечно
-        await q.answer(f"🗑 Удаляю игрока {target_uid_del}…", show_alert=False)
-        _user_cache.invalidate(target_uid_del)
-        try:
-            async with aiosqlite.connect(DB_PATH) as db:
-                await db.execute("DELETE FROM frogs WHERE user_id=?", (target_uid_del,))
-                await db.execute("DELETE FROM collections WHERE user_id=?", (target_uid_del,))
-                await db.execute("DELETE FROM achievements WHERE user_id=?", (target_uid_del,))
-                await db.execute("DELETE FROM daily_quests WHERE user_id=?", (target_uid_del,))
-                await db.execute("DELETE FROM nft_frogs WHERE user_id=?", (target_uid_del,))
-                try:
-                    await db.execute("DELETE FROM duels WHERE challenger_id=? OR target_id=?", (target_uid_del, target_uid_del))
-                except Exception:
-                    pass
-                try:
-                    await db.execute("DELETE FROM referrals WHERE referrer_id=? OR referred_id=?", (target_uid_del, target_uid_del))
-                except Exception:
-                    pass
-                try:
-                    await db.execute("DELETE FROM shop_inventory WHERE user_id=?", (target_uid_del,))
-                except Exception:
-                    pass
-                try:
-                    await db.execute("DELETE FROM lottery_tickets WHERE user_id=?", (target_uid_del,))
-                except Exception:
-                    pass
-                try:
-                    await db.execute("DELETE FROM gift_log WHERE sender_id=? OR receiver_id=?", (target_uid_del, target_uid_del))
-                except Exception:
-                    pass
-                await db.commit()
-            await admin_log(uid, "delete_player", target_uid_del)
-            try:
-                await q.message.edit_text(
-                    f"🗑 <b>Игрок <code>{target_uid_del}</code> полностью удалён из базы данных.</b>",
-                    parse_mode=ParseMode.HTML,
-                    reply_markup=InlineKeyboardMarkup([
-                        [btn("◀️ К списку игроков", callback_data="admin_players_0")]
-                    ]),
-                )
-            except Exception:
-                pass
-        except Exception as e:
-            try:
-                await q.message.edit_text(
-                    f"{_E_CROSS} <b>Ошибка при удалении игрока <code>{target_uid_del}</code>:</b>\n<code>{e}</code>",
-                    parse_mode=ParseMode.HTML,
-                    reply_markup=InlineKeyboardMarkup([
-                        [btn("◀️ К списку игроков", callback_data="admin_players_0")]
-                    ]),
-                )
-            except Exception:
-                pass
-        return
-
-    # ── СПИСОК БОТОВ ────────────────────────────
-    if d.startswith("admin_bots_"):
-        if uid not in ADMIN_IDS:
-            await q.answer("⛔", show_alert=True)
-            return
-        page_b = int(d.split("_")[-1])
-        per_b = 8
-        async with aiosqlite.connect(DB_PATH) as db:
-            async with db.execute("SELECT COUNT(*) FROM frogs WHERE is_bot=1") as c:
-                total_b = (await c.fetchone())[0]
-            async with db.execute(
-                "SELECT user_id, first_name, username, level, coins FROM frogs WHERE is_bot=1 ORDER BY user_id DESC LIMIT ? OFFSET ?",
-                (per_b, page_b * per_b),
-            ) as c:
-                rows_b = await c.fetchall()
-        import math as _math
-        total_pages_b = max(1, _math.ceil(total_b / per_b))
-        text_b = (
-            f"{_E_BOT} <b>Помеченные боты ({total_b} шт., стр. {page_b+1}/{total_pages_b})</b>\n"
-            f"Боты скрыты из топов /top /topw /topm.\n"
-            f"Нажми на бота — открыть карточку (снять метку или удалить).\n"
-        )
-        kb_rows_b = []
-        for r in rows_b:
-            uname_b = f"@{r[2]}" if r[2] else f"id{r[0]}"
-            label_b = f"{_E_BOT} {r[1]} ({uname_b}) ур.{r[3]}"
-            kb_rows_b.append([
-                btn(label_b, callback_data=f"admin_pcard_{r[0]}_{page_b}")
-            ])
-        nav_b = []
-        if page_b > 0:
-            nav_b.append(btn("◀️", callback_data=f"admin_bots_{page_b-1}"))
-        if page_b < total_pages_b - 1:
-            nav_b.append(btn("▶️", callback_data=f"admin_bots_{page_b+1}"))
-        if nav_b:
-            kb_rows_b.append(nav_b)
-        kb_rows_b.append([btn("◀️ Назад в панель", callback_data="admin_refresh")])
-        try:
-            await q.message.edit_text(
-                text_b,
-                parse_mode=ParseMode.HTML,
-                reply_markup=InlineKeyboardMarkup(kb_rows_b),
-            )
-        except Exception:
-            pass
-        await q.answer()
-        return
 
 
-    if d.startswith("admin_revive_"):
-        if uid not in ADMIN_IDS:
-            await q.answer("⛔", show_alert=True)
-            return
-        target_uid_rev = int(d.split("_")[-1])
-        p_rev = await db_get(target_uid_rev)
-        if p_rev:
-            p_rev["alive"] = 1
-            p_rev["health"] = 100
-            p_rev["hunger"] = 100
-            p_rev["happiness"] = 100
-            await db_save(p_rev)
-            await admin_log(uid, "revive", target_uid_rev)
-            try:
-                await ctx.bot.send_message(
-                    target_uid_rev,
-                    "💚 <b>Тебя воскресила администрация!</b>\n\nТвоя лягушка снова жива! <tg-emoji emoji-id='5341367834935075028'>🐸</tg-emoji>",
-                    parse_mode=ParseMode.HTML,
-                )
-            except Exception:
-                pass
-        await q.answer("💚 Воскрешено", show_alert=True)
-        await show_player_card(q.message, target_uid_rev, edit=True)
-        return
 
-    # ── УБИТЬ ЛЯГУШКУ (АДМИН) ───────────────────
-    if d.startswith("admin_kill_"):
-        if uid not in ADMIN_IDS:
-            await q.answer("⛔", show_alert=True)
-            return
-        target_uid_kill = int(d.split("_")[-1])
-        p_kill = await db_get(target_uid_kill)
-        if p_kill:
-            p_kill["alive"] = 0
-            p_kill["health"] = 0
-            p_kill["trial_active"] = 0
-            p_kill["trial_quests"] = "[]"
-            p_kill["trial_progress"] = "{}"
-            await db_save(p_kill)
-            await admin_log(uid, "kill", target_uid_kill)
-            try:
-                await ctx.bot.send_message(
-                    target_uid_kill,
-                    "<tg-emoji emoji-id='5341573078537248907'>💀</tg-emoji> <b>Твоя лягушка была убита администрацией.</b>\n\nИспользуй /revive чтобы воскресить её.",
-                    parse_mode=ParseMode.HTML,
-                )
-            except Exception:
-                pass
-        await q.answer("💀 Убито", show_alert=True)
-        await show_player_card(q.message, target_uid_kill, edit=True)
-        return
 
-    # ── ЛОГИ КОНКРЕТНОГО ИГРОКА ─────────────────
-    if d.startswith("admin_logs_uid_"):
-        if uid not in ADMIN_IDS:
-            await q.answer("⛔", show_alert=True)
-            return
-        target_uid_log = int(d.split("_")[-1])
-        p_log = await db_get(target_uid_log)
-        async with aiosqlite.connect(DB_PATH) as db:
-            db.row_factory = aiosqlite.Row
-            # Берём ВСЕ логи — без лимита, отдаём файлом
-            async with db.execute(
-                "SELECT * FROM admin_logs WHERE target_id=? ORDER BY ts DESC",
-                (target_uid_log,)
-            ) as c:
-                log_rows = await c.fetchall()
-            # Также coin_log
-            async with db.execute(
-                "SELECT amount, reason, ts FROM coin_log WHERE user_id=? ORDER BY ts DESC LIMIT 200",
-                (target_uid_log,)
-            ) as c:
-                coin_rows = await c.fetchall()
-        pname = (p_log.get("frog_name") or p_log.get("first_name") or str(target_uid_log)) if p_log else str(target_uid_log)
-        uname = (f"@{p_log['username']}" if p_log and p_log.get("username") else "") if p_log else ""
-        lines = [
-            f"=== ЛОГИ ИГРОКА {pname} {uname} (ID: {target_uid_log}) ===",
-            f"Экспорт: {datetime.now(timezone.utc).strftime('%Y-%m-%d %H:%M UTC')}",
-            "",
-            "--- ADMIN LOG ---",
-        ]
-        if log_rows:
-            for r in log_rows:
-                ts_str = datetime.fromtimestamp(r["ts"], tz=timezone.utc).strftime("%Y-%m-%d %H:%M:%S")
-                lines.append(f"[{ts_str}] admin={r['admin_id']} action={r['action']} details={r.get('details','')}")
-        else:
-            lines.append("(пусто)")
-        lines += ["", "--- COIN LOG (последние 200) ---"]
-        if coin_rows:
-            for r in coin_rows:
-                ts_str = datetime.fromtimestamp(r["ts"], tz=timezone.utc).strftime("%Y-%m-%d %H:%M:%S")
-                sign = "+" if r["amount"] > 0 else ""
-                lines.append(f"[{ts_str}] {sign}{r['amount']} {r['reason']}")
-        else:
-            lines.append("(пусто)")
-        file_content = "\n".join(lines).encode("utf-8")
-        import io
-        file_obj = io.BytesIO(file_content)
-        file_obj.name = f"logs_{target_uid_log}.txt"
-        await q.answer()
-        try:
-            await q.message.reply_document(
-                document=file_obj,
-                caption=f"📋 Логи игрока <b>{he(pname)}</b> (ID: <code>{target_uid_log}</code>)\n"
-                        f"Admin log: {len(log_rows)} записей | Coin log: {len(coin_rows)} записей",
-                parse_mode=ParseMode.HTML,
-            )
-        except Exception as _le:
-            await q.answer((f"Ошибка отправки файла: {_le}")[:200], show_alert=True)
-        return
+
+
+
+
+
+
+
+
 
     # ── ЗАМОРОЗКА ПЕРЕВОДОВ — решение админа ─────────────
     if d.startswith("gift_unfreeze_") or d.startswith("gift_keepfreeze_"):
@@ -45333,257 +47034,13 @@ async def on_callback(update: Update, ctx: ContextTypes.DEFAULT_TYPE):
                 pass
         return
 
-    # ── СБРОС КУЛДАУНОВ ─────────────────────────
-    if d.startswith("admin_reset_cd_"):
-        if uid not in ADMIN_IDS:
-            await q.answer("⛔", show_alert=True)
-            return
-        target_uid_cd = int(d.split("_")[-1])
-        p_cd = await db_get(target_uid_cd)
-        if p_cd:
-            for cd_key in (
-                "last_feed",
-                "last_play",
-                "last_wash",
-                "last_sleep",
-                "last_pet",
-                "last_guess",
-                "last_casino",
-                "last_daily",
-                "last_expedition",
-            ):
-                p_cd[cd_key] = 0
-            await db_save(p_cd)
-            await admin_log(uid, "reset_cd", target_uid_cd)
-        await q.answer("✅ Кулдауны сброшены", show_alert=True)
-        await show_player_card(q.message, target_uid_cd, edit=True)
-        return
 
-    # ── ВЫДАТЬ ДОП. СЛОТ ПОХОДА ──────────────────────────
-    if d.startswith("admin_give_advslot_"):
-        if uid not in ADMIN_IDS:
-            await q.answer("⛔", show_alert=True)
-            return
-        target_uid_as = int(d.split("_")[-1])
-        p_as = await db_get(target_uid_as)
-        if p_as:
-            p_as["adventure_extra_slots_bought"] = p_as.get("adventure_extra_slots_bought", 0) + 1
-            p_as["adventure_extra_slot"] = 1
-            await db_save(p_as)
-            await admin_log(uid, "give_advslot", target_uid_as)
-            slots = p_as["adventure_extra_slots_bought"]
-            await q.answer((f"✅ Выдан доп. слот похода. Всего куплено: {slots}")[:200], show_alert=True)
-        else:
-            await q.answer("❌ Игрок не найден", show_alert=True)
-        await show_player_card(q.message, target_uid_as, edit=True)
-        return
 
-    # ── СБРОСИТЬ КД ПОХОДА И ЭКСПЕДИЦИИ ──────────────────────────
-    if d.startswith("admin_reset_advcd_"):
-        if uid not in ADMIN_IDS:
-            await q.answer("⛔", show_alert=True)
-            return
-        target_uid_ra = int(d.split("_")[-1])
-        p_ra = await db_get(target_uid_ra)
-        if p_ra:
-            p_ra["last_expedition"] = 0
-            p_ra["adventure_hours_today"] = 0.0
-            p_ra["adventure_hours_reset"] = 0.0
-            p_ra["adventure_extra_slots_bought"] = 0
-            await db_save(p_ra)
-            await admin_log(uid, "reset_advcd", target_uid_ra)
-            await q.answer("✅ КД похода и экспедиции сброшены. Лимит часов обнулён.", show_alert=True)
-        else:
-            await q.answer("❌ Игрок не найден", show_alert=True)
-        await show_player_card(q.message, target_uid_ra, edit=True)
-        return
 
-    # ── ИЗМЕНЕНИЕ МОНЕТ ──────────────────────────
-    if d.startswith("admin_coins_p") or d.startswith("admin_coins_m"):
-        if uid not in ADMIN_IDS:
-            await q.answer("⛔", show_alert=True)
-            return
-        parts_coin = d.split("_")
-        # admin_coins_p100_12345 → direction=p, amount=100, target_uid=12345
-        op = "p" if d.startswith("admin_coins_p") else "m"
-        # Find amount: between op and last _
-        rest = d[len(f"admin_coins_{op}") :]
-        amt_str, sep, tuid_str = rest.partition("_")
-        try:
-            amount_coin = int(amt_str)
-            target_uid_coin = int(tuid_str)
-        except ValueError:
-            await q.answer("Ошибка", show_alert=True)
-            return
-        if op == "m":
-            amount_coin = -amount_coin
-        p_coin = await db_get(target_uid_coin)
-        if p_coin:
-            p_coin["coins"] = max(0, p_coin["coins"] + amount_coin)
-            await db_save(p_coin)
-            await admin_log(
-                uid,
-                f"coins_{'+' if amount_coin>=0 else ''}{amount_coin}",
-                target_uid_coin,
-                f"bal→{p_coin['coins']}",
-            )
-        direction = "+" if amount_coin > 0 else ""
-        await q.answer((f"✅ {direction}{amount_coin}{coin_plain()}")[:200], show_alert=True)
-        await show_player_card(q.message, target_uid_coin, edit=True)
-        return
 
-    # ── ИЗМЕНЕНИЕ XP ───────────────────────────
-    if d.startswith("admin_xp_p") or d.startswith("admin_xp_m"):
-        if uid not in ADMIN_IDS:
-            await q.answer("⛔", show_alert=True)
-            return
-        op_xp = "p" if d.startswith("admin_xp_p") else "m"
-        rest_xp = d[len(f"admin_xp_{op_xp}") :]
-        amt_xp_str, _, tuid_xp_str = rest_xp.partition("_")
-        try:
-            amount_xp = int(amt_xp_str)
-            target_uid_xp = int(tuid_xp_str)
-        except ValueError:
-            await q.answer("Ошибка", show_alert=True)
-            return
-        if op_xp == "m":
-            amount_xp = -amount_xp
-        p_xp = await db_get(target_uid_xp)
-        if p_xp:
-            p_xp["xp"] = max(0, p_xp.get("xp", 0) + amount_xp)
-            await levelup(p_xp, ctx.bot)
-            await db_save(p_xp)
-            await admin_log(uid, f"xp_{'+' if amount_xp>=0 else ''}{amount_xp}", target_uid_xp, f"xp→{p_xp['xp']}")
-            try:
-                await ctx.bot.send_message(
-                    target_uid_xp,
-                    f"{_E_XP} Администратор {'начислил' if amount_xp >= 0 else 'списал'} <b>{abs(amount_xp)} XP</b>!\n"
-                    f"Текущий опыт: {p_xp['xp']} XP (уровень {p_xp['level']})",
-                    parse_mode=ParseMode.HTML,
-                )
-            except Exception:
-                pass
-        direction_xp = "+" if amount_xp > 0 else ""
-        await q.answer((f"✅ {direction_xp}{amount_xp} XP")[:200], show_alert=True)
-        await show_player_card(q.message, target_uid_xp, edit=True)
-        return
 
-    # ── УСТАНОВИТЬ МОНЕТЫ (меню ввода) ─────────
-    if d.startswith("admin_setcoins_menu_"):
-        if uid not in ADMIN_IDS:
-            await q.answer("⛔", show_alert=True)
-            return
-        try:
-            target_uid_sc = int(d[len("admin_setcoins_menu_"):])
-        except ValueError:
-            await q.answer("Ошибка", show_alert=True)
-            return
-        p_sc = await db_get(target_uid_sc)
-        current_coins = p_sc["coins"] if p_sc else 0
-        kb_sc = InlineKeyboardMarkup([
-            [
-                btn("💰 +500", callback_data=f"admin_coins_p500_{target_uid_sc}"),
-                btn("💰 +5000", callback_data=f"admin_coins_p5000_{target_uid_sc}"),
-            ],
-            [
-                btn("💰 -500", callback_data=f"admin_coins_m500_{target_uid_sc}"),
-                btn("💰 -5000", callback_data=f"admin_coins_m5000_{target_uid_sc}"),
-            ],
-            [btn("◀️ Назад", callback_data=f"admin_player_{target_uid_sc}_p0")],
-        ])
-        try:
-            await q.message.edit_text(
-                f"{_E_COIN} <b>Управление монетами</b>\n"
-                f"Игрок ID: <code>{target_uid_sc}</code>\n"
-                f"Текущий баланс: <b>{current_coins:,}</b> {_E_COIN}\n\n"
-                f"Выбери действие:",
-                parse_mode=ParseMode.HTML,
-                reply_markup=kb_sc,
-            )
-        except Exception:
-            pass
-        await q.answer()
-        return
 
-    # ── ЗАБРАТЬ ОБЛИК — МЕНЮ ───────────────────
-    if d.startswith("admin_takeskin_menu_"):
-        if uid not in ADMIN_IDS:
-            await q.answer("⛔", show_alert=True)
-            return
-        try:
-            target_uid_ts = int(d[len("admin_takeskin_menu_"):])
-        except ValueError:
-            await q.answer("Ошибка", show_alert=True)
-            return
-        # Получаем коллекцию игрока
-        coll_ts = await db_coll(target_uid_ts)
-        if not coll_ts:
-            await q.answer("У игрока нет обликов", show_alert=True)
-            await show_player_card(q.message, target_uid_ts, edit=True)
-            return
-        skin_rows_ts = []
-        for skin_ts in sorted(coll_ts)[:12]:  # до 12 скинов
-            s_ts = SKINS.get(skin_ts, {})
-            plain_emoji_ts = s_ts.get("emoji", "🐸")  # plain emoji, не HTML-тег
-            skin_rows_ts.append([btn(
-                f"{plain_emoji_ts} {skin_ts[:20]} ({s_ts.get('rarity','?')[:3]})",
-                callback_data=f"admin_takeskin_do_{target_uid_ts}_{skin_ts[:30]}",
-            )])
-        skin_rows_ts.append([btn("◀️ Назад", callback_data=f"admin_player_{target_uid_ts}_p0")])
-        try:
-            await q.message.edit_text(
-                f"🗑 <b>Забрать облик</b>\n"
-                f"Игрок ID: <code>{target_uid_ts}</code>\n\n"
-                f"Выбери облик для изъятия (первые 12):",
-                parse_mode=ParseMode.HTML,
-                reply_markup=InlineKeyboardMarkup(skin_rows_ts),
-            )
-        except Exception:
-            pass
-        await q.answer()
-        return
 
-    # ── ЗАБРАТЬ ОБЛИК — ДЕЙСТВИЕ ───────────────
-    if d.startswith("admin_takeskin_do_"):
-        if uid not in ADMIN_IDS:
-            await q.answer("⛔", show_alert=True)
-            return
-        try:
-            rest_ts = d[len("admin_takeskin_do_"):]
-            parts_ts = rest_ts.split("_", 1)
-            target_uid_tsd = int(parts_ts[0])
-            skin_name_ts = parts_ts[1] if len(parts_ts) > 1 else ""
-        except (ValueError, IndexError):
-            await q.answer("Ошибка", show_alert=True)
-            return
-        full_skin_ts = next((s for s in SKINS if s.startswith(skin_name_ts) or s == skin_name_ts), None)
-        if not full_skin_ts:
-            await q.answer((f"Облик не найден: {skin_name_ts}")[:200], show_alert=True)
-            return
-        async with aiosqlite.connect(DB_PATH) as db:
-            await db.execute(
-                "DELETE FROM collections WHERE user_id=? AND skin=?",
-                (target_uid_tsd, full_skin_ts),
-            )
-            await db.commit()
-        _user_cache.invalidate(target_uid_tsd)
-        # Если это активный облик — сбрасываем на Brownie
-        p_ts = await db_get(target_uid_tsd)
-        if p_ts and p_ts.get("skin") == full_skin_ts:
-            p_ts["skin"] = "Brownie"
-            await db_save(p_ts)
-        await admin_log(uid, f"take_skin_{full_skin_ts}", target_uid_tsd, "")
-        try:
-            await ctx.bot.send_message(
-                target_uid_tsd,
-                f"⚠️ Администратор изъял облик <b>{he(full_skin_ts)}</b> {pemoji(full_skin_ts)} из вашей коллекции.",
-                parse_mode=ParseMode.HTML,
-            )
-        except Exception:
-            pass
-        await q.answer((f"✅ Облик {full_skin_ts} изъят")[:200], show_alert=True)
-        await show_player_card(q.message, target_uid_tsd, edit=True)
-        return
 
     # ── ADMIN: НФТ ПЕРЕПРОВЕРКА — оставить или забрать скин ────────────
     if d.startswith("nft_recheck_keep_"):
@@ -45660,125 +47117,9 @@ async def on_callback(update: Update, ctx: ContextTypes.DEFAULT_TYPE):
             pass
         return
 
-    # ── ADMIN: ВЫДАТЬ ПРЕДМЕТ — МЕНЮ ────────────────────────
-    if d.startswith("admin_giveitem_menu_"):
-        if uid not in ADMIN_IDS:
-            await q.answer("⛔", show_alert=True)
-            return
-        try:
-            target_uid_gi = int(d[len("admin_giveitem_menu_"):])
-        except ValueError:
-            await q.answer("Ошибка", show_alert=True)
-            return
-        # Показываем меню выбора предмета
-        item_rows = []
-        all_items = list(FOOD.items()) + [("gacha_ticket", {"name": "Тикет гачи", "emoji": "🎟"})]
-        for fid, fdata in all_items:
-            emoji = fdata.get("emoji", "🎁")
-            name = fdata.get("name", fid)
-            item_rows.append([
-                btn(f"{emoji} {name} ×1", callback_data=f"admin_giveitem_do_{target_uid_gi}_{fid}_1"),
-                btn(f"×5", callback_data=f"admin_giveitem_do_{target_uid_gi}_{fid}_5"),
-                btn(f"×10", callback_data=f"admin_giveitem_do_{target_uid_gi}_{fid}_10"),
-            ])
-        item_rows.append([btn("◀️ Назад", callback_data=f"admin_give_uid_{target_uid_gi}")])
-        try:
-            await q.message.edit_text(
-                f"{_E_GIFT} <b>Выдача предмета</b>\nИгрок ID: <code>{target_uid_gi}</code>\n\nВыбери предмет и количество:",
-                parse_mode=ParseMode.HTML,
-                reply_markup=InlineKeyboardMarkup(item_rows),
-            )
-        except Exception:
-            pass
-        return
 
-    # ── ADMIN: ВЫДАТЬ ПРЕДМЕТ — ДЕЙСТВИЕ ────────────────────
-    if d.startswith("admin_giveitem_do_"):
-        if uid not in ADMIN_IDS:
-            await q.answer("⛔", show_alert=True)
-            return
-        try:
-            parts_gi = d[len("admin_giveitem_do_"):].split("_")
-            # format: admin_giveitem_do_<uid>_<item_id>_<qty>
-            # item_id may have underscores but is last before qty
-            target_uid_gid = int(parts_gi[0])
-            qty_gi = int(parts_gi[-1])
-            item_id_gi = "_".join(parts_gi[1:-1])
-        except (ValueError, IndexError):
-            await q.answer("Ошибка", show_alert=True)
-            return
-        await inv_add(target_uid_gid, item_id_gi, qty_gi)
-        await admin_log(uid, f"give_item_{item_id_gi}", target_uid_gid, f"qty={qty_gi}")
-        await q.answer((f"✅ Выдано {qty_gi}×{item_id_gi}")[:200], show_alert=True)
-        await show_player_card(q.message, target_uid_gid, edit=True)
-        return
 
-    # ── ADMIN: ВЫДАТЬ ОБЛИК — МЕНЮ ──────────────────────────
-    if d.startswith("admin_giveskin_menu_"):
-        if uid not in ADMIN_IDS:
-            await q.answer("⛔", show_alert=True)
-            return
-        try:
-            target_uid_gs = int(d[len("admin_giveskin_menu_"):])
-        except ValueError:
-            await q.answer("Ошибка", show_alert=True)
-            return
-        # Пагинация скинов: показываем по 8 штук
-        offset_gs = 0
-        skin_list = [s for s in SKINS.keys() if SKINS[s].get("chance", 0) > 0 or SKINS[s].get("rarity") in ("legendary", "mythic", "secret")]
-        skin_list = sorted(skin_list, key=lambda s: SKINS[s].get("rarity", "common"))
-        skin_rows = []
-        for skin_n in skin_list[offset_gs:offset_gs + 8]:
-            s_data = SKINS[skin_n]
-            skin_rows.append([btn(
-                f"{pemoji(skin_n)} {skin_n[:20]} ({s_data.get('rarity','?')[:3]})",
-                callback_data=f"admin_giveskin_do_{target_uid_gs}_{skin_n[:30]}",
-            )])
-        skin_rows.append([btn("◀️ Назад", callback_data=f"admin_give_uid_{target_uid_gs}")])
-        try:
-            await q.message.edit_text(
-                f"🎨 <b>Выдача облика</b>\nИгрок ID: <code>{target_uid_gs}</code>\n\nВыбери облик:",
-                parse_mode=ParseMode.HTML,
-                reply_markup=InlineKeyboardMarkup(skin_rows),
-            )
-        except Exception:
-            pass
-        return
 
-    # ── ADMIN: ВЫДАТЬ ОБЛИК — ДЕЙСТВИЕ ──────────────────────
-    if d.startswith("admin_giveskin_do_"):
-        if uid not in ADMIN_IDS:
-            await q.answer("⛔", show_alert=True)
-            return
-        try:
-            rest_gs = d[len("admin_giveskin_do_"):]
-            # format: admin_giveskin_do_<uid>_<skin_name>
-            parts_gs = rest_gs.split("_", 1)
-            target_uid_gsd = int(parts_gs[0])
-            skin_name_gs = parts_gs[1] if len(parts_gs) > 1 else ""
-        except (ValueError, IndexError):
-            await q.answer("Ошибка", show_alert=True)
-            return
-        # Найти полное имя скина (может быть обрезано до 30 символов)
-        full_skin_name = next((s for s in SKINS if s.startswith(skin_name_gs) or s == skin_name_gs), None)
-        if not full_skin_name:
-            await q.answer((f"Облик не найден: {skin_name_gs}")[:200], show_alert=True)
-            return
-        await db_add_skin(target_uid_gsd, full_skin_name)
-        await admin_log(uid, f"give_skin_{full_skin_name}", target_uid_gsd, "")
-        await q.answer((f"✅ Облик {full_skin_name} выдан")[:200], show_alert=True)
-        # Уведомить игрока
-        try:
-            await ctx.bot.send_message(
-                target_uid_gsd,
-                f"{_E_GIFT} Администратор выдал вам облик <b>{he(full_skin_name)}</b> {pemoji(full_skin_name)}!\n"
-                f"Надеть: /frog → 👗 Облики",
-                parse_mode=ParseMode.HTML,
-            )
-        except Exception:
-            pass
-        await show_player_card(q.message, target_uid_gsd, edit=True)
-        return
 
     # ── РОЗЫГРЫШ (GIVEAWAY): УЧАСТИЕ ─────────────────────
     if d.startswith("giveaway_join_"):
@@ -45861,857 +47202,26 @@ async def on_callback(update: Update, ctx: ContextTypes.DEFAULT_TYPE):
         await finalize_giveaway(gid, ctx)
         return
 
-    if d == "admin_dead":
-        if uid not in ADMIN_IDS:
-            await q.answer("⛔", show_alert=True)
-            return
-        async with aiosqlite.connect(DB_PATH) as db:
-            async with db.execute(
-                "SELECT first_name, username, user_id, level FROM frogs WHERE alive=0 ORDER BY level DESC LIMIT 20"
-            ) as c:
-                rows = await c.fetchall()
-        if not rows:
-            text = "💚 Все лягушки живы!"
-        else:
-            lines = [f"{_E_SKULL} <b>Мёртвые лягушки ({len(rows)})</b>\n"]
-            for r in rows:
-                uname = f"@{r[1]}" if r[1] else f"ID:{r[2]}"
-                lines.append(f"{_E_SKULL} {r[0]} ({uname}) ур.{r[3]}")
-            text = "\n".join(lines)
-        try:
-            await q.message.edit_text(
-                text,
-                parse_mode=ParseMode.HTML,
-                reply_markup=InlineKeyboardMarkup(
-                    [[btn("◀️ Назад", callback_data="admin_refresh")]]
-                ),
-            )
-        except Exception:
-            pass
-        await q.answer()
-        return
-
-    if d == "admin_search_hint":
-        if uid not in ADMIN_IDS:
-            await q.answer("⛔", show_alert=True)
-            return
-        await q.answer()
-        try:
-            await q.message.edit_text(
-                "🔍 <b>Поиск игрока</b>\n\n"
-                "Используй команду:\n"
-                "<code>/adminlookup @username</code>\n"
-                "или\n"
-                "<code>/adminlookup 123456789</code> (по ID)\n\n"
-                "<i>Покажет полную информацию об игроке.</i>",
-                parse_mode=ParseMode.HTML,
-                reply_markup=InlineKeyboardMarkup(
-                    [[btn("◀️ Назад", callback_data="admin_refresh")]]
-                ),
-            )
-        except Exception:
-            pass
-        return
-
-    if d == "admin_casino_stats":
-        if uid not in ADMIN_IDS:
-            await q.answer("⛔", show_alert=True)
-            return
-        now_ts = time.time()
-        day_ago  = now_ts - 86400
-        week_ago = now_ts - 604800
-        async with aiosqlite.connect(DB_PATH) as db:
-            # Общая статистика из frogs
-            async with db.execute(
-                "SELECT SUM(total_casino), SUM(total_casino_wins), SUM(coins_spent), SUM(coins) FROM frogs WHERE is_bot=0"
-            ) as c:
-                row = await c.fetchone()
-            total_games = row[0] or 0
-            total_wins  = row[1] or 0
-            total_spent = row[2] or 0
-            total_balance = row[3] or 0
-
-            # Уникальных игроков казино за сутки / неделю
-            async with db.execute(
-                "SELECT COUNT(DISTINCT user_id) FROM game_logs WHERE game_type='casino' AND ts>=?", (day_ago,)
-            ) as c:
-                active_day = (await c.fetchone())[0] or 0
-            async with db.execute(
-                "SELECT COUNT(DISTINCT user_id) FROM game_logs WHERE game_type='casino' AND ts>=?", (week_ago,)
-            ) as c:
-                active_week = (await c.fetchone())[0] or 0
-
-            # Игры за сутки / неделю
-            async with db.execute(
-                "SELECT COUNT(*), SUM(bet_amount), SUM(win_amount) FROM game_logs WHERE game_type='casino' AND ts>=?", (day_ago,)
-            ) as c:
-                r_day = await c.fetchone()
-            games_day   = r_day[0] or 0
-            bet_day     = r_day[1] or 0
-            win_day     = r_day[2] or 0
-            async with db.execute(
-                "SELECT COUNT(*), SUM(bet_amount), SUM(win_amount) FROM game_logs WHERE game_type='casino' AND ts>=?", (week_ago,)
-            ) as c:
-                r_week = await c.fetchone()
-            games_week  = r_week[0] or 0
-            bet_week    = r_week[1] or 0
-            win_week    = r_week[2] or 0
-
-            # Топ-5 выигрышей всех времён
-            async with db.execute(
-                "SELECT f.first_name, f.username, gl.win_amount, gl.bet_amount "
-                "FROM game_logs gl LEFT JOIN frogs f ON f.user_id=gl.user_id "
-                "WHERE gl.game_type='casino' AND gl.result='win' "
-                "ORDER BY gl.win_amount DESC LIMIT 5"
-            ) as c:
-                top_wins_rows = await c.fetchall()
-
-            # Топ-5 игроков по количеству игр
-            async with db.execute(
-                "SELECT f.first_name, f.username, COUNT(*) as cnt "
-                "FROM game_logs gl LEFT JOIN frogs f ON f.user_id=gl.user_id "
-                "WHERE gl.game_type='casino' "
-                "GROUP BY gl.user_id ORDER BY cnt DESC LIMIT 5"
-            ) as c:
-                top_players_rows = await c.fetchall()
-
-            # Самый большой выигрыш за сутки
-            async with db.execute(
-                "SELECT f.first_name, gl.win_amount FROM game_logs gl "
-                "LEFT JOIN frogs f ON f.user_id=gl.user_id "
-                "WHERE gl.game_type='casino' AND gl.result='win' AND gl.ts>=? "
-                "ORDER BY gl.win_amount DESC LIMIT 1", (day_ago,)
-            ) as c:
-                best_today = await c.fetchone()
-
-        wr = int(total_wins / total_games * 100) if total_games else 0
-        house_profit_day  = bet_day  - win_day
-        house_profit_week = bet_week - win_week
-
-        lines = [
-            "🃏 <b>Статистика казино</b>\n",
-            "📊 <b>Общее (всё время)</b>",
-            f"  Игр: <b>{total_games:,}</b> │ Побед: <b>{total_wins:,}</b> ({wr}%)",
-            f"  КваКоинов поставлено: <b>{total_spent:,}</b>",
-            f"  КваКоинов в экономике: <b>{total_balance:,}</b>",
-            "",
-            "🕐 <b>За 24 часа</b>",
-            f"  Игр: <b>{games_day:,}</b> │ Активных игроков: <b>{active_day}</b>",
-            f"  Поставлено: <b>{bet_day:,}</b> │ Выиграно: <b>{win_day:,}</b>",
-            f"  Доход казино: <b>{'+'if house_profit_day>=0 else ''}{house_profit_day:,}</b>🪙",
-        ]
-        if best_today:
-            name_bt = f"@{best_today[1]}" if best_today[1] else he(best_today[0] or "?")
-            lines.append(f"  {_E_TROPHY} Лучший выигрыш: <b>{best_today[1]:,}</b>🪙 ({name_bt})")
-        lines += [
-            "",
-            "📅 <b>За 7 дней</b>",
-            f"  Игр: <b>{games_week:,}</b> │ Активных игроков: <b>{active_week}</b>",
-            f"  Поставлено: <b>{bet_week:,}</b> │ Выиграно: <b>{win_week:,}</b>",
-            f"  Доход казино: <b>{'+'if house_profit_week>=0 else ''}{house_profit_week:,}</b>🪙",
-        ]
-        if top_wins_rows:
-            lines += ["", "💰 <b>Топ-5 выигрышей (всё время)</b>"]
-            for i, r in enumerate(top_wins_rows, 1):
-                nm = f"@{r[1]}" if r[1] else he(r[0] or "?")
-                lines.append(f"  {i}. {nm} — <b>{r[2]:,}</b>🪙 (ставка {r[3]:,})")
-        if top_players_rows:
-            lines += ["", "🎰 <b>Топ-5 по числу игр</b>"]
-            for i, r in enumerate(top_players_rows, 1):
-                nm = f"@{r[1]}" if r[1] else he(r[0] or "?")
-                lines.append(f"  {i}. {nm} — <b>{r[2]:,}</b> игр")
-
-        text = "\n".join(lines)
-        try:
-            await q.message.edit_text(
-                text,
-                parse_mode=ParseMode.HTML,
-                reply_markup=InlineKeyboardMarkup([
-                    [btn("🔴 Владельцы мифических обликов", callback_data="admin_mythic_owners")],
-                    [btn("◀️ Назад", callback_data="admin_refresh")],
-                ]),
-            )
-        except Exception:
-            pass
-        await q.answer()
-        return
-
-    if d == "admin_mythic_owners":
-        if uid not in ADMIN_IDS:
-            await q.answer("⛔", show_alert=True)
-            return
-        # Все мифические обликиу
-        mythic_skin_names = [sname for sname, sdata in SKINS.items() if sdata.get("rarity") == "mythic"]
-        if not mythic_skin_names:
-            await q.answer("Мифических обликов нет в конфиге.", show_alert=True)
-            return
-        placeholders = ",".join("?" * len(mythic_skin_names))
-        async with aiosqlite.connect(DB_PATH) as db:
-            db.row_factory = aiosqlite.Row
-            # Активный облик
-            async with db.execute(
-                f"SELECT user_id, first_name, username, skin FROM frogs "
-                f"WHERE skin IN ({placeholders}) AND is_bot=0 AND banned=0 "
-                f"ORDER BY skin",
-                mythic_skin_names,
-            ) as c:
-                active_rows = await c.fetchall()
-            # В коллекции (не обязательно активный)
-            async with db.execute(
-                f"SELECT c.user_id, f.first_name, f.username, c.skin "
-                f"FROM collections c LEFT JOIN frogs f ON f.user_id=c.user_id "
-                f"WHERE c.skin IN ({placeholders}) AND (f.is_bot IS NULL OR f.is_bot=0) "
-                f"AND (f.banned IS NULL OR f.banned=0) "
-                f"ORDER BY c.skin",
-                mythic_skin_names,
-            ) as c:
-                owned_rows = await c.fetchall()
-
-        # Построим карту: skin → {uid: (name, active)}
-        from collections import defaultdict
-        skin_map: dict = defaultdict(dict)
-        for r in owned_rows:
-            skin_map[r["skin"]][r["user_id"]] = [r["first_name"] or "?", r["username"] or "", False]
-        for r in active_rows:
-            if r["user_id"] in skin_map[r["skin"]]:
-                skin_map[r["skin"]][r["user_id"]][2] = True
-            else:
-                skin_map[r["skin"]][r["user_id"]] = [r["first_name"] or "?", r["username"] or "", True]
-
-        lines = ["🔴 <b>Владельцы мифических обликов</b>\n"]
-        total_owners = 0
-        for sname in sorted(skin_map.keys()):
-            sdata = SKINS.get(sname, {})
-            emoji = sdata.get("emoji", "🔴")
-            owners = skin_map[sname]
-            total_owners += len(owners)
-            lines.append(f"{emoji} <b>{_html.escape(sname)}</b> — {len(owners)} владельца(ев)")
-            for entry_uid, (frog_fname, uname, is_active) in owners.items():
-                disp = f"@{uname}" if uname else _html.escape(frog_fname)
-                active_mark = " ✅" if is_active else ""
-                lines.append(f"  · {disp} (<code>{entry_uid}</code>){active_mark}")
-        if not lines[1:]:
-            lines.append("Никто ещё не владеет мифическими обликами.")
-        lines.append(f"\n👑 Всего уникальных владельцев: <b>{total_owners}</b>")
-        lines.append("<i>✅ = облик сейчас активен</i>")
-
-        text = "\n".join(lines)
-        # Если текст слишком длинный, обрезаем
-        if len(text) > 4000:
-            text = text[:3950] + "\n<i>... (список обрезан)</i>"
-        try:
-            await q.message.edit_text(
-                text,
-                parse_mode=ParseMode.HTML,
-                reply_markup=InlineKeyboardMarkup([
-                    [btn("◀️ Назад к казино", callback_data="admin_casino_stats")],
-                    [btn("🏠 Главное меню", callback_data="admin_refresh")],
-                ]),
-            )
-        except Exception:
-            pass
-        await q.answer()
-        return
-
-    if d == "admin_stickers":
-        if uid not in ADMIN_IDS:
-            await q.answer("⛔", show_alert=True)
-            return
-        lines = ["🎭 <b>Настройка стикеров действий</b>\n"]
-        lines.append("Текущие индексы PREMIUM_STICKER_IDS для каждого действия:\n")
-        kb_rows = []
-        for action, label in ACTION_STICKER_LABELS.items():
-            custom_val = await db_setting(f"sticker_{action}")
-            current = (
-                custom_val
-                if custom_val
-                else ",".join(str(i) for i in ACTION_STICKERS[action])
-            )
-            lines.append(f"<b>{label}</b>: <code>{current}</code>")
-            kb_rows.append(
-                [
-                    btn(
-                        f"{_E_PENCIL} {label}", callback_data=f"admin_sticker_edit_{action}"
-                    )
-                ]
-            )
-        kb_rows.append([btn("◀️ Назад", callback_data="admin_refresh")])
-        lines.append(
-            "\n<i>Нажми на действие чтобы изменить индексы.\n"
-            "Индексы 0-49 соответствуют PREMIUM_STICKER_IDS.</i>"
-        )
-        try:
-            await q.message.edit_text(
-                "\n".join(lines),
-                parse_mode=ParseMode.HTML,
-                reply_markup=InlineKeyboardMarkup(kb_rows),
-            )
-        except Exception:
-            pass
-        await q.answer()
-        return
-
-    if d.startswith("admin_sticker_edit_"):
-        if uid not in ADMIN_IDS:
-            await q.answer("⛔", show_alert=True)
-            return
-        action = d[19:]
-        label = ACTION_STICKER_LABELS.get(action, action)
-        custom_val = await db_setting(f"sticker_{action}")
-        current = (
-            custom_val
-            if custom_val
-            else ",".join(str(i) for i in ACTION_STICKERS.get(action, []))
-        )
-        await q.answer()
-        try:
-            await q.message.edit_text(
-                f"{_E_PENCIL} <b>Редактирование: {label}</b>\n\n"
-                f"Текущие индексы: <code>{current}</code>\n\n"
-                f"Чтобы изменить, используй команду:\n"
-                f"<code>/setsticker {action} 0,1,2,3</code>\n\n"
-                f"Индексы 0-49 соответствуют PREMIUM_STICKER_IDS.\n"
-                f"Всего стикеров: {len(PREMIUM_STICKER_IDS)}",
-                parse_mode=ParseMode.HTML,
-                reply_markup=InlineKeyboardMarkup(
-                    [
-                        [
-                            btn(
-                                "◀️ Назад к стикерам", callback_data="admin_stickers"
-                            )
-                        ]
-                    ]
-                ),
-            )
-        except Exception:
-            pass
-        return
-
-    if d == "admin_referrals":
-        if uid not in ADMIN_IDS:
-            await q.answer("⛔", show_alert=True)
-            return
-        await q.answer()
-        async with aiosqlite.connect(DB_PATH) as db:
-            async with db.execute("SELECT COUNT(*) FROM referrals") as c:
-                total_refs = (await c.fetchone())[0] or 0
-            async with db.execute("SELECT SUM(rewarded_coins) FROM referrals") as c:
-                total_coins = (await c.fetchone())[0] or 0
-            # Топ-рефереры
-            async with db.execute(
-                "SELECT referrer_id, COUNT(*) as cnt, SUM(rewarded_coins) as earned "
-                "FROM referrals GROUP BY referrer_id ORDER BY cnt DESC LIMIT 15"
-            ) as c:
-                top_refs = await c.fetchall()
-        lines = [
-            f"🔗 <b>Реферальная статистика</b>\n\n"
-            f"Всего рефералов: <b>{total_refs}</b>\n"
-            f"КваКоинов выдано: <b>{total_coins}{coin_emoji()}</b>\n\n"
-            f"<b>Топ-рефереры (🚨 &gt;50 = подозрительно):</b>"
-        ]
-        kb_rows_ref = []
-        for ref_uid, cnt, earned in top_refs:
-            rf = await db_get(ref_uid)
-            name = he(rf["first_name"]) if rf else f"ID:{ref_uid}"
-            uname = f"@{rf['username']}" if rf and rf.get("username") else f"id{ref_uid}"
-            flag = " 🚨" if cnt > 50 else ""
-            lines.append(f"{'⚠️' if cnt > 50 else '👤'} <b>{name}</b> ({uname}) — {cnt} чел., {earned or 0}{coin_emoji()}{flag}")
-            if cnt > 50:
-                kb_rows_ref.append([btn(
-                    f"{_E_SEARCH} {name[:20]} ({cnt} реф.)",
-                    callback_data=f"admin_refdetail_{ref_uid}"
-                )])
-        if not kb_rows_ref:
-            lines.append("\n✅ <i>Подозрительных реферальных схем не обнаружено</i>")
-        else:
-            lines.append("\n⚠️ <b>Нажми на подозрительного пользователя для расследования:</b>")
-        kb_rows_ref.append([btn("◀️ Назад", callback_data="admin_refresh")])
-        try:
-            await q.message.edit_text(
-                "\n".join(lines),
-                parse_mode=ParseMode.HTML,
-                reply_markup=InlineKeyboardMarkup(kb_rows_ref),
-            )
-        except Exception:
-            pass
-        return
-
-    if d.startswith("admin_refdetail_"):
-        if uid not in ADMIN_IDS:
-            await q.answer("⛔", show_alert=True)
-            return
-        await q.answer()
-        try:
-            suspect_id = int(d.split("_")[-1])
-        except ValueError:
-            await q.answer("❌ Неверный ID", show_alert=True)
-            return
-        try:
-            rf = await db_get(suspect_id)
-            name = he(str(rf["first_name"] or f"ID:{suspect_id}")) if rf else f"ID:{suspect_id}"
-            uname = he("@" + rf["username"]) if rf and rf.get("username") else he(f"id{suspect_id}")
-            async with aiosqlite.connect(DB_PATH) as db:
-                async with db.execute(
-                    "SELECT referred_id, joined_at, stage_mask, rewarded_coins FROM referrals WHERE referrer_id=? ORDER BY joined_at DESC",
-                    (suspect_id,)
-                ) as c:
-                    ref_list = await c.fetchall()
-            # NULL-безопасное суммирование
-            total_earned = sum((r[3] or 0) for r in ref_list)
-            # Анализ подозрительных: регистрации < 5 минут между собой
-            suspicious_ids = []
-            prev_ts = 0.0
-            for rr in sorted(ref_list, key=lambda x: (x[1] or 0)):
-                ts = rr[1] or 0
-                diff = ts - prev_ts
-                if prev_ts and diff < 300:
-                    suspicious_ids.append(rr[0])
-                prev_ts = ts
-            lines = [
-                f"{_E_SEARCH} <b>Расследование: {name} ({uname})</b>\n",
-                f"ID: <code>{suspect_id}</code>",
-                f"💰 Баланс: {rf['coins'] if rf else '?'} 🪙",
-                f"{_E_USERS} Всего рефералов: <b>{len(ref_list)}</b>",
-                f"🪙 Заработано с рефералов: <b>{total_earned} 🪙</b>",
-                f"{_E_BOT} Подозрительных (регистрации &lt; 5 мин): <b>{len(suspicious_ids)}</b>\n",
-                f"<b>Последние 20 рефералов:</b>",
-            ]
-            for rr in ref_list[:20]:
-                # NULL-безопасные значения
-                joined_at = rr[1] or 0
-                stage_mask = rr[2] or 0
-                rewarded = rr[3] or 0
-                ts_s = time.strftime("%d.%m %H:%M", time.localtime(joined_at)) if joined_at else "—"
-                mask_s = bin(stage_mask).count("1")
-                flag = " 🤖" if rr[0] in suspicious_ids else ""
-                lines.append(f"• <code>{rr[0]}</code> [{ts_s}] эт.{mask_s} {rewarded} 🪙{flag}")
-            if len(ref_list) > 20:
-                lines.append(f"<i>...и ещё {len(ref_list)-20}</i>")
-            ban_s = rf.get("banned", 0) if rf else 0
-            ban_lbl = "🔓 Разбанить" if ban_s else "🚫 Забанить мошенника"
-            ban_cb = f"admin_unban_{suspect_id}" if ban_s else f"admin_ban_{suspect_id}"
-            kb_det = InlineKeyboardMarkup([
-                [btn(ban_lbl, callback_data=ban_cb, style="danger")],
-                [btn(f"🗑 Удалить {len(suspicious_ids)} бот-рефералов", callback_data=f"admin_purge_botrefs_{suspect_id}")],
-                [btn(f"💸 Списать реф. монеты ({total_earned})", callback_data=f"admin_strip_refcoins_{suspect_id}")],
-                [btn("◀️ Назад к рефералам", callback_data="admin_referrals")],
-            ])
-            await q.message.edit_text("\n".join(lines), parse_mode=ParseMode.HTML, reply_markup=kb_det)
-        except Exception as e:
-            print(f"{_E_CROSS} admin_refdetail error: {e}")
-            try:
-                await q.message.edit_text(
-                    f"{_E_CROSS} <b>Ошибка при загрузке расследования</b>\n\n<code>{_html.escape(str(e))}</code>",
-                    parse_mode=ParseMode.HTML,
-                    reply_markup=InlineKeyboardMarkup(
-                        [[btn("◀️ Назад", callback_data="admin_referrals")]]
-                    ),
-                )
-            except Exception:
-                pass
-        return
-
-    if d.startswith("admin_purge_botrefs_"):
-        if uid not in ADMIN_IDS:
-            await q.answer("⛔", show_alert=True)
-            return
-        try:
-            suspect_id = int(d.split("_")[-1])
-        except ValueError:
-            return
-        async with aiosqlite.connect(DB_PATH) as db:
-            async with db.execute(
-                "SELECT referred_id, joined_at FROM referrals WHERE referrer_id=? ORDER BY joined_at",
-                (suspect_id,)
-            ) as c:
-                ref_list = await c.fetchall()
-        suspicious_ids = []
-        prev_ts = 0.0
-        for rr in sorted(ref_list, key=lambda x: (x[1] or 0)):
-            ts = rr[1] or 0
-            diff = ts - prev_ts
-            if prev_ts and diff < 300:
-                suspicious_ids.append(rr[0])
-            prev_ts = ts
-        if not suspicious_ids:
-            await q.answer("✅ Бот-рефералов не найдено", show_alert=True)
-            return
-        async with aiosqlite.connect(DB_PATH) as db:
-            for bot_id in suspicious_ids:
-                await db.execute("DELETE FROM referrals WHERE referrer_id=? AND referred_id=?", (suspect_id, bot_id))
-                await db.execute("UPDATE frogs SET banned=1 WHERE user_id=?", (bot_id,))
-            await db.commit()
-        await q.answer((f"🗑 Удалено {len(suspicious_ids)} бот-рефералов, аккаунты забанены")[:200], show_alert=True)
-        await admin_log(uid, "purge_botrefs", suspect_id, details=f"purged {len(suspicious_ids)} bot referrals")
-        return
-
-    if d.startswith("admin_strip_refcoins_"):
-        if uid not in ADMIN_IDS:
-            await q.answer("⛔", show_alert=True)
-            return
-        try:
-            suspect_id = int(d.split("_")[-1])
-        except ValueError:
-            return
-        async with aiosqlite.connect(DB_PATH) as db:
-            async with db.execute("SELECT SUM(rewarded_coins) FROM referrals WHERE referrer_id=?", (suspect_id,)) as c:
-                earned = (await c.fetchone())[0] or 0
-            # Списываем ровно столько, сколько заработано с рефералов
-            await db.execute("UPDATE frogs SET coins = MAX(0, coins - ?) WHERE user_id=?", (earned, suspect_id))
-            await db.commit()
-        await q.answer((f"💸 Списано {earned}🪙 с ID:{suspect_id}")[:200], show_alert=True)
-        await admin_log(uid, "strip_refcoins", suspect_id, details=f"stripped {earned} ref coins")
-        return
 
 
-    # ── ПОИСК ИГРОКА ───────────────────────────────────
-    if d == "admin_search_hint":
-        if uid not in ADMIN_IDS:
-            await q.answer("⛔", show_alert=True)
-            return
-        await q.answer()
-        try:
-            await q.message.edit_text(
-                "🔍 <b>Поиск игрока</b>\n\n"
-                "По username:\n<code>/adminlookup @username</code>\n\n"
-                "По Telegram ID:\n<code>/adminlookup 123456789</code>\n\n"
-                "<i>Откроется карточка игрока с возможностью бана, выдачи монет и сброса КД.</i>",
-                parse_mode=ParseMode.HTML,
-                reply_markup=InlineKeyboardMarkup(
-                    [[btn("◀️ Назад", callback_data="admin_refresh")]]
-                ),
-            )
-        except Exception:
-            pass
-        return
 
-    # ── ТОП БОГАЧИ ─────────────────────────────────────
-    if d == "admin_rich":
-        if uid not in ADMIN_IDS:
-            await q.answer("⛔", show_alert=True)
-            return
-        await q.answer()
-        async with aiosqlite.connect(DB_PATH) as db:
-            db.row_factory = aiosqlite.Row
-            async with db.execute(
-                "SELECT user_id, first_name, username, coins, level, banned FROM frogs ORDER BY coins DESC LIMIT 20"
-            ) as c:
-                rich_list = await c.fetchall()
-        medals = ["🥇","🥈","🥉"] + ["💰"] * 17
-        lines = ["💎 <b>Топ-20 богатейших игроков</b>\n"]
-        for i, r in enumerate(rich_list):
-            uname = f"@{r['username']}" if r["username"] else f"id{r['user_id']}"
-            ban_mark = " 🚫" if r["banned"] else ""
-            lines.append(
-                f"{medals[i]} <b>{he(r['first_name'])}</b> ({uname}){ban_mark}\n"
-                f"   {_E_COIN} {r['coins']:,} · ур.{r['level']} · <code>{r['user_id']}</code>"
-            )
-        try:
-            await q.message.edit_text(
-                "\n".join(lines),
-                parse_mode=ParseMode.HTML,
-                reply_markup=InlineKeyboardMarkup(
-                    [[btn("◀️ Назад", callback_data="admin_refresh")]]
-                ),
-            )
-        except Exception:
-            pass
-        return
 
-    # ── ПАРТНЁРСКИЕ ЧАТЫ ──────────────────────────────
-    if d == "admin_partner_chats":
-        if uid not in ADMIN_IDS:
-            await q.answer("⛔", show_alert=True)
-            return
-        await q.answer()
-        chats = await partner_chat_list_active()
-        if not chats:
-            lines = ["🏘 <b>Партнёрские чаты</b>\n\nНет активных партнёрских чатов.\nДобавь бота в группу — она автоматически появится здесь."]
-        else:
-            lines = [f"🏘 <b>Партнёрские чаты ({len(chats)} активных)</b>\n"]
-            for ch in chats:
-                cnt = await partner_chat_count_members(ch["chat_id"])
-                title = he(ch.get("chat_title") or str(ch["chat_id"]))
-                uname = f" (@{ch['chat_username']})" if ch.get("chat_username") else ""
-                added_dt = datetime.fromtimestamp(ch["added_at"], timezone.utc).strftime("%d.%m.%Y") if ch.get("added_at") else "?"
-                lines.append(
-                    f"• <b>{title}</b>{uname}\n"
-                    f"  id: <code>{ch['chat_id']}</code> · игроков: <b>{cnt}</b> · добавлен: {added_dt}\n"
-                    f"  🔗 <a href=\"{ch.get('bot_link','')}\">Ссылка для игроков</a>"
-                )
-        try:
-            await q.message.edit_text(
-                "\n".join(lines),
-                parse_mode=ParseMode.HTML,
-                reply_markup=InlineKeyboardMarkup(
-                    [[btn("◀️ Назад", callback_data="admin_refresh")]]
-                ),
-                link_preview_options=LinkPreviewOptions(is_disabled=True),
-            )
-        except Exception:
-            pass
-        return
 
-    # ── ПЕРЕВОДЫ /gift ──────────────────────────────────
-    if d == "admin_gifts_0" or d.startswith("admin_gifts_"):
-        if uid not in ADMIN_IDS:
-            await q.answer("⛔", show_alert=True)
-            return
-        await q.answer()
-        try:
-            offset_g = int(d.split("_")[-1])
-        except (ValueError, IndexError):
-            offset_g = 0
-        async with aiosqlite.connect(DB_PATH) as db:
-            db.row_factory = aiosqlite.Row
-            async with db.execute(
-                "SELECT g.id, g.from_id, g.to_id, g.amount, g.ts, "
-                "f1.first_name as from_name, f1.username as from_uname, "
-                "f2.first_name as to_name, f2.username as to_uname "
-                "FROM gift_log g "
-                "LEFT JOIN frogs f1 ON f1.user_id=g.from_id "
-                "LEFT JOIN frogs f2 ON f2.user_id=g.to_id "
-                "ORDER BY g.ts DESC LIMIT 15 OFFSET ?",
-                (offset_g,)
-            ) as c:
-                gift_rows = await c.fetchall()
-            async with db.execute("SELECT COUNT(*), SUM(amount) FROM gift_log") as c:
-                cnt_g, sum_g = await c.fetchone()
-                cnt_g = cnt_g or 0
-                sum_g = sum_g or 0
-        lines_g = [f"{_E_GIFT} <b>Переводы /gift</b> (всего: {cnt_g}, сумма: {sum_g:,}{coin_emoji()})\n"]
-        if not gift_rows:
-            lines_g.append("<i>Переводов пока нет</i>")
-        for gr in gift_rows:
-            ts_s = time.strftime("%d.%m %H:%M", time.localtime(gr["ts"]))
-            fn = he(gr["from_name"] or f"id{gr['from_id']}")
-            fu = f"@{gr['from_uname']}" if gr["from_uname"] else f"<code>{gr['from_id']}</code>"
-            tn = he(gr["to_name"] or f"id{gr['to_id']}")
-            tu = f"@{gr['to_uname']}" if gr["to_uname"] else f"<code>{gr['to_id']}</code>"
-            lines_g.append(
-                f"<code>{ts_s}</code> {fn}({fu}) → {tn}({tu}): <b>+{gr['amount']}{coin_emoji()}</b>"
-            )
-        nav_g = []
-        if offset_g > 0:
-            nav_g.append(btn("◀️ Новее", callback_data=f"admin_gifts_{max(0, offset_g-15)}"))
-        if offset_g + 15 < cnt_g:
-            nav_g.append(btn("▶️ Старее", callback_data=f"admin_gifts_{offset_g+15}"))
-        kb_g_rows = []
-        if nav_g:
-            kb_g_rows.append(nav_g)
-        kb_g_rows.append([btn("◀️ Назад", callback_data="admin_refresh")])
-        try:
-            await q.message.edit_text(
-                "\n".join(lines_g),
-                parse_mode=ParseMode.HTML,
-                reply_markup=InlineKeyboardMarkup(kb_g_rows),
-            )
-        except Exception:
-            pass
-        return
 
-    # ── ЛОТЕРЕЯ (АДМИН) ──────────────────────────────────
-    if d == "admin_lottery":
-        if uid not in ADMIN_IDS:
-            await q.answer("⛔", show_alert=True)
-            return
-        await q.answer()
-        draw_date = lottery_today()
-        async with aiosqlite.connect(DB_PATH) as db:
-            db.row_factory = aiosqlite.Row
-            # Все билеты текущего розыгрыша
-            async with db.execute(
-                "SELECT user_id, COUNT(*) as cnt FROM lottery_tickets "
-                "WHERE draw_date=? GROUP BY user_id ORDER BY cnt DESC",
-                (draw_date,)
-            ) as c:
-                participants = await c.fetchall()
-            async with db.execute(
-                "SELECT COUNT(*) FROM lottery_tickets WHERE draw_date=?", (draw_date,)
-            ) as c:
-                total_tickets = (await c.fetchone())[0] or 0
 
-        pool = total_tickets * LOTTERY_TICKET_COST
-        lines = [
-            f"🎟 <b>Лотерея — панель управления</b>\n",
-            f"📅 Розыгрыш: <b>{draw_date}</b>",
-            f"🎫 Билетов: <b>{total_tickets}</b> · 💰 Банк: <b>{pool}{coin_emoji()}</b>",
-            f"{_E_USERS} Участников: <b>{len(participants)}</b>\n",
-        ]
-        if participants:
-            lines.append("<b>Участники (имя в игре — билетов):</b>")
-            for row in participants:
-                p_uid = row["user_id"]
-                p_cnt = row["cnt"]
-                pf = await db_get(p_uid)
-                if pf:
-                    pname = he(pf.get("frog_name") or pf.get("first_name") or f"ID:{p_uid}")
-                else:
-                    pname = f"ID:{p_uid}"
-                lines.append(f"• {pname} — <b>{p_cnt}</b> 🎟")
-        else:
-            lines.append("<i>Билеты ещё не куплены</i>")
 
-        kb_lot = InlineKeyboardMarkup([
-            [btn("🎲 Провести розыгрыш сейчас", callback_data="admin_lottery_draw_now")],
-            [btn("🗑 Сбросить билеты", callback_data="admin_lottery_reset")],
-            [btn("◀️ Назад", callback_data="admin_refresh")],
-        ])
-        try:
-            await q.message.edit_text(
-                "\n".join(lines), parse_mode=ParseMode.HTML, reply_markup=kb_lot
-            )
-        except Exception:
-            pass
-        return
 
-    if d == "admin_lottery_draw_now":
-        if uid not in ADMIN_IDS:
-            await q.answer("⛔", show_alert=True)
-            return
-        await q.answer("🎲 Розыгрыш запускается...", show_alert=True)
-        asyncio.create_task(job_lottery_draw(ctx))
-        await admin_log(uid, "lottery_draw_now")
-        return
 
-    if d == "admin_lottery_reset":
-        if uid not in ADMIN_IDS:
-            await q.answer("⛔", show_alert=True)
-            return
-        draw_date = lottery_today()
-        async with aiosqlite.connect(DB_PATH) as db:
-            async with db.execute(
-                "SELECT COUNT(*) FROM lottery_tickets WHERE draw_date=?", (draw_date,)
-            ) as c:
-                cnt = (await c.fetchone())[0] or 0
-            await db.execute("DELETE FROM lottery_tickets WHERE draw_date=?", (draw_date,))
-            await db.commit()
-        await q.answer((f"🗑 Удалено {cnt} билетов за {draw_date}")[:200], show_alert=True)
-        await admin_log(uid, "lottery_reset", details=f"deleted {cnt} tickets for {draw_date}")
-        # Обновим страницу лотереи
-        kb_lot = InlineKeyboardMarkup([
-            [btn("🎲 Провести розыгрыш сейчас", callback_data="admin_lottery_draw_now")],
-            [btn("🗑 Сбросить билеты", callback_data="admin_lottery_reset")],
-            [btn("◀️ Назад", callback_data="admin_refresh")],
-        ])
-        try:
-            await q.message.edit_text(
-                f"{_E_TICKET} <b>Лотерея — панель управления</b>\n\n"
-                f"📅 Розыгрыш: <b>{draw_date}</b>\n"
-                f"🗑 Билеты сброшены (удалено: {cnt})\n\n"
-                f"<i>Участников нет</i>",
-                parse_mode=ParseMode.HTML,
-                reply_markup=kb_lot,
-            )
-        except Exception:
-            pass
-        return
 
-    if d == "admin_broadcast":
-        if uid not in ADMIN_IDS:
-            await q.answer("⛔", show_alert=True)
-            return
-        await q.answer()
-        try:
-            await q.message.edit_text(
-                "📢 <b>Рассылка</b>\n\n"
-                "Отправь текст сообщения командой:\n"
-                "<code>/broadcast Текст сообщения</code>\n\n"
-                "<i>Сообщение получат все активные игроки.</i>",
-                parse_mode=ParseMode.HTML,
-                reply_markup=InlineKeyboardMarkup(
-                    [[btn("◀️ Назад", callback_data="admin_refresh")]]
-                ),
-            )
-        except Exception:
-            pass
-        return
 
-    if d in ("admin_give_coins", "admin_give_skin"):
-        if uid not in ADMIN_IDS:
-            await q.answer("⛔", show_alert=True)
-            return
-        await q.answer()
-        if d == "admin_give_coins":
-            await q.answer()
-            hint = "Дать КваКоины: <code>/givecoin @username 500</code>"
-        else:
-            hint = "Дать облик: <code>/giveskin @username Brownie</code>"
-        try:
-            await q.message.edit_text(
-                f"{_E_GIFT} <b>Выдача игрокам</b>\n\n{hint}",
-                parse_mode=ParseMode.HTML,
-                reply_markup=InlineKeyboardMarkup(
-                    [[btn("◀️ Назад", callback_data="admin_refresh")]]
-                ),
-            )
-        except Exception:
-            pass
-        return
 
-    # ── ЭКОНОМИКА ────────────────────────────────
-    if d == "admin_eco":
-        if uid not in ADMIN_IDS:
-            await q.answer("⛔", show_alert=True)
-            return
-        await q.answer()
-        # Читаем основные настройки из БД (с дефолтами)
-        async with aiosqlite.connect(DB_PATH) as db:
-            async with db.execute(
-                "SELECT key, value FROM settings WHERE key IN (?,?,?,?,?,?,?,?)",
-                (
-                    "gacha_cost",
-                    "revive_cost",
-                    "heal_cost",
-                    "daily_base",
-                    "casino_jackpot_pool",
-                    "feed_reward",
-                    "play_reward",
-                    "wash_reward",
-                ),
-            ) as c:
-                srows = {r[0]: r[1] for r in await c.fetchall()}
-        total_coins_eco = 0
-        async with aiosqlite.connect(DB_PATH) as db:
-            async with db.execute("SELECT SUM(coins) FROM frogs") as c:
-                total_coins_eco = (await c.fetchone())[0] or 0
 
-        def sv(key, default):
-            return srows.get(key, str(default))
 
-        text_eco = (
-            f"💰 <b>Экономика и цены</b>\n\n"
-            f"🪙 В экономике: <b>{total_coins_eco:,}</b>\n\n"
-            f"<b>Цены (изменить: /setprice ключ значение):</b>\n"
-            f"• gacha_cost = {sv('gacha_cost','50')} (гача)\n"
-            f"• revive_cost = {sv('revive_cost','100')} (воскрешение)\n"
-            f"• heal_cost = {sv('heal_cost','30')} (лечение)\n"
-            f"• daily_base = {sv('daily_base','50')} (ежедневный бонус)\n\n"
-            f"<b>Награды:</b>\n"
-            f"• feed_reward = {sv('feed_reward','10')} (кормление)\n"
-            f"• play_reward = {sv('play_reward','8')} (игра)\n"
-            f"• wash_reward = {sv('wash_reward','5')} (купание)\n\n"
-            f"<b>Казино:</b>\n"
-            f"• Джекпот-пул: {sv('casino_jackpot_pool','0')}{coin_emoji()}\n\n"
-            f"<i>Пример: /setprice gacha_cost 75</i>"
-        )
-        kb_eco = InlineKeyboardMarkup(
-            [
-                [
-                    btn(
-                        "📊 Гача-стат", callback_data="admin_casino_stats"
-                    )
-                ],
-                [btn("◀️ Назад", callback_data="admin_refresh")],
-            ]
-        )
-        try:
-            await q.message.edit_text(
-                text_eco, parse_mode=ParseMode.HTML, reply_markup=kb_eco
-            )
-        except Exception:
-            pass
-        return
+
+
+
+
+
 
     # ── ADMIN EXP EVENT (тест событий экспедиции) ────────────────────────────
     if d.startswith("aee_"):
@@ -46722,471 +47232,18 @@ async def on_callback(update: Update, ctx: ContextTypes.DEFAULT_TYPE):
         await _adminexpev_cb(q, d, bot=ctx.bot)
         return
 
-    # ── ИВЕНТЫ ───────────────────────────────────
-    if d == "admin_events":
-        if uid not in ADMIN_IDS:
-            await q.answer("⛔", show_alert=True)
-            return
-        await q.answer()
-        leg = await legend_active()
-        if leg:
-            ends_dt = datetime.utcfromtimestamp(leg["ends_at"] + 3*3600).strftime("%d.%m в %H:%M")
-            goals   = leg["goals"]
-            prog    = leg["progress"]
-            pct_parts = []
-            for action, goal in goals.items():
-                cur = prog.get(action, 0)
-                icon, label = _LEGEND_ACTION_LABELS.get(action, ("▫️", action))
-                pct_parts.append(f"{icon}{cur}/{goal}")
-            leg_status = (
-                f"📜 <b>Легенда активна:</b> {leg['emoji']} {leg['title']}\n"
-                f"Прогресс: {' | '.join(pct_parts)}\n"
-                f"Финал: {ends_dt} МСК"
-            )
-            legend_btns = [
-                [btn("🔄 Обновить прогресс в чате", callback_data="admin_legend_update")],
-                [btn("🏁 Завершить легенду досрочно", callback_data="admin_legend_finish")],
-                [btn("✏️ Изменить цели", callback_data="admin_legend_edit_goals")],
-            ]
-        else:
-            leg_status = "📜 <b>Легенда:</b> не активна"
-            legend_btns = [
-                [btn("🚀 Запустить легенду сейчас", callback_data="admin_legend_start")],
-            ]
 
-        text_ev = (
-            f"🎲 <b>Ивенты и события</b>\n\n"
-            f"🦟 Комар: запускается случайно каждые 1–6ч\n"
-            f"🎲 Интерактивные события: каждые 8ч, 30% шанс\n\n"
-            f"{leg_status}\n\n"
-            f"<i>Действия доступны ниже:</i>"
-        )
-        kb_ev = InlineKeyboardMarkup(
-            legend_btns + [
-                [btn("🦟 Запустить комара", callback_data="admin_launch_mosquito")],
-                [btn("🎲 Разослать интерактивное событие", callback_data="admin_launch_iev")],
-                [btn("✨ Золотая лягушка", callback_data="admin_boost_menu")],
-                [btn("📢 Рассылка", callback_data="admin_broadcast")],
-                [btn("◀️ Назад", callback_data="admin_refresh")],
-            ]
-        )
-        try:
-            await q.message.edit_text(text_ev, parse_mode=ParseMode.HTML, reply_markup=kb_ev)
-        except Exception:
-            pass
-        return
 
-    if d == "admin_launch_mosquito":
-        if uid not in ADMIN_IDS:
-            await q.answer("⛔", show_alert=True)
-            return
-        asyncio.create_task(job_mosquito(ctx))
-        await admin_log(uid, "launch_mosquito")
-        await q.answer("🦟 Комар запущен", show_alert=True)
-        return
 
-    if d == "admin_launch_iev":
-        if uid not in ADMIN_IDS:
-            await q.answer("⛔", show_alert=True)
-            return
-        # Сбрасываем КД у всех живых, потом запускаем job_events
-        async with aiosqlite.connect(DB_PATH) as db:
-            await db.execute("UPDATE frogs SET last_interactive_event=0, last_event=0 WHERE alive=1")
-            await db.commit()
-        asyncio.create_task(job_events(ctx))
-        await admin_log(uid, "launch_iev")
-        await q.answer("🎲 Интерактивные события разосланы", show_alert=True)
-        return
 
-    if d == "admin_legend_start":
-        if uid not in ADMIN_IDS:
-            await q.answer("⛔", show_alert=True)
-            return
-        await _legend_start(ctx.bot)
-        await admin_log(uid, "legend_start")
-        await q.answer("📜 Легенда запущена", show_alert=True)
-        # Обновляем панель
-        try:
-            await q.message.edit_reply_markup(reply_markup=None)
-        except Exception:
-            pass
-        # Перерисовываем admin_events
-        ctx.drop_callback_data = False
-        q.data = "admin_events"
-        return
 
-    if d == "admin_legend_update":
-        if uid not in ADMIN_IDS:
-            await q.answer("⛔", show_alert=True)
-            return
-        leg = await legend_active()
-        if leg:
-            await _legend_announce(ctx.bot, leg)
-            await admin_log(uid, "legend_update")
-            await q.answer("🔄 Прогресс обновлён в чате", show_alert=True)
-        else:
-            await q.answer("Нет активной легенды.", show_alert=True)
-        return
 
-    if d == "admin_legend_finish":
-        if uid not in ADMIN_IDS:
-            await q.answer("⛔", show_alert=True)
-            return
-        leg = await legend_active()
-        if leg:
-            await _legend_finish(ctx.bot, leg)
-            await admin_log(uid, "legend_finish")
-            await q.answer("🏁 Легенда завершена", show_alert=True)
-        else:
-            await q.answer("Нет активной легенды.", show_alert=True)
-        return
 
-    if d == "admin_legend_edit_goals":
-        if uid not in ADMIN_IDS:
-            await q.answer("⛔", show_alert=True)
-            return
-        leg = await legend_active()
-        if not leg:
-            await q.answer("Нет активной легенды.", show_alert=True)
-            return
-        goals_str = " | ".join(f"{a}:{g}" for a, g in leg["goals"].items())
-        await q.answer()
-        try:
-            await q.message.edit_text(
-                f"{_E_PENCIL} <b>Изменить цели легенды</b>\n\n"
-                f"Текущие цели:\n<code>{goals_str}</code>\n\n"
-                f"Отправь новые цели командой:\n"
-                f"<code>/legend_goals feeds:300 washes:50 plays:40</code>\n\n"
-                f"Доступные действия: feeds, washes, plays, heals, sleeps, gacha, casino",
-                parse_mode=ParseMode.HTML,
-                reply_markup=InlineKeyboardMarkup([
-                    [btn("◀️ Назад", callback_data="admin_events")]
-                ]),
-            )
-        except Exception:
-            pass
-        return
 
-    # ── СИСТЕМА ─────────────────────────────────
-    if d == "admin_system":
-        if uid not in ADMIN_IDS:
-            await q.answer("⛔", show_alert=True)
-            return
-        await q.answer()
-        import os as _os
 
-        db_size = _os.path.getsize(DB_PATH) if _os.path.exists(DB_PATH) else 0
-        db_size_kb = db_size // 1024
-        # Собираем быструю сводку нагрузки для отображения в системной панели
-        try:
-            import psutil as _psu
-            _cpu = _psu.cpu_percent(interval=0.2)
-            _mem = _psu.virtual_memory()
-            _disk = _psu.disk_usage("/")
-            _load_line = (
-                f"🖥 CPU: <b>{_cpu:.1f}%</b>  "
-                f"🧠 RAM: <b>{_mem.percent:.1f}%</b> "
-                f"({_mem.used // 1024**2}/{_mem.total // 1024**2} МБ)  "
-                f"💽 Диск: <b>{_disk.percent:.1f}%</b>"
-            )
-        except ImportError:
-            _load_line = "⚠️ psutil не установлен (<code>pip install psutil</code>)"
-        text_sys = (
-            f"🔧 <b>Системные инструменты</b>\n\n"
-            f"📦 Размер БД: <b>{db_size_kb} КБ</b>\n"
-            f"{_load_line}\n\n"
-            f"<b>Доступные действия:</b>\n"
-            f"• 💾 Бекап — отправит БД в личку\n"
-            f"• {_E_CHART} Нагрузка — CPU/RAM/диск + пиковые значения\n"
-            f"• {_E_REFRESH} Обновить панель\n\n"
-            f"<b>Команды для выдачи игрокам:</b>\n"
-            f"<code>/givecoin @username 500</code>\n"
-            f"<code>/giveskin @username Brownie</code>\n"
-            f"<code>/adminlookup @username</code>\n"
-            f"<code>/setprice key value</code>"
-        )
-        kb_sys = InlineKeyboardMarkup(
-            [
-                [btn("💾 Бекап БД", callback_data="admin_backup")],
-                [
-                    btn("📊 Статистика", callback_data="admin_stats"),
-                    btn("🎭 Стикеры", callback_data="admin_stickers"),
-                ],
-                [
-                    btn(
-                        "🔍 Поиск игрока", callback_data="admin_search_hint"
-                    ),
-                    btn("💀 Мёртвые", callback_data="admin_dead"),
-                ],
-                [btn("🔄 Сбросить топ недели", callback_data="admin_reset_topw")],
-                [btn("🟢 Онлайн", callback_data="admin_online")],
-                [btn("📈 Нагрузка сервера", callback_data="admin_server_load")],
-                [btn("◀️ Назад", callback_data="admin_refresh")],
-            ]
-        )
-        try:
-            await q.message.edit_text(
-                text_sys, parse_mode=ParseMode.HTML, reply_markup=kb_sys
-            )
-        except Exception:
-            pass
-        return
 
-    # ── СБРОС ТОПА НЕДЕЛИ (ДОСРОЧНО) ─────────────
-    if d == "admin_reset_topw":
-        if uid not in ADMIN_IDS:
-            await q.answer("⛔", show_alert=True)
-            return
-        await q.answer("✅ Топ недели сброшен", show_alert=True)
-        # Выдаём достижение top_weekly топ-3 ПЕРЕД сбросом
-        try:
-            top3w = await db_top_weekly(3)
-            for _r in top3w:
-                _uid_w = _r.get("user_id")
-                if _uid_w:
-                    await ach_grant(_uid_w, "top_weekly", ctx.bot)
-        except Exception as _e:
-            logger.warning("admin_reset_topw ach_grant error: %s", _e)
-        async with aiosqlite.connect(DB_PATH) as db:
-            await db.execute("UPDATE frogs SET xp_week = 0")
-            await db.commit()
-        await admin_log(uid, "reset_topw")
-        try:
-            await q.message.edit_text(
-                "✅ <b>Топ недели сброшен досрочно.</b>\n\nВсе xp_week обнулены.",
-                parse_mode=ParseMode.HTML,
-                reply_markup=InlineKeyboardMarkup([[btn("◀️ Назад", callback_data="admin_system")]]),
-            )
-        except Exception:
-            pass
-        return
 
-    # ── ОНЛАЙН СТАТИСТИКА ───────────────────────
-    if d == "admin_online":
-        if uid not in ADMIN_IDS:
-            await q.answer("⛔", show_alert=True)
-            return
-        await q.answer()
-        global _peak_last_save
-        now_ao = time.time()
-        cutoff_10 = now_ao - 10 * 60
-        cutoff_60 = now_ao - 60 * 60
-        async with aiosqlite.connect(DB_PATH) as db:
-            async with db.execute("SELECT COUNT(*) FROM frogs WHERE last_seen >= ? AND alive=1", (cutoff_10,)) as c:
-                online_10 = (await c.fetchone())[0] or 0
-            async with db.execute("SELECT COUNT(*) FROM frogs WHERE last_seen >= ? AND alive=1", (cutoff_60,)) as c:
-                online_60 = (await c.fetchone())[0] or 0
-            async with db.execute("SELECT COUNT(*) FROM frogs WHERE alive=1") as c:
-                total_alive = (await c.fetchone())[0] or 0
-            async with db.execute("SELECT COUNT(*) FROM frogs") as c:
-                total_all = (await c.fetchone())[0] or 0
 
-        # Обновляем пик
-        _update_peak_online(online_10)
-        if now_ao - _peak_last_save > _PEAK_SAVE_INTERVAL:
-            await _save_peak_online()
-
-        def _fmt_peak(period: str) -> str:
-            count, ts = _peak_online.get(period, (0, 0))
-            if ts == 0:
-                return "—"
-            dt = now_ao - ts
-            if dt < 3600:
-                ago = f"{int(dt//60)}м назад"
-            elif dt < 86400:
-                ago = f"{int(dt//3600)}ч назад"
-            else:
-                ago = f"{int(dt//86400)}д назад"
-            return f"<b>{count}</b> ({ago})"
-
-        try:
-            await q.message.edit_text(
-                f"🟢 <b>Онлайн статистика</b>\n\n"
-                f"🟢 Сейчас (10 мин): <b>{online_10}</b>\n"
-                f"🟡 За час: <b>{online_60}</b>\n"
-                f"<tg-emoji emoji-id='5341367834935075028'>🐸</tg-emoji> Живых: <b>{total_alive}</b> · Всего: <b>{total_all}</b>\n\n"
-                f"<b>📈 Пиковый онлайн:</b>\n"
-                f"  За сутки: {_fmt_peak('day')}\n"
-                f"  За неделю: {_fmt_peak('week')}\n"
-                f"  За месяц: {_fmt_peak('month')}",
-                parse_mode=ParseMode.HTML,
-                reply_markup=InlineKeyboardMarkup([
-                    [btn("🔄 Обновить", callback_data="admin_online")],
-                    [btn("◀️ Назад", callback_data="admin_system")],
-                ]),
-            )
-        except Exception:
-            pass
-        return
-
-    # ── НАГРУЗКА СЕРВЕРА ─────────────────────────────────
-    if d == "admin_server_load" or d == "admin_server_load_refresh":
-        if uid not in ADMIN_IDS:
-            await q.answer("⛔", show_alert=True)
-            return
-        await q.answer()
-        try:
-            import psutil as _psu
-            # CPU — 0.5 сек замер (неблокирующий в asyncio через executor)
-            loop = asyncio.get_event_loop()
-            _cpu_pct = await loop.run_in_executor(None, lambda: _psu.cpu_percent(interval=0.5))
-            _cpu_count = _psu.cpu_count(logical=True)
-            _cpu_freq = _psu.cpu_freq()
-            _freq_str = f"{_cpu_freq.current:.0f} МГц" if _cpu_freq else "—"
-
-            _mem = _psu.virtual_memory()
-            _swap = _psu.swap_memory()
-            _disk = _psu.disk_usage("/")
-
-            # Uptime процесса бота
-            _proc = _psu.Process()
-            _proc_create = _proc.create_time()
-            _uptime_sec = int(time.time() - _proc_create)
-            _uptime_str = (
-                f"{_uptime_sec // 3600}ч {(_uptime_sec % 3600) // 60}м"
-                if _uptime_sec >= 3600
-                else f"{_uptime_sec // 60}м {_uptime_sec % 60}с"
-            )
-            _proc_mem = _proc.memory_info().rss // 1024 ** 2
-
-            # Сетевой трафик
-            _net = _psu.net_io_counters()
-            _net_sent = _net.bytes_sent // 1024 ** 2
-            _net_recv = _net.bytes_recv // 1024 ** 2
-
-            # Пиковые CPU/RAM — храним в bot_data
-            _sl = ctx.bot_data.setdefault("server_load_peak", {
-                "cpu_max": 0.0, "cpu_max_ts": 0,
-                "ram_max": 0.0, "ram_max_ts": 0,
-            })
-            _now_sl = time.time()
-            if _cpu_pct > _sl["cpu_max"]:
-                _sl["cpu_max"] = _cpu_pct
-                _sl["cpu_max_ts"] = _now_sl
-            if _mem.percent > _sl["ram_max"]:
-                _sl["ram_max"] = _mem.percent
-                _sl["ram_max_ts"] = _now_sl
-
-            def _ago(ts):
-                if ts == 0:
-                    return "—"
-                d_ = int(_now_sl - ts)
-                if d_ < 3600:
-                    return f"{d_ // 60}м назад"
-                elif d_ < 86400:
-                    return f"{d_ // 3600}ч назад"
-                return f"{d_ // 86400}д назад"
-
-            text_load = (
-                f"📈 <b>Нагрузка сервера</b>\n\n"
-                f"🖥 <b>CPU</b>\n"
-                f"  Сейчас: <b>{_cpu_pct:.1f}%</b> ({_cpu_count} ядер, {_freq_str})\n"
-                f"  🔺 Пик: <b>{_sl['cpu_max']:.1f}%</b> ({_ago(_sl['cpu_max_ts'])})\n\n"
-                f"🧠 <b>RAM</b>\n"
-                f"  Сейчас: <b>{_mem.percent:.1f}%</b>  "
-                f"({_mem.used // 1024**2}/{_mem.total // 1024**2} МБ)\n"
-                f"  🔺 Пик: <b>{_sl['ram_max']:.1f}%</b> ({_ago(_sl['ram_max_ts'])})\n"
-                f"  SWAP: {_swap.used // 1024**2}/{_swap.total // 1024**2} МБ "
-                f"({_swap.percent:.1f}%)\n\n"
-                f"💽 <b>Диск</b>\n"
-                f"  Занято: <b>{_disk.percent:.1f}%</b>  "
-                f"({_disk.used // 1024**3}/{_disk.total // 1024**3} ГБ)\n\n"
-                f"{_E_BOT} <b>Процесс бота</b>\n"
-                f"  Uptime: <b>{_uptime_str}</b>\n"
-                f"  RAM процесса: <b>{_proc_mem} МБ</b>\n\n"
-                f"🌐 <b>Сеть</b>\n"
-                f"  Отправлено: {_net_sent} МБ · Получено: {_net_recv} МБ\n\n"
-                f"<i>Пики сбрасываются при перезапуске бота</i>"
-            )
-        except ImportError:
-            text_load = (
-                "⚠️ <b>psutil не установлен</b>\n\n"
-                "Для мониторинга нагрузки выполните:\n"
-                "<code>pip install psutil</code>\n"
-                "и перезапустите бота."
-            )
-        except Exception as _e:
-            text_load = f"{_E_CROSS} Ошибка получения данных: <code>{_html.escape(str(_e))}</code>"
-
-        try:
-            await q.message.edit_text(
-                text_load,
-                parse_mode=ParseMode.HTML,
-                reply_markup=InlineKeyboardMarkup([
-                    [btn("🔄 Обновить", callback_data="admin_server_load_refresh")],
-                    [btn("◀️ Назад", callback_data="admin_system")],
-                ]),
-            )
-        except Exception:
-            pass
-        return
-
-    # ── БЕКАП БД ─────────────────────────────────
-    if d == "admin_backup":
-        if uid not in ADMIN_IDS:
-            await q.answer("⛔", show_alert=True)
-            return
-        await q.answer("⏳ Создаю бекап...", show_alert=False)
-        try:
-            import shutil as _shutil, os as _os, gzip as _gzip
-
-            backup_path = f"/tmp/frog_backup_{int(time.time())}.db"
-            _shutil.copy2(DB_PATH, backup_path)
-            gz_path = backup_path + ".gz"
-            with open(backup_path, "rb") as _f_in, _gzip.open(gz_path, "wb") as _f_out:
-                _f_out.write(_f_in.read())
-            size_kb = _os.path.getsize(backup_path) // 1024
-            gz_size_kb = _os.path.getsize(gz_path) // 1024
-            with open(gz_path, "rb") as bf:
-                await ctx.bot.send_document(
-                    uid,
-                    bf,
-                    filename=f"frog_backup_{int(time.time())}.db.gz",
-                    caption=f"💾 Бекап базы данных\n🕐 {time.strftime('%Y-%m-%d %H:%M:%S')}\n📦 {size_kb} KB → сжато: {gz_size_kb} KB",
-                )
-            _os.remove(backup_path)
-            _os.remove(gz_path)
-            await admin_log(uid, "backup")
-        except Exception as e:
-            await ctx.bot.send_message(uid, f"{_E_CROSS} Ошибка бекапа: {e}")
-        return
-
-    # ── ЛОГИ АДМИНИСТРАТОРА ──────────────────────
-    if d == "admin_logs_view" or d.startswith("admin_logs_view_"):
-        if uid not in ADMIN_IDS:
-            await q.answer("⛔", show_alert=True)
-            return
-        await q.answer()
-        async with aiosqlite.connect(DB_PATH) as db:
-            db.row_factory = aiosqlite.Row
-            async with db.execute(
-                "SELECT a.admin_id, a.action, a.target_id, a.details, a.ts FROM admin_logs a ORDER BY a.ts DESC LIMIT 500"
-            ) as c:
-                log_rows = await c.fetchall()
-            async with db.execute("SELECT COUNT(*) FROM admin_logs") as c:
-                total_logs = (await c.fetchone())[0] or 0
-        if not log_rows:
-            await q.answer("Логов нет.", show_alert=True)
-            return
-        import io as _io
-        lines_log = [f"=== ADMIN LOG (последние {len(log_rows)} из {total_logs}) ===",
-                     f"Экспорт: {datetime.now(timezone.utc).strftime('%Y-%m-%d %H:%M UTC')}", ""]
-        for lr in log_rows:
-            ts_str = datetime.fromtimestamp(lr["ts"], tz=timezone.utc).strftime("%Y-%m-%d %H:%M:%S")
-            target_s = f" → uid={lr['target_id']}" if lr["target_id"] else ""
-            det = f" | {lr['details']}" if lr["details"] else ""
-            lines_log.append(f"[{ts_str}] admin={lr['admin_id']} {lr['action']}{target_s}{det}")
-        bio = _io.BytesIO("\n".join(lines_log).encode("utf-8"))
-        bio.name = "admin_log.txt"
-        try:
-            await q.message.reply_document(
-                document=bio,
-                caption=f"📋 <b>Журнал администратора</b>\n{total_logs} записей, показано {len(log_rows)}",
-                parse_mode=ParseMode.HTML,
-            )
-        except Exception as _e:
-            await q.answer((f"Ошибка: {_e}")[:200], show_alert=True)
-        return
 
     # ── ЛОТЕРЕЯ: КУПИТЬ БИЛЕТ ───────────────────────
     if d.startswith("lottery_buy_") or d == "lottery_refresh":
@@ -47276,26 +47333,6 @@ async def on_callback(update: Update, ctx: ContextTypes.DEFAULT_TYPE):
             pass
         return
 
-    if d.startswith("admin_give_uid_"):
-        if uid not in ADMIN_IDS:
-            await q.answer("⛔", show_alert=True)
-            return
-        target_uid_give = int(d[len("admin_give_uid_") :])
-        await q.answer()
-        try:
-            await q.message.edit_text(
-                f"{_E_GIFT} <b>Выдача монет игроку (ID {target_uid_give})</b>\n\n"
-                f"<code>/givecoin @username 500</code>\n\n"
-                f"Или используй кнопки в карточке игрока ({_E_COIN} +100 / +1000 / -100)\n\n"
-                f"<i>Для открытия карточки: /adminlookup {target_uid_give}</i>",
-                parse_mode=ParseMode.HTML,
-                reply_markup=InlineKeyboardMarkup(
-                    [[btn("◀️ Назад", callback_data="admin_refresh")]]
-                ),
-            )
-        except Exception:
-            pass
-        return
 
     # ── ПОЙМАТЬ КОМАРА ──────────────────────────────
     if d.startswith("mosquito_"):
@@ -67937,6 +67974,15 @@ def main():
     app.add_handler(ChatMemberHandler(on_my_chat_member, ChatMemberHandler.MY_CHAT_MEMBER))
 
     app.add_handler(InlineQueryHandler(on_inline_query))
+
+    # ── Роутеры колбэков ────────────────────────────────────────────────────
+    # Специализированные роутеры идут ПЕРЕД общим on_callback: у них есть
+    # pattern=, поэтому нажатие попадает сразу в нужную группу, а не проходит
+    # сотни чужих условий. Общий обработчик — всегда последним.
+    app.add_handler(CallbackQueryHandler(
+        admin_router,
+        pattern=r"^(admin|ca_|cs_|nft_approve|nft_reject)",
+    ))
     app.add_handler(CallbackQueryHandler(on_callback))
     app.add_handler(PreCheckoutQueryHandler(pre_checkout))
     app.add_handler(CommandHandler("nft_list", cmd_nft_list))
