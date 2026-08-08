@@ -5107,6 +5107,22 @@ _E_STAR = _E_LEVEL
 #   5. Подсказка — не больше одной строки, курсивом, в самом низу.
 #   6. Иконки статов — только премиум-эмодзи из списка выше.
 #
+# Как устроен экран:
+#
+#   7. Один экран — одна функция `<имя>_screen(f) -> (text, InlineKeyboardMarkup)`.
+#      Текст и клавиатура рождаются вместе и в одном месте, поэтому не
+#      расходятся. Обработчик только вызывает её и отдаёт результат:
+#          text, kb = await games_screen(f, is_private)
+#          await q.message.edit_text(text, parse_mode=ParseMode.HTML, reply_markup=kb)
+#      Готовые примеры — games_screen() и settings_screen().
+#   8. Нажатие кнопки **перерисовывает** текущее сообщение (edit_text).
+#      Новое сообщение (reply_text) — только для нового события: анонса,
+#      публичного результата, уведомления в чужой чат.
+#   9. С каждого экрана есть выход: последняя строка клавиатуры — «◀️ Назад».
+#      Исключения ровно два: ход в идущей партии и публичное объявление.
+#  10. Текст не пересказывает кнопки. Если действие есть на кнопке, в теле
+#      его больше нет — там остаётся только то, чего на кнопках не видно.
+#
 # Кастомные emoji-id придумывать нельзя: Telegram отвергает сообщение с
 # несуществующим id. Ниже — только проверенные, уже работавшие в боте.
 
@@ -16081,6 +16097,75 @@ def _care_ready(f: dict) -> bool:
     if f.get("last_daily", 0) < today_start:
         return True
     return False
+
+
+async def games_screen(f: dict, is_private: bool) -> tuple[str, InlineKeyboardMarkup]:
+    """
+    Экран «Игры» — единственный источник правды.
+
+    До этого он существовал дважды: кнопкой menu_games и командой /games,
+    причём команда вместо экрана отдавала список из четырнадцати строк вида
+    «• /casino — 🎲 Казино», то есть пересказывала кнопки, которые тут же
+    и рисовала. Теперь оба входа показывают одно и то же.
+    """
+    lvl = f.get("level", 1)
+
+    # Уровни разблокировки
+    UNLOCK_ADV = 4    # казино, дуэли, лотерея, джекпот
+    UNLOCK_HARD = 8   # шашки
+    unlocked_adv = lvl >= UNLOCK_ADV
+    unlocked_hard = lvl >= UNLOCK_HARD
+
+    rows = [
+        [btn(t("btn_sapper", f), callback_data="sapper_start"),
+         btn(t("btn_guess", f), callback_data="guess_start")],
+        [btn(t("btn_memory", f), callback_data="memo_start"),
+         btn(t("btn_ttt", f), callback_data="ttt_menu")],
+    ]
+
+    if unlocked_adv:
+        rows += [
+            [btn(t("btn_casino", f), callback_data="casino_menu"),
+             btn(t("btn_duel", f), callback_data="duel_search")],
+            [btn(t("btn_lottery", f), callback_data="menu_lottery"),
+             btn(t("btn_jackpot", f), callback_data="menu_jackpot")],
+        ]
+        if unlocked_hard:
+            rows.append([btn(t("btn_checkers", f), callback_data="checkers_menu")])
+        else:
+            rows.append([btn(f"🔒 Откроется на {UNLOCK_HARD} уровне",
+                             callback_data="games_locked_hard")])
+    else:
+        # Закрытый раздел показываем — иначе непонятно, ради чего качаться
+        rows.append([btn(f"🔒 Откроется на {UNLOCK_ADV} уровне",
+                         callback_data="games_locked_adv")])
+
+    # Событийные кнопки — всегда сверху
+    if await _get_active_contest():
+        rows.insert(0, [btn("🎟 Конкурс — мои билеты",
+                            callback_data="contest_my_stats", style="success")])
+    funnel_ev = await _funnel_active_event()
+    if funnel_ev:
+        rows.insert(0, [btn(t("btn_funnel", f), callback_data=f"funnel_menu_{funnel_ev['id']}")])
+
+    rows.append([btn(t("btn_back", f), callback_data="refresh")])
+
+    # В тексте — только то, чего нет на кнопках.
+    if not unlocked_adv:
+        hint = f"Казино, дуэли и лотерея — с {UNLOCK_ADV} уровня"
+    elif not unlocked_hard:
+        hint = f"Шашки — с {UNLOCK_HARD} уровня"
+    elif is_private:
+        hint = "Ставки против живых игроков — в группе"
+    else:
+        hint = ""
+
+    text = ui_card(
+        ui_title(_E_GAMES, "Игры"),
+        ui_line(f"Уровень {lvl}", ui_money(f.get("coins", 0))),
+        hint=hint,
+    )
+    return text, InlineKeyboardMarkup(rows)
 
 
 def settings_screen(f: dict) -> tuple[str, InlineKeyboardMarkup]:
@@ -37796,6 +37881,7 @@ async def on_callback(update: Update, ctx: ContextTypes.DEFAULT_TYPE):
         kb_death = InlineKeyboardMarkup([
             [btn("💀 Воскресить (100🪙)", callback_data="revive_confirm", style="success")],
             [btn("⚔️ Начать испытание", callback_data="trial_start", style="success")],
+            [btn("◀️ Назад", callback_data="refresh")],
         ])
         try:
             await ctx.bot.send_message(
@@ -38021,9 +38107,10 @@ async def on_callback(update: Update, ctx: ContextTypes.DEFAULT_TYPE):
                 await q.message.edit_text(
                     status_text(f),
                     parse_mode=ParseMode.HTML,
-                    reply_markup=InlineKeyboardMarkup([[
-                        btn("🔄 Обновить", callback_data="trial_status")
-                    ]]),
+                    reply_markup=InlineKeyboardMarkup([
+                        [btn("🔄 Обновить", callback_data="trial_status")],
+                        [btn("◀️ Назад", callback_data="refresh")],
+                    ]),
                 )
             except (BadRequest, Forbidden, TimedOut):
                 pass
@@ -38182,7 +38269,10 @@ async def on_callback(update: Update, ctx: ContextTypes.DEFAULT_TYPE):
                     f"Накоплено сытости: <b>{f['overfeed_total']} / {OVERFEED_DEATH_THRESHOLD}</b>\n"
                     f"{_E_SKULL} Воскресить за <b>{OVERFEED_REVIVE_COST}{_E_COIN}</b> (используй /revive)",
                     parse_mode=ParseMode.HTML,
-                    reply_markup=InlineKeyboardMarkup([[btn(f"🤢 Воскресить ({OVERFEED_REVIVE_COST}🪙)", callback_data="revive_confirm", style="success")]]),
+                    reply_markup=InlineKeyboardMarkup([
+                        [btn(f"🤢 Воскресить ({OVERFEED_REVIVE_COST}🪙)", callback_data="revive_confirm", style="success")],
+                        [btn("◀️ Назад", callback_data="refresh")],
+                    ]),
                 )
             except (BadRequest, Forbidden, TimedOut):
                 pass
@@ -38261,7 +38351,10 @@ async def on_callback(update: Update, ctx: ContextTypes.DEFAULT_TYPE):
                     f"Накоплено сытости: <b>{f['overfeed_total']} / {OVERFEED_DEATH_THRESHOLD}</b>\n"
                     f"{_E_SKULL} Воскресить за <b>{OVERFEED_REVIVE_COST}{_E_COIN}</b> (или /revive)",
                     parse_mode=ParseMode.HTML,
-                    reply_markup=InlineKeyboardMarkup([[btn(f"🤢 Воскресить ({OVERFEED_REVIVE_COST}🪙)", callback_data="revive_confirm", style="success")]]),
+                    reply_markup=InlineKeyboardMarkup([
+                        [btn(f"🤢 Воскресить ({OVERFEED_REVIVE_COST}🪙)", callback_data="revive_confirm", style="success")],
+                        [btn("◀️ Назад", callback_data="refresh")],
+                    ]),
                 )
             except (BadRequest, Forbidden, TimedOut):
                 pass
@@ -38337,7 +38430,10 @@ async def on_callback(update: Update, ctx: ContextTypes.DEFAULT_TYPE):
                     f"Накоплено сытости: <b>{f['overfeed_total']} / {OVERFEED_DEATH_THRESHOLD}</b>\n"
                     f"{_E_SKULL} Воскресить за <b>{OVERFEED_REVIVE_COST}{_E_COIN}</b> (или /revive)",
                     parse_mode=ParseMode.HTML,
-                    reply_markup=InlineKeyboardMarkup([[btn(f"🤢 Воскресить ({OVERFEED_REVIVE_COST}🪙)", callback_data="revive_confirm", style="success")]]),
+                    reply_markup=InlineKeyboardMarkup([
+                        [btn(f"🤢 Воскресить ({OVERFEED_REVIVE_COST}🪙)", callback_data="revive_confirm", style="success")],
+                        [btn("◀️ Назад", callback_data="refresh")],
+                    ]),
                 )
             except (BadRequest, Forbidden, TimedOut):
                 pass
@@ -39489,93 +39585,9 @@ async def on_callback(update: Update, ctx: ContextTypes.DEFAULT_TYPE):
     # ── МЕНЮ ИГР ───────────────────────────────────
     if d == "menu_games":
         await q.answer()
-        lvl        = f.get("level", 1)
-        is_private = q.message.chat.type == "private"
-        funnel_ev  = await _funnel_active_event()
-
-        # ── Уровень разблокировки ─────────────────────────────────────────
-        UNLOCK_ADV  = 4   # казино, лотерея, виселица, дуэль
-        UNLOCK_HARD = 8   # шашки
-        unlocked_adv  = lvl >= UNLOCK_ADV
-        unlocked_hard = lvl >= UNLOCK_HARD
-
-        # ── Базовый набор — всегда доступен ──────────────────────────────
-        base_rows = [
-            [
-                btn(t("btn_sapper",  f), callback_data="sapper_start"),
-                btn(t("btn_guess",   f), callback_data="guess_start"),
-            ],
-            [
-                btn(t("btn_memory",  f), callback_data="memo_start"),
-                btn(t("btn_ttt",     f), callback_data="ttt_menu"),
-            ],
-        ]
-
-        # ── Продвинутые — открываются на ур.4 ────────────────────────────
-        if unlocked_adv:
-            adv_rows = [
-                [
-                    btn(t("btn_casino",  f), callback_data="casino_menu"),
-                    btn(t("btn_duel",    f), callback_data="duel_search"),
-                ],
-                [
-                    btn(t("btn_lottery", f), callback_data="menu_lottery"),
-                    btn(t("btn_jackpot", f), callback_data="menu_jackpot"),
-                ],
-            ]
-            # Тяжёлые стратегии — на ур.8
-            if unlocked_hard:
-                adv_rows.append([
-                    btn(t("btn_checkers",   f), callback_data="checkers_menu"),
-                ])
-            else:
-                adv_rows.append([
-                    btn(
-                        f"🔒 Откроется на {UNLOCK_HARD} уровне",
-                        callback_data="games_locked_hard",
-                    )
-                ])
-        else:
-            # Показываем заблокированный раздел как мотивация
-            adv_rows = [
-                [
-                    btn(
-                        f"🔒 Откроется на {UNLOCK_ADV} уровне",
-                        callback_data="games_locked_adv",
-                    )
-                ]
-            ]
-
-        rows = base_rows + adv_rows
-
-        # Спецкнопки (конкурс / воронка) — всегда первые
-        if await _get_active_contest():
-            rows.insert(0, [btn("🎟 Конкурс — мои билеты", callback_data="contest_my_stats", style="success")])
-        if funnel_ev:
-            rows.insert(0, [btn(t("btn_funnel", f), callback_data=f"funnel_menu_{funnel_ev['id']}")])
-
-        rows.append([btn(t("btn_back", f), callback_data="refresh")])
-        kb = InlineKeyboardMarkup(rows)
-
-        # Список игр не дублируется в тексте — он и так на кнопках.
-        # В теле остаётся только то, чего на кнопках нет: что откроется дальше.
-        if not unlocked_adv:
-            next_up = f"🔒 Казино, дуэли и лотерея откроются на {UNLOCK_ADV} уровне."
-        elif not unlocked_hard:
-            next_up = f"🔒 Шашки откроются на {UNLOCK_HARD} уровне."
-        else:
-            next_up = ""
-
+        text, kb = await games_screen(f, q.message.chat.type == "private")
         try:
-            await q.message.edit_text(
-                ui_card(
-                    ui_title("🎮", "Игры"),
-                    ui_line(f"Уровень {lvl}", ui_money(f["coins"])),
-                    hint=next_up,
-                ),
-                parse_mode=ParseMode.HTML,
-                reply_markup=kb,
-            )
+            await q.message.edit_text(text, parse_mode=ParseMode.HTML, reply_markup=kb)
         except (BadRequest, Forbidden, TimedOut):
             pass
         return
@@ -43845,10 +43857,11 @@ async def on_callback(update: Update, ctx: ContextTypes.DEFAULT_TYPE):
                                 f"Лимит обновится в полночь UTC (03:00 МСК).\n\n"
                                 f"{_E_STARS} За <b>{ADV_EXTRA_STARS} Stars</b> — ещё {ADV_DAILY_LIMIT_H} часов прямо сейчас!",
                                 parse_mode="HTML",
-                                reply_markup=InlineKeyboardMarkup([[
-                                    btn(f"⭐ Докупить слот ({ADV_EXTRA_STARS} Stars)",
-                                        callback_data="adv_buy_extra_slot", style="primary")
-                                ]]),
+                                reply_markup=InlineKeyboardMarkup([
+                                    [btn(f"⭐ Докупить слот ({ADV_EXTRA_STARS} Stars)",
+                                         callback_data="adv_buy_extra_slot", style="primary")],
+                                    [btn("◀️ Назад", callback_data="refresh")],
+                                ]),
                             )
                         except (BadRequest, Forbidden, TimedOut):
                             pass
@@ -57313,46 +57326,12 @@ def _chk_header(gd):
 
 
 async def cmd_games(update: Update, ctx: ContextTypes.DEFAULT_TYPE):
-    """/games — список всех игр бота с командами"""
-    is_group = update.effective_chat.type != "private"
-
-    solo_games = (
-        "🎮 <b>Игры — все команды</b>\n\n"
-        "<b>🕹 Одиночные (работают везде):</b>\n"
-        "• /checkers — ♟️ Шашки (vs бот)\n"
-        "• /casino — 🎲 Казино\n"
-        "• /ttt — ❌ Крестики-нолики vs бот\n"
-        "• /ttt5 — ❌ Крестики-нолики 5×5 vs бот\n"
-        "• /duel — ⚔️ Дуэль (кубик)\n\n"
-    )
-    group_games = (
-        "<b>👥 Мультиплеер (в чате со ставкой):</b>\n"
-        "• /checkers [ставка] — ♟️ Шашки vs игрок\n"
-        "• /ttt [ставка] — ❌ Крестики-нолики 3×3\n"
-        "• /ttt5 [ставка] — ❌ Крестики-нолики 5×5\n"
-        "• /duel [@user] [ставка] — ⚔️ Дуэль\n\n"
-    ) if is_group else (
-        "<b>👥 Мультиплеер:</b> доступны в группах!\n"
-        "Добавь бота в чат и используй те же команды со ставкой.\n\n"
-    )
-    lottery_line = (
-        "<b>🎟 Лотереи и прочее:</b>\n"
-        "• /lottery — 🎟 Лотерея\n"
-        "• /jackpot — 🎰 Джекпот\n"
-        "• /battle — ⚔️ Битва лягушек\n"
-        "• /top — 🏆 Топ игроков\n"
-    )
-    text = solo_games + group_games + lottery_line
-
-    kb = InlineKeyboardMarkup([
-        [
-            btn("♟️ Шашки", callback_data="checkers_menu", style="primary"),
-        ],
-        [
-            btn("🎮 Все игры", callback_data="menu_games"),
-            btn("🎲 Казино", callback_data="casino_menu"),
-        ],
-    ])
+    """/games — тот же экран игр, что и по кнопке."""
+    f = await db_get(update.effective_user.id)
+    if not f:
+        await update.message.reply_text(f"Сначала /start {_E_FROG}", parse_mode=ParseMode.HTML)
+        return
+    text, kb = await games_screen(f, update.effective_chat.type == "private")
     await update.message.reply_text(
         text,
         parse_mode=ParseMode.HTML,
@@ -57389,6 +57368,7 @@ async def cmd_checkers(update: Update, ctx: ContextTypes.DEFAULT_TYPE):
     kb = InlineKeyboardMarkup([
         [btn(t("btn_chk_solo", f), callback_data="ck_mode|bot", style="primary"),
          btn(t("btn_chk_pvp", f), callback_data="ck_mode|pvp", style="success")],
+        [btn(t("btn_back_games", f), callback_data="menu_games")],
     ])
     msg = await update.message.reply_text(
         "♟️ <b>Шашки</b>",
@@ -57523,6 +57503,7 @@ async def handle_checkers_callback(q, d, uid, ctx):
             kb = InlineKeyboardMarkup([
                 [btn(t("btn_chk_solo", f), callback_data="ck_mode|bot", style="primary"),
                  btn(t("btn_chk_pvp", f), callback_data="ck_mode|pvp", style="success")],
+                [btn(t("btn_back_games", f), callback_data="menu_games")],
             ])
             try:
                 await q.message.edit_text(
