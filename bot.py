@@ -370,7 +370,8 @@ def freeze_run_sync_migration(conn: sqlite3.Connection, cur: sqlite3.Cursor) -> 
         cur.execute("UPDATE freeze_state SET total_nft = remaining_nft WHERE total_nft = 0 OR total_nft IS NULL")
         conn.commit()
         logger.info("Миграция freeze_state: добавлена колонка total_nft")
-    except Exception:
+    except Exception as _e:
+        logger.exception("подавлено исключение: %s", _e)
         pass  # Колонка уже существует
 
 
@@ -598,7 +599,7 @@ async def _fz_pool_rewards(uid: int, bot) -> None:
                 "Он будет отображаться в /freeze.",
                 parse_mode=ParseMode.HTML,
             )
-        except Exception:
+        except (BadRequest, Forbidden, TimedOut):
             pass
 
 
@@ -925,7 +926,7 @@ async def _fz_free_cube(uid: int, source: str, bot) -> None:
                 "<i>Помоги охладить болото: /icecube 🧊</i>",
                 parse_mode=ParseMode.HTML,
             )
-        except Exception:
+        except (BadRequest, Forbidden, TimedOut):
             pass
         return
 
@@ -968,7 +969,7 @@ async def _fz_free_cube(uid: int, source: str, bot) -> None:
         )
     try:
         await bot.send_message(uid, msg, parse_mode=ParseMode.HTML)
-    except Exception:
+    except (BadRequest, Forbidden, TimedOut):
         pass
 
 
@@ -1004,7 +1005,7 @@ async def _fz_award_quiz_cubes(uid: int, bot) -> None:
         msg = f"🧊 <b>Квиз — +{FZ_QUIZ_CUBES} кубиков брошено!</b>\nРезультаты: /freeze"
     try:
         await bot.send_message(uid, msg, parse_mode=ParseMode.HTML)
-    except Exception:
+    except (BadRequest, Forbidden, TimedOut):
         pass
 
 
@@ -2383,7 +2384,7 @@ async def _fz_on_callback(update: Update, ctx: ContextTypes.DEFAULT_TYPE) -> Non
             ])
             try:
                 await q.edit_message_text(text, parse_mode=ParseMode.HTML, reply_markup=kb)
-            except Exception:
+            except (BadRequest, Forbidden, TimedOut):
                 pass
             return
         if d == "fzadm_start":
@@ -2422,7 +2423,7 @@ async def _fz_on_callback(update: Update, ctx: ContextTypes.DEFAULT_TYPE) -> Non
                 await q.answer("Анонс уже опубликован или отменён.", show_alert=True)
                 try:
                     await q.edit_message_reply_markup(reply_markup=None)
-                except Exception:
+                except (BadRequest, Forbidden, TimedOut):
                     pass
                 return
             await q.answer("Публикую...")
@@ -2431,7 +2432,7 @@ async def _fz_on_callback(update: Update, ctx: ContextTypes.DEFAULT_TYPE) -> Non
                     q.message.text + "\n\n<i>✅ Опубликовано</i>",
                     parse_mode=ParseMode.HTML,
                 )
-            except Exception:
+            except (BadRequest, Forbidden, TimedOut):
                 pass
             await announce(ctx.bot, pending["text"], **pending["kwargs"])
         else:  # fz_pub_no_
@@ -2442,7 +2443,7 @@ async def _fz_on_callback(update: Update, ctx: ContextTypes.DEFAULT_TYPE) -> Non
                     q.message.text + "\n\n<i>❌ Отменено</i>",
                     parse_mode=ParseMode.HTML,
                 )
-            except Exception:
+            except (BadRequest, Forbidden, TimedOut):
                 pass
         return
 
@@ -2495,7 +2496,7 @@ async def _fz_on_callback(update: Update, ctx: ContextTypes.DEFAULT_TYPE) -> Non
                     [btn("◀️ Главное меню", callback_data="refresh")],
                 ]),
             )
-        except Exception:
+        except (BadRequest, Forbidden, TimedOut):
             pass
         return
 
@@ -2509,7 +2510,7 @@ async def _fz_on_callback(update: Update, ctx: ContextTypes.DEFAULT_TYPE) -> Non
         if status not in (FZ_ACTIVE, FZ_SOLD_OUT, FZ_FINALE):
             try:
                 await q.edit_message_text("🧊 Ивент не активен.", parse_mode=ParseMode.HTML)
-            except Exception:
+            except (BadRequest, Forbidden, TimedOut):
                 pass
             return
 
@@ -2542,7 +2543,7 @@ async def _fz_on_callback(update: Update, ctx: ContextTypes.DEFAULT_TYPE) -> Non
                 parse_mode=ParseMode.HTML,
                 reply_markup=InlineKeyboardMarkup(pkg_rows),
             )
-        except Exception:
+        except (BadRequest, Forbidden, TimedOut):
             pass
         return
 
@@ -2648,7 +2649,7 @@ async def _fz_on_callback(update: Update, ctx: ContextTypes.DEFAULT_TYPE) -> Non
                      btn("📊 Дашборд", callback_data="fz_dashboard")],
                 ]),
             )
-        except Exception:
+        except (BadRequest, Forbidden, TimedOut):
             pass
         return
 
@@ -2671,7 +2672,7 @@ async def _fz_on_callback(update: Update, ctx: ContextTypes.DEFAULT_TYPE) -> Non
                     btn("📊 Дашборд", callback_data="fz_dashboard"),
                 ]]),
             )
-        except Exception:
+        except (BadRequest, Forbidden, TimedOut):
             pass
         return
 
@@ -2698,7 +2699,7 @@ async def _fz_on_callback(update: Update, ctx: ContextTypes.DEFAULT_TYPE) -> Non
                     btn("📊 Дашборд", callback_data="fz_dashboard"),
                 ]]),
             )
-        except Exception:
+        except (BadRequest, Forbidden, TimedOut):
             pass
         return
 
@@ -3059,7 +3060,7 @@ async def cmd_resetwar(update: Update, ctx: ContextTypes.DEFAULT_TYPE) -> None:
                         parse_mode=ParseMode.HTML,
                     )
                     members_notified += 1
-                except Exception:
+                except (BadRequest, Forbidden, TimedOut):
                     pass
 
         # Закрываем ВСЕ стычки не в статусе finished (включая фантомные)
@@ -3095,7 +3096,7 @@ async def cmd_resetwar(update: Update, ctx: ContextTypes.DEFAULT_TYPE) -> None:
                         parse_mode=ParseMode.HTML,
                     )
                     members_notified += 1
-                except Exception:
+                except (BadRequest, Forbidden, TimedOut):
                     pass
 
         await db.commit()
@@ -3428,8 +3429,8 @@ def print(*args, **kwargs):  # noqa: A001
             logger.warning(text)
         else:
             logger.info(text)
-    except Exception:
-        pass
+    except Exception as _e:
+        logger.exception("подавлено исключение: %s", _e)
 
 logger.info("=" * 60)
 logger.info("🐸 Frog Bot запускается, LOG_FILE=%s, LOG_LEVEL=%s", LOG_FILE, logging.getLevelName(LOG_LEVEL))
@@ -3766,16 +3767,16 @@ class _DBPool:
         if temporary:
             try:
                 conn.close()
-            except Exception:
-                pass
+            except Exception as _e:
+                logger.exception("подавлено исключение: %s", _e)
             return
         try:
             self._pool.put_nowait(conn)
         except _queue.Full:
             try:
                 conn.close()
-            except Exception:
-                pass
+            except Exception as _e:
+                logger.exception("подавлено исключение: %s", _e)
 
 
 _db_pool = _DBPool(DB_PATH, size=10)
@@ -4764,13 +4765,15 @@ def run_sync_migration():
         "CREATE INDEX IF NOT EXISTS idx_cref_referred ON contest_referrals(referred_id)",
     ]:
         try: cur.execute(idx_sql); conn.commit()
-        except Exception: pass
+        except Exception as _e:
+            logger.exception("подавлено исключение: %s", _e)
 
     # Миграция: добавляем tickets_awarded в contest_referrals (если ещё нет)
     try:
         cur.execute("ALTER TABLE contest_referrals ADD COLUMN tickets_awarded INTEGER DEFAULT 0")
         conn.commit()
-    except Exception:
+    except Exception as _e:
+        logger.exception("подавлено исключение: %s", _e)
         pass  # Уже существует
 
     # Новая таблица: прогресс скинов конкурса (для скин-билетов)
@@ -4790,8 +4793,8 @@ def run_sync_migration():
     try:
         cur.execute("CREATE INDEX IF NOT EXISTS idx_csp_contest ON contest_skin_progress(contest_id)")
         conn.commit()
-    except Exception:
-        pass
+    except Exception as _e:
+        logger.exception("подавлено исключение: %s", _e)
 
     # ── NFT-конкурс по лигам ──────────────────────────────────────────────────
     try:
@@ -4819,8 +4822,8 @@ def run_sync_migration():
         try:
             cur.execute(idx_sql)
             conn.commit()
-        except Exception:
-            pass
+        except Exception as _e:
+            logger.exception("подавлено исключение: %s", _e)
 
     # Миграция колонки notes в adventures (для существующих БД)
     try:
@@ -4829,8 +4832,8 @@ def run_sync_migration():
         if "notes" not in _adv_cols:
             cur.execute("ALTER TABLE adventures ADD COLUMN notes TEXT DEFAULT '{}'")
             conn.commit()
-    except Exception:
-        pass
+    except Exception as _e:
+        logger.exception("подавлено исключение: %s", _e)
 
     # ── Экспедиции ───────────────────────────────────────────────────────────
     _gift_log_migration(conn)
@@ -7763,7 +7766,7 @@ async def handle_interactive_event_choice(query, uid: int, event_id: str, choice
         # Сообщение могло устареть — отправляем новым
         try:
             await bot.send_message(uid, result_msg, parse_mode=ParseMode.HTML)
-        except Exception:
+        except (BadRequest, Forbidden, TimedOut):
             pass
         logger.warning("iev edit_text uid=%s: %s", uid, _e)
 
@@ -8317,7 +8320,7 @@ async def staya_check_upgrade(staya_id: int, bot=None):
             if bot:
                 await bot.send_message(m["user_id"], announce_text, parse_mode=ParseMode.HTML)
             await asyncio.sleep(0.15)
-        except Exception:
+        except (BadRequest, Forbidden, TimedOut):
             pass
 
     logger.info("staya_upgrade: id=%s level=%s upgrade=%s", staya_id, new_level, upgrade["name"])
@@ -8533,8 +8536,8 @@ async def war_migrate(db: aiosqlite.Connection) -> None:
     for col, typedef in new_raid_cols:
         try:
             await db.execute(f"ALTER TABLE staya_raids ADD COLUMN {col} {typedef}")
-        except Exception:
-            pass
+        except Exception as _e:
+            logger.exception("подавлено исключение: %s", _e)
 
     new_sk_cols = [
         ("mode",           "TEXT    DEFAULT 'rps'"),
@@ -8546,17 +8549,17 @@ async def war_migrate(db: aiosqlite.Connection) -> None:
     for col, typedef in new_sk_cols:
         try:
             await db.execute(f"ALTER TABLE staya_skirmishes ADD COLUMN {col} {typedef}")
-        except Exception:
-            pass
+        except Exception as _e:
+            logger.exception("подавлено исключение: %s", _e)
 
     try:
         await db.execute("ALTER TABLE hideseek_events ADD COLUMN prize_text TEXT DEFAULT ''")
-    except Exception:
-        pass
+    except Exception as _e:
+        logger.exception("подавлено исключение: %s", _e)
     try:
         await db.execute("ALTER TABLE skirmish_members ADD COLUMN is_spectator INTEGER DEFAULT 0")
-    except Exception:
-        pass
+    except Exception as _e:
+        logger.exception("подавлено исключение: %s", _e)
 
     await db.execute("""
         CREATE TABLE IF NOT EXISTS war_stats (
@@ -8591,20 +8594,20 @@ async def war_migrate(db: aiosqlite.Connection) -> None:
     # Колонка для хранения message_id боевого сообщения (для редактирования)
     try:
         await db.execute("ALTER TABLE skirmish_duels ADD COLUMN live_msg_ids TEXT DEFAULT '{}'")
-    except Exception:
-        pass
+    except Exception as _e:
+        logger.exception("подавлено исключение: %s", _e)
     try:
         await db.execute("ALTER TABLE skirmish_duels ADD COLUMN att_rounds_won INTEGER DEFAULT 0")
-    except Exception:
-        pass
+    except Exception as _e:
+        logger.exception("подавлено исключение: %s", _e)
     try:
         await db.execute("ALTER TABLE skirmish_duels ADD COLUMN def_rounds_won INTEGER DEFAULT 0")
-    except Exception:
-        pass
+    except Exception as _e:
+        logger.exception("подавлено исключение: %s", _e)
     try:
         await db.execute("ALTER TABLE skirmish_duels ADD COLUMN game_state TEXT DEFAULT '{}'")
-    except Exception:
-        pass
+    except Exception as _e:
+        logger.exception("подавлено исключение: %s", _e)
 
     await db.commit()
     print("✅ Миграция war_stats / staya_raids / staya_skirmishes / duel_bets v2 применена")
@@ -8641,7 +8644,7 @@ async def _raid_notify_staya(bot, staya_id: int, text: str,
                 parse_mode=ParseMode.HTML,
                 reply_markup=reply_markup,
             )
-        except Exception:
+        except (BadRequest, Forbidden, TimedOut):
             pass
 
 
@@ -8728,7 +8731,7 @@ async def _raid_scout_phase(bot, raid_id: int, att_staya: dict, target: dict,
             continue
         try:
             await bot.send_message(m["user_id"], scout_text, parse_mode=ParseMode.HTML)
-        except Exception:
+        except (BadRequest, Forbidden, TimedOut):
             pass
 
     if guard_uid:
@@ -8744,7 +8747,7 @@ async def _raid_scout_phase(bot, raid_id: int, att_staya: dict, target: dict,
                     btn("🛡️ Защищать котёл", callback_data=f"raid_guard_{raid_id}", style="success"),
                 ]]),
             )
-        except Exception:
+        except (BadRequest, Forbidden, TimedOut):
             pass
 
     await asyncio.sleep(RAID_SCOUT_PHASE_SEC)
@@ -8772,7 +8775,7 @@ async def _raid_vote_phase(bot, raid_id: int, att_staya: dict, target: dict,
                 parse_mode=ParseMode.HTML,
                 reply_markup=_raid_vote_keyboard(raid_id, False, {}, 0),
             )
-        except Exception:
+        except (BadRequest, Forbidden, TimedOut):
             pass
     await asyncio.sleep(RAID_VOTE_PHASE_SEC)
     raid = await _raid_get(raid_id)
@@ -8865,7 +8868,7 @@ async def _raid_resolve(bot, raid_id: int, chosen: int,
     for uid_p in participants:
         try:
             await bot.send_message(uid_p, result_text, parse_mode=ParseMode.HTML)
-        except Exception:
+        except (BadRequest, Forbidden, TimedOut):
             pass
 
 
@@ -8954,7 +8957,7 @@ async def _sk_broadcast(bot, sk_id: int, text: str, reply_markup=None,
                 parse_mode=ParseMode.HTML,
                 reply_markup=reply_markup,
             )
-        except Exception:
+        except (BadRequest, Forbidden, TimedOut):
             pass
 
 skirmish_broadcast = _sk_broadcast
@@ -9337,7 +9340,7 @@ async def reaction_run_round(bot, sk_id: int, duel_id: int,
                 await bot.send_message(
                     f_uid, fire_text, parse_mode=ParseMode.HTML, reply_markup=fire_kb,
                 )
-        except Exception:
+        except (BadRequest, Forbidden, TimedOut):
             pass
 
     # Таймаут реакции
@@ -9690,7 +9693,7 @@ async def roulette_shoot(bot, sk_id: int, duel: dict, shooter_uid: int,
         except Exception:
             try:
                 await bot.send_message(f_uid, click_text, parse_mode=ParseMode.HTML, reply_markup=kb)
-            except Exception:
+            except (BadRequest, Forbidden, TimedOut):
                 pass
 
 
@@ -9888,11 +9891,11 @@ async def _edit_or_send(bot, uid: int, msg_id: int | None, text: str,
                 parse_mode=ParseMode.HTML, reply_markup=kb,
             )
             return
-    except Exception:
+    except (BadRequest, Forbidden, TimedOut):
         pass
     try:
         await bot.send_message(uid, text, parse_mode=ParseMode.HTML, reply_markup=kb)
-    except Exception:
+    except (BadRequest, Forbidden, TimedOut):
         pass
 
 
@@ -10155,7 +10158,7 @@ async def _bet_payout(bot, duel_id: int, winner_side: str):
                 f"({'<b>+' + str(profit) + '{_E_COIN}</b>' if profit >= 0 else '<b>' + str(profit) + '{_E_COIN}</b>'})",
                 parse_mode=ParseMode.HTML,
             )
-        except Exception:
+        except (BadRequest, Forbidden, TimedOut):
             pass
 
     # Уведомляем проигравших
@@ -10181,7 +10184,7 @@ async def _bet_payout(bot, duel_id: int, winner_side: str):
                 f"{_E_CASINO} Ставка проиграла — <b>−{lo['amount']}{_E_COIN}</b>",
                 parse_mode=ParseMode.HTML,
             )
-        except Exception:
+        except (BadRequest, Forbidden, TimedOut):
             pass
 
 
@@ -10237,7 +10240,7 @@ async def _sk_start_duel(bot, sk: dict, att_m: dict, def_m: dict,
                 reply_markup=None if is_fighter else _bet_side_keyboard(duel_id),
             )
             live_msg_ids[m_uid] = msg.message_id
-        except Exception:
+        except (BadRequest, Forbidden, TimedOut):
             pass
 
     async with aiosqlite.connect(DB_PATH) as db:
@@ -10268,7 +10271,7 @@ async def _sk_start_duel(bot, sk: dict, att_m: dict, def_m: dict,
                         parse_mode=ParseMode.HTML,
                         reply_markup=None if my_bet else _bet_side_keyboard(duel_id),
                     )
-                except Exception:
+                except (BadRequest, Forbidden, TimedOut):
                     pass
 
     asyncio.create_task(_bet_tick())
@@ -10339,7 +10342,7 @@ async def _sk_start_duel(bot, sk: dict, att_m: dict, def_m: dict,
             try:
                 msg = await bot.send_message(uid_d, txt, parse_mode=ParseMode.HTML, reply_markup=kb)
                 live_msg_ids[uid_d] = msg.message_id
-            except Exception:
+            except (BadRequest, Forbidden, TimedOut):
                 pass
 
     for m in members:
@@ -10382,7 +10385,7 @@ async def _sk_start_duel(bot, sk: dict, att_m: dict, def_m: dict,
                     m_uid, txt, parse_mode=ParseMode.HTML, reply_markup=sup_kb,
                 )
                 live_msg_ids[m_uid] = msg.message_id
-            except Exception:
+            except (BadRequest, Forbidden, TimedOut):
                 pass
 
     async with aiosqlite.connect(DB_PATH) as db:
@@ -10417,7 +10420,7 @@ async def _sk_duel_timeout(bot, sk_id: int, duel_id: int, deadline: float):
                 try:
                     await bot.send_message(uid_d, "⏳ <b>Время вышло.</b> Ход сделан автоматически.",
                                            parse_mode=ParseMode.HTML)
-                except Exception:
+                except (BadRequest, Forbidden, TimedOut):
                     pass
         await _sk_resolve_rps(bot, sk_id, duel, att_c, def_c)
     else:
@@ -10432,7 +10435,7 @@ async def _sk_duel_timeout(bot, sk_id: int, duel_id: int, deadline: float):
                 try:
                     await bot.send_message(uid_d, "⏳ <b>Время вышло.</b> Ход сделан автоматически.",
                                            parse_mode=ParseMode.HTML)
-                except Exception:
+                except (BadRequest, Forbidden, TimedOut):
                     pass
         await _sk_resolve_eo(bot, sk_id, duel, att_c, def_c)
 
@@ -10480,7 +10483,7 @@ async def _sk_send_round_result(bot, sk_id: int, duel: dict, att_name: str, def_
             except Exception:
                 try:
                     await bot.send_message(m_uid, summary, parse_mode=ParseMode.HTML)
-                except Exception:
+                except (BadRequest, Forbidden, TimedOut):
                     pass
     else:
         # Не финальный — бойцам с кнопками, зрителям с поддержкой
@@ -10520,7 +10523,7 @@ async def _sk_send_round_result(bot, sk_id: int, duel: dict, att_name: str, def_
                         uid_d, summary_fighters, parse_mode=ParseMode.HTML, reply_markup=kb,
                     )
                     live_msg_ids[uid_d] = msg.message_id
-                except Exception:
+                except (BadRequest, Forbidden, TimedOut):
                     pass
 
         for m in members:
@@ -10544,7 +10547,7 @@ async def _sk_send_round_result(bot, sk_id: int, duel: dict, att_name: str, def_
                     await bot.send_message(
                         m_uid, summary_base, parse_mode=ParseMode.HTML, reply_markup=sup_kb,
                     )
-                except Exception:
+                except (BadRequest, Forbidden, TimedOut):
                     pass
 
 
@@ -11524,7 +11527,7 @@ async def skirmish_start_all_duels(bot, sk_id: int):
             kb = _skirmish_duel_keyboard(mode, duel_id, role_d)
             try:
                 await bot.send_message(uid_d, text, parse_mode=ParseMode.HTML, reply_markup=kb)
-            except Exception:
+            except (BadRequest, Forbidden, TimedOut):
                 pass
 
         asyncio.create_task(
@@ -11703,7 +11706,7 @@ async def skirmish_resolve_duel(bot, skirmish_id: int, duel: dict, winner: str):
     for uid_d in (duel["att_uid"], duel["def_uid"]):
         try:
             await bot.send_message(uid_d, status_text, parse_mode=ParseMode.HTML)
-        except Exception:
+        except (BadRequest, Forbidden, TimedOut):
             pass
 
     await _skirmish_check_all_done(bot, skirmish_id)
@@ -11733,7 +11736,7 @@ async def _skirmish_duel_timeout(bot, skirmish_id: int, duel_id: int, deadline: 
             if not duel[col]:
                 try:
                     await bot.send_message(uid_d, "⏳ Время вышло — кубик брошен автоматически! ⚠️ AFK")
-                except Exception:
+                except (BadRequest, Forbidden, TimedOut):
                     pass
         await _skirmish_duel_resolve_dice(bot, skirmish_id, duel, int(att_c), int(def_c))
 
@@ -11750,7 +11753,7 @@ async def _skirmish_duel_timeout(bot, skirmish_id: int, duel_id: int, deadline: 
             if not duel[ch_col] or not duel.get(num_col):
                 try:
                     await bot.send_message(uid_d, "⏳ Время вышло — выбор сделан автоматически! ⚠️ AFK")
-                except Exception:
+                except (BadRequest, Forbidden, TimedOut):
                     pass
         async with aiosqlite.connect(DB_PATH) as db:
             await db.execute(
@@ -11769,7 +11772,7 @@ async def _skirmish_duel_timeout(bot, skirmish_id: int, duel_id: int, deadline: 
             if not duel[col]:
                 try:
                     await bot.send_message(uid_d, "⏳ Время вышло — выбор сделан автоматически! ⚠️ AFK")
-                except Exception:
+                except (BadRequest, Forbidden, TimedOut):
                     pass
         await _skirmish_duel_resolve_choices(bot, skirmish_id, duel, att_c, def_c)
 
@@ -11864,7 +11867,7 @@ async def _skirmish_duel_resolve_choices(bot, skirmish_id: int, duel: dict,
     for uid_d in (duel["att_uid"], duel["def_uid"]):
         try:
             await bot.send_message(uid_d, summary, parse_mode=ParseMode.HTML)
-        except Exception:
+        except (BadRequest, Forbidden, TimedOut):
             pass
 
     if att_hp <= 0 or def_hp <= 0 or round_num >= 3:
@@ -11903,7 +11906,7 @@ async def _skirmish_duel_resolve_choices(bot, skirmish_id: int, duel: dict,
             kb = _skirmish_duel_keyboard(mode, duel["id"], role_d)
             try:
                 await bot.send_message(uid_d, next_text, parse_mode=ParseMode.HTML, reply_markup=kb)
-            except Exception:
+            except (BadRequest, Forbidden, TimedOut):
                 pass
 
 
@@ -11947,7 +11950,7 @@ async def _skirmish_duel_resolve_dice(bot, skirmish_id: int, duel: dict,
     for uid_d in (duel["att_uid"], duel["def_uid"]):
         try:
             await bot.send_message(uid_d, summary, parse_mode=ParseMode.HTML)
-        except Exception:
+        except (BadRequest, Forbidden, TimedOut):
             pass
 
     if result == "draw":
@@ -11965,7 +11968,7 @@ async def _skirmish_duel_resolve_dice(bot, skirmish_id: int, duel: dict,
             kb = _skirmish_duel_keyboard("dice", duel["id"], role_d)
             try:
                 await bot.send_message(uid_d, retry_text, parse_mode=ParseMode.HTML, reply_markup=kb)
-            except Exception:
+            except (BadRequest, Forbidden, TimedOut):
                 pass
         return
 
@@ -11993,7 +11996,7 @@ async def _skirmish_duel_resolve_dice(bot, skirmish_id: int, duel: dict,
             kb = _skirmish_duel_keyboard("dice", duel["id"], role_d)
             try:
                 await bot.send_message(uid_d, next_text, parse_mode=ParseMode.HTML, reply_markup=kb)
-            except Exception:
+            except (BadRequest, Forbidden, TimedOut):
                 pass
 
 
@@ -13955,8 +13958,8 @@ async def init_db():
             try:
                 await db.execute(idx_sql)
                 await db.commit()
-            except Exception:
-                pass
+            except Exception as _e:
+                logger.exception("подавлено исключение: %s", _e)
 
         # ── Фриз-ивент ───────────────────────────────────────────────────────
         await freeze_init_db(db)
@@ -14296,7 +14299,7 @@ async def update_giveaway_message(gid: int, ctx):
             parse_mode=ParseMode.HTML,
             reply_markup=kb,
         )
-    except Exception:
+    except (BadRequest, Forbidden, TimedOut):
         pass
 
 
@@ -14398,7 +14401,7 @@ async def finalize_giveaway(gid: int, ctx):
             parse_mode=ParseMode.HTML,
             reply_markup=None,
         )
-    except Exception:
+    except (BadRequest, Forbidden, TimedOut):
         pass
 
     # ── Уведомление администратору о завершении розыгрыша ──────────────
@@ -15059,8 +15062,8 @@ async def _load_peak_online():
             try:
                 parts = raw.split(":")
                 _peak_online[period] = (int(parts[0]), float(parts[1]))
-            except Exception:
-                pass
+            except Exception as _e:
+                logger.exception("подавлено исключение: %s", _e)
 
 
 async def _save_peak_online():
@@ -15190,7 +15193,7 @@ async def job_boost_check(ctx: ContextTypes.DEFAULT_TYPE):
                     "💫 Успей пополнить КваКоины — курс Stars выгоднее!",
                     parse_mode="HTML",
                 )
-            except Exception:
+            except (BadRequest, Forbidden, TimedOut):
                 pass
         return
     # Буст истёк
@@ -15203,7 +15206,7 @@ async def job_boost_check(ctx: ContextTypes.DEFAULT_TYPE):
             f"Спасибо всем участникам! Курсы и шансы вернулись в норму. {_E_FROG}",
             parse_mode="HTML",
         )
-    except Exception:
+    except (BadRequest, Forbidden, TimedOut):
         pass
 
 async def inv_get(uid: int) -> dict:
@@ -15358,7 +15361,7 @@ async def update_trial_progress(uid: int, quest_type: str, amount: int = 1, bot=
                 + f"\n{_E_CHART} Прогресс: <b>{done_count}/{total}</b>",
                 parse_mode=ParseMode.HTML,
             )
-        except Exception:
+        except (BadRequest, Forbidden, TimedOut):
             pass
 
 
@@ -15401,7 +15404,7 @@ async def complete_trial(uid: int, bot=None):
                 parse_mode=ParseMode.HTML,
                 reply_markup=await main_kb_live(f),
             )
-        except Exception:
+        except (BadRequest, Forbidden, TimedOut):
             pass
 
 
@@ -15434,7 +15437,7 @@ async def ach_grant(uid: int, ach_id: str, bot=None) -> bool:
                 f"{_E_TROPHY} <b>Достижение!</b>\n\n{a['emoji']} <b>{a['name']}</b>\n<i>{a['desc']}</i>",
                 parse_mode=ParseMode.HTML,
             )
-        except Exception:
+        except (BadRequest, Forbidden, TimedOut):
             pass
     return True
 
@@ -15609,7 +15612,7 @@ async def ach_check(f: dict, bot=None):
                     f"{_E_TROPHY} <b>Достижение!</b>\n\n{a['emoji']} <b>{a['name']}</b>\n<i>{a['desc']}</i>",
                     parse_mode=ParseMode.HTML,
                 )
-            except Exception:
+            except (BadRequest, Forbidden, TimedOut):
                 pass
 
 
@@ -16125,7 +16128,7 @@ async def show_settings(q, f: dict) -> None:
             text, parse_mode=ParseMode.HTML, reply_markup=kb,
             link_preview_options=LinkPreviewOptions(),
         )
-    except Exception:
+    except (BadRequest, Forbidden, TimedOut):
         pass
 
 
@@ -16269,8 +16272,8 @@ async def show_status(target, f: dict, edit=False, app=None):
             _is_group = target.message.chat.type in ("group", "supergroup")
         elif hasattr(target, "chat"):
             _is_group = target.chat.type in ("group", "supergroup")
-    except Exception:
-        pass
+    except Exception as _e:
+        logger.exception("подавлено исключение: %s", _e)
     kb = await main_kb_live(f, is_group=_is_group)
     try:
         if edit and hasattr(target, "edit_message_text"):
@@ -16311,7 +16314,7 @@ async def animate(q, text: str):
         await q.message.edit_text(
             text, parse_mode=ParseMode.HTML, link_preview_options=LinkPreviewOptions(is_disabled=True)
         )
-    except Exception:
+    except (BadRequest, Forbidden, TimedOut):
         pass
     await asyncio.sleep(1.5)
 
@@ -16629,7 +16632,7 @@ async def _run_chat_auto_giveaway(chat_id: int, fund: int, ctx):
                 f"Приз: <b>+{fund}{_E_COIN}</b>",
                 parse_mode=ParseMode.HTML,
             )
-        except Exception:
+        except (BadRequest, Forbidden, TimedOut):
             pass
     except Exception as e:
         print(f"⚠️ Auto-giveaway error: {e}")
@@ -16642,7 +16645,7 @@ async def schedule_delete(
     await asyncio.sleep(delay)
     try:
         await bot.delete_message(chat_id=chat_id, message_id=message_id)
-    except Exception:
+    except (BadRequest, Forbidden, TimedOut):
         pass
 
 
@@ -16768,11 +16771,11 @@ async def vanilla_reply(
         # Удаляем команду пользователя
         try:
             await update.message.delete()
-        except Exception:
-            pass
+        except Exception as _e:
+            logger.exception("подавлено исключение: %s", _e)
         # Планируем удаление ответа
         asyncio.create_task(schedule_delete(ctx.bot, msg.chat_id, msg.message_id, delay))
-    except Exception:
+    except (BadRequest, Forbidden, TimedOut):
         pass
 
 
@@ -16793,10 +16796,10 @@ async def vanilla_redirect(
         msg = await update.message.reply_text("👇", reply_markup=kb)
         try:
             await update.message.delete()
-        except Exception:
-            pass
+        except Exception as _e:
+            logger.exception("подавлено исключение: %s", _e)
         asyncio.create_task(schedule_delete(ctx.bot, msg.chat_id, msg.message_id, 15))
-    except Exception:
+    except (BadRequest, Forbidden, TimedOut):
         pass
 
 
@@ -16842,7 +16845,7 @@ async def _delete_casino_dice(bot, chat_id: int, message_id: int, chat_type: str
     await asyncio.sleep(5)
     try:
         await bot.delete_message(chat_id=chat_id, message_id=message_id)
-    except Exception:
+    except (BadRequest, Forbidden, TimedOut):
         pass
 
 
@@ -16865,7 +16868,7 @@ async def _auto_delete(bot, chat_id: int, message_id: int, importance: str = MSG
     await asyncio.sleep(delay)
     try:
         await bot.delete_message(chat_id=chat_id, message_id=message_id)
-    except Exception:
+    except (BadRequest, Forbidden, TimedOut):
         pass
 
 
@@ -16911,9 +16914,9 @@ async def send_feed_sticker(bot, chat_id: int) -> None:
         await asyncio.sleep(2.0)
         try:
             await msg.delete()
-        except Exception:
-            pass
-    except Exception:
+        except Exception as _e:
+            logger.exception("подавлено исключение: %s", _e)
+    except (BadRequest, Forbidden, TimedOut):
         pass
 
 
@@ -16926,9 +16929,9 @@ async def send_sleep_sticker(bot, chat_id: int) -> None:
         await asyncio.sleep(2.0)
         try:
             await msg.delete()
-        except Exception:
-            pass
-    except Exception:
+        except Exception as _e:
+            logger.exception("подавлено исключение: %s", _e)
+    except (BadRequest, Forbidden, TimedOut):
         pass
 
 
@@ -16941,9 +16944,9 @@ async def send_wash_sticker(bot, chat_id: int) -> None:
         await asyncio.sleep(2.0)
         try:
             await msg.delete()
-        except Exception:
-            pass
-    except Exception:
+        except Exception as _e:
+            logger.exception("подавлено исключение: %s", _e)
+    except (BadRequest, Forbidden, TimedOut):
         pass
 
 
@@ -17277,7 +17280,7 @@ async def maybe_big_win_announce(
         sent = await bot.send_message(CHAT_ID, msg, parse_mode=ParseMode.HTML)
         if sent:
             asyncio.create_task(schedule_delete(bot, CHAT_ID, sent.message_id, 120))
-    except Exception:
+    except (BadRequest, Forbidden, TimedOut):
         pass
     # Адм-чат
     await admin_notify(bot, f"{player_name} выиграл <b>{amount}🪙</b> в {game_label}{stake_part}", "💰")
@@ -17432,8 +17435,8 @@ async def cmd_activate(update: Update, ctx: ContextTypes.DEFAULT_TYPE):
                 bot_me.username or "",
             )
             pc = await partner_chat_get(chat.id)
-        except Exception:
-            pass
+        except Exception as _e:
+            logger.exception("подавлено исключение: %s", _e)
     if not pc:
         await update.message.reply_text("⚠️ Не удалось зарегистрировать чат. Попробуйте удалить бота и добавить снова.")
         return
@@ -17458,7 +17461,7 @@ async def cmd_activate(update: Update, ctx: ContextTypes.DEFAULT_TYPE):
                     btn("🐸 Начать", url=bot_link),
                 ]]) if bot_link else None,
             )
-        except Exception:
+        except (BadRequest, Forbidden, TimedOut):
             pass
     else:
         # Полное приветствие
@@ -17480,7 +17483,7 @@ async def cmd_activate(update: Update, ctx: ContextTypes.DEFAULT_TYPE):
                     btn("🐸 Начать игру", url=bot_link),
                 ]]) if bot_link else None,
             )
-        except Exception:
+        except (BadRequest, Forbidden, TimedOut):
             pass
     # Уведомляем главного администратора бота
     chat_mention = f"@{chat.username}" if chat.username else chat_title
@@ -17950,7 +17953,8 @@ async def _handle_chatadmin_callback(q, uid: int, ctx):
     if d == "ca_close":
         await q.answer()
         try: await q.message.delete()
-        except Exception: pass
+        except Exception as _e:
+            logger.exception("подавлено исключение: %s", _e)
         return
 
     if d == "ca_noop":
@@ -17988,7 +17992,7 @@ async def _handle_chatadmin_callback(q, uid: int, ctx):
                 parse_mode=ParseMode.HTML,
                 reply_markup=InlineKeyboardMarkup(rows),
             )
-        except Exception:
+        except (BadRequest, Forbidden, TimedOut):
             pass
         return
 
@@ -18031,7 +18035,7 @@ async def _handle_chatadmin_callback(q, uid: int, ctx):
                 parse_mode=ParseMode.HTML,
                 reply_markup=_chatadmin_main_kb(cid),
             )
-        except Exception:
+        except (BadRequest, Forbidden, TimedOut):
             pass
         return
 
@@ -18058,7 +18062,8 @@ async def _handle_chatadmin_callback(q, uid: int, ctx):
                 parse_mode=ParseMode.HTML,
                 reply_markup=_chatadmin_main_kb(cid, trusted=trusted, is_admin=(uid in ADMIN_IDS)),
             )
-        except Exception: pass
+        except (BadRequest, Forbidden, TimedOut):
+            pass
         return
 
     # ── Парсим cid из конца callback_data ────────────────────────────────────
@@ -18097,7 +18102,8 @@ async def _handle_chatadmin_callback(q, uid: int, ctx):
     async def _refresh(text: str, kb: InlineKeyboardMarkup):
         try:
             await q.message.edit_text(text, parse_mode=ParseMode.HTML, reply_markup=kb)
-        except Exception: pass
+        except (BadRequest, Forbidden, TimedOut):
+            pass
 
     # ── Главное меню ─────────────────────────────────────────────────────────
     if d == f"ca_main_{cid}":
@@ -18324,7 +18330,8 @@ async def _handle_chatadmin_callback(q, uid: int, ctx):
                 parse_mode=ParseMode.HTML,
                 reply_markup=InlineKeyboardMarkup([[btn("❌ Отмена", callback_data=f"ca_settings_{cid}")]]),
             )
-        except Exception: pass
+        except (BadRequest, Forbidden, TimedOut):
+            pass
         return
 
     if d == f"ca_setrules_{cid}":
@@ -18338,7 +18345,8 @@ async def _handle_chatadmin_callback(q, uid: int, ctx):
                 parse_mode=ParseMode.HTML,
                 reply_markup=InlineKeyboardMarkup([[btn("❌ Отмена", callback_data=f"ca_settings_{cid}")]]),
             )
-        except Exception: pass
+        except (BadRequest, Forbidden, TimedOut):
+            pass
         return
 
     # ── 🎮 Игры ───────────────────────────────────────────────────────────────
@@ -18445,7 +18453,8 @@ async def _handle_chatadmin_callback(q, uid: int, ctx):
                 parse_mode=ParseMode.HTML,
                 reply_markup=InlineKeyboardMarkup([[btn("❌ Отмена", callback_data=f"ca_economy_{cid}")]]),
             )
-        except Exception: pass
+        except (BadRequest, Forbidden, TimedOut):
+            pass
         return
 
     if d == f"ca_cycle_thresh_{cid}":
@@ -18458,7 +18467,8 @@ async def _handle_chatadmin_callback(q, uid: int, ctx):
                 parse_mode=ParseMode.HTML,
                 reply_markup=InlineKeyboardMarkup([[btn("❌ Отмена", callback_data=f"ca_economy_{cid}")]]),
             )
-        except Exception: pass
+        except (BadRequest, Forbidden, TimedOut):
+            pass
         return
 
     if d == f"ca_giveaway_now_{cid}":
@@ -18495,7 +18505,8 @@ async def _handle_chatadmin_callback(q, uid: int, ctx):
                 parse_mode=ParseMode.HTML,
                 reply_markup=InlineKeyboardMarkup([[btn("◀️ Назад", callback_data=f"ca_main_{cid}")]]),
             )
-        except Exception: pass
+        except (BadRequest, Forbidden, TimedOut):
+            pass
         return
 
     # ── 📊 Статистика ─────────────────────────────────────────────────────────
@@ -18535,7 +18546,8 @@ async def _handle_chatadmin_callback(q, uid: int, ctx):
                 parse_mode=ParseMode.HTML,
                 reply_markup=InlineKeyboardMarkup([[btn("◀️ Назад", callback_data=f"ca_main_{cid}")]]),
             )
-        except Exception: pass
+        except (BadRequest, Forbidden, TimedOut):
+            pass
         return
 
     await q.answer()
@@ -18722,8 +18734,8 @@ async def _handle_partnerinfo_callback(q, uid: int, ctx):
                  btn("❌ Удалить", callback_data=f"pi_remove_{cid}", style="danger")],
             ])
             await q.message.edit_text(text, parse_mode=ParseMode.HTML, reply_markup=kb)
-        except Exception:
-            pass
+        except Exception as _e:
+            logger.exception("подавлено исключение: %s", _e)
 
     elif d.startswith("pi_suspend_"):
         async with aiosqlite.connect(DB_PATH) as db:
@@ -18731,7 +18743,8 @@ async def _handle_partnerinfo_callback(q, uid: int, ctx):
             await db.commit()
         await q.answer(f"⏸ Чат {cid} приостановлен.")
         try: await q.message.edit_reply_markup(None)
-        except Exception: pass
+        except (BadRequest, Forbidden, TimedOut):
+            pass
 
     elif d.startswith("pi_remove_"):
         async with aiosqlite.connect(DB_PATH) as db:
@@ -18739,7 +18752,8 @@ async def _handle_partnerinfo_callback(q, uid: int, ctx):
             await db.commit()
         await q.answer(f"❌ Чат {cid} удалён из партнёров.")
         try: await q.message.edit_reply_markup(None)
-        except Exception: pass
+        except (BadRequest, Forbidden, TimedOut):
+            pass
 
     elif d.startswith("pi_note_"):
         ctx.user_data[f"pi_input_{uid}"] = {"field": "notes", "cid": cid}
@@ -18833,8 +18847,8 @@ def _detect_lang(user) -> str:
             return "zh"
         if lc.startswith("en"):
             return "en"
-    except Exception:
-        pass
+    except Exception as _e:
+        logger.exception("подавлено исключение: %s", _e)
     return "ru"
 
 
@@ -19005,8 +19019,8 @@ async def group_cmd_guard(update: Update, cmd: str, ctx: ContextTypes.DEFAULT_TY
         # Тихо игнорируем все команды в readonly
         try:
             await update.message.delete()
-        except Exception:
-            pass
+        except Exception as _e:
+            logger.exception("подавлено исключение: %s", _e)
         return False
 
     if mode == "vanilla" and ctx is not None:
@@ -19093,7 +19107,7 @@ async def _referral_stage_reward(
                 f"Используй /referral чтобы видеть всех рефералов.",
                 parse_mode=ParseMode.HTML,
             )
-        except Exception:
+        except (BadRequest, Forbidden, TimedOut):
             pass
 
 
@@ -19149,7 +19163,7 @@ async def check_referral_stages(referred_f: dict, bot):
                         f"Использовано: {ref_f['fz_ref_count']}/{FZ_REF_LIMIT}</i>",
                         parse_mode=ParseMode.HTML,
                     )
-                except Exception:
+                except (BadRequest, Forbidden, TimedOut):
                     pass
 
     # ── Конкурс: валидируем тикет при достижении 2-го уровня ─────────────────
@@ -19220,7 +19234,7 @@ async def cmd_referral(update: Update, ctx: ContextTypes.DEFAULT_TYPE):
             try:
                 tg_chat = await ctx.bot.get_chat(referred_id)
                 tg_username = tg_chat.username or None
-            except Exception:
+            except (BadRequest, Forbidden, TimedOut):
                 pass
             ref_data.append((rf, mask, earned, tg_username))
         ref_data.sort(key=lambda x: x[0].get("level", 1), reverse=True)
@@ -19357,8 +19371,8 @@ async def make_db_backup(bot=None, notify_admin: bool = False) -> str:
     while len(backups) > BACKUP_KEEP:
         try:
             os.remove(backups.pop(0))
-        except Exception:
-            pass
+        except Exception as _e:
+            logger.exception("подавлено исключение: %s", _e)
     size_kb = os.path.getsize(dest) // 1024
     if notify_admin and bot and ADMIN_IDS:
         for aid in ADMIN_IDS:
@@ -19369,7 +19383,7 @@ async def make_db_backup(bot=None, notify_admin: bool = False) -> str:
                     caption=f"💾 <b>Автобэкап БД</b>\n{ts}\nРазмер: {size_kb} KB",
                     parse_mode=ParseMode.HTML,
                 )
-            except Exception:
+            except (BadRequest, Forbidden, TimedOut):
                 pass
     return dest
 
@@ -19410,8 +19424,8 @@ async def cmd_backup(update: Update, ctx: ContextTypes.DEFAULT_TYPE):
         )
         try:
             os.remove(gz_path)
-        except Exception:
-            pass
+        except Exception as _e:
+            logger.exception("подавлено исключение: %s", _e)
     except Exception as e:
         await msg.edit_text(f"{_E_CROSS} Ошибка бэкапа: {e}")
 
@@ -19464,8 +19478,8 @@ async def show_antibot_panel(message, ctx, edit: bool = False):
     fn = message.edit_text if edit else message.reply_text
     try:
         await fn(text, parse_mode=ParseMode.HTML, reply_markup=kb)
-    except Exception:
-        pass
+    except Exception as _e:
+        logger.exception("подавлено исключение: %s", _e)
 
 
 async def handle_antibot_callback(q, d, uid, ctx):
@@ -19529,7 +19543,8 @@ async def handle_antibot_callback(q, d, uid, ctx):
         buttons.append([btn("◀️ Назад", callback_data="aab_refresh")])
         try:
             await q.message.edit_text("\n".join(lines), parse_mode=ParseMode.HTML, reply_markup=InlineKeyboardMarkup(buttons))
-        except Exception: pass
+        except (BadRequest, Forbidden, TimedOut):
+            pass
         return
 
     if d.startswith("aab_ok_"):
@@ -19624,7 +19639,7 @@ async def handle_antibot_callback(q, d, uid, ctx):
                 "\n".join(lines), parse_mode=ParseMode.HTML,
                 reply_markup=InlineKeyboardMarkup(buttons)
             )
-        except Exception:
+        except (BadRequest, Forbidden, TimedOut):
             pass
         return
 
@@ -19646,8 +19661,8 @@ async def handle_antibot_callback(q, d, uid, ctx):
             m = _re.search(r"стр (\d+)", current_text)
             if m:
                 page_str = str(int(m.group(1)) - 1)
-        except Exception:
-            pass
+        except Exception as _e:
+            logger.exception("подавлено исключение: %s", _e)
         # Перерисовываем список
         async with aiosqlite.connect(DB_PATH) as db:
             async with db.execute(
@@ -19679,7 +19694,7 @@ async def handle_antibot_callback(q, d, uid, ctx):
                 "\n".join(lines2), parse_mode=ParseMode.HTML,
                 reply_markup=InlineKeyboardMarkup(buttons2)
             )
-        except Exception:
+        except (BadRequest, Forbidden, TimedOut):
             pass
         return
 
@@ -19719,7 +19734,7 @@ async def handle_antibot_callback(q, d, uid, ctx):
         try:
             await q.message.edit_text("\n".join(lines), parse_mode=ParseMode.HTML,
                                       reply_markup=InlineKeyboardMarkup(buttons))
-        except Exception:
+        except (BadRequest, Forbidden, TimedOut):
             pass
         return
 
@@ -19751,7 +19766,8 @@ async def handle_antibot_callback(q, d, uid, ctx):
         buttons.append([btn("◀️ Назад", callback_data="aab_refresh")])
         try:
             await q.message.edit_text("\n".join(lines) if lines else "Список пуст.", parse_mode=ParseMode.HTML, reply_markup=InlineKeyboardMarkup(buttons))
-        except Exception: pass
+        except (BadRequest, Forbidden, TimedOut):
+            pass
         return
 
     if d.startswith("aab_untrust_"):
@@ -19811,7 +19827,7 @@ async def handle_antibot_callback(q, d, uid, ctx):
         ])
         try:
             await q.message.edit_text(text, parse_mode=ParseMode.HTML, reply_markup=kb)
-        except Exception:
+        except (BadRequest, Forbidden, TimedOut):
             pass
         return
 
@@ -19875,7 +19891,7 @@ async def handle_antibot_callback(q, d, uid, ctx):
                 f"Теперь можно откатить монеты и скины у всех ботов (шаг 3).",
                 parse_mode=ParseMode.HTML, reply_markup=kb
             )
-        except Exception:
+        except (BadRequest, Forbidden, TimedOut):
             pass
         return
 
@@ -20507,8 +20523,8 @@ async def get_user_risk_full(uid: int) -> dict:
                 row = await c.fetchone()
         if row:
             return dict(row)
-    except Exception:
-        pass
+    except Exception as _e:
+        logger.exception("подавлено исключение: %s", _e)
     return {"user_id": uid, "risk_level": 0, "risk_reason": "", "risk_updated": 0, "flags": "{}"}
 
 
@@ -20731,8 +20747,8 @@ async def cmd_adminrisk(update: Update, ctx: ContextTypes.DEFAULT_TYPE) -> None:
                 (uid, day_start),
             ) as c:
                 receivers_list = await c.fetchall()
-    except Exception:
-        pass
+    except Exception as _e:
+        logger.exception("подавлено исключение: %s", _e)
 
     def _fmt_user(uid2, fname2, uname2):
         n = fname2 or uname2 or str(uid2)
@@ -20899,7 +20915,8 @@ async def handle_bot_contacts_callback(q, d: str, uid: int, ctx) -> None:
                     banned_names.append(cname2)
             await q.answer((f"🚫 Забанено: {len(banned_names)}")[:200], show_alert=True)
             try: await q.message.delete()
-            except Exception: pass
+            except Exception as _e:
+                logger.exception("подавлено исключение: %s", _e)
             await _send_bot_contacts_page(ctx.bot, uid, bot_uid, bname, contacts, page)
             return
 
@@ -20939,8 +20956,8 @@ async def handle_bot_contacts_callback(q, d: str, uid: int, ctx) -> None:
         bname = (bf.get("first_name") or str(bot_uid)) if bf else str(bot_uid)
         try:
             await q.message.delete()
-        except Exception:
-            pass
+        except Exception as _e:
+            logger.exception("подавлено исключение: %s", _e)
         await _send_bot_contacts_page(ctx.bot, uid, bot_uid, bname, contacts, page)
         return
 
@@ -20956,8 +20973,8 @@ async def handle_bot_contacts_callback(q, d: str, uid: int, ctx) -> None:
         bname = (bf.get("first_name") or str(bot_uid)) if bf else str(bot_uid)
         try:
             await q.message.delete()
-        except Exception:
-            pass
+        except Exception as _e:
+            logger.exception("подавлено исключение: %s", _e)
         await _send_bot_contacts_page(ctx.bot, uid, bot_uid, bname, contacts, page)
         return
 
@@ -20975,8 +20992,8 @@ async def handle_bot_contacts_callback(q, d: str, uid: int, ctx) -> None:
         bname = (bf.get("first_name") or str(bot_uid)) if bf else str(bot_uid)
         try:
             await q.message.delete()
-        except Exception:
-            pass
+        except Exception as _e:
+            logger.exception("подавлено исключение: %s", _e)
         await _send_bot_contacts_page(ctx.bot, uid, bot_uid, bname, contacts, page)
         return
 
@@ -21061,8 +21078,8 @@ async def handle_risk_callback(q, d: str, uid: int, ctx) -> None:
                 await db.execute("UPDATE frogs SET banned=0 WHERE user_id=? AND banned=1", (target,))
                 await db.commit()
             _user_cache.invalidate(target)
-        except Exception:
-            pass
+        except Exception as _e:
+            logger.exception("подавлено исключение: %s", _e)
         await q.answer("✅ Риск сброшен до нормы", show_alert=True)
         return
 
@@ -21527,7 +21544,7 @@ async def _do_rollback(bot_uid: int, hours: int, dry_run: bool, bot) -> str:
                         f"Затронуто: {total_victims_affected} игроков",
                         parse_mode=ParseMode.HTML,
                     )
-                except Exception:
+                except (BadRequest, Forbidden, TimedOut):
                     pass
 
     return "\n".join(report_lines)
@@ -21728,7 +21745,7 @@ async def cmd_adminundo(update: Update, ctx: ContextTypes.DEFAULT_TYPE):
             )
             try:
                 await ctx.bot.send_message(target_uid, f"✅ Администратор вернул тебя в стаю «{he(staya_name)}».", parse_mode=ParseMode.HTML)
-            except Exception:
+            except (BadRequest, Forbidden, TimedOut):
                 pass
 
         elif action == "staya_role":
@@ -21854,7 +21871,7 @@ async def cmd_adminundo(update: Update, ctx: ContextTypes.DEFAULT_TYPE):
                 f"Зайди в /staya чтобы увидеть её.",
                 parse_mode=ParseMode.HTML,
             )
-        except Exception:
+        except (BadRequest, Forbidden, TimedOut):
             pass
 
     else:
@@ -21866,14 +21883,16 @@ async def handle_rollback_callback(q, d, uid, ctx):
 
     if d == "rollback_cancel":
         try: await q.message.edit_text("❌ Откат отменён.")
-        except Exception: pass
+        except (BadRequest, Forbidden, TimedOut):
+            pass
         return
 
     if d.startswith("rollback_confirm|"):
         parts = d.split("|")
         bot_uid, hours = int(parts[1]), int(parts[2])
         try: await q.message.edit_text("🔨 Выполняю откат... Это может занять несколько секунд.")
-        except Exception: pass
+        except (BadRequest, Forbidden, TimedOut):
+            pass
         report = await _do_rollback(bot_uid, hours, dry_run=False, bot=ctx.bot)
         # Отчёт может быть длинным — отправляем новым сообщением
         try:
@@ -21955,7 +21974,7 @@ async def cmd_start(update: Update, ctx: ContextTypes.DEFAULT_TYPE):
                             f"🏘 <b>{he(user.first_name)}</b> принял приглашение и стал соседом.",
                             parse_mode=ParseMode.HTML,
                         )
-                    except Exception:
+                    except (BadRequest, Forbidden, TimedOut):
                         pass
             except (ValueError, TypeError):
                 pass
@@ -21964,8 +21983,8 @@ async def cmd_start(update: Update, ctx: ContextTypes.DEFAULT_TYPE):
         if arg.startswith("chat_"):
             try:
                 start_source_chat_id = int(arg[5:])
-            except Exception:
-                pass
+            except Exception as _e:
+                logger.exception("подавлено исключение: %s", _e)
         # Реферал: ?start=ref_123456
         elif is_new and arg.startswith("ref_"):
             try:
@@ -21981,8 +22000,8 @@ async def cmd_start(update: Update, ctx: ContextTypes.DEFAULT_TYPE):
                                 ref_count = (await c.fetchone())[0]
                         if ref_count < 50000:
                             referrer_id = ref_id
-            except Exception:
-                pass
+            except Exception as _e:
+                logger.exception("подавлено исключение: %s", _e)
 
     # ── Если /start написан прямо в партнёрском чате — владелец чата становится реферером ──
     if is_new and not referrer_id and is_group(update):
@@ -22004,8 +22023,8 @@ async def cmd_start(update: Update, ctx: ContextTypes.DEFAULT_TYPE):
                                 ref_count = (await c.fetchone())[0]
                         if ref_count < 50000:
                             referrer_id = chat_owner_id
-        except Exception:
-            pass
+        except Exception as _e:
+            logger.exception("подавлено исключение: %s", _e)
 
     # Устанавливаем source_chat_id если ещё не задан (при первом входе или новом источнике)
     if start_source_chat_id and not is_new and f:
@@ -22033,7 +22052,7 @@ async def cmd_start(update: Update, ctx: ContextTypes.DEFAULT_TYPE):
                         parse_mode=ParseMode.HTML,
                         link_preview_options=LinkPreviewOptions(is_disabled=True),
                     )
-            except Exception:
+            except (BadRequest, Forbidden, TimedOut):
                 pass
         # Создаём реферальную запись
         if referrer_id:
@@ -22044,8 +22063,8 @@ async def cmd_start(update: Update, ctx: ContextTypes.DEFAULT_TYPE):
                         (referrer_id, user.id, time.time()),
                     )
                     await db.commit()
-                except Exception:
-                    pass
+                except Exception as _e:
+                    logger.exception("подавлено исключение: %s", _e)
             # ── Конкурс: записываем реферала ─────────────────────────────────
             _active_contest = await _get_active_contest()
             if _active_contest:
@@ -22080,8 +22099,8 @@ async def cmd_start(update: Update, ctx: ContextTypes.DEFAULT_TYPE):
                                 f"Награда заморожена. /adminantibot для проверки.",
                                 parse_mode=ParseMode.HTML,
                             )
-                        except Exception:
-                            pass
+                        except Exception as _e:
+                            logger.exception("подавлено исключение: %s", _e)
             else:
                 # Чисто → выдаём +50 монет рефереру сразу
                 await _referral_stage_reward(referrer_id, user.id, 0, ctx.bot)
@@ -22201,7 +22220,7 @@ async def cmd_start(update: Update, ctx: ContextTypes.DEFAULT_TYPE):
                     except Exception:
                         await update.message.reply_text("\n".join(lines), parse_mode=ParseMode.HTML, reply_markup=InlineKeyboardMarkup(buttons))
                     return
-            except Exception:
+            except (BadRequest, Forbidden, TimedOut):
                 pass
 
         # Deep-link для вступления в ИДУЩУЮ экспедицию: ?start=exp_mid_join_<id>
@@ -22305,7 +22324,7 @@ async def cmd_frog(update: Update, ctx: ContextTypes.DEFAULT_TYPE):
                 f"💰 Тебе возвращено: <b>{refund}{coin_emoji()}</b>",
                 parse_mode=ParseMode.HTML,
             )
-        except Exception:
+        except (BadRequest, Forbidden, TimedOut):
             pass
 
     f = decay(f)
@@ -22566,7 +22585,8 @@ async def cmd_top(update: Update, ctx: ContextTypes.DEFAULT_TYPE):
         mode = await get_chat_mode(update.effective_chat.id)
         if mode == "readonly":
             try: await update.message.delete()
-            except Exception: pass
+            except Exception as _e:
+                logger.exception("подавлено исключение: %s", _e)
             return
         if mode == "vanilla":
             await vanilla_redirect(update, ctx, "top")
@@ -22968,7 +22988,7 @@ async def cmd_gift(update: Update, ctx: ContextTypes.DEFAULT_TYPE):
                 f"Теперь у тебя: {target_fresh['coins']}{coin_emoji()}",
                 parse_mode=ParseMode.HTML,
             )
-    except Exception:
+    except (BadRequest, Forbidden, TimedOut):
         pass
     # ── Обновляем квесты и испытание после воскрешения ────────────────────
     await quest_update(user.id, "gift")
@@ -23180,7 +23200,7 @@ async def _casino_auto_loop(
                         btn("⭐ Пополнить", callback_data="buy_stars_quick"),
                     ]]),
                 )
-            except Exception:
+            except (BadRequest, Forbidden, TimedOut):
                 pass
             break
 
@@ -23210,7 +23230,7 @@ async def _casino_auto_loop(
                     btn("⏹ Стоп", callback_data=f"casino_auto_stop_{uid}", style="danger")
                 ]]),
             )
-        except Exception:
+        except (BadRequest, Forbidden, TimedOut):
             pass
 
         # Бросаем кубик
@@ -23321,7 +23341,7 @@ async def _casino_auto_loop(
                         btn("⭐ Пополнить", callback_data="buy_stars_quick"),
                     ]]),
                 )
-            except Exception:
+            except (BadRequest, Forbidden, TimedOut):
                 pass
             break
 
@@ -23336,7 +23356,7 @@ async def _casino_auto_loop(
                     btn("⏹ Стоп", callback_data=f"casino_auto_stop_{uid}", style="danger")
                 ]]),
             )
-        except Exception:
+        except (BadRequest, Forbidden, TimedOut):
             pass
 
         # Пауза 1.5 сек чтобы игрок видел результат перед следующим броском
@@ -23552,7 +23572,7 @@ async def cmd_battle(update: Update, ctx: ContextTypes.DEFAULT_TYPE):
             parse_mode=ParseMode.HTML,
             reply_markup=kb,
         )
-    except Exception:
+    except (BadRequest, Forbidden, TimedOut):
         pass
     ctx.job_queue.run_once(
         lambda c: asyncio.create_task(_expire_battle(battle_id)),
@@ -23580,7 +23600,8 @@ async def cmd_duel(update: Update, ctx: ContextTypes.DEFAULT_TYPE):
         mode = await get_chat_mode(update.effective_chat.id)
         if mode == "readonly":
             try: await update.message.delete()
-            except Exception: pass
+            except Exception as _e:
+                logger.exception("подавлено исключение: %s", _e)
             return
         if mode == "vanilla":
             await vanilla_redirect(update, ctx, "duel")
@@ -23765,7 +23786,7 @@ async def cmd_duel(update: Update, ctx: ContextTypes.DEFAULT_TYPE):
             reply_markup=kb,
             link_preview_options=LinkPreviewOptions(is_disabled=True),
         )
-    except Exception:
+    except (BadRequest, Forbidden, TimedOut):
         pass
     ctx.job_queue.run_once(
         lambda c: asyncio.create_task(_expire_duel(duel_id)),
@@ -23910,13 +23931,13 @@ async def cmd_feed(update: Update, ctx: ContextTypes.DEFAULT_TYPE):
             f"{_E_FOOD} <b>Ням-ням!</b> <i>Лягушка {_feed_tname_esc} ест...</i> 👅",
             parse_mode=ParseMode.HTML,
         )
-    except Exception:
+    except (BadRequest, Forbidden, TimedOut):
         pass
     await asyncio.sleep(1.0)
     try:
         await anim_msg.delete()
-    except Exception:
-        pass
+    except Exception as _e:
+        logger.exception("подавлено исключение: %s", _e)
 
     # Кормим — сначала применяем decay чтобы не было расхождения при следующем открытии
     hunger_gain = 20
@@ -24013,8 +24034,8 @@ async def cmd_feed(update: Update, ctx: ContextTypes.DEFAULT_TYPE):
                 parse_mode=ParseMode.HTML,
                 reply_markup=_feed_notify_kb,
             )
-    except Exception:
-        pass
+    except Exception as _e:
+        logger.exception("подавлено исключение: %s", _e)
 
 
 # ─── конец cmd_feed ───────────────────────────────────────
@@ -24223,7 +24244,7 @@ async def cmd_nft(update: Update, ctx: ContextTypes.DEFAULT_TYPE):
                     f"Надень через 👗 Облики → /frog",
                     parse_mode=ParseMode.HTML,
                 )
-            except Exception:
+            except (BadRequest, Forbidden, TimedOut):
                 pass
             return
 
@@ -24252,7 +24273,7 @@ async def cmd_nft(update: Update, ctx: ContextTypes.DEFAULT_TYPE):
                     f"Надень через 👗 Облики → /frog",
                     parse_mode=ParseMode.HTML,
                 )
-            except Exception:
+            except (BadRequest, Forbidden, TimedOut):
                 pass
             return
 
@@ -24297,7 +24318,7 @@ async def cmd_nft(update: Update, ctx: ContextTypes.DEFAULT_TYPE):
                 f"<i>Администратор проверит и добавит облик вручную.\n{reason}</i>",
                 parse_mode=ParseMode.HTML,
             )
-        except Exception:
+        except (BadRequest, Forbidden, TimedOut):
             pass
         return
 
@@ -24340,7 +24361,7 @@ async def cmd_nft(update: Update, ctx: ContextTypes.DEFAULT_TYPE):
                 "<code>/nft https://t.me/nft/KissedFrog-XXXX</code>",
                 parse_mode=ParseMode.HTML,
             )
-        except Exception:
+        except (BadRequest, Forbidden, TimedOut):
             pass
         return
 
@@ -24449,7 +24470,7 @@ async def cmd_nft(update: Update, ctx: ContextTypes.DEFAULT_TYPE):
 
     try:
         await msg.edit_text("\n".join(lines), parse_mode=ParseMode.HTML)
-    except Exception:
+    except (BadRequest, Forbidden, TimedOut):
         pass
 
 
@@ -24883,8 +24904,8 @@ async def cmd_subscribe(update: Update, ctx: ContextTypes.DEFAULT_TYPE):
                         f"{story}\n{event}\n"
                         f"<i>🏠 Вернётся вечером в 18:00 МСК</i>"
                     )
-            except Exception:
-                pass
+            except Exception as _e:
+                logger.exception("подавлено исключение: %s", _e)
 
     await update.message.reply_text(
         f"<tg-emoji emoji-id='5341367834935075028'>🐸</tg-emoji> <b>Подписки</b>\n\n"
@@ -25024,7 +25045,7 @@ async def cmd_broadcast_sub(update: Update, ctx: ContextTypes.DEFAULT_TYPE):
             f"{_E_CROSS} Не доставлено: <b>{failed}</b>",
             parse_mode=ParseMode.HTML,
         )
-    except Exception:
+    except (BadRequest, Forbidden, TimedOut):
         pass
 
 
@@ -25068,7 +25089,7 @@ async def cmd_adminsubscription(update: Update, ctx: ContextTypes.DEFAULT_TYPE):
                 "ℹ️ <b>Твоя подписка была деактивирована администратором.</b>",
                 parse_mode=ParseMode.HTML,
             )
-        except Exception:
+        except (BadRequest, Forbidden, TimedOut):
             pass
     elif action in ("nanny", "worker"):
         sub_type = 1 if action == "nanny" else 2
@@ -25094,7 +25115,7 @@ async def cmd_adminsubscription(update: Update, ctx: ContextTypes.DEFAULT_TYPE):
                    else "🏪 <i>Квакуся собирается на рынок!</i>"),
                 parse_mode=ParseMode.HTML,
             )
-        except Exception:
+        except (BadRequest, Forbidden, TimedOut):
             pass
     else:
         await update.message.reply_text("❌ Действие должно быть: nanny / worker / remove")
@@ -25188,7 +25209,7 @@ async def show_admin_panel(message, edit=False, bot_data=None):
     if edit:
         try:
             await message.edit_text(text, parse_mode=ParseMode.HTML, reply_markup=kb)
-        except Exception:
+        except (BadRequest, Forbidden, TimedOut):
             pass
     else:
         await message.reply_text(text, parse_mode=ParseMode.HTML, reply_markup=kb)
@@ -25207,7 +25228,7 @@ async def show_player_card(
                     [[btn("◀️ Назад", callback_data=back_cb)]]
                 ),
             )
-        except Exception:
+        except (BadRequest, Forbidden, TimedOut):
             pass
         return
     coll = await db_coll(target_uid)
@@ -25333,7 +25354,7 @@ async def show_player_card(
             await message.edit_text(text, parse_mode=ParseMode.HTML, reply_markup=kb)
         else:
             await message.reply_text(text, parse_mode=ParseMode.HTML, reply_markup=kb)
-    except Exception:
+    except (BadRequest, Forbidden, TimedOut):
         pass
 
 
@@ -25447,7 +25468,7 @@ async def cmd_broadcast(update: Update, ctx: ContextTypes.DEFAULT_TYPE):
         await status_msg.edit_text(
             f"✅ Рассылка завершена!{photo_note}\n📨 Доставлено: {sent}\n{_E_CROSS} Не доставлено: {failed}"
         )
-    except Exception:
+    except (BadRequest, Forbidden, TimedOut):
         pass
 
 
@@ -25607,7 +25628,7 @@ async def cmd_admincasino(update: Update, ctx: ContextTypes.DEFAULT_TYPE):
                     f"🔴 <b>Казино отключено</b> администратором {user.first_name} (ID:{user.id})",
                     parse_mode=ParseMode.HTML,
                 )
-            except Exception:
+            except (BadRequest, Forbidden, TimedOut):
                 pass
     elif arg == "on":
         await db_setting("casino_disabled", "0")
@@ -25623,7 +25644,7 @@ async def cmd_admincasino(update: Update, ctx: ContextTypes.DEFAULT_TYPE):
                     f"🟢 <b>Казино включено</b> администратором {user.first_name} (ID:{user.id})",
                     parse_mode=ParseMode.HTML,
                 )
-            except Exception:
+            except (BadRequest, Forbidden, TimedOut):
                 pass
     else:
         await update.message.reply_text("❌ Укажи <code>on</code> или <code>off</code>", parse_mode=ParseMode.HTML)
@@ -25740,7 +25761,7 @@ async def cmd_givestreak(update: Update, ctx: ContextTypes.DEFAULT_TYPE) -> None
             f"🔥 Администратор восстановил твой стрик {type_ru}: <b>{value}</b>",
             parse_mode=ParseMode.HTML,
         )
-    except Exception:
+    except (BadRequest, Forbidden, TimedOut):
         pass
 
 
@@ -25786,7 +25807,7 @@ async def cmd_givecoin(update: Update, ctx: ContextTypes.DEFAULT_TYPE):
             f"Баланс: {target['coins']}{coin_emoji()}",
             parse_mode=ParseMode.HTML,
         )
-    except Exception:
+    except (BadRequest, Forbidden, TimedOut):
         pass
 
 
@@ -25848,7 +25869,7 @@ async def cmd_givexp(update: Update, ctx: ContextTypes.DEFAULT_TYPE):
             + (f"\n🎉 Новый уровень: <b>{new_lvl}</b>!" if new_lvl > old_lvl else ""),
             parse_mode=ParseMode.HTML,
         )
-    except Exception:
+    except (BadRequest, Forbidden, TimedOut):
         pass
 
 
@@ -25976,7 +25997,7 @@ async def cmd_adminrename(update: Update, ctx: ContextTypes.DEFAULT_TYPE):
                 f"<i>Если считаешь это ошибкой — напиши администратору.</i>",
                 parse_mode=ParseMode.HTML,
             )
-        except Exception:
+        except (BadRequest, Forbidden, TimedOut):
             pass
         return
 
@@ -26014,7 +26035,7 @@ async def cmd_adminrename(update: Update, ctx: ContextTypes.DEFAULT_TYPE):
                     f"<i>Если считаешь это ошибкой — напиши администратору.</i>",
                     parse_mode=ParseMode.HTML,
                 )
-            except Exception:
+            except (BadRequest, Forbidden, TimedOut):
                 pass
         return
 
@@ -26059,7 +26080,7 @@ async def cmd_giveskin(update: Update, ctx: ContextTypes.DEFAULT_TYPE):
             f"Надеть: /frog → 👗 Облики",
             parse_mode=ParseMode.HTML,
         )
-    except Exception:
+    except (BadRequest, Forbidden, TimedOut):
         pass
 
 
@@ -26108,7 +26129,7 @@ async def cmd_removeskin(update: Update, ctx: ContextTypes.DEFAULT_TYPE):
             f"⚠️ Администратор забрал у вас облик <b>{_html.escape(matched_skin)}</b>.",
             parse_mode=ParseMode.HTML,
         )
-    except Exception:
+    except (BadRequest, Forbidden, TimedOut):
         pass
 
 
@@ -26576,7 +26597,7 @@ async def cmd_ref_approve(update: Update, ctx: ContextTypes.DEFAULT_TYPE):
             f"Администратор свяжется с тобой для перевода Stars.",
             parse_mode=ParseMode.HTML,
         )
-    except Exception:
+    except (BadRequest, Forbidden, TimedOut):
         pass
     await update.message.reply_text(f"✅ Заявка #{req_id} одобрена. Пользователь уведомлён.")
 
@@ -26612,7 +26633,7 @@ async def cmd_ref_decline(update: Update, ctx: ContextTypes.DEFAULT_TYPE):
             f"{_E_CROSS} <b>Заявка на вывод отклонена.</b>\n\nСумма: {amount} ⭐\nСвяжись с администратором для уточнения.",
             parse_mode=ParseMode.HTML,
         )
-    except Exception:
+    except (BadRequest, Forbidden, TimedOut):
         pass
     await update.message.reply_text(f"{_E_CROSS} Заявка #{req_id} отклонена.")
 
@@ -26667,7 +26688,7 @@ async def cmd_chatban(update: Update, ctx: ContextTypes.DEFAULT_TYPE):
             f"{_E_BAN} <b>Вы заблокированы в чате «{he(chat.title or '')}».</b>\nПричина: {reason}",
             parse_mode=ParseMode.HTML,
         )
-    except Exception:
+    except (BadRequest, Forbidden, TimedOut):
         pass
 
 
@@ -26714,7 +26735,7 @@ async def cmd_chatunban(update: Update, ctx: ContextTypes.DEFAULT_TYPE):
             f"✅ <b>Ваш бан в чате «{he(chat.title or '')}» снят!</b>",
             parse_mode=ParseMode.HTML,
         )
-    except Exception:
+    except (BadRequest, Forbidden, TimedOut):
         pass
 
 
@@ -26828,7 +26849,7 @@ async def cmd_chatmute(update: Update, ctx: ContextTypes.DEFAULT_TYPE):
             f"<i>В период мута вы не можете взаимодействовать с ботом в этом чате.</i>",
             parse_mode=ParseMode.HTML,
         )
-    except Exception:
+    except (BadRequest, Forbidden, TimedOut):
         pass
 
 
@@ -26871,7 +26892,7 @@ async def cmd_chatunmute(update: Update, ctx: ContextTypes.DEFAULT_TYPE):
             f"🔊 <b>Ваш мут в чате «{he(chat.title or '')}» снят!</b>",
             parse_mode=ParseMode.HTML,
         )
-    except Exception:
+    except (BadRequest, Forbidden, TimedOut):
         pass
 
 
@@ -27255,7 +27276,7 @@ async def cmd_ban(update: Update, ctx: ContextTypes.DEFAULT_TYPE):
             f"{_E_BAN} <b>Ваш аккаунт заблокирован администрацией.</b>\nПричина: {reason}",
             parse_mode=ParseMode.HTML,
         )
-    except Exception:
+    except (BadRequest, Forbidden, TimedOut):
         pass
 
 
@@ -27290,7 +27311,7 @@ async def cmd_unban(update: Update, ctx: ContextTypes.DEFAULT_TYPE):
             "✅ <b>Ваш аккаунт разблокирован!</b>",
             parse_mode=ParseMode.HTML,
         )
-    except Exception:
+    except (BadRequest, Forbidden, TimedOut):
         pass
 
 
@@ -27359,7 +27380,8 @@ async def cmd_casino(update: Update, ctx: ContextTypes.DEFAULT_TYPE):
         mode = await get_chat_mode(update.effective_chat.id)
         if mode == "readonly":
             try: await update.message.delete()
-            except Exception: pass
+            except Exception as _e:
+                logger.exception("подавлено исключение: %s", _e)
             return
         if mode == "vanilla":
             await vanilla_redirect(update, ctx, "casino")
@@ -27721,7 +27743,7 @@ async def cmd_portfolio(update: Update, ctx: ContextTypes.DEFAULT_TYPE):
                 "😕 Данные о портфеле не найдены.\n<i>Пользователь не зарегистрирован в See.tg или у него нет гифтов.</i>",
                 parse_mode=ParseMode.HTML,
             )
-        except Exception:
+        except (BadRequest, Forbidden, TimedOut):
             pass
         return
 
@@ -27763,7 +27785,7 @@ async def cmd_portfolio(update: Update, ctx: ContextTypes.DEFAULT_TYPE):
 
     try:
         await msg.edit_text("\n".join(lines), parse_mode=ParseMode.HTML)
-    except Exception:
+    except (BadRequest, Forbidden, TimedOut):
         pass
 
 
@@ -27817,7 +27839,7 @@ async def cmd_giftcheck(update: Update, ctx: ContextTypes.DEFAULT_TYPE):
                     f"Гифт <b>{_html.escape(slug)} #{num}</b> не найден.",
                     parse_mode=ParseMode.HTML,
                 )
-            except Exception:
+            except (BadRequest, Forbidden, TimedOut):
                 pass
             return
         owner_xg = gift_xg.get("currentOwner") or gift_xg.get("owner") or {}
@@ -27837,7 +27859,7 @@ async def cmd_giftcheck(update: Update, ctx: ContextTypes.DEFAULT_TYPE):
                 parse_mode=ParseMode.HTML,
                 link_preview_options=LinkPreviewOptions(),
             )
-        except Exception:
+        except (BadRequest, Forbidden, TimedOut):
             pass
         return
 
@@ -27958,7 +27980,7 @@ async def cmd_giftcheck(update: Update, ctx: ContextTypes.DEFAULT_TYPE):
             parse_mode=ParseMode.HTML,
             link_preview_options=LinkPreviewOptions(),
         )
-    except Exception:
+    except (BadRequest, Forbidden, TimedOut):
         pass
 
 async def cmd_admin_nft_recheck(update: Update, ctx: ContextTypes.DEFAULT_TYPE):
@@ -28150,7 +28172,7 @@ async def cmd_admin_nft_invite(update: Update, ctx: ContextTypes.DEFAULT_TYPE):
             f"Отправляю приглашения...",
             parse_mode="HTML",
         )
-    except Exception:
+    except (BadRequest, Forbidden, TimedOut):
         pass
 
     # Отправляем приглашения тем кто не в чате
@@ -28214,7 +28236,7 @@ async def cmd_admin_nft_invite(update: Update, ctx: ContextTypes.DEFAULT_TYPE):
     ]
     try:
         await update.message.reply_text("\n".join(report_lines), parse_mode="HTML")
-    except Exception:
+    except (BadRequest, Forbidden, TimedOut):
         pass
 
 async def cmd_giftfloors(update: Update, ctx: ContextTypes.DEFAULT_TYPE):
@@ -28290,7 +28312,7 @@ async def cmd_giftfloors(update: Update, ctx: ContextTypes.DEFAULT_TYPE):
                     f"Коллекция <b>{_html.escape(slug)}</b> не найдена.",
                     parse_mode=ParseMode.HTML,
                 )
-            except Exception:
+            except (BadRequest, Forbidden, TimedOut):
                 pass
             return
         lines = [f"<b>Флоры · {_html.escape(slug)}</b>\n"]
@@ -28307,7 +28329,7 @@ async def cmd_giftfloors(update: Update, ctx: ContextTypes.DEFAULT_TYPE):
                 lines.append(f"  {_html.escape(str(model))}: <b>{price:.2f} TON</b>")
         try:
             await msg.edit_text("\n".join(lines), parse_mode=ParseMode.HTML)
-        except Exception:
+        except (BadRequest, Forbidden, TimedOut):
             pass
         return
 
@@ -28368,7 +28390,7 @@ async def cmd_giftfloors(update: Update, ctx: ContextTypes.DEFAULT_TYPE):
 
     try:
         await msg.edit_text("\n".join(lines), parse_mode=ParseMode.HTML)
-    except Exception:
+    except (BadRequest, Forbidden, TimedOut):
         pass
 
 
@@ -28481,7 +28503,7 @@ async def cmd_checkgroup(update: Update, ctx: ContextTypes.DEFAULT_TYPE):
                 "❌ В базе нет верифицированных владельцев NFT.",
                 parse_mode=ParseMode.HTML,
             )
-        except Exception:
+        except (BadRequest, Forbidden, TimedOut):
             pass
         return
 
@@ -28532,7 +28554,7 @@ async def cmd_checkgroup(update: Update, ctx: ContextTypes.DEFAULT_TYPE):
                     f"{_E_DOOR} вышли: {left_group_count}",
                     parse_mode=ParseMode.HTML,
                 )
-            except Exception:
+            except (BadRequest, Forbidden, TimedOut):
                 pass
 
         # ── Проверяем членство в группе ──────────────────────────────────────
@@ -28621,7 +28643,7 @@ async def cmd_checkgroup(update: Update, ctx: ContextTypes.DEFAULT_TYPE):
     if not no_nft_entries:
         try:
             await msg.edit_text(summary, parse_mode=ParseMode.HTML)
-        except Exception:
+        except (BadRequest, Forbidden, TimedOut):
             pass
         return
 
@@ -29178,7 +29200,7 @@ async def cmd_nft_contest_broadcast(update: Update, ctx: ContextTypes.DEFAULT_TY
             f"🥚🐛🐸 Лиги: Икринка, Головастик, Лягушонок\n"
             f"📨 Доставлено: {sent}\n{_E_CROSS} Не доставлено: {failed}"
         )
-    except Exception:
+    except (BadRequest, Forbidden, TimedOut):
         pass
 
 
@@ -29426,7 +29448,7 @@ async def cmd_contest_export(update: Update, ctx: ContextTypes.DEFAULT_TYPE):
                 username = f"@{tg.username}"
             if not name or name == str(uid_p):
                 name = tg.full_name or str(uid_p)
-        except Exception:
+        except (BadRequest, Forbidden, TimedOut):
             pass
         ref_t  = ref_tickets.get(uid_p, 0)
         skin_t = skin_tickets.get(uid_p, 0)
@@ -29593,7 +29615,7 @@ async def cmd_contest_winners(update: Update, ctx: ContextTypes.DEFAULT_TYPE):
         tg_user = None
         try:
             tg_user = await update.get_bot().get_chat(wid)
-        except Exception:
+        except (BadRequest, Forbidden, TimedOut):
             pass
         uname = (tg_user.username if tg_user and tg_user.username else None)
         name = (rf.get("frog_name") or rf.get("first_name") or str(wid)) if rf else str(wid)
@@ -29680,7 +29702,7 @@ async def cmd_contest_refs(update: Update, ctx: ContextTypes.DEFAULT_TYPE):
             tg_name = tg.full_name or ""
             if tg_name:
                 return _html.escape(tg_name)
-        except Exception:
+        except (BadRequest, Forbidden, TimedOut):
             pass
         if rf:
             return _html.escape(rf.get("frog_name") or rf.get("first_name") or str(rid))
@@ -30006,7 +30028,8 @@ async def admin_router(update: Update, ctx: ContextTypes.DEFAULT_TYPE):
                 parse_mode=ParseMode.HTML,
                 reply_markup=InlineKeyboardMarkup([[btn("❌ Отмена", callback_data="admin_refresh")]])
             )
-        except Exception: pass
+        except (BadRequest, Forbidden, TimedOut):
+            pass
         return
     if d.startswith("admin_ban_toggle_"):
         if uid not in ADMIN_IDS:
@@ -30057,7 +30080,7 @@ async def admin_router(update: Update, ctx: ContextTypes.DEFAULT_TYPE):
                 parse_mode=ParseMode.HTML,
                 reply_markup=kb_boost,
             )
-        except Exception:
+        except (BadRequest, Forbidden, TimedOut):
             pass
         return
     if d.startswith("admin_boost_start_"):
@@ -30083,7 +30106,7 @@ async def admin_router(update: Update, ctx: ContextTypes.DEFAULT_TYPE):
                 f"<i>Скорее в магазин и гачу! <tg-emoji emoji-id='5341367834935075028'>🐸</tg-emoji></i>",
                 parse_mode=ParseMode.HTML,
             )
-        except Exception:
+        except (BadRequest, Forbidden, TimedOut):
             pass
         # ЛС-рассылка
         async with aiosqlite.connect(DB_PATH) as db:
@@ -30098,7 +30121,7 @@ async def admin_router(update: Update, ctx: ContextTypes.DEFAULT_TYPE):
                     f"Событие идёт <b>{hours} ч</b>. Заходи!",
                     parse_mode=ParseMode.HTML,
                 )
-            except Exception:
+            except (BadRequest, Forbidden, TimedOut):
                 pass
             await asyncio.sleep(0.05)
         return
@@ -30116,7 +30139,7 @@ async def admin_router(update: Update, ctx: ContextTypes.DEFAULT_TYPE):
                 "Курсы и шансы вернулись в норму. <tg-emoji emoji-id='5341367834935075028'>🐸</tg-emoji>",
                 parse_mode=ParseMode.HTML,
             )
-        except Exception:
+        except (BadRequest, Forbidden, TimedOut):
             pass
         return
     if d.startswith("nft_approve_") and not d.startswith("nft_approve_list_"):
@@ -30162,7 +30185,7 @@ async def admin_router(update: Update, ctx: ContextTypes.DEFAULT_TYPE):
                 parse_mode=ParseMode.HTML,
                 link_preview_options=LinkPreviewOptions(),
             )
-        except Exception:
+        except (BadRequest, Forbidden, TimedOut):
             pass
         # Приглашение в закрытый NFT-клуб
         if NFT_CLUB_CHAT_ID:
@@ -30185,7 +30208,7 @@ async def admin_router(update: Update, ctx: ContextTypes.DEFAULT_TYPE):
         await q.answer((f"✅ Подтверждено. Выдан: {skin_to_give}")[:200], show_alert=True)
         try:
             await q.edit_message_reply_markup(reply_markup=None)
-        except Exception:
+        except (BadRequest, Forbidden, TimedOut):
             pass
         return
     if d.startswith("nft_reject_") and not d.startswith("nft_reject_list_"):
@@ -30204,12 +30227,12 @@ async def admin_router(update: Update, ctx: ContextTypes.DEFAULT_TYPE):
                     f"{_E_CROSS} Заявка на KissedFrog #{row[1]} отклонена администратором.\n"
                     f"Если считаете это ошибкой — напишите /nft с правильной ссылкой.",
                 )
-            except Exception:
+            except (BadRequest, Forbidden, TimedOut):
                 pass
         await q.answer("❌ Отклонено", show_alert=True)
         try:
             await q.edit_message_reply_markup(reply_markup=None)
-        except Exception:
+        except (BadRequest, Forbidden, TimedOut):
             pass
         return
     # ── /chatsettings и /chatadmin колбэки (единая панель) ──────────────
@@ -30278,7 +30301,7 @@ async def admin_router(update: Update, ctx: ContextTypes.DEFAULT_TYPE):
                 parse_mode=ParseMode.HTML,
                 link_preview_options=LinkPreviewOptions(),
             )
-        except Exception:
+        except (BadRequest, Forbidden, TimedOut):
             pass
         # Приглашение в закрытый NFT-клуб
         if NFT_CLUB_CHAT_ID:
@@ -30521,7 +30544,7 @@ async def admin_router(update: Update, ctx: ContextTypes.DEFAULT_TYPE):
                     [btn("◀️ Назад", callback_data="admin_refresh")],
                 ]),
             )
-        except Exception:
+        except (BadRequest, Forbidden, TimedOut):
             pass
         await q.answer()
         return
@@ -30547,7 +30570,7 @@ async def admin_router(update: Update, ctx: ContextTypes.DEFAULT_TYPE):
                     parse_mode=ParseMode.HTML,
                     reply_markup=InlineKeyboardMarkup(kb),
                 )
-            except Exception:
+            except (BadRequest, Forbidden, TimedOut):
                 pass
             return
 
@@ -30573,7 +30596,7 @@ async def admin_router(update: Update, ctx: ContextTypes.DEFAULT_TYPE):
                     parse_mode=ParseMode.HTML,
                     reply_markup=InlineKeyboardMarkup(kb),
                 )
-            except Exception:
+            except (BadRequest, Forbidden, TimedOut):
                 pass
             return
 
@@ -30611,7 +30634,7 @@ async def admin_router(update: Update, ctx: ContextTypes.DEFAULT_TYPE):
                     parse_mode=ParseMode.HTML,
                     reply_markup=InlineKeyboardMarkup(kb),
                 )
-            except Exception:
+            except (BadRequest, Forbidden, TimedOut):
                 pass
             return
     if d == "admin_stuck_stats":
@@ -30680,7 +30703,7 @@ async def admin_router(update: Update, ctx: ContextTypes.DEFAULT_TYPE):
                     [btn("◀️ Назад", callback_data="admin_stats")],
                 ]),
             )
-        except Exception:
+        except (BadRequest, Forbidden, TimedOut):
             pass
         return
     if d.startswith("admin_players_") and not d.startswith("admin_players_p_"):
@@ -30735,7 +30758,7 @@ async def admin_router(update: Update, ctx: ContextTypes.DEFAULT_TYPE):
                 parse_mode=ParseMode.HTML,
                 reply_markup=InlineKeyboardMarkup(kb_rows),
             )
-        except Exception:
+        except (BadRequest, Forbidden, TimedOut):
             pass
         await q.answer()
         return
@@ -30817,7 +30840,7 @@ async def admin_router(update: Update, ctx: ContextTypes.DEFAULT_TYPE):
                     ]
                 ]),
             )
-        except Exception:
+        except (BadRequest, Forbidden, TimedOut):
             pass
         await q.answer()
         return
@@ -30839,24 +30862,24 @@ async def admin_router(update: Update, ctx: ContextTypes.DEFAULT_TYPE):
                 await db.execute("DELETE FROM nft_frogs WHERE user_id=?", (target_uid_del,))
                 try:
                     await db.execute("DELETE FROM duels WHERE challenger_id=? OR target_id=?", (target_uid_del, target_uid_del))
-                except Exception:
-                    pass
+                except Exception as _e:
+                    logger.exception("подавлено исключение: %s", _e)
                 try:
                     await db.execute("DELETE FROM referrals WHERE referrer_id=? OR referred_id=?", (target_uid_del, target_uid_del))
-                except Exception:
-                    pass
+                except Exception as _e:
+                    logger.exception("подавлено исключение: %s", _e)
                 try:
                     await db.execute("DELETE FROM shop_inventory WHERE user_id=?", (target_uid_del,))
-                except Exception:
-                    pass
+                except Exception as _e:
+                    logger.exception("подавлено исключение: %s", _e)
                 try:
                     await db.execute("DELETE FROM lottery_tickets WHERE user_id=?", (target_uid_del,))
-                except Exception:
-                    pass
+                except Exception as _e:
+                    logger.exception("подавлено исключение: %s", _e)
                 try:
                     await db.execute("DELETE FROM gift_log WHERE sender_id=? OR receiver_id=?", (target_uid_del, target_uid_del))
-                except Exception:
-                    pass
+                except Exception as _e:
+                    logger.exception("подавлено исключение: %s", _e)
                 await db.commit()
             await admin_log(uid, "delete_player", target_uid_del)
             try:
@@ -30867,7 +30890,7 @@ async def admin_router(update: Update, ctx: ContextTypes.DEFAULT_TYPE):
                         [btn("◀️ К списку игроков", callback_data="admin_players_0")]
                     ]),
                 )
-            except Exception:
+            except (BadRequest, Forbidden, TimedOut):
                 pass
         except Exception as e:
             try:
@@ -30878,7 +30901,7 @@ async def admin_router(update: Update, ctx: ContextTypes.DEFAULT_TYPE):
                         [btn("◀️ К списку игроков", callback_data="admin_players_0")]
                     ]),
                 )
-            except Exception:
+            except (BadRequest, Forbidden, TimedOut):
                 pass
         return
     # ── СПИСОК БОТОВ ────────────────────────────
@@ -30924,7 +30947,7 @@ async def admin_router(update: Update, ctx: ContextTypes.DEFAULT_TYPE):
                 parse_mode=ParseMode.HTML,
                 reply_markup=InlineKeyboardMarkup(kb_rows_b),
             )
-        except Exception:
+        except (BadRequest, Forbidden, TimedOut):
             pass
         await q.answer()
         return
@@ -30947,7 +30970,7 @@ async def admin_router(update: Update, ctx: ContextTypes.DEFAULT_TYPE):
                     "💚 <b>Тебя воскресила администрация!</b>\n\nТвоя лягушка снова жива! <tg-emoji emoji-id='5341367834935075028'>🐸</tg-emoji>",
                     parse_mode=ParseMode.HTML,
                 )
-            except Exception:
+            except (BadRequest, Forbidden, TimedOut):
                 pass
         await q.answer("💚 Воскрешено", show_alert=True)
         await show_player_card(q.message, target_uid_rev, edit=True)
@@ -30973,7 +30996,7 @@ async def admin_router(update: Update, ctx: ContextTypes.DEFAULT_TYPE):
                     "<tg-emoji emoji-id='5341573078537248907'>💀</tg-emoji> <b>Твоя лягушка была убита администрацией.</b>\n\nИспользуй /revive чтобы воскресить её.",
                     parse_mode=ParseMode.HTML,
                 )
-            except Exception:
+            except (BadRequest, Forbidden, TimedOut):
                 pass
         await q.answer("💀 Убито", show_alert=True)
         await show_player_card(q.message, target_uid_kill, edit=True)
@@ -31160,7 +31183,7 @@ async def admin_router(update: Update, ctx: ContextTypes.DEFAULT_TYPE):
                     f"Текущий опыт: {p_xp['xp']} XP (уровень {p_xp['level']})",
                     parse_mode=ParseMode.HTML,
                 )
-            except Exception:
+            except (BadRequest, Forbidden, TimedOut):
                 pass
         direction_xp = "+" if amount_xp > 0 else ""
         await q.answer((f"✅ {direction_xp}{amount_xp} XP")[:200], show_alert=True)
@@ -31198,7 +31221,7 @@ async def admin_router(update: Update, ctx: ContextTypes.DEFAULT_TYPE):
                 parse_mode=ParseMode.HTML,
                 reply_markup=kb_sc,
             )
-        except Exception:
+        except (BadRequest, Forbidden, TimedOut):
             pass
         await q.answer()
         return
@@ -31235,7 +31258,7 @@ async def admin_router(update: Update, ctx: ContextTypes.DEFAULT_TYPE):
                 parse_mode=ParseMode.HTML,
                 reply_markup=InlineKeyboardMarkup(skin_rows_ts),
             )
-        except Exception:
+        except (BadRequest, Forbidden, TimedOut):
             pass
         await q.answer()
         return
@@ -31275,7 +31298,7 @@ async def admin_router(update: Update, ctx: ContextTypes.DEFAULT_TYPE):
                 f"⚠️ Администратор изъял облик <b>{he(full_skin_ts)}</b> {pemoji(full_skin_ts)} из вашей коллекции.",
                 parse_mode=ParseMode.HTML,
             )
-        except Exception:
+        except (BadRequest, Forbidden, TimedOut):
             pass
         await q.answer((f"✅ Облик {full_skin_ts} изъят")[:200], show_alert=True)
         await show_player_card(q.message, target_uid_tsd, edit=True)
@@ -31308,7 +31331,7 @@ async def admin_router(update: Update, ctx: ContextTypes.DEFAULT_TYPE):
                 parse_mode=ParseMode.HTML,
                 reply_markup=InlineKeyboardMarkup(item_rows),
             )
-        except Exception:
+        except (BadRequest, Forbidden, TimedOut):
             pass
         return
     # ── ADMIN: ВЫДАТЬ ПРЕДМЕТ — ДЕЙСТВИЕ ────────────────────
@@ -31359,7 +31382,7 @@ async def admin_router(update: Update, ctx: ContextTypes.DEFAULT_TYPE):
                 parse_mode=ParseMode.HTML,
                 reply_markup=InlineKeyboardMarkup(skin_rows),
             )
-        except Exception:
+        except (BadRequest, Forbidden, TimedOut):
             pass
         return
     # ── ADMIN: ВЫДАТЬ ОБЛИК — ДЕЙСТВИЕ ──────────────────────
@@ -31392,7 +31415,7 @@ async def admin_router(update: Update, ctx: ContextTypes.DEFAULT_TYPE):
                 f"Надеть: /frog → 👗 Облики",
                 parse_mode=ParseMode.HTML,
             )
-        except Exception:
+        except (BadRequest, Forbidden, TimedOut):
             pass
         await show_player_card(q.message, target_uid_gsd, edit=True)
         return
@@ -31421,7 +31444,7 @@ async def admin_router(update: Update, ctx: ContextTypes.DEFAULT_TYPE):
                     [[btn("◀️ Назад", callback_data="admin_refresh")]]
                 ),
             )
-        except Exception:
+        except (BadRequest, Forbidden, TimedOut):
             pass
         await q.answer()
         return
@@ -31443,7 +31466,7 @@ async def admin_router(update: Update, ctx: ContextTypes.DEFAULT_TYPE):
                     [[btn("◀️ Назад", callback_data="admin_refresh")]]
                 ),
             )
-        except Exception:
+        except (BadRequest, Forbidden, TimedOut):
             pass
         return
     if d == "admin_casino_stats":
@@ -31564,7 +31587,7 @@ async def admin_router(update: Update, ctx: ContextTypes.DEFAULT_TYPE):
                     [btn("◀️ Назад", callback_data="admin_refresh")],
                 ]),
             )
-        except Exception:
+        except (BadRequest, Forbidden, TimedOut):
             pass
         await q.answer()
         return
@@ -31640,7 +31663,7 @@ async def admin_router(update: Update, ctx: ContextTypes.DEFAULT_TYPE):
                     [btn("🏠 Главное меню", callback_data="admin_refresh")],
                 ]),
             )
-        except Exception:
+        except (BadRequest, Forbidden, TimedOut):
             pass
         await q.answer()
         return
@@ -31677,7 +31700,7 @@ async def admin_router(update: Update, ctx: ContextTypes.DEFAULT_TYPE):
                 parse_mode=ParseMode.HTML,
                 reply_markup=InlineKeyboardMarkup(kb_rows),
             )
-        except Exception:
+        except (BadRequest, Forbidden, TimedOut):
             pass
         await q.answer()
         return
@@ -31713,7 +31736,7 @@ async def admin_router(update: Update, ctx: ContextTypes.DEFAULT_TYPE):
                     ]
                 ),
             )
-        except Exception:
+        except (BadRequest, Forbidden, TimedOut):
             pass
         return
     if d == "admin_referrals":
@@ -31761,7 +31784,7 @@ async def admin_router(update: Update, ctx: ContextTypes.DEFAULT_TYPE):
                 parse_mode=ParseMode.HTML,
                 reply_markup=InlineKeyboardMarkup(kb_rows_ref),
             )
-        except Exception:
+        except (BadRequest, Forbidden, TimedOut):
             pass
         return
     if d.startswith("admin_refdetail_"):
@@ -31835,7 +31858,7 @@ async def admin_router(update: Update, ctx: ContextTypes.DEFAULT_TYPE):
                         [[btn("◀️ Назад", callback_data="admin_referrals")]]
                     ),
                 )
-            except Exception:
+            except (BadRequest, Forbidden, TimedOut):
                 pass
         return
     if d.startswith("admin_purge_botrefs_"):
@@ -31905,7 +31928,7 @@ async def admin_router(update: Update, ctx: ContextTypes.DEFAULT_TYPE):
                     [[btn("◀️ Назад", callback_data="admin_refresh")]]
                 ),
             )
-        except Exception:
+        except (BadRequest, Forbidden, TimedOut):
             pass
         return
     # ── ТОП БОГАЧИ ─────────────────────────────────────
@@ -31937,7 +31960,7 @@ async def admin_router(update: Update, ctx: ContextTypes.DEFAULT_TYPE):
                     [[btn("◀️ Назад", callback_data="admin_refresh")]]
                 ),
             )
-        except Exception:
+        except (BadRequest, Forbidden, TimedOut):
             pass
         return
     # ── ПАРТНЁРСКИЕ ЧАТЫ ──────────────────────────────
@@ -31970,7 +31993,7 @@ async def admin_router(update: Update, ctx: ContextTypes.DEFAULT_TYPE):
                 ),
                 link_preview_options=LinkPreviewOptions(is_disabled=True),
             )
-        except Exception:
+        except (BadRequest, Forbidden, TimedOut):
             pass
         return
     # ── ПЕРЕВОДЫ /gift ──────────────────────────────────
@@ -32027,7 +32050,7 @@ async def admin_router(update: Update, ctx: ContextTypes.DEFAULT_TYPE):
                 parse_mode=ParseMode.HTML,
                 reply_markup=InlineKeyboardMarkup(kb_g_rows),
             )
-        except Exception:
+        except (BadRequest, Forbidden, TimedOut):
             pass
         return
     # ── ЛОТЕРЕЯ (АДМИН) ──────────────────────────────────
@@ -32081,7 +32104,7 @@ async def admin_router(update: Update, ctx: ContextTypes.DEFAULT_TYPE):
             await q.message.edit_text(
                 "\n".join(lines), parse_mode=ParseMode.HTML, reply_markup=kb_lot
             )
-        except Exception:
+        except (BadRequest, Forbidden, TimedOut):
             pass
         return
     if d == "admin_lottery_draw_now":
@@ -32121,7 +32144,7 @@ async def admin_router(update: Update, ctx: ContextTypes.DEFAULT_TYPE):
                 parse_mode=ParseMode.HTML,
                 reply_markup=kb_lot,
             )
-        except Exception:
+        except (BadRequest, Forbidden, TimedOut):
             pass
         return
     if d == "admin_broadcast":
@@ -32140,7 +32163,7 @@ async def admin_router(update: Update, ctx: ContextTypes.DEFAULT_TYPE):
                     [[btn("◀️ Назад", callback_data="admin_refresh")]]
                 ),
             )
-        except Exception:
+        except (BadRequest, Forbidden, TimedOut):
             pass
         return
     if d in ("admin_give_coins", "admin_give_skin"):
@@ -32161,7 +32184,7 @@ async def admin_router(update: Update, ctx: ContextTypes.DEFAULT_TYPE):
                     [[btn("◀️ Назад", callback_data="admin_refresh")]]
                 ),
             )
-        except Exception:
+        except (BadRequest, Forbidden, TimedOut):
             pass
         return
     # ── ЭКОНОМИКА ────────────────────────────────
@@ -32224,7 +32247,7 @@ async def admin_router(update: Update, ctx: ContextTypes.DEFAULT_TYPE):
             await q.message.edit_text(
                 text_eco, parse_mode=ParseMode.HTML, reply_markup=kb_eco
             )
-        except Exception:
+        except (BadRequest, Forbidden, TimedOut):
             pass
         return
     # ── ИВЕНТЫ ───────────────────────────────────
@@ -32277,7 +32300,7 @@ async def admin_router(update: Update, ctx: ContextTypes.DEFAULT_TYPE):
         )
         try:
             await q.message.edit_text(text_ev, parse_mode=ParseMode.HTML, reply_markup=kb_ev)
-        except Exception:
+        except (BadRequest, Forbidden, TimedOut):
             pass
         return
     if d == "admin_launch_mosquito":
@@ -32310,7 +32333,7 @@ async def admin_router(update: Update, ctx: ContextTypes.DEFAULT_TYPE):
         # Обновляем панель
         try:
             await q.message.edit_reply_markup(reply_markup=None)
-        except Exception:
+        except (BadRequest, Forbidden, TimedOut):
             pass
         # Раньше здесь стояло `q.data = "admin_events"` в расчёте перерисовать
         # панель. В PTB объект CallbackQuery неизменяем, поэтому строка не
@@ -32372,7 +32395,7 @@ async def admin_router(update: Update, ctx: ContextTypes.DEFAULT_TYPE):
                     [btn("◀️ Назад", callback_data="admin_events")]
                 ]),
             )
-        except Exception:
+        except (BadRequest, Forbidden, TimedOut):
             pass
         return
     # ── СИСТЕМА ─────────────────────────────────
@@ -32436,7 +32459,7 @@ async def admin_router(update: Update, ctx: ContextTypes.DEFAULT_TYPE):
             await q.message.edit_text(
                 text_sys, parse_mode=ParseMode.HTML, reply_markup=kb_sys
             )
-        except Exception:
+        except (BadRequest, Forbidden, TimedOut):
             pass
         return
     # ── СБРОС ТОПА НЕДЕЛИ (ДОСРОЧНО) ─────────────
@@ -32464,7 +32487,7 @@ async def admin_router(update: Update, ctx: ContextTypes.DEFAULT_TYPE):
                 parse_mode=ParseMode.HTML,
                 reply_markup=InlineKeyboardMarkup([[btn("◀️ Назад", callback_data="admin_system")]]),
             )
-        except Exception:
+        except (BadRequest, Forbidden, TimedOut):
             pass
         return
     # ── ОНЛАЙН СТАТИСТИКА ───────────────────────
@@ -32521,7 +32544,7 @@ async def admin_router(update: Update, ctx: ContextTypes.DEFAULT_TYPE):
                     [btn("◀️ Назад", callback_data="admin_system")],
                 ]),
             )
-        except Exception:
+        except (BadRequest, Forbidden, TimedOut):
             pass
         return
     # ── НАГРУЗКА СЕРВЕРА ─────────────────────────────────
@@ -32622,7 +32645,7 @@ async def admin_router(update: Update, ctx: ContextTypes.DEFAULT_TYPE):
                     [btn("◀️ Назад", callback_data="admin_system")],
                 ]),
             )
-        except Exception:
+        except (BadRequest, Forbidden, TimedOut):
             pass
         return
     # ── БЕКАП БД ─────────────────────────────────
@@ -32707,7 +32730,7 @@ async def admin_router(update: Update, ctx: ContextTypes.DEFAULT_TYPE):
                     [[btn("◀️ Назад", callback_data="admin_refresh")]]
                 ),
             )
-        except Exception:
+        except (BadRequest, Forbidden, TimedOut):
             pass
         return
 
@@ -33155,7 +33178,7 @@ async def gacha_router(update: Update, ctx: ContextTypes.DEFAULT_TYPE):
                 parse_mode=ParseMode.HTML,
                 reply_markup=kb,
             )
-        except Exception:
+        except (BadRequest, Forbidden, TimedOut):
             pass
         return
     if d == "gacha_confirm":
@@ -33165,7 +33188,7 @@ async def gacha_router(update: Update, ctx: ContextTypes.DEFAULT_TYPE):
             return
         try:
             await q.message.edit_text("🎰 <b>Крутим гачу...</b>\n\n✨ · ✨ · ✨", parse_mode=ParseMode.HTML)
-        except Exception:
+        except (BadRequest, Forbidden, TimedOut):
             pass
         await asyncio.sleep(1.5)
         f["coins"] -= cost
@@ -33239,7 +33262,7 @@ async def gacha_router(update: Update, ctx: ContextTypes.DEFAULT_TYPE):
                 await q.message.reply_text(
                     text, parse_mode=ParseMode.HTML, reply_markup=kb, link_preview_options=LinkPreviewOptions(is_disabled=True),
                 )
-            except Exception:
+            except (BadRequest, Forbidden, TimedOut):
                 pass
         return
     # ── ИСПОЛЬЗОВАТЬ ГАЧА-БИЛЕТ ─────────────────────
@@ -33253,7 +33276,7 @@ async def gacha_router(update: Update, ctx: ContextTypes.DEFAULT_TYPE):
         try:
             dots = "✨ · " * count
             await q.message.edit_text(f"{_E_CASINO} <b>Крутим ×{count}...</b>\n\n{dots.strip()}", parse_mode=ParseMode.HTML)
-        except Exception:
+        except (BadRequest, Forbidden, TimedOut):
             pass
         await asyncio.sleep(2)
         f["coins"] -= total_cost
@@ -33350,7 +33373,7 @@ async def gacha_router(update: Update, ctx: ContextTypes.DEFAULT_TYPE):
                 f"🌀 <b>Крутим на всё ({count:,} раз)...</b>\n\n"
                 f"<i>Идёт расчёт, это займёт несколько секунд...</i>",
                 parse_mode=ParseMode.HTML)
-        except Exception:
+        except (BadRequest, Forbidden, TimedOut):
             pass
 
         # ── Всё считаем в памяти, затем ONE батч в БД ─────────────────────
@@ -33434,7 +33457,7 @@ async def gacha_router(update: Update, ctx: ContextTypes.DEFAULT_TYPE):
         try:
             await q.message.edit_text("\n".join(lines), parse_mode=ParseMode.HTML, reply_markup=kb,
                                       link_preview_options=LinkPreviewOptions(is_disabled=True))
-        except Exception:
+        except (BadRequest, Forbidden, TimedOut):
             pass
         await q.answer(f"🌀 {count:,} круток — готово")
         return
@@ -33445,7 +33468,7 @@ async def gacha_router(update: Update, ctx: ContextTypes.DEFAULT_TYPE):
             return
         try:
             await q.message.edit_text("🎰 <b>Используем билет...</b>\n\n<tg-emoji emoji-id='5341688243790323773'>🎟</tg-emoji> · ✨ · <tg-emoji emoji-id='5341688243790323773'>🎟</tg-emoji>", parse_mode=ParseMode.HTML)
-        except Exception:
+        except (BadRequest, Forbidden, TimedOut):
             pass
         await asyncio.sleep(1.5)
         await inv_add(uid, "gacha_ticket", -1)
@@ -33519,7 +33542,7 @@ async def gacha_router(update: Update, ctx: ContextTypes.DEFAULT_TYPE):
                 reply_markup=InlineKeyboardMarkup(kb_rows),
                 link_preview_options=LinkPreviewOptions(is_disabled=True),
             )
-        except Exception:
+        except (BadRequest, Forbidden, TimedOut):
             pass
         return
     # Ветка не нашлась — отдаём общему обработчику.
@@ -33543,7 +33566,7 @@ async def nft_router(update: Update, ctx: ContextTypes.DEFAULT_TYPE):
         text, kb = await _nft_contest_menu_text(uid)
         try:
             await q.message.edit_text(text, parse_mode=ParseMode.HTML, reply_markup=kb)
-        except Exception:
+        except (BadRequest, Forbidden, TimedOut):
             pass
         return
     # ── 🐸 NFT МАГАЗИН ────────────────────────────────────────────────────────
@@ -33642,7 +33665,7 @@ async def nft_router(update: Update, ctx: ContextTypes.DEFAULT_TYPE):
                 reply_markup=InlineKeyboardMarkup(buttons),
                 link_preview_options=LinkPreviewOptions(is_disabled=True),
             )
-        except Exception:
+        except (BadRequest, Forbidden, TimedOut):
             pass
         return
     if d == "nft_menu":
@@ -33699,7 +33722,7 @@ async def nft_router(update: Update, ctx: ContextTypes.DEFAULT_TYPE):
                 reply_markup=kb,
                 link_preview_options=LinkPreviewOptions(),
             )
-        except Exception:
+        except (BadRequest, Forbidden, TimedOut):
             pass
         return
     # Пагинация списка заявок
@@ -33725,7 +33748,7 @@ async def nft_router(update: Update, ctx: ContextTypes.DEFAULT_TYPE):
         await q.answer("✅ НФТ оставлен, владелец сохраняет бонусы.", show_alert=True)
         try:
             await q.message.edit_reply_markup(reply_markup=None)
-        except Exception:
+        except (BadRequest, Forbidden, TimedOut):
             pass
         return
     if d.startswith("nft_recheck_revoke_"):
@@ -33771,14 +33794,14 @@ async def nft_router(update: Update, ctx: ContextTypes.DEFAULT_TYPE):
                     f"Если это ошибка — напишите администратору.",
                     parse_mode=ParseMode.HTML,
                 )
-            except Exception:
+            except (BadRequest, Forbidden, TimedOut):
                 pass
             await q.answer((f"✅ Облик {skin_to_remove} изъят, НФТ деверифицирован.")[:200], show_alert=True)
         else:
             await q.answer("✅ НФТ деверифицирован (облик не найден).", show_alert=True)
         try:
             await q.message.edit_reply_markup(reply_markup=None)
-        except Exception:
+        except (BadRequest, Forbidden, TimedOut):
             pass
         return
     # Ветка не нашлась — отдаём общему обработчику.
@@ -33809,7 +33832,7 @@ async def casino_router(update: Update, ctx: ContextTypes.DEFAULT_TYPE):
                         btn("◀️ Назад", callback_data="menu_games")
                     ]]),
                 )
-            except Exception:
+            except (BadRequest, Forbidden, TimedOut):
                 pass
             return
         kb = InlineKeyboardMarkup(
@@ -33840,7 +33863,7 @@ async def casino_router(update: Update, ctx: ContextTypes.DEFAULT_TYPE):
                 parse_mode=ParseMode.HTML,
                 reply_markup=kb,
             )
-        except Exception:
+        except (BadRequest, Forbidden, TimedOut):
             pass
         return
     if d.startswith("casino_pick_"):
@@ -33869,7 +33892,7 @@ async def casino_router(update: Update, ctx: ContextTypes.DEFAULT_TYPE):
                     parse_mode=ParseMode.HTML,
                     reply_markup=kb,
                 )
-            except Exception:
+            except (BadRequest, Forbidden, TimedOut):
                 pass
             return
         if gtype == "slots":
@@ -33916,7 +33939,7 @@ async def casino_router(update: Update, ctx: ContextTypes.DEFAULT_TYPE):
                 parse_mode=ParseMode.HTML,
                 reply_markup=kb,
             )
-        except Exception:
+        except (BadRequest, Forbidden, TimedOut):
             pass
         return
     # ── Режим "Брошу сам": показываем кнопки выбора ставки ──────────────────
@@ -33940,7 +33963,7 @@ async def casino_router(update: Update, ctx: ContextTypes.DEFAULT_TYPE):
                 parse_mode=ParseMode.HTML,
                 reply_markup=InlineKeyboardMarkup(kb_rows),
             )
-        except Exception:
+        except (BadRequest, Forbidden, TimedOut):
             pass
         return
     # ── Режим "Брошу сам": списание монет и ожидание броска ─────────────────
@@ -33986,7 +34009,7 @@ async def casino_router(update: Update, ctx: ContextTypes.DEFAULT_TYPE):
                     [btn("❌ Отменить (вернуть монеты)", callback_data=f"casino_self_cancel_{uid}", style="danger")],
                 ]),
             )
-        except Exception:
+        except (BadRequest, Forbidden, TimedOut):
             pass
         return
     if d.startswith("casino_self_cancel_"):
@@ -34013,7 +34036,7 @@ async def casino_router(update: Update, ctx: ContextTypes.DEFAULT_TYPE):
                     [btn("🎰 Казино", callback_data="casino_menu")],
                 ]),
             )
-        except Exception:
+        except (BadRequest, Forbidden, TimedOut):
             pass
         return
     if d == "casino_wish_menu":
@@ -34034,7 +34057,7 @@ async def casino_router(update: Update, ctx: ContextTypes.DEFAULT_TYPE):
                 parse_mode=ParseMode.HTML,
                 reply_markup=InlineKeyboardMarkup(stake_rows),
             )
-        except Exception:
+        except (BadRequest, Forbidden, TimedOut):
             pass
         return
     if d.startswith("casino_wish_bet_"):
@@ -34065,7 +34088,7 @@ async def casino_router(update: Update, ctx: ContextTypes.DEFAULT_TYPE):
                     [btn("❌ Отмена", callback_data="casino_wish_menu")],
                 ]),
             )
-        except Exception:
+        except (BadRequest, Forbidden, TimedOut):
             pass
         return
     if d.startswith("casino_wish_play_"):
@@ -34146,7 +34169,7 @@ async def casino_router(update: Update, ctx: ContextTypes.DEFAULT_TYPE):
                     [btn("◀️ Казино", callback_data="casino_menu")],
                 ]),
             )
-        except Exception:
+        except (BadRequest, Forbidden, TimedOut):
             pass
         return
     if d.startswith("casino_slots5_"):
@@ -34240,7 +34263,7 @@ async def casino_router(update: Update, ctx: ContextTypes.DEFAULT_TYPE):
         ])
         try:
             await q.message.edit_text(result, parse_mode=ParseMode.HTML, reply_markup=kb)
-        except Exception:
+        except (BadRequest, Forbidden, TimedOut):
             pass
         return
     # ── DOUBLE OR NOTHING ─────────────────────────────────────────────────────
@@ -34312,7 +34335,7 @@ async def casino_router(update: Update, ctx: ContextTypes.DEFAULT_TYPE):
                 reply_markup=kb_d,
             )
             edited = True
-        except Exception:
+        except (BadRequest, Forbidden, TimedOut):
             pass
         # Если edit_text не сработал — отправляем новое сообщение
         if not edited:
@@ -34328,7 +34351,7 @@ async def casino_router(update: Update, ctx: ContextTypes.DEFAULT_TYPE):
                     parse_mode=ParseMode.HTML,
                     reply_markup=kb_d,
                 )
-            except Exception:
+            except (BadRequest, Forbidden, TimedOut):
                 pass
         return
     if d.startswith("casino_bet_"):
@@ -34507,7 +34530,7 @@ async def casino_router(update: Update, ctx: ContextTypes.DEFAULT_TYPE):
             await q.message.edit_text(
                 result, parse_mode=ParseMode.HTML, reply_markup=kb
             )
-        except Exception:
+        except (BadRequest, Forbidden, TimedOut):
             pass
         return
     # ── КАЗИНО: АВТО-РЕЖИМ (непрерывный цикл) ─────────────────────
@@ -34563,7 +34586,7 @@ async def casino_router(update: Update, ctx: ContextTypes.DEFAULT_TYPE):
                              f"casino_auto_{state['gtype']}_{state['stake']}" if state else "casino_menu"),
                 ]]),
             )
-        except Exception:
+        except (BadRequest, Forbidden, TimedOut):
             pass
         return
     # Ветка не нашлась — отдаём общему обработчику.
@@ -34666,7 +34689,7 @@ async def duel_router(update: Update, ctx: ContextTypes.DEFAULT_TYPE):
                     f"{_E_SWORDS} <b>Дуэль начинается!</b>\n\n🎲 {c_name} бросает кубик...",
                     parse_mode=ParseMode.HTML,
                 )
-            except Exception:
+            except (BadRequest, Forbidden, TimedOut):
                 pass
 
         dice_c = await ctx.bot.send_dice(chat_id=q.message.chat.id, emoji="🎲")
@@ -34683,7 +34706,7 @@ async def duel_router(update: Update, ctx: ContextTypes.DEFAULT_TYPE):
                     from_chat_id=q.message.chat.id,
                     message_id=dice_c.message_id,
                 )
-            except Exception:
+            except (BadRequest, Forbidden, TimedOut):
                 pass
         await asyncio.sleep(3.5)
 
@@ -34703,7 +34726,7 @@ async def duel_router(update: Update, ctx: ContextTypes.DEFAULT_TYPE):
                 asyncio.create_task(
                     schedule_delete(ctx.bot, q.message.chat.id, step2_msg.message_id)
                 )
-        except Exception:
+        except (BadRequest, Forbidden, TimedOut):
             pass
         if is_private_duel and duel["challenger_id"] != uid:
             try:
@@ -34712,7 +34735,7 @@ async def duel_router(update: Update, ctx: ContextTypes.DEFAULT_TYPE):
                     step2_text,
                     parse_mode=ParseMode.HTML,
                 )
-            except Exception:
+            except (BadRequest, Forbidden, TimedOut):
                 pass
 
         dice_t = await ctx.bot.send_dice(chat_id=q.message.chat.id, emoji="🎲")
@@ -34729,7 +34752,7 @@ async def duel_router(update: Update, ctx: ContextTypes.DEFAULT_TYPE):
                     from_chat_id=q.message.chat.id,
                     message_id=dice_t.message_id,
                 )
-            except Exception:
+            except (BadRequest, Forbidden, TimedOut):
                 pass
         await asyncio.sleep(3.5)
 
@@ -34833,7 +34856,7 @@ async def duel_router(update: Update, ctx: ContextTypes.DEFAULT_TYPE):
             await ctx.bot.send_message(
                 duel["challenger_id"], result, parse_mode=ParseMode.HTML
             )
-        except Exception:
+        except (BadRequest, Forbidden, TimedOut):
             pass
         # ── Анонс крупного выигрыша в дуэли ──────────
         duel_prize = duel["stake"] * 2
@@ -34860,7 +34883,7 @@ async def duel_router(update: Update, ctx: ContextTypes.DEFAULT_TYPE):
             await q.message.edit_text("❌ Дуэль отклонена.", parse_mode=ParseMode.HTML)
             if q.message.chat.type in ("group", "supergroup"):
                 asyncio.create_task(schedule_delete(ctx.bot, q.message.chat.id, q.message.message_id))
-        except Exception:
+        except (BadRequest, Forbidden, TimedOut):
             pass
         return
     # ── БАТЛ: ПРИНЯТЬ ──────────────────────────────────
@@ -34994,7 +35017,7 @@ async def duel_router(update: Update, ctx: ContextTypes.DEFAULT_TYPE):
                     parse_mode=ParseMode.HTML,
                 )
                 mirror_msg_id = m.message_id
-            except Exception:
+            except (BadRequest, Forbidden, TimedOut):
                 pass
 
         async def edit_both(text: str, kb=None):
@@ -35003,7 +35026,7 @@ async def duel_router(update: Update, ctx: ContextTypes.DEFAULT_TYPE):
                 kwargs["reply_markup"] = kb
             try:
                 await q.message.edit_text(text, **kwargs)
-            except Exception:
+            except (BadRequest, Forbidden, TimedOut):
                 pass
             if mirror_msg_id and mirror_chat_id:
                 try:
@@ -35013,7 +35036,7 @@ async def duel_router(update: Update, ctx: ContextTypes.DEFAULT_TYPE):
                         message_id=mirror_msg_id,
                         **kwargs,
                     )
-                except Exception:
+                except (BadRequest, Forbidden, TimedOut):
                     pass
 
         await asyncio.sleep(2.5)
@@ -35173,7 +35196,7 @@ async def duel_router(update: Update, ctx: ContextTypes.DEFAULT_TYPE):
                     f"{_E_TROPHY} Ты <b>победил</b> в батле!{stake_result}\n{_E_BOLT} +0.3 Power → {w_final_power}",
                     parse_mode=ParseMode.HTML,
                 )
-            except Exception:
+            except (BadRequest, Forbidden, TimedOut):
                 pass
             try:
                 await ctx.bot.send_message(
@@ -35181,7 +35204,7 @@ async def duel_router(update: Update, ctx: ContextTypes.DEFAULT_TYPE):
                     f"{_E_SKULL} Ты <b>проиграл</b> батл против <b>{he(w_name)}</b>.\n{_E_BOLT} +0.1 Power → {l_final_power}",
                     parse_mode=ParseMode.HTML,
                 )
-            except Exception:
+            except (BadRequest, Forbidden, TimedOut):
                 pass
         return
     # ── БАТЛ: ОТКАЗАТЬСЯ ───────────────────────────────
@@ -35201,7 +35224,7 @@ async def duel_router(update: Update, ctx: ContextTypes.DEFAULT_TYPE):
             await q.message.edit_text(
                 "❌ Вызов на бой отклонён.", parse_mode=ParseMode.HTML
             )
-        except Exception:
+        except (BadRequest, Forbidden, TimedOut):
             pass
         return
     # ── ТУРНИР: СОЗДАТЬ ────────────────────────────
@@ -35228,7 +35251,7 @@ async def duel_router(update: Update, ctx: ContextTypes.DEFAULT_TYPE):
                 parse_mode=ParseMode.HTML,
                 reply_markup=InlineKeyboardMarkup(kb_rows),
             )
-        except Exception:
+        except (BadRequest, Forbidden, TimedOut):
             pass
         return
     if d.startswith("tournament_stake_"):
@@ -35456,7 +35479,7 @@ async def duel_router(update: Update, ctx: ContextTypes.DEFAULT_TYPE):
                     parse_mode=ParseMode.HTML,
                     reply_markup=tie_kb,
                 )
-            except Exception:
+            except (BadRequest, Forbidden, TimedOut):
                 pass
             # Отмечаем турнир как tie-pending
             async with aiosqlite.connect(DB_PATH) as db:
@@ -35498,7 +35521,7 @@ async def duel_router(update: Update, ctx: ContextTypes.DEFAULT_TYPE):
                     "\n".join(lines),
                     parse_mode=ParseMode.HTML,
                 )
-            except Exception:
+            except (BadRequest, Forbidden, TimedOut):
                 pass
             # Уведомляем победителя
             try:
@@ -35507,7 +35530,7 @@ async def duel_router(update: Update, ctx: ContextTypes.DEFAULT_TYPE):
                     f"{_E_TROPHY} <b>Ты победил в турнире!</b>\n+{prize}{coin_emoji()}",
                     parse_mode=ParseMode.HTML,
                 )
-            except Exception:
+            except (BadRequest, Forbidden, TimedOut):
                 pass
         return
     # ── ТУРНИР: РАЗДЕЛИТЬ ПРИЗ ─────────────────────
@@ -35548,7 +35571,7 @@ async def duel_router(update: Update, ctx: ContextTypes.DEFAULT_TYPE):
         )
         try:
             await q.message.edit_text(split_msg, parse_mode=ParseMode.HTML)
-        except Exception:
+        except (BadRequest, Forbidden, TimedOut):
             pass
         return
     # ── ТУРНИР: ПЕРЕБРОС ─────────────────────────
@@ -35610,7 +35633,7 @@ async def duel_router(update: Update, ctx: ContextTypes.DEFAULT_TYPE):
             await ctx.bot.send_message(
                 q.message.chat.id, "\n".join(lines), parse_mode=ParseMode.HTML
             )
-        except Exception:
+        except (BadRequest, Forbidden, TimedOut):
             pass
         return
     # ── ПОИСК ИГРОКА ДЛЯ ДУЭЛИ ────────────────────
@@ -35640,7 +35663,7 @@ async def duel_router(update: Update, ctx: ContextTypes.DEFAULT_TYPE):
                 parse_mode=ParseMode.HTML,
                 reply_markup=InlineKeyboardMarkup(kb_rows),
             )
-        except Exception:
+        except (BadRequest, Forbidden, TimedOut):
             pass
         return
     # ── ДУЭЛЬ: ВЫБОР СТАВКИ ────────────────────────
@@ -35680,7 +35703,7 @@ async def duel_router(update: Update, ctx: ContextTypes.DEFAULT_TYPE):
                 parse_mode=ParseMode.HTML,
                 reply_markup=InlineKeyboardMarkup(kb_rows),
             )
-        except Exception:
+        except (BadRequest, Forbidden, TimedOut):
             pass
         return
     # ── ДУЭЛЬ: ВЫЗОВ ЧЕРЕЗ МЕНЮ ────────────────────
@@ -35747,7 +35770,7 @@ async def duel_router(update: Update, ctx: ContextTypes.DEFAULT_TYPE):
                 reply_markup=kb_d,
                 link_preview_options=LinkPreviewOptions(),
             )
-        except Exception:
+        except (BadRequest, Forbidden, TimedOut):
             pass
         try:
             await ctx.bot.send_message(
@@ -35757,7 +35780,7 @@ async def duel_router(update: Update, ctx: ContextTypes.DEFAULT_TYPE):
                 parse_mode=ParseMode.HTML,
                 reply_markup=kb_d,
             )
-        except Exception:
+        except (BadRequest, Forbidden, TimedOut):
             pass
         ctx.job_queue.run_once(
             lambda c: asyncio.create_task(_expire_duel(duel_id_d)),
@@ -35812,7 +35835,7 @@ async def duel_router(update: Update, ctx: ContextTypes.DEFAULT_TYPE):
                 parse_mode=ParseMode.HTML,
                 reply_markup=InlineKeyboardMarkup(kb_rows),
             )
-        except Exception:
+        except (BadRequest, Forbidden, TimedOut):
             pass
         return
     if d.startswith("battle_challenge_uid_"):
@@ -35896,7 +35919,7 @@ async def duel_router(update: Update, ctx: ContextTypes.DEFAULT_TYPE):
                 parse_mode=ParseMode.HTML,
                 reply_markup=kb,
             )
-        except Exception:
+        except (BadRequest, Forbidden, TimedOut):
             pass
         ctx.job_queue.run_once(
             lambda c: asyncio.create_task(_expire_battle(battle_id)),
@@ -35951,7 +35974,7 @@ async def duel_router(update: Update, ctx: ContextTypes.DEFAULT_TYPE):
                 parse_mode=ParseMode.HTML,
                 reply_markup=InlineKeyboardMarkup(kb_rows),
             )
-        except Exception:
+        except (BadRequest, Forbidden, TimedOut):
             pass
         return
     if d.startswith("battle_challenge_uid_"):
@@ -36035,7 +36058,7 @@ async def duel_router(update: Update, ctx: ContextTypes.DEFAULT_TYPE):
                 parse_mode=ParseMode.HTML,
                 reply_markup=kb_b,
             )
-        except Exception:
+        except (BadRequest, Forbidden, TimedOut):
             pass
         ctx.job_queue.run_once(
             lambda c: asyncio.create_task(_expire_battle(battle_id_b)),
@@ -36087,7 +36110,7 @@ async def shop_router(update: Update, ctx: ContextTypes.DEFAULT_TYPE):
                 "\n".join(lines), parse_mode=ParseMode.HTML,
                 reply_markup=InlineKeyboardMarkup(kb_rows_m),
             )
-        except Exception:
+        except (BadRequest, Forbidden, TimedOut):
             pass
         return
     if d.startswith("market_view_"):
@@ -36122,7 +36145,7 @@ async def shop_router(update: Update, ctx: ContextTypes.DEFAULT_TYPE):
                 parse_mode=ParseMode.HTML,
                 reply_markup=InlineKeyboardMarkup(kb_v),
             )
-        except Exception:
+        except (BadRequest, Forbidden, TimedOut):
             pass
         return
     if d.startswith("market_confirm_"):
@@ -36158,7 +36181,7 @@ async def shop_router(update: Update, ctx: ContextTypes.DEFAULT_TYPE):
                     f"Выручка: <b>+{seller_payout}{_E_COIN}</b> (комиссия {commission_c}{_E_COIN})",
                     parse_mode=ParseMode.HTML,
                 )
-            except Exception:
+            except (BadRequest, Forbidden, TimedOut):
                 pass
         # Выдаём облик покупателю
         await db_add_skin(uid, lot_c["skin"])
@@ -36173,7 +36196,7 @@ async def shop_router(update: Update, ctx: ContextTypes.DEFAULT_TYPE):
                     btn("🏪 На рынок", callback_data="market_main"),
                 ]]),
             )
-        except Exception:
+        except (BadRequest, Forbidden, TimedOut):
             pass
         return
     if d.startswith("market_cancel_"):
@@ -36218,7 +36241,7 @@ async def shop_router(update: Update, ctx: ContextTypes.DEFAULT_TYPE):
                 parse_mode=ParseMode.HTML,
                 reply_markup=InlineKeyboardMarkup(kb_sell),
             )
-        except Exception:
+        except (BadRequest, Forbidden, TimedOut):
             pass
         return
     if d.startswith("market_set_price_"):
@@ -36239,7 +36262,7 @@ async def shop_router(update: Update, ctx: ContextTypes.DEFAULT_TYPE):
                     btn("❌ Отмена", callback_data="market_main"),
                 ]]),
             )
-        except Exception:
+        except (BadRequest, Forbidden, TimedOut):
             pass
         return
     if d == "market_my":
@@ -36262,7 +36285,7 @@ async def shop_router(update: Update, ctx: ContextTypes.DEFAULT_TYPE):
                 "\n".join(lines_my), parse_mode=ParseMode.HTML,
                 reply_markup=InlineKeyboardMarkup(kb_my),
             )
-        except Exception:
+        except (BadRequest, Forbidden, TimedOut):
             pass
         return
     # ── МАГАЗИН ЕДЫ ────────────────────────────────
@@ -36345,7 +36368,7 @@ async def shop_router(update: Update, ctx: ContextTypes.DEFAULT_TYPE):
                 parse_mode=ParseMode.HTML,
                 reply_markup=InlineKeyboardMarkup(rows_ss),
             )
-        except Exception:
+        except (BadRequest, Forbidden, TimedOut):
             pass
         return
     if d == "shop_food":
@@ -36394,7 +36417,7 @@ async def shop_router(update: Update, ctx: ContextTypes.DEFAULT_TYPE):
                 parse_mode=ParseMode.HTML,
                 reply_markup=InlineKeyboardMarkup(rows),
             )
-        except Exception:
+        except (BadRequest, Forbidden, TimedOut):
             pass
         return
     # ── Магазин еды из столовой (кнопка Назад → canteen_menu) ──────────────
@@ -36439,7 +36462,7 @@ async def shop_router(update: Update, ctx: ContextTypes.DEFAULT_TYPE):
                 parse_mode=ParseMode.HTML,
                 reply_markup=InlineKeyboardMarkup(rows),
             )
-        except Exception:
+        except (BadRequest, Forbidden, TimedOut):
             pass
         return
     # ── КУПИТЬ ЕДУ (BULK +10 с подтверждением) ─────
@@ -36480,7 +36503,7 @@ async def shop_router(update: Update, ctx: ContextTypes.DEFAULT_TYPE):
                 parse_mode=ParseMode.HTML,
                 reply_markup=kb_conf,
             )
-        except Exception:
+        except (BadRequest, Forbidden, TimedOut):
             pass
         return
     if d.startswith("buy_food_confirm_"):
@@ -36538,7 +36561,7 @@ async def shop_router(update: Update, ctx: ContextTypes.DEFAULT_TYPE):
                 parse_mode=ParseMode.HTML,
                 reply_markup=InlineKeyboardMarkup(rows),
             )
-        except Exception:
+        except (BadRequest, Forbidden, TimedOut):
             pass
         return
     # ── КУПИТЬ ЕДУ ─────────────────────────────────
@@ -36594,7 +36617,7 @@ async def shop_router(update: Update, ctx: ContextTypes.DEFAULT_TYPE):
                 parse_mode=ParseMode.HTML,
                 reply_markup=InlineKeyboardMarkup(rows),
             )
-        except Exception:
+        except (BadRequest, Forbidden, TimedOut):
             pass
         return
     # ── МАГАЗИН ОБЛИКОВ ────────────────────────────
@@ -36645,7 +36668,7 @@ async def shop_router(update: Update, ctx: ContextTypes.DEFAULT_TYPE):
                 reply_markup=InlineKeyboardMarkup(rows),
                 link_preview_options=LinkPreviewOptions(),
             )
-        except Exception:
+        except (BadRequest, Forbidden, TimedOut):
             pass
         return
     # ── КУПИТЬ ОБЛИК ───────────────────────────────
@@ -36744,7 +36767,7 @@ async def shop_router(update: Update, ctx: ContextTypes.DEFAULT_TYPE):
                 parse_mode=ParseMode.HTML,
                 reply_markup=InlineKeyboardMarkup(rows),
             )
-        except Exception:
+        except (BadRequest, Forbidden, TimedOut):
             pass
         return
     # ── СКРАФТИТЬ ВСЁ ─────────────────────────────────────────────────────────
@@ -36869,7 +36892,8 @@ async def shop_router(update: Update, ctx: ContextTypes.DEFAULT_TYPE):
                                       link_preview_options=LinkPreviewOptions(is_disabled=True))
         except Exception:
             try: await q.message.reply_text(text, parse_mode=ParseMode.HTML, reply_markup=kb)
-            except Exception: pass
+            except (BadRequest, Forbidden, TimedOut):
+                pass
         await q.answer()
         return
     # ── КРАФТ ──────────────────────────────────────
@@ -36956,7 +36980,8 @@ async def shop_router(update: Update, ctx: ContextTypes.DEFAULT_TYPE):
                                           link_preview_options=LinkPreviewOptions(is_disabled=True))
             except Exception:
                 try: await q.message.reply_text(text, parse_mode=ParseMode.HTML, reply_markup=kb)
-                except Exception: pass
+                except (BadRequest, Forbidden, TimedOut):
+                    pass
             return
 
         # ── Обычный крафт с возможным шансом ───────────────────────────────
@@ -36983,7 +37008,8 @@ async def shop_router(update: Update, ctx: ContextTypes.DEFAULT_TYPE):
                                           link_preview_options=LinkPreviewOptions(is_disabled=True))
             except Exception:
                 try: await q.message.reply_text(text, parse_mode=ParseMode.HTML, reply_markup=kb)
-                except Exception: pass
+                except (BadRequest, Forbidden, TimedOut):
+                    pass
             return
 
         # Успех
@@ -37022,7 +37048,7 @@ async def shop_router(update: Update, ctx: ContextTypes.DEFAULT_TYPE):
             try:
                 await q.message.reply_text(text, parse_mode=ParseMode.HTML, reply_markup=kb,
                                            link_preview_options=LinkPreviewOptions(is_disabled=True))
-            except Exception:
+            except (BadRequest, Forbidden, TimedOut):
                 pass
         return
     # ── СБОРКА МИФИКА ИЗ ОСКОЛКОВ ──────────────────────────────────────────
@@ -37079,7 +37105,7 @@ async def shop_router(update: Update, ctx: ContextTypes.DEFAULT_TYPE):
                 f"🔴 {result_skin} 🍀",
                 delete_after=300,
             )
-        except Exception:
+        except (BadRequest, Forbidden, TimedOut):
             pass
 
         kb = InlineKeyboardMarkup([
@@ -37091,7 +37117,8 @@ async def shop_router(update: Update, ctx: ContextTypes.DEFAULT_TYPE):
                                       link_preview_options=LinkPreviewOptions(is_disabled=True))
         except Exception:
             try: await q.message.reply_text(text, parse_mode=ParseMode.HTML, reply_markup=kb)
-            except Exception: pass
+            except (BadRequest, Forbidden, TimedOut):
+                pass
         return
     if d == "buy_stars_quick":
         await q.answer()
@@ -37126,7 +37153,7 @@ async def shop_router(update: Update, ctx: ContextTypes.DEFAULT_TYPE):
                 parse_mode=ParseMode.HTML,
                 reply_markup=InlineKeyboardMarkup(kb_rows),
             )
-        except Exception:
+        except (BadRequest, Forbidden, TimedOut):
             pass
         return
     # ── БЫСТРАЯ ПОКУПКА ПАКЕТА (из buy_stars_quick) ───────────────
@@ -37258,7 +37285,7 @@ async def shop_router(update: Update, ctx: ContextTypes.DEFAULT_TYPE):
                 parse_mode=ParseMode.HTML,
                 reply_markup=kb,
             )
-        except Exception:
+        except (BadRequest, Forbidden, TimedOut):
             pass
         return
     if d.startswith("buy_stars_"):
@@ -37451,7 +37478,7 @@ async def shop_router(update: Update, ctx: ContextTypes.DEFAULT_TYPE):
                     [btn("🎁 1 день Трудяги бесплатно", callback_data="sub_trial_worker")],
                     [btn("◀️ Назад", callback_data="menu_shop")],
                 ]))
-            except Exception:
+            except (BadRequest, Forbidden, TimedOut):
                 pass
         else:
             await q.answer("😔 Пробник уже был использован.", show_alert=True)
@@ -37488,7 +37515,7 @@ async def shop_router(update: Update, ctx: ContextTypes.DEFAULT_TYPE):
                         callback_data="sub_buy_worker" if is_worker else "sub_buy_nanny",
                     )
                 ]]))
-            except Exception:
+            except (BadRequest, Forbidden, TimedOut):
                 pass
             return
 
@@ -37601,7 +37628,7 @@ async def on_callback(update: Update, ctx: ContextTypes.DEFAULT_TYPE):
                         btn("◀️ Назад", callback_data="refresh")
                     ]]),
                 )
-            except Exception:
+            except (BadRequest, Forbidden, TimedOut):
                 pass
             return
 
@@ -37648,7 +37675,7 @@ async def on_callback(update: Update, ctx: ContextTypes.DEFAULT_TYPE):
                     btn("◀️ Назад", callback_data="refresh")
                 ]]),
             )
-        except Exception:
+        except (BadRequest, Forbidden, TimedOut):
             pass
         return
 
@@ -37704,7 +37731,7 @@ async def on_callback(update: Update, ctx: ContextTypes.DEFAULT_TYPE):
                 parse_mode=ParseMode.HTML,
                 reply_markup=kb_death,
             )
-        except Exception:
+        except (BadRequest, Forbidden, TimedOut):
             pass
     elif f.get("_need_warning"):
         f.pop("_need_warning", None)
@@ -37718,7 +37745,7 @@ async def on_callback(update: Update, ctx: ContextTypes.DEFAULT_TYPE):
                 f"Если здоровье упадёт до 0 — лягушка умрёт.",
                 parse_mode=ParseMode.HTML,
             )
-        except Exception:
+        except (BadRequest, Forbidden, TimedOut):
             pass
 
     # ── ОГРАНИЧЕНИЯ ДЛЯ МЁРТВОЙ ЛЯГУШКИ ───────────
@@ -37772,7 +37799,7 @@ async def on_callback(update: Update, ctx: ContextTypes.DEFAULT_TYPE):
         if f_rv.get("alive"):
             try:
                 await q.edit_message_text("Лягушка уже жива! 🐸")
-            except Exception:
+            except (BadRequest, Forbidden, TimedOut):
                 pass
             return
         try:
@@ -37833,7 +37860,7 @@ async def on_callback(update: Update, ctx: ContextTypes.DEFAULT_TYPE):
                     f"🕐 {datetime.now(timezone.utc).strftime('%d.%m.%Y %H:%M')} UTC",
                     parse_mode=ParseMode.HTML,
                 )
-            except Exception:
+            except (BadRequest, Forbidden, TimedOut):
                 pass
         try:
             await q.message.edit_text(
@@ -37846,7 +37873,7 @@ async def on_callback(update: Update, ctx: ContextTypes.DEFAULT_TYPE):
                     btn("🐸 Открыть лягушку", callback_data="refresh", style="success")
                 ]]),
             )
-        except Exception:
+        except (BadRequest, Forbidden, TimedOut):
             pass
         return
 
@@ -37901,7 +37928,7 @@ async def on_callback(update: Update, ctx: ContextTypes.DEFAULT_TYPE):
                 parse_mode=ParseMode.HTML,
                 reply_markup=await main_kb_live(f),
             )
-        except Exception:
+        except (BadRequest, Forbidden, TimedOut):
             pass
         return
 
@@ -37921,7 +37948,7 @@ async def on_callback(update: Update, ctx: ContextTypes.DEFAULT_TYPE):
                         btn("🔄 Обновить", callback_data="trial_status")
                     ]]),
                 )
-            except Exception:
+            except (BadRequest, Forbidden, TimedOut):
                 pass
             return
         # Генерируем 3 уникальных квеста
@@ -37946,7 +37973,7 @@ async def on_callback(update: Update, ctx: ContextTypes.DEFAULT_TYPE):
                     btn("🎲 Игры", callback_data="menu_games"),
                 ]]),
             )
-        except Exception:
+        except (BadRequest, Forbidden, TimedOut):
             pass
         return
 
@@ -37978,7 +38005,7 @@ async def on_callback(update: Update, ctx: ContextTypes.DEFAULT_TYPE):
                     btn("🎲 Игры", callback_data="menu_games"),
                 ]]),
             )
-        except Exception:
+        except (BadRequest, Forbidden, TimedOut):
             pass
         await q.answer("✅ Испытание обновлено", show_alert=False)
         return
@@ -38014,7 +38041,7 @@ async def on_callback(update: Update, ctx: ContextTypes.DEFAULT_TYPE):
                     [btn("🔄 Обновить", callback_data="trial_status")],
                 ]),
             )
-        except Exception:
+        except (BadRequest, Forbidden, TimedOut):
             pass
         return
 
@@ -38045,7 +38072,7 @@ async def on_callback(update: Update, ctx: ContextTypes.DEFAULT_TYPE):
                 parse_mode=ParseMode.HTML,
                 reply_markup=feed_kb,
             )
-        except Exception:
+        except (BadRequest, Forbidden, TimedOut):
             pass
         return
 
@@ -38080,7 +38107,8 @@ async def on_callback(update: Update, ctx: ContextTypes.DEFAULT_TYPE):
                     parse_mode=ParseMode.HTML,
                     reply_markup=InlineKeyboardMarkup([[btn(f"🤢 Воскресить ({OVERFEED_REVIVE_COST}🪙)", callback_data="revive_confirm", style="success")]]),
                 )
-            except Exception: pass
+            except (BadRequest, Forbidden, TimedOut):
+                pass
             return
         mult = await get_reward_multiplier(uid, f)
         base_xp = food["xp"]
@@ -38117,7 +38145,7 @@ async def on_callback(update: Update, ctx: ContextTypes.DEFAULT_TYPE):
                 reply_markup=feed_kb,
                 link_preview_options=LinkPreviewOptions(),
             )
-        except Exception:
+        except (BadRequest, Forbidden, TimedOut):
             pass
         return
 
@@ -38158,7 +38186,8 @@ async def on_callback(update: Update, ctx: ContextTypes.DEFAULT_TYPE):
                     parse_mode=ParseMode.HTML,
                     reply_markup=InlineKeyboardMarkup([[btn(f"🤢 Воскресить ({OVERFEED_REVIVE_COST}🪙)", callback_data="revive_confirm", style="success")]]),
                 )
-            except Exception: pass
+            except (BadRequest, Forbidden, TimedOut):
+                pass
             return
         rewards = await levelup(f, ctx.bot)
         await db_save(f)
@@ -38180,7 +38209,7 @@ async def on_callback(update: Update, ctx: ContextTypes.DEFAULT_TYPE):
                 reply_markup=feed_kb,
                 link_preview_options=LinkPreviewOptions(),
             )
-        except Exception:
+        except (BadRequest, Forbidden, TimedOut):
             pass
         return
 
@@ -38233,7 +38262,8 @@ async def on_callback(update: Update, ctx: ContextTypes.DEFAULT_TYPE):
                     parse_mode=ParseMode.HTML,
                     reply_markup=InlineKeyboardMarkup([[btn(f"🤢 Воскресить ({OVERFEED_REVIVE_COST}🪙)", callback_data="revive_confirm", style="success")]]),
                 )
-            except Exception: pass
+            except (BadRequest, Forbidden, TimedOut):
+                pass
             return
         rewards = await levelup(f, ctx.bot)
         await db_save(f)
@@ -38261,7 +38291,7 @@ async def on_callback(update: Update, ctx: ContextTypes.DEFAULT_TYPE):
                 ]),
                 link_preview_options=LinkPreviewOptions(),
             )
-        except Exception:
+        except (BadRequest, Forbidden, TimedOut):
             pass
         return
     if d == "menu_play":
@@ -38294,7 +38324,7 @@ async def on_callback(update: Update, ctx: ContextTypes.DEFAULT_TYPE):
                 parse_mode=ParseMode.HTML,
                 reply_markup=kb,
             )
-        except Exception:
+        except (BadRequest, Forbidden, TimedOut):
             pass
         return
 
@@ -38354,7 +38384,7 @@ async def on_callback(update: Update, ctx: ContextTypes.DEFAULT_TYPE):
                 reply_markup=care_kb(f),
                 link_preview_options=LinkPreviewOptions(),
             )
-        except Exception:
+        except (BadRequest, Forbidden, TimedOut):
             pass
         return
 
@@ -38400,7 +38430,7 @@ async def on_callback(update: Update, ctx: ContextTypes.DEFAULT_TYPE):
                 reply_markup=care_kb(f),
                 link_preview_options=LinkPreviewOptions(),
             )
-        except Exception:
+        except (BadRequest, Forbidden, TimedOut):
             pass
         return
 
@@ -38457,7 +38487,7 @@ async def on_callback(update: Update, ctx: ContextTypes.DEFAULT_TYPE):
                 reply_markup=care_kb(f),
                 link_preview_options=LinkPreviewOptions(),
             )
-        except Exception:
+        except (BadRequest, Forbidden, TimedOut):
             pass
         return
 
@@ -38511,7 +38541,7 @@ async def on_callback(update: Update, ctx: ContextTypes.DEFAULT_TYPE):
                 reply_markup=care_kb(f),
                 link_preview_options=LinkPreviewOptions(),
             )
-        except Exception:
+        except (BadRequest, Forbidden, TimedOut):
             pass
         return
 
@@ -38608,8 +38638,8 @@ async def on_callback(update: Update, ctx: ContextTypes.DEFAULT_TYPE):
                         )
                         partner["coins"] = partner.get("coins", 0) + bond_reward
                         await db_save(partner)
-                    except Exception:
-                        pass
+                    except Exception as _e:
+                        logger.exception("подавлено исключение: %s", _e)
                     await letopis_add(uid, "friend",
                         f"💚 {fname(f)} и {he(pname)}: {new_streak} дней Болотной Связи!")
                 else:
@@ -38715,7 +38745,7 @@ async def on_callback(update: Update, ctx: ContextTypes.DEFAULT_TYPE):
                 reply_markup=InlineKeyboardMarkup(rows),
                 link_preview_options=LinkPreviewOptions(is_disabled=True),
             )
-        except Exception:
+        except (BadRequest, Forbidden, TimedOut):
             pass
         return
 
@@ -38844,7 +38874,7 @@ async def on_callback(update: Update, ctx: ContextTypes.DEFAULT_TYPE):
                 reply_markup=InlineKeyboardMarkup(rows),
                 link_preview_options=LinkPreviewOptions(is_disabled=True),
             )
-        except Exception:
+        except (BadRequest, Forbidden, TimedOut):
             pass
         return
 
@@ -38894,7 +38924,7 @@ async def on_callback(update: Update, ctx: ContextTypes.DEFAULT_TYPE):
                 reply_markup=InlineKeyboardMarkup(rows),
                 link_preview_options=LinkPreviewOptions(is_disabled=True),
             )
-        except Exception:
+        except (BadRequest, Forbidden, TimedOut):
             pass
         return
 
@@ -38920,7 +38950,7 @@ async def on_callback(update: Update, ctx: ContextTypes.DEFAULT_TYPE):
                 reply_markup=await main_kb_live(f, is_group=_is_grp),
                 link_preview_options=LinkPreviewOptions(),
             )
-        except Exception:
+        except (BadRequest, Forbidden, TimedOut):
             pass
         return
 
@@ -38939,7 +38969,7 @@ async def on_callback(update: Update, ctx: ContextTypes.DEFAULT_TYPE):
                 reply_markup=await main_kb_live(f, is_group=_is_grp),
                 link_preview_options=LinkPreviewOptions(),
             )
-        except Exception:
+        except (BadRequest, Forbidden, TimedOut):
             pass
         return
 
@@ -38956,7 +38986,7 @@ async def on_callback(update: Update, ctx: ContextTypes.DEFAULT_TYPE):
                 reply_markup=await main_kb_live(f, is_group=_is_grp),
                 link_preview_options=LinkPreviewOptions(),
             )
-        except Exception:
+        except (BadRequest, Forbidden, TimedOut):
             pass
         return
 
@@ -38976,7 +39006,7 @@ async def on_callback(update: Update, ctx: ContextTypes.DEFAULT_TYPE):
                 reply_markup=await main_kb_live(f, is_group=_is_grp),
                 link_preview_options=LinkPreviewOptions(),
             )
-        except Exception:
+        except (BadRequest, Forbidden, TimedOut):
             pass
         return
 
@@ -38986,7 +39016,7 @@ async def on_callback(update: Update, ctx: ContextTypes.DEFAULT_TYPE):
         text, kb = await _contest_my_stats_text(uid)
         try:
             await q.message.edit_text(text, parse_mode=ParseMode.HTML, reply_markup=kb)
-        except Exception:
+        except (BadRequest, Forbidden, TimedOut):
             pass
         return
 
@@ -39025,7 +39055,7 @@ async def on_callback(update: Update, ctx: ContextTypes.DEFAULT_TYPE):
         kb2 = InlineKeyboardMarkup([[btn("◀️ Назад", callback_data="contest_my_stats")]])
         try:
             await q.message.edit_text("\n".join(lines), parse_mode=ParseMode.HTML, reply_markup=kb2)
-        except Exception:
+        except (BadRequest, Forbidden, TimedOut):
             pass
         return
 
@@ -39052,7 +39082,7 @@ async def on_callback(update: Update, ctx: ContextTypes.DEFAULT_TYPE):
                     parse_mode=ParseMode.HTML,
                     reply_markup=care_kb(f),
                 )
-            except Exception:
+            except (BadRequest, Forbidden, TimedOut):
                 pass
         return
 
@@ -39091,7 +39121,7 @@ async def on_callback(update: Update, ctx: ContextTypes.DEFAULT_TYPE):
                 parse_mode=ParseMode.HTML,
                 reply_markup=kb,
             )
-        except Exception:
+        except (BadRequest, Forbidden, TimedOut):
             pass
         return
 
@@ -39219,8 +39249,8 @@ async def on_callback(update: Update, ctx: ContextTypes.DEFAULT_TYPE):
                             f"{event_ss}\n\n"
                             f"<i>🏠 Вернётся в 18:00 МСК</i>"
                         )
-                except Exception:
-                    pass
+                except Exception as _e:
+                    logger.exception("подавлено исключение: %s", _e)
 
         try:
             await q.message.edit_text(
@@ -39237,7 +39267,7 @@ async def on_callback(update: Update, ctx: ContextTypes.DEFAULT_TYPE):
                 parse_mode=ParseMode.HTML,
                 reply_markup=InlineKeyboardMarkup(rows_ss),
             )
-        except Exception:
+        except (BadRequest, Forbidden, TimedOut):
             pass
         return
 
@@ -39293,7 +39323,7 @@ async def on_callback(update: Update, ctx: ContextTypes.DEFAULT_TYPE):
                 parse_mode=ParseMode.HTML,
                 reply_markup=InlineKeyboardMarkup(rows),
             )
-        except Exception:
+        except (BadRequest, Forbidden, TimedOut):
             pass
         return
 
@@ -39375,7 +39405,7 @@ async def on_callback(update: Update, ctx: ContextTypes.DEFAULT_TYPE):
                 parse_mode=ParseMode.HTML,
                 reply_markup=InlineKeyboardMarkup(rows),
             )
-        except Exception:
+        except (BadRequest, Forbidden, TimedOut):
             pass
         return
 
@@ -39469,7 +39499,7 @@ async def on_callback(update: Update, ctx: ContextTypes.DEFAULT_TYPE):
                 parse_mode=ParseMode.HTML,
                 reply_markup=kb,
             )
-        except Exception:
+        except (BadRequest, Forbidden, TimedOut):
             pass
         return
 
@@ -39551,7 +39581,7 @@ async def on_callback(update: Update, ctx: ContextTypes.DEFAULT_TYPE):
             )
         try:
             await q.message.edit_text(text, parse_mode=ParseMode.HTML, reply_markup=kb)
-        except Exception:
+        except (BadRequest, Forbidden, TimedOut):
             pass
         await q.answer()
         return
@@ -39564,8 +39594,8 @@ async def on_callback(update: Update, ctx: ContextTypes.DEFAULT_TYPE):
         await q.answer()
         try:
             await q.message.delete()
-        except Exception:
-            pass
+        except Exception as _e:
+            logger.exception("подавлено исключение: %s", _e)
         return
 
     # Покупка за Stars — sgift_<index>
@@ -39623,7 +39653,7 @@ async def on_callback(update: Update, ctx: ContextTypes.DEFAULT_TYPE):
                         btn("◀️ Назад в магазин", callback_data="sgift_admin_reopen"),
                     ]]),
                 )
-            except Exception:
+            except (BadRequest, Forbidden, TimedOut):
                 pass
         else:
             try:
@@ -39636,7 +39666,7 @@ async def on_callback(update: Update, ctx: ContextTypes.DEFAULT_TYPE):
                         btn("◀️ Назад", callback_data="sgift_admin_reopen"),
                     ]]),
                 )
-            except Exception:
+            except (BadRequest, Forbidden, TimedOut):
                 pass
         return
 
@@ -39658,7 +39688,7 @@ async def on_callback(update: Update, ctx: ContextTypes.DEFAULT_TYPE):
                 parse_mode=ParseMode.HTML,
                 reply_markup=_secretgift_keyboard(admin_free=True),
             )
-        except Exception:
+        except (BadRequest, Forbidden, TimedOut):
             pass
         return
 
@@ -39720,7 +39750,7 @@ async def on_callback(update: Update, ctx: ContextTypes.DEFAULT_TYPE):
                      btn("◀️ Назад", callback_data="refresh")],
                 ]),
             )
-        except Exception:
+        except (BadRequest, Forbidden, TimedOut):
             pass
         await q.answer(f"✅ Забрал {state['bank']}{coin_plain()}")
         return
@@ -39758,7 +39788,7 @@ async def on_callback(update: Update, ctx: ContextTypes.DEFAULT_TYPE):
                         [btn("🎰 Казино", callback_data="casino_menu")],
                     ]),
                 )
-            except Exception:
+            except (BadRequest, Forbidden, TimedOut):
                 pass
             return
         # 95% RTP: 47.5% шанс победы за раунд (0.475 × 2 = 0.95)
@@ -39799,7 +39829,7 @@ async def on_callback(update: Update, ctx: ContextTypes.DEFAULT_TYPE):
                         parse_mode=ParseMode.HTML,
                         reply_markup=kb_d,
                     )
-                except Exception:
+                except (BadRequest, Forbidden, TimedOut):
                     pass
         else:
             # Проигрыш
@@ -39829,7 +39859,7 @@ async def on_callback(update: Update, ctx: ContextTypes.DEFAULT_TYPE):
                          btn("◀️ Назад", callback_data="refresh")],
                     ]),
                 )
-            except Exception:
+            except (BadRequest, Forbidden, TimedOut):
                 pass
         return
 
@@ -39849,8 +39879,8 @@ async def on_callback(update: Update, ctx: ContextTypes.DEFAULT_TYPE):
                     f"⏳ КД ещё {remaining // 60}мин {remaining % 60}с — играй бесплатно, без награды!",
                     show_alert=False,
                 )
-            except Exception:
-                pass
+            except Exception as _e:
+                logger.exception("подавлено исключение: %s", _e)
         # Большой пул разнообразных эмодзи
         pool = [
             "🐸",
@@ -39922,7 +39952,7 @@ async def on_callback(update: Update, ctx: ContextTypes.DEFAULT_TYPE):
                 parse_mode=ParseMode.HTML,
                 reply_markup=InlineKeyboardMarkup(kb_rows),
             )
-        except Exception:
+        except (BadRequest, Forbidden, TimedOut):
             pass
         return
 
@@ -39990,7 +40020,7 @@ async def on_callback(update: Update, ctx: ContextTypes.DEFAULT_TYPE):
                 parse_mode=ParseMode.HTML,
                 reply_markup=InlineKeyboardMarkup(kb_rows),
             )
-        except Exception:
+        except (BadRequest, Forbidden, TimedOut):
             pass
         return
 
@@ -40211,7 +40241,7 @@ async def on_callback(update: Update, ctx: ContextTypes.DEFAULT_TYPE):
                 parse_mode=ParseMode.HTML,
                 reply_markup=InlineKeyboardMarkup(kb_rows),
             )
-        except Exception:
+        except (BadRequest, Forbidden, TimedOut):
             pass
         return
 
@@ -40245,7 +40275,7 @@ async def on_callback(update: Update, ctx: ContextTypes.DEFAULT_TYPE):
                 parse_mode=ParseMode.HTML,
                 reply_markup=kb,
             )
-        except Exception:
+        except (BadRequest, Forbidden, TimedOut):
             pass
         return
 
@@ -40435,7 +40465,7 @@ async def on_callback(update: Update, ctx: ContextTypes.DEFAULT_TYPE):
                     [btn("◀️ Назад", callback_data="ttt_menu")],
                 ]),
             )
-        except Exception:
+        except (BadRequest, Forbidden, TimedOut):
             pass
         return
 
@@ -40490,7 +40520,7 @@ async def on_callback(update: Update, ctx: ContextTypes.DEFAULT_TYPE):
                 parse_mode=ParseMode.HTML,
                 reply_markup=InlineKeyboardMarkup(rows5),
             )
-        except Exception:
+        except (BadRequest, Forbidden, TimedOut):
             pass
         return
 
@@ -40504,7 +40534,7 @@ async def on_callback(update: Update, ctx: ContextTypes.DEFAULT_TYPE):
                 reply_markup=await main_kb_live(f),
                 link_preview_options=LinkPreviewOptions(),
             )
-        except Exception:
+        except (BadRequest, Forbidden, TimedOut):
             pass
         return
 
@@ -40558,7 +40588,7 @@ async def on_callback(update: Update, ctx: ContextTypes.DEFAULT_TYPE):
                 try:
                     await q.message.edit_text(f"⬛ <b>5×5 Соло</b>\n\n{txt}",
                         parse_mode=ParseMode.HTML, reply_markup=InlineKeyboardMarkup(rows_fin))
-                except Exception:
+                except (BadRequest, Forbidden, TimedOut):
                     pass
         if winner_5s == player_mark_5s:
             await _finish_ttt5_solo("win"); return
@@ -40587,7 +40617,7 @@ async def on_callback(update: Update, ctx: ContextTypes.DEFAULT_TYPE):
                 parse_mode=ParseMode.HTML,
                 reply_markup=InlineKeyboardMarkup(rows5),
             )
-        except Exception:
+        except (BadRequest, Forbidden, TimedOut):
             pass
         return
 
@@ -40696,7 +40726,7 @@ async def on_callback(update: Update, ctx: ContextTypes.DEFAULT_TYPE):
                 parse_mode=ParseMode.HTML,
                 reply_markup=kb_sides,
             )
-        except Exception:
+        except (BadRequest, Forbidden, TimedOut):
             pass
         return
 
@@ -40727,7 +40757,7 @@ async def on_callback(update: Update, ctx: ContextTypes.DEFAULT_TYPE):
                 parse_mode=ParseMode.HTML,
                 reply_markup=InlineKeyboardMarkup(rows),
             )
-        except Exception:
+        except (BadRequest, Forbidden, TimedOut):
             pass
         return
 
@@ -40742,7 +40772,7 @@ async def on_callback(update: Update, ctx: ContextTypes.DEFAULT_TYPE):
                 reply_markup=await main_kb_live(f),
                 link_preview_options=LinkPreviewOptions(),
             )
-        except Exception:
+        except (BadRequest, Forbidden, TimedOut):
             pass
         return
 
@@ -40790,7 +40820,7 @@ async def on_callback(update: Update, ctx: ContextTypes.DEFAULT_TYPE):
                         parse_mode=ParseMode.HTML,
                         reply_markup=InlineKeyboardMarkup(rows_f),
                     )
-                except Exception:
+                except (BadRequest, Forbidden, TimedOut):
                     pass
             return
         # Ход бота
@@ -40826,7 +40856,7 @@ async def on_callback(update: Update, ctx: ContextTypes.DEFAULT_TYPE):
                         parse_mode=ParseMode.HTML,
                         reply_markup=InlineKeyboardMarkup(rows_f),
                     )
-                except Exception:
+                except (BadRequest, Forbidden, TimedOut):
                     pass
             return
         # Продолжаем игру
@@ -40842,7 +40872,7 @@ async def on_callback(update: Update, ctx: ContextTypes.DEFAULT_TYPE):
                 parse_mode=ParseMode.HTML,
                 reply_markup=InlineKeyboardMarkup(rows),
             )
-        except Exception:
+        except (BadRequest, Forbidden, TimedOut):
             pass
         return
 
@@ -40859,7 +40889,7 @@ async def on_callback(update: Update, ctx: ContextTypes.DEFAULT_TYPE):
                 parse_mode=ParseMode.HTML,
                 reply_markup=kb,
             )
-        except Exception:
+        except (BadRequest, Forbidden, TimedOut):
             pass
         return
 
@@ -40906,7 +40936,7 @@ async def on_callback(update: Update, ctx: ContextTypes.DEFAULT_TYPE):
                     [btn(t("btn_back_games", f), callback_data="menu_games")],
                 ]),
             )
-        except Exception:
+        except (BadRequest, Forbidden, TimedOut):
             pass
         return
 
@@ -40956,7 +40986,7 @@ async def on_callback(update: Update, ctx: ContextTypes.DEFAULT_TYPE):
                 parse_mode=ParseMode.HTML,
                 reply_markup=InlineKeyboardMarkup(rows),
             )
-        except Exception:
+        except (BadRequest, Forbidden, TimedOut):
             pass
         return
 
@@ -41022,7 +41052,7 @@ async def on_callback(update: Update, ctx: ContextTypes.DEFAULT_TYPE):
                     parse_mode=ParseMode.HTML,
                     reply_markup=InlineKeyboardMarkup(rows_f),
                 )
-            except Exception:
+            except (BadRequest, Forbidden, TimedOut):
                 pass
             return
         # Следующий ход
@@ -41041,7 +41071,7 @@ async def on_callback(update: Update, ctx: ContextTypes.DEFAULT_TYPE):
                 parse_mode=ParseMode.HTML,
                 reply_markup=InlineKeyboardMarkup(rows),
             )
-        except Exception:
+        except (BadRequest, Forbidden, TimedOut):
             pass
         return
 
@@ -41073,7 +41103,7 @@ async def on_callback(update: Update, ctx: ContextTypes.DEFAULT_TYPE):
                     chat_id=gdata_ttt["chat_id"],
                     message_id=gdata_ttt["msg_id"],
                 )
-        except Exception:
+        except (BadRequest, Forbidden, TimedOut):
             pass
         await q.answer((f"Вызов отменён, {stake_ttt}🪙 возвращены.")[:200], show_alert=True)
         try:
@@ -41082,7 +41112,7 @@ async def on_callback(update: Update, ctx: ContextTypes.DEFAULT_TYPE):
                 parse_mode=ParseMode.HTML,
                 reply_markup=InlineKeyboardMarkup([[btn(t("btn_back_games", f), callback_data="menu_games")]]),
             )
-        except Exception:
+        except (BadRequest, Forbidden, TimedOut):
             pass
         return
 
@@ -41119,7 +41149,7 @@ async def on_callback(update: Update, ctx: ContextTypes.DEFAULT_TYPE):
                 parse_mode=ParseMode.HTML,
                 reply_markup=InlineKeyboardMarkup([[btn(t("btn_back_games", f), callback_data="menu_games")]]),
             )
-        except Exception:
+        except (BadRequest, Forbidden, TimedOut):
             pass
         return
 
@@ -41170,7 +41200,7 @@ async def on_callback(update: Update, ctx: ContextTypes.DEFAULT_TYPE):
                 parse_mode=ParseMode.HTML,
                 reply_markup=InlineKeyboardMarkup(rows),
             )
-        except Exception:
+        except (BadRequest, Forbidden, TimedOut):
             pass
         return
 
@@ -41232,7 +41262,7 @@ async def on_callback(update: Update, ctx: ContextTypes.DEFAULT_TYPE):
                     parse_mode=ParseMode.HTML,
                     reply_markup=InlineKeyboardMarkup(rows_f_t5),
                 )
-            except Exception:
+            except (BadRequest, Forbidden, TimedOut):
                 pass
             return
         next_uid_t5 = gdata_t5["opponent"] if uid == gdata_t5["creator"] else gdata_t5["creator"]
@@ -41251,7 +41281,7 @@ async def on_callback(update: Update, ctx: ContextTypes.DEFAULT_TYPE):
                 parse_mode=ParseMode.HTML,
                 reply_markup=InlineKeyboardMarkup(rows),
             )
-        except Exception:
+        except (BadRequest, Forbidden, TimedOut):
             pass
         return
 
@@ -41281,7 +41311,7 @@ async def on_callback(update: Update, ctx: ContextTypes.DEFAULT_TYPE):
                     chat_id=gdata_t5["chat_id"],
                     message_id=gdata_t5["msg_id"],
                 )
-        except Exception:
+        except (BadRequest, Forbidden, TimedOut):
             pass
         await q.answer((f"Вызов отменён, {stake_t5}🪙 возвращены.")[:200], show_alert=True)
         try:
@@ -41290,7 +41320,7 @@ async def on_callback(update: Update, ctx: ContextTypes.DEFAULT_TYPE):
                 parse_mode=ParseMode.HTML,
                 reply_markup=InlineKeyboardMarkup([[btn(t("btn_back_games", f), callback_data="menu_games")]]),
             )
-        except Exception:
+        except (BadRequest, Forbidden, TimedOut):
             pass
         return
 
@@ -41327,7 +41357,7 @@ async def on_callback(update: Update, ctx: ContextTypes.DEFAULT_TYPE):
                 parse_mode=ParseMode.HTML,
                 reply_markup=InlineKeyboardMarkup([[btn(t("btn_back_games", f), callback_data="menu_games")]]),
             )
-        except Exception:
+        except (BadRequest, Forbidden, TimedOut):
             pass
         return
 
@@ -41358,7 +41388,7 @@ async def on_callback(update: Update, ctx: ContextTypes.DEFAULT_TYPE):
                 parse_mode=ParseMode.HTML,
                 reply_markup=InlineKeyboardMarkup(board_rows),
             )
-        except Exception:
+        except (BadRequest, Forbidden, TimedOut):
             pass
         return
 
@@ -41424,7 +41454,7 @@ async def on_callback(update: Update, ctx: ContextTypes.DEFAULT_TYPE):
                     parse_mode=ParseMode.HTML,
                     reply_markup=InlineKeyboardMarkup(board_rows),
                 )
-            except Exception:
+            except (BadRequest, Forbidden, TimedOut):
                 pass
         else:
             _sapper_flood(cells_s, revealed_s, i_s)
@@ -41452,7 +41482,7 @@ async def on_callback(update: Update, ctx: ContextTypes.DEFAULT_TYPE):
                 try:
                     await q.message.edit_text(result_text, parse_mode=ParseMode.HTML,
                         reply_markup=InlineKeyboardMarkup(board_rows))
-                except Exception:
+                except (BadRequest, Forbidden, TimedOut):
                     pass
             else:
                 board_rows = _sapper_render(cells_s, revealed_s)
@@ -41468,7 +41498,7 @@ async def on_callback(update: Update, ctx: ContextTypes.DEFAULT_TYPE):
                         parse_mode=ParseMode.HTML,
                         reply_markup=InlineKeyboardMarkup(board_rows),
                     )
-                except Exception:
+                except (BadRequest, Forbidden, TimedOut):
                     pass
         return
 
@@ -41499,7 +41529,7 @@ async def on_callback(update: Update, ctx: ContextTypes.DEFAULT_TYPE):
         try:
             await q.message.edit_text(result_text, parse_mode=ParseMode.HTML,
                 reply_markup=InlineKeyboardMarkup(board_rows))
-        except Exception:
+        except (BadRequest, Forbidden, TimedOut):
             pass
         return
 
@@ -41602,7 +41632,7 @@ async def on_callback(update: Update, ctx: ContextTypes.DEFAULT_TYPE):
                 parse_mode=ParseMode.HTML,
                 reply_markup=InlineKeyboardMarkup(letter_rows),
             )
-        except Exception:
+        except (BadRequest, Forbidden, TimedOut):
             pass
         return
         try:
@@ -41666,7 +41696,7 @@ async def on_callback(update: Update, ctx: ContextTypes.DEFAULT_TYPE):
                     parse_mode=ParseMode.HTML,
                     reply_markup=kb,
                 )
-            except Exception:
+            except (BadRequest, Forbidden, TimedOut):
                 pass
             return
 
@@ -41699,7 +41729,7 @@ async def on_callback(update: Update, ctx: ContextTypes.DEFAULT_TYPE):
                 parse_mode=ParseMode.HTML,
                 reply_markup=kb,
             )
-        except Exception:
+        except (BadRequest, Forbidden, TimedOut):
             pass
         return
 
@@ -41718,7 +41748,7 @@ async def on_callback(update: Update, ctx: ContextTypes.DEFAULT_TYPE):
                 parse_mode=ParseMode.HTML,
                 reply_markup=back_to_main(),
             )
-        except Exception:
+        except (BadRequest, Forbidden, TimedOut):
             pass
         return
 
@@ -41839,7 +41869,7 @@ async def on_callback(update: Update, ctx: ContextTypes.DEFAULT_TYPE):
                 parse_mode=ParseMode.HTML,
                 reply_markup=kb,
             )
-        except Exception:
+        except (BadRequest, Forbidden, TimedOut):
             pass
         return
 
@@ -41886,7 +41916,7 @@ async def on_callback(update: Update, ctx: ContextTypes.DEFAULT_TYPE):
         ])
         try:
             await q.message.edit_text(text, parse_mode=ParseMode.HTML, reply_markup=kb)
-        except Exception:
+        except (BadRequest, Forbidden, TimedOut):
             pass
         return
 
@@ -41951,7 +41981,7 @@ async def on_callback(update: Update, ctx: ContextTypes.DEFAULT_TYPE):
                 ]])
         try:
             await q.message.edit_text(text, parse_mode=ParseMode.HTML, reply_markup=kb)
-        except Exception:
+        except (BadRequest, Forbidden, TimedOut):
             pass
         return
 
@@ -41991,7 +42021,7 @@ async def on_callback(update: Update, ctx: ContextTypes.DEFAULT_TYPE):
         ])
         try:
             await q.message.edit_text(text, parse_mode=ParseMode.HTML, reply_markup=kb)
-        except Exception:
+        except (BadRequest, Forbidden, TimedOut):
             pass
         return
 
@@ -42037,7 +42067,7 @@ async def on_callback(update: Update, ctx: ContextTypes.DEFAULT_TYPE):
             ])
         try:
             await q.message.edit_text(text, parse_mode=ParseMode.HTML, reply_markup=kb)
-        except Exception:
+        except (BadRequest, Forbidden, TimedOut):
             pass
         return
 
@@ -42132,7 +42162,7 @@ async def on_callback(update: Update, ctx: ContextTypes.DEFAULT_TYPE):
         try:
             await q.message.edit_text(text, parse_mode=ParseMode.HTML,
                                       reply_markup=InlineKeyboardMarkup(kb_rows))
-        except Exception:
+        except (BadRequest, Forbidden, TimedOut):
             pass
         return
 
@@ -42164,7 +42194,7 @@ async def on_callback(update: Update, ctx: ContextTypes.DEFAULT_TYPE):
                         [btn("◀️ Назад", callback_data="plaza")],
                     ])
                 )
-            except Exception:
+            except (BadRequest, Forbidden, TimedOut):
                 pass
             return
 
@@ -42201,7 +42231,7 @@ async def on_callback(update: Update, ctx: ContextTypes.DEFAULT_TYPE):
         try:
             await q.message.edit_text("\n".join(lines), parse_mode=ParseMode.HTML,
                                       reply_markup=InlineKeyboardMarkup(kb_rows))
-        except Exception:
+        except (BadRequest, Forbidden, TimedOut):
             pass
         return
 
@@ -42318,7 +42348,7 @@ async def on_callback(update: Update, ctx: ContextTypes.DEFAULT_TYPE):
         try:
             await q.message.edit_text(text, parse_mode=ParseMode.HTML,
                                       reply_markup=InlineKeyboardMarkup(kb_rows))
-        except Exception:
+        except (BadRequest, Forbidden, TimedOut):
             pass
         return
 
@@ -42349,7 +42379,7 @@ async def on_callback(update: Update, ctx: ContextTypes.DEFAULT_TYPE):
         try:
             await q.message.edit_text("\n".join(lines), parse_mode=ParseMode.HTML,
                                       reply_markup=InlineKeyboardMarkup(kb_rows))
-        except Exception:
+        except (BadRequest, Forbidden, TimedOut):
             pass
         return
 
@@ -42368,7 +42398,7 @@ async def on_callback(update: Update, ctx: ContextTypes.DEFAULT_TYPE):
                     btn("❌ Отмена", callback_data="plaza_sosedi")
                 ]])
             )
-        except Exception:
+        except (BadRequest, Forbidden, TimedOut):
             pass
         return
 
@@ -42400,7 +42430,8 @@ async def on_callback(update: Update, ctx: ContextTypes.DEFAULT_TYPE):
                         btn("◀️ Назад", callback_data="plaza_staya"),
                     ]])
                 )
-            except Exception: pass
+            except (BadRequest, Forbidden, TimedOut):
+                pass
             return
 
         lines = [f"{_E_LEAF} <b>Болотные Стаи</b> — стр.{page+1}\n"]
@@ -42431,7 +42462,8 @@ async def on_callback(update: Update, ctx: ContextTypes.DEFAULT_TYPE):
         try:
             await q.message.edit_text("\n".join(lines), parse_mode=ParseMode.HTML,
                                       reply_markup=InlineKeyboardMarkup(kb_rows))
-        except Exception: pass
+        except (BadRequest, Forbidden, TimedOut):
+            pass
         return
 
     # ── Просмотр конкретной стаи + подать заявку ─────────────────────────────
@@ -42497,7 +42529,8 @@ async def on_callback(update: Update, ctx: ContextTypes.DEFAULT_TYPE):
             ])
         try:
             await q.message.edit_text(text, parse_mode=ParseMode.HTML, reply_markup=kb)
-        except Exception: pass
+        except (BadRequest, Forbidden, TimedOut):
+            pass
         return
 
     # ── Подать заявку ──────────────────────────────────────────────────────────
@@ -42515,7 +42548,8 @@ async def on_callback(update: Update, ctx: ContextTypes.DEFAULT_TYPE):
                     btn("❌ Отмена", callback_data=f"plaza_staya_view_{staya_id}")
                 ]])
             )
-        except Exception: pass
+        except (BadRequest, Forbidden, TimedOut):
+            pass
         return
 
     # ── Приглашения и заявки (для вожака) ─────────────────────────────────────
@@ -42549,7 +42583,8 @@ async def on_callback(update: Update, ctx: ContextTypes.DEFAULT_TYPE):
                         btn("◀️ Назад", callback_data="plaza_staya")
                     ]])
                 )
-            except Exception: pass
+            except (BadRequest, Forbidden, TimedOut):
+                pass
             return
 
         lines = [f"{_E_MAIL} <b>Заявки в стаю «{he(staya['name'])}»</b> — {len(apps)} шт.\n"]
@@ -42567,7 +42602,8 @@ async def on_callback(update: Update, ctx: ContextTypes.DEFAULT_TYPE):
         try:
             await q.message.edit_text("\n".join(lines), parse_mode=ParseMode.HTML,
                                       reply_markup=InlineKeyboardMarkup(kb_rows))
-        except Exception: pass
+        except (BadRequest, Forbidden, TimedOut):
+            pass
         return
 
     if d.startswith("staya_app_ok_"):
@@ -42600,7 +42636,8 @@ async def on_callback(update: Update, ctx: ContextTypes.DEFAULT_TYPE):
                     f"Добро пожаловать на болото! {_E_LEAF}",
                     parse_mode=ParseMode.HTML,
                 )
-            except Exception: pass
+            except (BadRequest, Forbidden, TimedOut):
+                pass
         await q.answer(f"✅ Принят в стаю")
         # Обновляем список
         if d.startswith("staya_app"):
@@ -42626,7 +42663,8 @@ async def on_callback(update: Update, ctx: ContextTypes.DEFAULT_TYPE):
                 f"Попробуй другую стаю или создай свою! {_E_LEAF}",
                 parse_mode=ParseMode.HTML,
             )
-        except Exception: pass
+        except (BadRequest, Forbidden, TimedOut):
+            pass
         await q.answer("❌ Заявка отклонена.")
         return
 
@@ -42661,7 +42699,8 @@ async def on_callback(update: Update, ctx: ContextTypes.DEFAULT_TYPE):
                 f"{_E_COIN} Котёл: {staya['cauldron']}{_E_COIN}",
                 parse_mode=ParseMode.HTML, reply_markup=kb,
             )
-        except Exception: pass
+        except (BadRequest, Forbidden, TimedOut):
+            pass
         return
 
     if d.startswith("staya_join_"):
@@ -42698,14 +42737,16 @@ async def on_callback(update: Update, ctx: ContextTypes.DEFAULT_TYPE):
                     btn("🌿 Моя стая", callback_data="plaza_staya")
                 ]])
             )
-        except Exception: pass
+        except (BadRequest, Forbidden, TimedOut):
+            pass
         return
 
     if d.startswith("staya_decline_"):
         await q.answer("Приглашение отклонено.")
         try:
             await q.message.edit_text("❌ Приглашение в стаю отклонено.")
-        except Exception: pass
+        except (BadRequest, Forbidden, TimedOut):
+            pass
         return
 
     # ── 🌿 Стая ───────────────────────────────────────────────────────────────
@@ -42725,7 +42766,7 @@ async def on_callback(update: Update, ctx: ContextTypes.DEFAULT_TYPE):
                         [btn("◀️ Назад", callback_data="plaza")],
                     ])
                 )
-            except Exception:
+            except (BadRequest, Forbidden, TimedOut):
                 pass
             return
 
@@ -42809,7 +42850,7 @@ async def on_callback(update: Update, ctx: ContextTypes.DEFAULT_TYPE):
         try:
             await q.message.edit_text(text, parse_mode=ParseMode.HTML,
                                       reply_markup=InlineKeyboardMarkup(kb_rows))
-        except Exception:
+        except (BadRequest, Forbidden, TimedOut):
             pass
         return
 
@@ -42869,7 +42910,7 @@ async def on_callback(update: Update, ctx: ContextTypes.DEFAULT_TYPE):
                     btn("🪙 Пополнить котёл", callback_data="staya_cauldron"),
                     btn("◀️ Назад", callback_data="plaza_staya"),
                 ]]))
-        except Exception:
+        except (BadRequest, Forbidden, TimedOut):
             pass
         return
 
@@ -42892,7 +42933,7 @@ async def on_callback(update: Update, ctx: ContextTypes.DEFAULT_TYPE):
                     btn("❌ Отмена", callback_data="staya_manage")
                 ]])
             )
-        except Exception:
+        except (BadRequest, Forbidden, TimedOut):
             pass
         return
 
@@ -42921,7 +42962,7 @@ async def on_callback(update: Update, ctx: ContextTypes.DEFAULT_TYPE):
                     btn("◀️ Назад", callback_data="plaza_staya")
                 ]])
             )
-        except Exception:
+        except (BadRequest, Forbidden, TimedOut):
             pass
         return
 
@@ -42950,7 +42991,7 @@ async def on_callback(update: Update, ctx: ContextTypes.DEFAULT_TYPE):
                         [btn("◀️ Назад", callback_data="plaza")],
                     ])
                 )
-            except Exception:
+            except (BadRequest, Forbidden, TimedOut):
                 pass
             return
 
@@ -42983,7 +43024,7 @@ async def on_callback(update: Update, ctx: ContextTypes.DEFAULT_TYPE):
                         [btn("◀️ Назад", callback_data="plaza")],
                     ])
                 )
-            except Exception:
+            except (BadRequest, Forbidden, TimedOut):
                 pass
             return
 
@@ -43006,7 +43047,7 @@ async def on_callback(update: Update, ctx: ContextTypes.DEFAULT_TYPE):
                 "\n".join(lines), parse_mode=ParseMode.HTML,
                 reply_markup=InlineKeyboardMarkup(kb_rows)
             )
-        except Exception:
+        except (BadRequest, Forbidden, TimedOut):
             pass
         return
 
@@ -43026,7 +43067,7 @@ async def on_callback(update: Update, ctx: ContextTypes.DEFAULT_TYPE):
                         [btn("◀️ Назад", callback_data="plaza")],
                     ]),
                 )
-            except Exception:
+            except (BadRequest, Forbidden, TimedOut):
                 pass
             return
 
@@ -43053,7 +43094,7 @@ async def on_callback(update: Update, ctx: ContextTypes.DEFAULT_TYPE):
                         [btn("◀️ Назад", callback_data="plaza")],
                     ]),
                 )
-            except Exception:
+            except (BadRequest, Forbidden, TimedOut):
                 pass
             return
 
@@ -43089,7 +43130,7 @@ async def on_callback(update: Update, ctx: ContextTypes.DEFAULT_TYPE):
                     parse_mode=ParseMode.HTML,
                     reply_markup=InlineKeyboardMarkup([[btn("◀️ Назад", callback_data="plaza")]])
                 )
-            except Exception:
+            except (BadRequest, Forbidden, TimedOut):
                 pass
             return
         kb_fish_rows = []
@@ -43112,7 +43153,7 @@ async def on_callback(update: Update, ctx: ContextTypes.DEFAULT_TYPE):
                 parse_mode=ParseMode.HTML,
                 reply_markup=InlineKeyboardMarkup(kb_fish_rows)
             )
-        except Exception:
+        except (BadRequest, Forbidden, TimedOut):
             pass
         return
 
@@ -43156,7 +43197,7 @@ async def on_callback(update: Update, ctx: ContextTypes.DEFAULT_TYPE):
                         chat_id=old_target, message_id=old_msg_id,
                         parse_mode=ParseMode.HTML,
                     )
-                except Exception:
+                except (BadRequest, Forbidden, TimedOut):
                     pass
         ctx.bot_data[f"adv_invite_{uid}"] = {
             "inviter": uid, "target": target_id, "created": time.time(), "msg_id": None
@@ -43180,7 +43221,7 @@ async def on_callback(update: Update, ctx: ContextTypes.DEFAULT_TYPE):
             # Сохраняем msg_id чтобы обновить если ушёл с другим
             if sent:
                 ctx.bot_data[f"adv_invite_{uid}"]["msg_id"] = sent.message_id
-        except Exception:
+        except (BadRequest, Forbidden, TimedOut):
             pass
         # Показываем отправителю подтверждение с возможностью отмены
         try:
@@ -43194,7 +43235,7 @@ async def on_callback(update: Update, ctx: ContextTypes.DEFAULT_TYPE):
                     btn("◀️ Назад", callback_data="plaza"),
                 ]]),
             )
-        except Exception:
+        except (BadRequest, Forbidden, TimedOut):
             pass
         return
 
@@ -43226,7 +43267,7 @@ async def on_callback(update: Update, ctx: ContextTypes.DEFAULT_TYPE):
                         chat_id=old_f_target, message_id=old_f_msg,
                         parse_mode=ParseMode.HTML,
                     )
-                except Exception:
+                except (BadRequest, Forbidden, TimedOut):
                     pass
         ctx.bot_data[f"fish_invite_{uid}"] = {
             "inviter": uid, "target": target_id, "cost": FISH_COST,
@@ -43247,7 +43288,7 @@ async def on_callback(update: Update, ctx: ContextTypes.DEFAULT_TYPE):
             )
             if sent_fish:
                 ctx.bot_data[f"fish_invite_{uid}"]["msg_id"] = sent_fish.message_id
-        except Exception:
+        except (BadRequest, Forbidden, TimedOut):
             pass
         # Показываем отправителю подтверждение с кнопкой отмены
         try:
@@ -43261,7 +43302,7 @@ async def on_callback(update: Update, ctx: ContextTypes.DEFAULT_TYPE):
                     btn("◀️ Назад", callback_data="plaza"),
                 ]]),
             )
-        except Exception:
+        except (BadRequest, Forbidden, TimedOut):
             pass
         return
 
@@ -43346,7 +43387,7 @@ async def on_callback(update: Update, ctx: ContextTypes.DEFAULT_TYPE):
             kb = InlineKeyboardMarkup(kb_rows_bond)
         try:
             await q.message.edit_text(text, parse_mode=ParseMode.HTML, reply_markup=kb)
-        except Exception:
+        except (BadRequest, Forbidden, TimedOut):
             pass
         return
 
@@ -43382,7 +43423,7 @@ async def on_callback(update: Update, ctx: ContextTypes.DEFAULT_TYPE):
         ])
         try:
             await q.message.edit_text(text, parse_mode=ParseMode.HTML, reply_markup=kb)
-        except Exception:
+        except (BadRequest, Forbidden, TimedOut):
             pass
         return
 
@@ -43412,7 +43453,7 @@ async def on_callback(update: Update, ctx: ContextTypes.DEFAULT_TYPE):
                 f"Вехи 7/14/30/100 дней — особые награды обоим! 🌟",
                 parse_mode=ParseMode.HTML, reply_markup=kb,
             )
-        except Exception:
+        except (BadRequest, Forbidden, TimedOut):
             pass
         return
 
@@ -43432,7 +43473,7 @@ async def on_callback(update: Update, ctx: ContextTypes.DEFAULT_TYPE):
                         f"💔 <b>{fname(f)}</b> разорвал Болотную Связь.",
                         parse_mode=ParseMode.HTML,
                     )
-                except Exception:
+                except (BadRequest, Forbidden, TimedOut):
                     pass
         try:
             await q.message.edit_text(
@@ -43441,7 +43482,7 @@ async def on_callback(update: Update, ctx: ContextTypes.DEFAULT_TYPE):
                     btn("◀️ Назад", callback_data="plaza_bond")
                 ]])
             )
-        except Exception:
+        except (BadRequest, Forbidden, TimedOut):
             pass
         return
 
@@ -43485,7 +43526,7 @@ async def on_callback(update: Update, ctx: ContextTypes.DEFAULT_TYPE):
                 f"🍎 <b>{fname(f)}</b> покормил твою лягушку!\n<i>{lore}</i>\n{_E_FOOD} +20",
                 parse_mode=ParseMode.HTML,
             )
-        except Exception:
+        except (BadRequest, Forbidden, TimedOut):
             pass
         return
 
@@ -43524,7 +43565,7 @@ async def on_callback(update: Update, ctx: ContextTypes.DEFAULT_TYPE):
                 f"🌱 <b>{he(my_name)}</b> хочет стать твоим болотным соседом!\nПримешь заявку?",
                 parse_mode=ParseMode.HTML, reply_markup=kb,
             )
-        except Exception:
+        except (BadRequest, Forbidden, TimedOut):
             pass
         return
 
@@ -43604,7 +43645,7 @@ async def on_callback(update: Update, ctx: ContextTypes.DEFAULT_TYPE):
                 ]])
                 await ctx.bot.send_message(target_id, receiver_text,
                     parse_mode=ParseMode.HTML, reply_markup=_care_tip_kb)
-            except Exception:
+            except (BadRequest, Forbidden, TimedOut):
                 pass
         # Обновляем карточку соседа чтобы показать новые кулдауны ✅
         try:
@@ -43644,8 +43685,8 @@ async def on_callback(update: Update, ctx: ContextTypes.DEFAULT_TYPE):
                      btn("◀️ Назад", callback_data="plaza_sosedi")],
                 ])
                 await q.message.edit_reply_markup(reply_markup=kb2)
-        except Exception:
-            pass
+        except Exception as _e:
+            logger.exception("подавлено исключение: %s", _e)
         return
 
     # ── Принятие/отклонение похода ────────────────────────
@@ -43732,14 +43773,14 @@ async def on_callback(update: Update, ctx: ContextTypes.DEFAULT_TYPE):
                                         callback_data="adv_buy_extra_slot", style="primary")
                                 ]]),
                             )
-                        except Exception:
+                        except (BadRequest, Forbidden, TimedOut):
                             pass
                     return
         await q.answer("⚔️ Поход начинается")
         # Обновляем сообщение с приглашением — убираем кнопки
         try:
             await q.message.edit_reply_markup(reply_markup=None)
-        except Exception:
+        except (BadRequest, Forbidden, TimedOut):
             pass
         # Удаляем приглашение только здесь — поход стартует
         ctx.bot_data.pop(invite_key, None)
@@ -43816,7 +43857,7 @@ async def on_callback(update: Update, ctx: ContextTypes.DEFAULT_TYPE):
         for frog_id in (inviter_id, uid):
             try:
                 await ctx.bot.send_message(frog_id, start_msg, parse_mode=ParseMode.HTML)
-            except Exception:
+            except (BadRequest, Forbidden, TimedOut):
                 pass
         await letopis_add(inviter_id, "staya_win", f"{_E_SWORDS} {inv_name} и {my_name} отправились в поход!")
         return
@@ -43834,7 +43875,7 @@ async def on_callback(update: Update, ctx: ContextTypes.DEFAULT_TYPE):
                     chat_id=cancelled_target, message_id=invite_c["msg_id"],
                     parse_mode=ParseMode.HTML,
                 )
-            except Exception:
+            except (BadRequest, Forbidden, TimedOut):
                 pass
         try:
             await q.message.edit_text(
@@ -43844,7 +43885,7 @@ async def on_callback(update: Update, ctx: ContextTypes.DEFAULT_TYPE):
                     btn("◀️ Назад", callback_data="plaza")
                 ]]),
             )
-        except Exception:
+        except (BadRequest, Forbidden, TimedOut):
             pass
         return
 
@@ -43854,11 +43895,11 @@ async def on_callback(update: Update, ctx: ContextTypes.DEFAULT_TYPE):
         await q.answer("Отказано.")
         try:
             await q.message.edit_text("❌ Ты отказался от похода.")
-        except Exception:
+        except (BadRequest, Forbidden, TimedOut):
             pass
         try:
             await ctx.bot.send_message(inviter_id, f"{_E_CROSS} <b>{he(fname(f))}</b> отказался от похода 😢", parse_mode=ParseMode.HTML)
-        except Exception:
+        except (BadRequest, Forbidden, TimedOut):
             pass
         return
 
@@ -43891,7 +43932,7 @@ async def on_callback(update: Update, ctx: ContextTypes.DEFAULT_TYPE):
                 f"{_E_SWORDS} Приглашение отправлено <b>{he(tname)}</b>!",
                 parse_mode=ParseMode.HTML,
             )
-        except Exception:
+        except (BadRequest, Forbidden, TimedOut):
             pass
         return
 
@@ -43938,14 +43979,14 @@ async def on_callback(update: Update, ctx: ContextTypes.DEFAULT_TYPE):
                 f"{_E_SWORDS} Партнёр <b>{other_name}</b> выбрал: <b>{label}</b>",
                 parse_mode=ParseMode.HTML,
             )
-        except Exception:
+        except (BadRequest, Forbidden, TimedOut):
             pass
         try:
             await q.message.edit_text(
                 q.message.text + f"\n\n✅ <b>Твой выбор:</b> {label}",
                 parse_mode=ParseMode.HTML,
             )
-        except Exception:
+        except (BadRequest, Forbidden, TimedOut):
             pass
 
         # ── Крюк 2 часа: treasure_map → go (оба выбрали) ─────────────────────
@@ -43972,7 +44013,7 @@ async def on_callback(update: Update, ctx: ContextTypes.DEFAULT_TYPE):
                             "<i>Болото не ждёт — но сокровище того стоит.</i>",
                             parse_mode=ParseMode.HTML,
                         )
-                    except Exception:
+                    except (BadRequest, Forbidden, TimedOut):
                         pass
 
         # ── Малый штраф: roadside_tavern → drink (оба выпили) ─────────────────
@@ -44018,7 +44059,7 @@ async def on_callback(update: Update, ctx: ContextTypes.DEFAULT_TYPE):
                 for _fid in (adv_fresh["user1_id"], adv_fresh["user2_id"]):
                     try:
                         await ctx.bot.send_message(_fid, cave_msg, parse_mode=ParseMode.HTML)
-                    except Exception:
+                    except (BadRequest, Forbidden, TimedOut):
                         pass
 
         # ── Лорный resolve: roadside_tavern → enter (оба зашли) ───────────────
@@ -44052,7 +44093,7 @@ async def on_callback(update: Update, ctx: ContextTypes.DEFAULT_TYPE):
                     try:
                         await ctx.bot.send_message(_fid, tav_msg,
                             parse_mode=ParseMode.HTML, reply_markup=tip_kb)
-                    except Exception:
+                    except (BadRequest, Forbidden, TimedOut):
                         pass
 
         return
@@ -44080,7 +44121,7 @@ async def on_callback(update: Update, ctx: ContextTypes.DEFAULT_TYPE):
         await q.answer("🪙 Хозяин кивнул с благодарностью — монетку принял", show_alert=True)
         try:
             await q.message.edit_reply_markup(reply_markup=None)
-        except Exception:
+        except (BadRequest, Forbidden, TimedOut):
             pass
         return
 
@@ -44114,12 +44155,12 @@ async def on_callback(update: Update, ctx: ContextTypes.DEFAULT_TYPE):
                     f"<i>Приятно быть полезным! 🐸</i>",
                     parse_mode=ParseMode.HTML,
                 )
-            except Exception:
+            except (BadRequest, Forbidden, TimedOut):
                 pass
         await q.answer((f"🪙 +{amount_tip} отправлено {feeder_display}")[:200], show_alert=True)
         try:
             await q.message.edit_reply_markup(reply_markup=None)
-        except Exception:
+        except (BadRequest, Forbidden, TimedOut):
             pass
         return
 
@@ -44167,7 +44208,7 @@ async def on_callback(update: Update, ctx: ContextTypes.DEFAULT_TYPE):
                     btn("🔄 Обновить", callback_data="plaza_pohod"),
                 ]]),
             )
-        except Exception:
+        except (BadRequest, Forbidden, TimedOut):
             pass
         return
 
@@ -44180,7 +44221,7 @@ async def on_callback(update: Update, ctx: ContextTypes.DEFAULT_TYPE):
         if any(b["partner_id"] == requester_id for b in my_bonds):
             try:
                 await q.message.edit_text("💚 Болотная Связь уже активна!")
-            except Exception:
+            except (BadRequest, Forbidden, TimedOut):
                 pass
             return
         await add_bond(uid, requester_id)
@@ -44196,11 +44237,11 @@ async def on_callback(update: Update, ctx: ContextTypes.DEFAULT_TYPE):
                     f"Заходите каждый день — стрик будет расти {_E_FIRE}",
                     parse_mode=ParseMode.HTML,
                 )
-            except Exception:
+            except (BadRequest, Forbidden, TimedOut):
                 pass
         try:
             await q.message.edit_text("💚 Болотная Связь активирована!")
-        except Exception:
+        except (BadRequest, Forbidden, TimedOut):
             pass
         return
 
@@ -44208,7 +44249,7 @@ async def on_callback(update: Update, ctx: ContextTypes.DEFAULT_TYPE):
         await q.answer("Отказано.")
         try:
             await q.message.edit_text("❌ Предложение связи отклонено.")
-        except Exception:
+        except (BadRequest, Forbidden, TimedOut):
             pass
         return
 
@@ -44247,7 +44288,8 @@ async def on_callback(update: Update, ctx: ContextTypes.DEFAULT_TYPE):
                     btn("🌿 Моя стая", callback_data="plaza_staya"),
                 ]])
             )
-        except Exception: pass
+        except (BadRequest, Forbidden, TimedOut):
+            pass
         return
 
     # ── Удаление из друзей ───────────────────────────────────────────────────
@@ -44269,7 +44311,8 @@ async def on_callback(update: Update, ctx: ContextTypes.DEFAULT_TYPE):
                 parse_mode=ParseMode.HTML,
                 reply_markup=InlineKeyboardMarkup([[btn("◀️ К соседям", callback_data="plaza_sosedi")]])
             )
-        except Exception: pass
+        except (BadRequest, Forbidden, TimedOut):
+            pass
         return
 
     if d.startswith("plaza_unfriend_"):
@@ -44289,7 +44332,8 @@ async def on_callback(update: Update, ctx: ContextTypes.DEFAULT_TYPE):
                      btn("◀️ Нет", callback_data=f"plaza_friend_{target_id}")],
                 ])
             )
-        except Exception: pass
+        except (BadRequest, Forbidden, TimedOut):
+            pass
         return
 
     if d == "letopis_view":
@@ -44298,7 +44342,7 @@ async def on_callback(update: Update, ctx: ContextTypes.DEFAULT_TYPE):
         if not events:
             try:
                 await q.message.edit_text("📖 Летопись пуста — болото молчит 🌿")
-            except Exception:
+            except (BadRequest, Forbidden, TimedOut):
                 pass
             return
         lines = ["📖 <b>Болотная Летопись</b>\n"]
@@ -44327,7 +44371,7 @@ async def on_callback(update: Update, ctx: ContextTypes.DEFAULT_TYPE):
                     btn("◀️ Назад", callback_data="plaza"),
                 ]]),
             )
-        except Exception:
+        except (BadRequest, Forbidden, TimedOut):
             pass
         return
 
@@ -44361,7 +44405,7 @@ async def on_callback(update: Update, ctx: ContextTypes.DEFAULT_TYPE):
                 f"<i>Ответь на приглашение 👇</i>",
                 parse_mode=ParseMode.HTML, reply_markup=kb,
             )
-        except Exception:
+        except (BadRequest, Forbidden, TimedOut):
             pass
         return
 
@@ -44386,7 +44430,7 @@ async def on_callback(update: Update, ctx: ContextTypes.DEFAULT_TYPE):
                 f"✅ Вы теперь болотные соседи! {_E_LEAF}",
                 parse_mode=ParseMode.HTML,
             )
-        except Exception:
+        except (BadRequest, Forbidden, TimedOut):
             pass
         if rf:
             try:
@@ -44395,7 +44439,7 @@ async def on_callback(update: Update, ctx: ContextTypes.DEFAULT_TYPE):
                     f"🌱 <b>{he(my_name)}</b> принял твою заявку!\nВы теперь болотные соседи <tg-emoji emoji-id='5341367834935075028'>🐸</tg-emoji>",
                     parse_mode=ParseMode.HTML,
                 )
-            except Exception:
+            except (BadRequest, Forbidden, TimedOut):
                 pass
         return
 
@@ -44410,7 +44454,7 @@ async def on_callback(update: Update, ctx: ContextTypes.DEFAULT_TYPE):
             await db.commit()
         try:
             await q.message.edit_text("❌ Заявка отклонена.")
-        except Exception:
+        except (BadRequest, Forbidden, TimedOut):
             pass
         return
 
@@ -44444,7 +44488,7 @@ async def on_callback(update: Update, ctx: ContextTypes.DEFAULT_TYPE):
                 "\n".join(lines), parse_mode=ParseMode.HTML,
                 reply_markup=InlineKeyboardMarkup(kb_rows),
             )
-        except Exception:
+        except (BadRequest, Forbidden, TimedOut):
             pass
         return
 
@@ -44464,7 +44508,7 @@ async def on_callback(update: Update, ctx: ContextTypes.DEFAULT_TYPE):
         # Убираем кнопки из приглашения
         try:
             await q.message.edit_reply_markup(reply_markup=None)
-        except Exception:
+        except (BadRequest, Forbidden, TimedOut):
             pass
         ctx.bot_data.pop(invite_key, None)
         inviter_f = await db_get(inviter_id)
@@ -44517,11 +44561,11 @@ async def on_callback(update: Update, ctx: ContextTypes.DEFAULT_TYPE):
         await friend_add_xp(inviter_id, uid, 3)
         try:
             await q.message.edit_text(result, parse_mode=ParseMode.HTML)
-        except Exception:
+        except (BadRequest, Forbidden, TimedOut):
             pass
         try:
             await ctx.bot.send_message(inviter_id, result, parse_mode=ParseMode.HTML)
-        except Exception:
+        except (BadRequest, Forbidden, TimedOut):
             pass
         return
 
@@ -44537,7 +44581,7 @@ async def on_callback(update: Update, ctx: ContextTypes.DEFAULT_TYPE):
                     chat_id=fish_cancel_target, message_id=fish_inv_c["msg_id"],
                     parse_mode=ParseMode.HTML,
                 )
-            except Exception:
+            except (BadRequest, Forbidden, TimedOut):
                 pass
         try:
             await q.message.edit_text(
@@ -44546,7 +44590,7 @@ async def on_callback(update: Update, ctx: ContextTypes.DEFAULT_TYPE):
                     btn("◀️ Назад", callback_data="plaza")
                 ]]),
             )
-        except Exception:
+        except (BadRequest, Forbidden, TimedOut):
             pass
         return
 
@@ -44556,11 +44600,11 @@ async def on_callback(update: Update, ctx: ContextTypes.DEFAULT_TYPE):
         await q.answer("Отказано.")
         try:
             await q.message.edit_text("❌ Ты отказался от рыбалки.")
-        except Exception:
+        except (BadRequest, Forbidden, TimedOut):
             pass
         try:
             await ctx.bot.send_message(inviter_id, f"{_E_CROSS} <b>{he(fname(f))}</b> отказался от рыбалки 🎣", parse_mode=ParseMode.HTML)
-        except Exception:
+        except (BadRequest, Forbidden, TimedOut):
             pass
         return
 
@@ -44585,7 +44629,7 @@ async def on_callback(update: Update, ctx: ContextTypes.DEFAULT_TYPE):
                     btn("❌ Отмена", callback_data="staya_create_cancel"),
                 ]]),
             )
-        except Exception:
+        except (BadRequest, Forbidden, TimedOut):
             pass
         return
 
@@ -44595,7 +44639,7 @@ async def on_callback(update: Update, ctx: ContextTypes.DEFAULT_TYPE):
         await q.answer("Отменено.")
         try:
             await q.message.edit_text("❌ Создание стаи отменено.")
-        except Exception:
+        except (BadRequest, Forbidden, TimedOut):
             pass
         return
 
@@ -44622,7 +44666,8 @@ async def on_callback(update: Update, ctx: ContextTypes.DEFAULT_TYPE):
                         parse_mode=ParseMode.HTML,
                         reply_markup=InlineKeyboardMarkup(kb_transfer),
                     )
-                except Exception: pass
+                except (BadRequest, Forbidden, TimedOut):
+                    pass
             else:
                 # Один в стае — можно распустить
                 try:
@@ -44633,7 +44678,8 @@ async def on_callback(update: Update, ctx: ContextTypes.DEFAULT_TYPE):
                             btn("◀️ Отмена", callback_data="plaza_staya"),
                         ]])
                     )
-                except Exception: pass
+                except (BadRequest, Forbidden, TimedOut):
+                    pass
             return
         # Обычный участник — подтверждение
         try:
@@ -44644,7 +44690,8 @@ async def on_callback(update: Update, ctx: ContextTypes.DEFAULT_TYPE):
                     btn("◀️ Отмена", callback_data="plaza_staya"),
                 ]])
             )
-        except Exception: pass
+        except (BadRequest, Forbidden, TimedOut):
+            pass
         return
 
     if d == "staya_leave_confirm":
@@ -44663,7 +44710,8 @@ async def on_callback(update: Update, ctx: ContextTypes.DEFAULT_TYPE):
                 f"{_E_DOOR} Ты покинул стаю «{he(staya['name'])}». Удачи на болоте! {_E_LEAF}",
                 reply_markup=InlineKeyboardMarkup([[btn("Площадь", callback_data="plaza")]])
             )
-        except Exception: pass
+        except (BadRequest, Forbidden, TimedOut):
+            pass
         return
 
     if d.startswith("staya_transfer_"):
@@ -44696,7 +44744,8 @@ async def on_callback(update: Update, ctx: ContextTypes.DEFAULT_TYPE):
                     btn("◀️ Остаться", callback_data="plaza_staya"),
                 ]])
             )
-        except Exception: pass
+        except (BadRequest, Forbidden, TimedOut):
+            pass
         if new_f:
             try:
                 await ctx.bot.send_message(
@@ -44704,7 +44753,8 @@ async def on_callback(update: Update, ctx: ContextTypes.DEFAULT_TYPE):
                     f"👑 <b>{fname(f)}</b> передал тебе лидерство в стае «{he(staya['name'])}»!\nТы теперь Вожак! <tg-emoji emoji-id='5341367834935075028'>🐸</tg-emoji>",
                     parse_mode=ParseMode.HTML,
                 )
-            except Exception: pass
+            except (BadRequest, Forbidden, TimedOut):
+                pass
         return
 
     if d == "staya_disband":
@@ -44727,7 +44777,7 @@ async def on_callback(update: Update, ctx: ContextTypes.DEFAULT_TYPE):
                     btn("\u25c0\ufe0f Отмена",      callback_data="plaza_staya",            style="primary"),
                 ]]),
             )
-        except Exception:
+        except (BadRequest, Forbidden, TimedOut):
             pass
         return
 
@@ -44750,7 +44800,7 @@ async def on_callback(update: Update, ctx: ContextTypes.DEFAULT_TYPE):
             await q.message.edit_text(
                 f"\U0001f494 Стая «{he(staya['name'])}» распущена. Болото осиротело..."
             )
-        except Exception:
+        except (BadRequest, Forbidden, TimedOut):
             pass
         return
 
@@ -44824,7 +44874,7 @@ async def on_callback(update: Update, ctx: ContextTypes.DEFAULT_TYPE):
                 parse_mode=ParseMode.HTML,
                 reply_markup=InlineKeyboardMarkup(rows_c),
             )
-        except Exception:
+        except (BadRequest, Forbidden, TimedOut):
             pass
         return
 
@@ -44842,7 +44892,7 @@ async def on_callback(update: Update, ctx: ContextTypes.DEFAULT_TYPE):
                     btn("❌ Отмена", callback_data="staya_cauldron")
                 ]])
             )
-        except Exception:
+        except (BadRequest, Forbidden, TimedOut):
             pass
         return
 
@@ -44914,7 +44964,7 @@ async def on_callback(update: Update, ctx: ContextTypes.DEFAULT_TYPE):
                         btn("◀️ Назад", callback_data="plaza_staya"),
                     ]]),
                 )
-            except Exception:
+            except (BadRequest, Forbidden, TimedOut):
                 pass
             return
         ev = dict(ev_row)
@@ -44956,7 +45006,7 @@ async def on_callback(update: Update, ctx: ContextTypes.DEFAULT_TYPE):
             ] + [[btn("◀️ Назад", callback_data="plaza_staya")]])
         try:
             await q.message.edit_text(text, parse_mode=ParseMode.HTML, reply_markup=kb)
-        except Exception:
+        except (BadRequest, Forbidden, TimedOut):
             pass
         return
 
@@ -45003,7 +45053,7 @@ async def on_callback(update: Update, ctx: ContextTypes.DEFAULT_TYPE):
                 + ("⏳ Ждём остальных..." if vote_count < len(members_vote) else "🎉 Все проголосовали — подводим итоги!"),
                 parse_mode=ParseMode.HTML,
             )
-        except Exception:
+        except (BadRequest, Forbidden, TimedOut):
             pass
         return
 
@@ -45045,7 +45095,7 @@ async def on_callback(update: Update, ctx: ContextTypes.DEFAULT_TYPE):
         kb = InlineKeyboardMarkup(kb_rows_manage)
         try:
             await q.message.edit_text(text, parse_mode=ParseMode.HTML, reply_markup=kb)
-        except Exception:
+        except (BadRequest, Forbidden, TimedOut):
             pass
         return
 
@@ -45101,7 +45151,7 @@ async def on_callback(update: Update, ctx: ContextTypes.DEFAULT_TYPE):
                 [btn("📬 Заявки", callback_data="staya_applications")],
                 [btn("◀️ Назад", callback_data="plaza_staya")],
             ]))
-        except Exception:
+        except (BadRequest, Forbidden, TimedOut):
             pass
         return
 
@@ -45130,7 +45180,8 @@ async def on_callback(update: Update, ctx: ContextTypes.DEFAULT_TYPE):
         try:
             await q.message.edit_text("\n".join(lines_mm), parse_mode=ParseMode.HTML,
                                       reply_markup=InlineKeyboardMarkup(kb_mm))
-        except Exception: pass
+        except (BadRequest, Forbidden, TimedOut):
+            pass
         return
 
     if d.startswith("staya_member_action_"):
@@ -45155,7 +45206,8 @@ async def on_callback(update: Update, ctx: ContextTypes.DEFAULT_TYPE):
                 f"Роль: {'🦎 Старейшина' if target_role=='elder' else '🐟 Житель'}",
                 parse_mode=ParseMode.HTML, reply_markup=InlineKeyboardMarkup(kb_ma)
             )
-        except Exception: pass
+        except (BadRequest, Forbidden, TimedOut):
+            pass
         return
 
     if d.startswith("staya_promote_") or d.startswith("staya_demote_"):
@@ -45178,7 +45230,8 @@ async def on_callback(update: Update, ctx: ContextTypes.DEFAULT_TYPE):
             await ctx.bot.send_message(target_uid_pd,
                 f"{'🦎 Тебя повысили до Старейшины' if is_promote else '🐟 Тебя понизили до Жителя'} "
                 f"в стае «{he(staya['name'])}»!", parse_mode=ParseMode.HTML)
-        except Exception: pass
+        except (BadRequest, Forbidden, TimedOut):
+            pass
         return
 
     if d.startswith("staya_kick_"):
@@ -45210,7 +45263,8 @@ async def on_callback(update: Update, ctx: ContextTypes.DEFAULT_TYPE):
             try:
                 await ctx.bot.send_message(target_uid_k,
                     f"😔 Тебя исключили из стаи «{he(staya['name'])}».", parse_mode=ParseMode.HTML)
-            except Exception: pass
+            except (BadRequest, Forbidden, TimedOut):
+                pass
         await q.answer(f"🚫 Участник исключён")
         return
 
@@ -45242,7 +45296,8 @@ async def on_callback(update: Update, ctx: ContextTypes.DEFAULT_TYPE):
                     [btn("◀️ Назад", callback_data="staya_manage")],
                 ]),
             )
-        except Exception: pass
+        except (BadRequest, Forbidden, TimedOut):
+            pass
         return
 
     if d.startswith("staya_rename_role_"):
@@ -45263,7 +45318,8 @@ async def on_callback(update: Update, ctx: ContextTypes.DEFAULT_TYPE):
                 parse_mode=ParseMode.HTML,
                 reply_markup=InlineKeyboardMarkup([[btn("❌ Отмена", callback_data="staya_roles_rename")]]),
             )
-        except Exception: pass
+        except (BadRequest, Forbidden, TimedOut):
+            pass
         return
 
     # ── Магазин стаи ─────────────────────────────────────────────────────────
@@ -45319,7 +45375,8 @@ async def on_callback(update: Update, ctx: ContextTypes.DEFAULT_TYPE):
         kb_sh.append([btn("◀️ Назад", callback_data="staya_cauldron")])
         try:
             await q.message.edit_text(text_sh, parse_mode=ParseMode.HTML, reply_markup=InlineKeyboardMarkup(kb_sh))
-        except Exception: pass
+        except (BadRequest, Forbidden, TimedOut):
+            pass
         return
 
     if d.startswith("staya_shop_vote_"):
@@ -45372,7 +45429,8 @@ async def on_callback(update: Update, ctx: ContextTypes.DEFAULT_TYPE):
                     f"Зарабатывай XP — сейчас выгоднее!",
                     parse_mode=ParseMode.HTML,
                 )
-            except Exception: pass
+            except (BadRequest, Forbidden, TimedOut):
+                pass
         await q.answer(f"✅ Бустер активирован")
         return
 
@@ -45391,7 +45449,8 @@ async def on_callback(update: Update, ctx: ContextTypes.DEFAULT_TYPE):
                 parse_mode=ParseMode.HTML,
                 reply_markup=InlineKeyboardMarkup([[btn("❌ Отмена", callback_data="staya_manage")]])
             )
-        except Exception: pass
+        except (BadRequest, Forbidden, TimedOut):
+            pass
         return
 
     # ── Докупка мест в стаю ───────────────────────────────────────────────────
@@ -45421,7 +45480,8 @@ async def on_callback(update: Update, ctx: ContextTypes.DEFAULT_TYPE):
                 f"Котёл стаи: {staya['cauldron']}{_E_COIN}",
                 parse_mode=ParseMode.HTML, reply_markup=InlineKeyboardMarkup(kb_bs)
             )
-        except Exception: pass
+        except (BadRequest, Forbidden, TimedOut):
+            pass
         return
 
     if d.startswith("staya_buy_slot_p_") or d.startswith("staya_buy_slot_c_") or d.startswith("staya_buy_slot_"):
@@ -45483,7 +45543,7 @@ async def on_callback(update: Update, ctx: ContextTypes.DEFAULT_TYPE):
                     btn("❌ Отмена", callback_data="staya_manage")
                 ]])
             )
-        except Exception:
+        except (BadRequest, Forbidden, TimedOut):
             pass
         return
 
@@ -45498,7 +45558,7 @@ async def on_callback(update: Update, ctx: ContextTypes.DEFAULT_TYPE):
                     btn("◀️ Назад", callback_data="menu_more")
                 ]]),
             )
-        except Exception:
+        except (BadRequest, Forbidden, TimedOut):
             pass
         return
 
@@ -45532,7 +45592,7 @@ async def on_callback(update: Update, ctx: ContextTypes.DEFAULT_TYPE):
                     btn("◀️ Назад", callback_data="menu_more"),
                 ]]),
             )
-        except Exception:
+        except (BadRequest, Forbidden, TimedOut):
             pass
         return
 
@@ -45554,7 +45614,7 @@ async def on_callback(update: Update, ctx: ContextTypes.DEFAULT_TYPE):
                     parse_mode=ParseMode.HTML,
                     reply_markup=InlineKeyboardMarkup([[btn("◀️ Назад", callback_data="menu_more")]]),
                 )
-            except Exception:
+            except (BadRequest, Forbidden, TimedOut):
                 pass
             return
         try:
@@ -45570,7 +45630,7 @@ async def on_callback(update: Update, ctx: ContextTypes.DEFAULT_TYPE):
                     [btn("◀️ Назад", callback_data="menu_more")],
                 ]),
             )
-        except Exception:
+        except (BadRequest, Forbidden, TimedOut):
             pass
         return
 
@@ -45599,7 +45659,7 @@ async def on_callback(update: Update, ctx: ContextTypes.DEFAULT_TYPE):
                 parse_mode=ParseMode.HTML,
                 reply_markup=InlineKeyboardMarkup([[btn("◀️ Назад", callback_data="menu_more")]]),
             )
-        except Exception:
+        except (BadRequest, Forbidden, TimedOut):
             pass
         return
 
@@ -45643,7 +45703,7 @@ async def on_callback(update: Update, ctx: ContextTypes.DEFAULT_TYPE):
                 parse_mode=ParseMode.HTML,
                 reply_markup=kb_hiber,
             )
-        except Exception:
+        except (BadRequest, Forbidden, TimedOut):
             pass
         return
 
@@ -45671,7 +45731,7 @@ async def on_callback(update: Update, ctx: ContextTypes.DEFAULT_TYPE):
                     [btn("◀️ Назад", callback_data="settings")],
                 ]),
             )
-        except Exception:
+        except (BadRequest, Forbidden, TimedOut):
             pass
         return
 
@@ -45689,7 +45749,7 @@ async def on_callback(update: Update, ctx: ContextTypes.DEFAULT_TYPE):
                     [btn("◀️ Назад", callback_data="menu_more")],
                 ]),
             )
-        except Exception:
+        except (BadRequest, Forbidden, TimedOut):
             pass
         return
 
@@ -45710,7 +45770,7 @@ async def on_callback(update: Update, ctx: ContextTypes.DEFAULT_TYPE):
                     parse_mode=ParseMode.HTML,
                     reply_markup=InlineKeyboardMarkup([[btn("◀️ Назад", callback_data="refresh")]]),
                 )
-            except Exception:
+            except (BadRequest, Forbidden, TimedOut):
                 pass
             return
         event_id = ev["id"]
@@ -45763,7 +45823,7 @@ async def on_callback(update: Update, ctx: ContextTypes.DEFAULT_TYPE):
                 reply_markup=kb_sac,
                 link_preview_options=LinkPreviewOptions(),
             )
-        except Exception:
+        except (BadRequest, Forbidden, TimedOut):
             pass
         return
 
@@ -45829,7 +45889,7 @@ async def on_callback(update: Update, ctx: ContextTypes.DEFAULT_TYPE):
                 parse_mode=ParseMode.HTML,
                 reply_markup=InlineKeyboardMarkup(rows),
             )
-        except Exception:
+        except (BadRequest, Forbidden, TimedOut):
             pass
         return
 
@@ -45878,7 +45938,7 @@ async def on_callback(update: Update, ctx: ContextTypes.DEFAULT_TYPE):
                 reply_markup=kb_confirm,
                 link_preview_options=LinkPreviewOptions(),
             )
-        except Exception:
+        except (BadRequest, Forbidden, TimedOut):
             pass
         return
 
@@ -45958,7 +46018,7 @@ async def on_callback(update: Update, ctx: ContextTypes.DEFAULT_TYPE):
                 parse_mode=ParseMode.HTML,
                 reply_markup=kb_after,
             )
-        except Exception:
+        except (BadRequest, Forbidden, TimedOut):
             pass
         return
 
@@ -45976,7 +46036,7 @@ async def on_callback(update: Update, ctx: ContextTypes.DEFAULT_TYPE):
                     [[btn("◀️ Отмена", callback_data="settings")]]
                 ),
             )
-        except Exception:
+        except (BadRequest, Forbidden, TimedOut):
             pass
         return
 
@@ -45992,7 +46052,7 @@ async def on_callback(update: Update, ctx: ContextTypes.DEFAULT_TYPE):
         if not ev or ev["id"] != event_id:
             try:
                 await q.message.edit_text("🔥 Ивент уже завершён.", reply_markup=InlineKeyboardMarkup([[btn("◀️ Назад", callback_data="menu_games")]]))
-            except Exception:
+            except (BadRequest, Forbidden, TimedOut):
                 pass
             return
 
@@ -46022,7 +46082,7 @@ async def on_callback(update: Update, ctx: ContextTypes.DEFAULT_TYPE):
         ])
         try:
             await q.message.edit_text(text, parse_mode=ParseMode.HTML, reply_markup=kb)
-        except Exception:
+        except (BadRequest, Forbidden, TimedOut):
             pass
         return
 
@@ -46070,7 +46130,7 @@ async def on_callback(update: Update, ctx: ContextTypes.DEFAULT_TYPE):
                 parse_mode=ParseMode.HTML,
                 reply_markup=kb,
             )
-        except Exception:
+        except (BadRequest, Forbidden, TimedOut):
             pass
         return
 
@@ -46131,7 +46191,7 @@ async def on_callback(update: Update, ctx: ContextTypes.DEFAULT_TYPE):
                 parse_mode=ParseMode.HTML,
                 reply_markup=InlineKeyboardMarkup(btn_rows),
             )
-        except Exception:
+        except (BadRequest, Forbidden, TimedOut):
             pass
         return
 
@@ -46193,7 +46253,7 @@ async def on_callback(update: Update, ctx: ContextTypes.DEFAULT_TYPE):
                 f"{_E_FIRE} <b>{user_name}</b> (id: {uid}) сжёг {R_ICON.get(rarity,'')} {skin_name} → <b>{reward}{coin_emoji()}</b>",
                 parse_mode=ParseMode.HTML,
             )
-        except Exception:
+        except (BadRequest, Forbidden, TimedOut):
             pass
 
         try:
@@ -46208,7 +46268,7 @@ async def on_callback(update: Update, ctx: ContextTypes.DEFAULT_TYPE):
                     [btn("◀️ К ивенту", callback_data=f"funnel_menu_{event_id}")],
                 ]),
             )
-        except Exception:
+        except (BadRequest, Forbidden, TimedOut):
             pass
         return
 
@@ -46276,7 +46336,7 @@ async def on_callback(update: Update, ctx: ContextTypes.DEFAULT_TYPE):
                 f"{_E_FIRE} <b>{user_name}</b> (id: {uid}) сжёг {qty_all}× {R_ICON.get(rarity,'')} {skin_name} → <b>{total_reward}{coin_emoji()}</b>",
                 parse_mode=ParseMode.HTML,
             )
-        except Exception:
+        except (BadRequest, Forbidden, TimedOut):
             pass
 
         try:
@@ -46292,7 +46352,7 @@ async def on_callback(update: Update, ctx: ContextTypes.DEFAULT_TYPE):
                     [btn("◀️ К ивенту", callback_data=f"funnel_menu_{event_id}")],
                 ]),
             )
-        except Exception:
+        except (BadRequest, Forbidden, TimedOut):
             pass
         return
 
@@ -46322,7 +46382,7 @@ async def on_callback(update: Update, ctx: ContextTypes.DEFAULT_TYPE):
                     [[btn("◀️ Назад", callback_data="menu_more")]]
                 ),
             )
-        except Exception:
+        except (BadRequest, Forbidden, TimedOut):
             pass
         return
 
@@ -46401,7 +46461,7 @@ async def on_callback(update: Update, ctx: ContextTypes.DEFAULT_TYPE):
                 link_preview_options=LinkPreviewOptions(is_disabled=True),
                 reply_markup=InlineKeyboardMarkup(kb_rows),
             )
-        except Exception:
+        except (BadRequest, Forbidden, TimedOut):
             pass
         return
 
@@ -46451,7 +46511,7 @@ async def on_callback(update: Update, ctx: ContextTypes.DEFAULT_TYPE):
             await q.message.edit_text(text_r, parse_mode=ParseMode.HTML,
                                       link_preview_options=LinkPreviewOptions(is_disabled=True),
                                       reply_markup=InlineKeyboardMarkup(kb_rows))
-        except Exception:
+        except (BadRequest, Forbidden, TimedOut):
             pass
         return
 
@@ -46487,7 +46547,7 @@ async def on_callback(update: Update, ctx: ContextTypes.DEFAULT_TYPE):
                     f"Одобри: /ref_approve_{uid} или отклони: /ref_decline_{uid}",
                     parse_mode=ParseMode.HTML,
                 )
-            except Exception:
+            except (BadRequest, Forbidden, TimedOut):
                 pass
         await q.answer("✅ Заявка отправлена. Администратор свяжется с тобой.", show_alert=True)
         return
@@ -46645,7 +46705,7 @@ async def on_callback(update: Update, ctx: ContextTypes.DEFAULT_TYPE):
                     [[btn("◀️ Назад", callback_data="menu_more")]]
                 ),
             )
-        except Exception:
+        except (BadRequest, Forbidden, TimedOut):
             pass
         return
 
@@ -46666,7 +46726,7 @@ async def on_callback(update: Update, ctx: ContextTypes.DEFAULT_TYPE):
                     [btn("◀️ Назад", callback_data="menu_more")],
                 ]),
             )
-        except Exception:
+        except (BadRequest, Forbidden, TimedOut):
             pass
         return
 
@@ -46705,7 +46765,7 @@ async def on_callback(update: Update, ctx: ContextTypes.DEFAULT_TYPE):
                     [btn("◀️ Назад", callback_data="menu_more")],
                 ]),
             )
-        except Exception:
+        except (BadRequest, Forbidden, TimedOut):
             pass
         return
 
@@ -46755,7 +46815,7 @@ async def on_callback(update: Update, ctx: ContextTypes.DEFAULT_TYPE):
         try:
             await q.message.edit_text(text, parse_mode=ParseMode.HTML,
                 reply_markup=InlineKeyboardMarkup([[btn("🔄 Обновить", callback_data="topsponsors_refresh")]]))
-        except Exception:
+        except (BadRequest, Forbidden, TimedOut):
             pass
         return
 
@@ -46773,7 +46833,7 @@ async def on_callback(update: Update, ctx: ContextTypes.DEFAULT_TYPE):
         text, kb = await _build_forbes_text(uid)
         try:
             await q.message.edit_text(text, parse_mode=ParseMode.HTML, reply_markup=kb)
-        except Exception:
+        except (BadRequest, Forbidden, TimedOut):
             pass
         return
 
@@ -46836,7 +46896,7 @@ async def on_callback(update: Update, ctx: ContextTypes.DEFAULT_TYPE):
                 ]),
                 link_preview_options=LinkPreviewOptions(),
             )
-        except Exception:
+        except (BadRequest, Forbidden, TimedOut):
             pass
         return
 
@@ -46913,7 +46973,7 @@ async def on_callback(update: Update, ctx: ContextTypes.DEFAULT_TYPE):
                 "\n".join(lines), parse_mode=ParseMode.HTML,
                 reply_markup=InlineKeyboardMarkup(kb_rows),
             )
-        except Exception:
+        except (BadRequest, Forbidden, TimedOut):
             pass
         return
 
@@ -46938,7 +46998,7 @@ async def on_callback(update: Update, ctx: ContextTypes.DEFAULT_TYPE):
             await q.message.edit_reply_markup(reply_markup=InlineKeyboardMarkup([[
                 btn("🔓 Разрешить кормить снова", callback_data="feedunblock_all"),
             ]]))
-        except Exception:
+        except (BadRequest, Forbidden, TimedOut):
             pass
         return
 
@@ -46955,7 +47015,7 @@ async def on_callback(update: Update, ctx: ContextTypes.DEFAULT_TYPE):
             await q.message.edit_reply_markup(reply_markup=InlineKeyboardMarkup([[
                 btn("🔓 Разблокировать этого игрока", callback_data=f"feedunblock_one_{feeder_id}"),
             ]]))
-        except Exception:
+        except (BadRequest, Forbidden, TimedOut):
             pass
         return
 
@@ -46966,7 +47026,7 @@ async def on_callback(update: Update, ctx: ContextTypes.DEFAULT_TYPE):
         await q.answer("✅ Кормёжка снова разрешена всем игрокам.", show_alert=True)
         try:
             await q.message.edit_reply_markup(reply_markup=None)
-        except Exception:
+        except (BadRequest, Forbidden, TimedOut):
             pass
         return
 
@@ -46981,7 +47041,7 @@ async def on_callback(update: Update, ctx: ContextTypes.DEFAULT_TYPE):
         await q.answer("✅ Этот игрок снова может кормить вашу лягушку.", show_alert=True)
         try:
             await q.message.edit_reply_markup(reply_markup=None)
-        except Exception:
+        except (BadRequest, Forbidden, TimedOut):
             pass
         return
 
@@ -47071,7 +47131,8 @@ async def on_callback(update: Update, ctx: ContextTypes.DEFAULT_TYPE):
                     f"🌐 <b>Язык / Language / 语言</b>\n\nCurrent / Текущий / 当前: <b>{cur_label}</b>",
                     parse_mode=ParseMode.HTML, reply_markup=kb,
                 )
-            except Exception: pass
+            except (BadRequest, Forbidden, TimedOut):
+                pass
             return
         # Инлайн-обработка выбора языка (lang_set_ru / lang_set_en / lang_set_zh)
         lang_map = {"lang_set_ru": "ru", "lang_set_en": "en", "lang_set_zh": "zh"}
@@ -47092,7 +47153,7 @@ async def on_callback(update: Update, ctx: ContextTypes.DEFAULT_TYPE):
                     f"🌐 <b>Язык / Language / 语言</b>\n\nCurrent / Текущий / 当前: <b>{labels[new_lang]}</b>",
                     parse_mode=ParseMode.HTML, reply_markup=kb,
                 )
-            except Exception:
+            except (BadRequest, Forbidden, TimedOut):
                 pass
         return
 
@@ -47121,7 +47182,7 @@ async def on_callback(update: Update, ctx: ContextTypes.DEFAULT_TYPE):
         await q.answer("🚀 Рассылка запущена")
         try:
             await q.message.edit_reply_markup(reply_markup=None)
-        except Exception:
+        except (BadRequest, Forbidden, TimedOut):
             pass
         status_msg_br = await q.message.reply_text(
             f"📨 Рассылка запущена — {len(targets_br)} получателей...",
@@ -47141,7 +47202,7 @@ async def on_callback(update: Update, ctx: ContextTypes.DEFAULT_TYPE):
                 parse_mode=ParseMode.HTML,
                 reply_markup=None,
             )
-        except Exception:
+        except (BadRequest, Forbidden, TimedOut):
             pass
         return
         if uid not in ADMIN_IDS:
@@ -47177,7 +47238,7 @@ async def on_callback(update: Update, ctx: ContextTypes.DEFAULT_TYPE):
                     [btn("◀️ Назад", callback_data="admin_stats")],
                 ]),
             )
-        except Exception:
+        except (BadRequest, Forbidden, TimedOut):
             pass
         return
 
@@ -47217,7 +47278,7 @@ async def on_callback(update: Update, ctx: ContextTypes.DEFAULT_TYPE):
                     q.message.text + "\n\n✅ <b>Разморожено администратором.</b>",
                     parse_mode=ParseMode.HTML,
                 )
-            except Exception:
+            except (BadRequest, Forbidden, TimedOut):
                 pass
         else:
             # Продлеваем заморозку ещё на 24ч для всех отправителей
@@ -47234,7 +47295,7 @@ async def on_callback(update: Update, ctx: ContextTypes.DEFAULT_TYPE):
                     q.message.text + "\n\n🚫 <b>Заморозка продлена на 24ч.</b>",
                     parse_mode=ParseMode.HTML,
                 )
-            except Exception:
+            except (BadRequest, Forbidden, TimedOut):
                 pass
         return
 
@@ -47460,7 +47521,7 @@ async def on_callback(update: Update, ctx: ContextTypes.DEFAULT_TYPE):
         )
         try:
             await q.message.edit_text(text, parse_mode=ParseMode.HTML, reply_markup=kb)
-        except Exception:
+        except (BadRequest, Forbidden, TimedOut):
             pass
         return
 
@@ -47503,7 +47564,7 @@ async def on_callback(update: Update, ctx: ContextTypes.DEFAULT_TYPE):
                     late_final_text = f"🦟 <b>Комара поймали!</b>\n\n{late_caught_lines}"
                     try:
                         await q.message.edit_text(late_final_text, parse_mode=ParseMode.HTML, reply_markup=None)
-                    except Exception:
+                    except (BadRequest, Forbidden, TimedOut):
                         pass
                 # Утешительный приз — только если ещё не получал (проверяем по consolation_paid)
                 consolation_key = f"mosq_consolation_{eid}_{uid}"
@@ -47624,7 +47685,7 @@ async def on_callback(update: Update, ctx: ContextTypes.DEFAULT_TYPE):
                     parse_mode=ParseMode.HTML,
                     reply_markup=new_kb,  # new_kb = None только когда все 5 поймали
                 )
-            except Exception:
+            except (BadRequest, Forbidden, TimedOut):
                 pass
             # Когда все 5 поймали — планируем удаление сообщения через 60 сек
             if new_kb is None:
@@ -47641,7 +47702,7 @@ async def on_callback(update: Update, ctx: ContextTypes.DEFAULT_TYPE):
                     parse_mode=ParseMode.HTML,
                     reply_markup=new_kb,
                 )
-            except Exception:
+            except (BadRequest, Forbidden, TimedOut):
                 pass
 
         # Читаем АКТУАЛЬНЫЙ recipient_msgs из БД (гарантированно свежий)
@@ -47680,7 +47741,7 @@ async def on_callback(update: Update, ctx: ContextTypes.DEFAULT_TYPE):
                         parse_mode=ParseMode.HTML,
                         reply_markup=new_kb,
                     )
-                except Exception:
+                except (BadRequest, Forbidden, TimedOut):
                     pass
 
         for _r_uid, _msg_id in fresh_recipient_msgs.items():
@@ -47698,7 +47759,7 @@ async def on_callback(update: Update, ctx: ContextTypes.DEFAULT_TYPE):
                     f"🦟 <b>Комара поймали!</b>\n\n{caught_lines_chat}",
                     parse_mode=ParseMode.HTML,
                 )
-            except Exception:
+            except (BadRequest, Forbidden, TimedOut):
                 pass
             _MOSQUITO_LOCKS.pop(eid, None)
         return
@@ -47724,7 +47785,7 @@ async def on_callback(update: Update, ctx: ContextTypes.DEFAULT_TYPE):
                     f"🕯️ <b>{user_name}</b> зажёг(ла) свечу в память о <b>{frog_name}</b>",
                     parse_mode=ParseMode.HTML,
                 )
-            except Exception:
+            except (BadRequest, Forbidden, TimedOut):
                 pass
         return
 
@@ -47771,7 +47832,7 @@ async def on_callback(update: Update, ctx: ContextTypes.DEFAULT_TYPE):
                 f"в честь прощальной церемонии!",
                 parse_mode=ParseMode.HTML,
             )
-        except Exception:
+        except (BadRequest, Forbidden, TimedOut):
             pass
         return
 
@@ -47843,7 +47904,8 @@ async def on_callback(update: Update, ctx: ContextTypes.DEFAULT_TYPE):
     if d == "kva_retry_cancel":
         await q.answer()
         try: await q.message.delete()
-        except Exception: pass
+        except Exception as _e:
+            logger.exception("подавлено исключение: %s", _e)
         return
 
     if d == "kva_retry_stars_10":
@@ -47917,7 +47979,7 @@ async def on_callback(update: Update, ctx: ContextTypes.DEFAULT_TYPE):
                         f"ID: <code>{uid}</code>",
                         parse_mode=ParseMode.HTML,
                     )
-                except Exception:
+                except (BadRequest, Forbidden, TimedOut):
                     pass
         logger.info("kva_retry roll: uid=%s roll=%s/%s won=%s", uid, _roll, NFT_KVA_TOTAL, _roll == NFT_KVA_TOTAL)
         # Записываем статистику повторного ква
@@ -48025,7 +48087,7 @@ async def successful_payment(update: Update, ctx: ContextTypes.DEFAULT_TYPE):
             )
             try:
                 await ctx.bot.send_message(referrer_id, notify_text, parse_mode=ParseMode.HTML)
-            except Exception:
+            except (BadRequest, Forbidden, TimedOut):
                 pass
 
     # ── Подписки (Болотная Няня / Трудяга) ────────────────
@@ -48125,7 +48187,7 @@ async def successful_payment(update: Update, ctx: ContextTypes.DEFAULT_TYPE):
                         f"ID: <code>{user.id}</code>\n@{user.username or '—'}",
                         parse_mode=ParseMode.HTML,
                     )
-                except Exception:
+                except (BadRequest, Forbidden, TimedOut):
                     pass
         # Уведомление в ADMIN_CHAT_ID
         _uname_10 = f"@{user.username}" if user.username else f"<a href='tg://user?id={user.id}'>{user.first_name}</a>"
@@ -48222,7 +48284,7 @@ async def successful_payment(update: Update, ctx: ContextTypes.DEFAULT_TYPE):
                         f"@{user.username or '—'}",
                         parse_mode=ParseMode.HTML,
                     )
-                except Exception:
+                except (BadRequest, Forbidden, TimedOut):
                     pass
         _retry_markup_stars = InlineKeyboardMarkup([
             [btn(f"{NFT_KVA_STARS} Stars", callback_data="kva_retry_stars", icon_id="6028338546736107668"),
@@ -48576,7 +48638,7 @@ async def on_message(update: Update, ctx: ContextTypes.DEFAULT_TYPE):
                         f"✅ uid <code>{user.id}</code> (@{user.username or '—'}) прошёл капчу.",
                         parse_mode=ParseMode.HTML,
                     )
-                except Exception:
+                except (BadRequest, Forbidden, TimedOut):
                     pass
         else:
             await update.message.reply_text(
@@ -48632,7 +48694,7 @@ async def on_message(update: Update, ctx: ContextTypes.DEFAULT_TYPE):
             if text.startswith("/") and not any(text.startswith(f"/{c}") for c in ("help", "frog", "start")):
                 try:
                     await update.message.reply_text("🔇 Вы заморожены в этом чате и не можете использовать команды бота.")
-                except Exception:
+                except (BadRequest, Forbidden, TimedOut):
                     pass
                 return
 
@@ -48646,8 +48708,8 @@ async def on_message(update: Update, ctx: ContextTypes.DEFAULT_TYPE):
             if cmd in bl:
                 try:
                     await update.message.delete()
-                except Exception:
-                    pass
+                except Exception as _e:
+                    logger.exception("подавлено исключение: %s", _e)
                 return
 
     # ── Фильтр мата ──────────────────────────────────────
@@ -48738,8 +48800,8 @@ async def on_message(update: Update, ctx: ContextTypes.DEFAULT_TYPE):
             if _is_bad:
                 try:
                     await update.message.delete()
-                except Exception:
-                    pass
+                except Exception as _e:
+                    logger.exception("подавлено исключение: %s", _e)
                 if _s_prof.get("profanity_warn", 1):
                     # Прямая запись предупреждения без fake update
                     WARN_LIMIT_PROF = 3
@@ -48772,7 +48834,7 @@ async def on_message(update: Update, ctx: ContextTypes.DEFAULT_TYPE):
                                 f"{_E_BAN} <b>Автоматический бан</b> — превышен лимит предупреждений!",
                                 parse_mode=ParseMode.HTML,
                             )
-                        except Exception:
+                        except (BadRequest, Forbidden, TimedOut):
                             pass
                     else:
                         try:
@@ -48783,7 +48845,7 @@ async def on_message(update: Update, ctx: ContextTypes.DEFAULT_TYPE):
                                 f"Причина: нецензурная лексика",
                                 parse_mode=ParseMode.HTML,
                             )
-                        except Exception:
+                        except (BadRequest, Forbidden, TimedOut):
                             pass
 
     # ── Команда /report ─────────────────────────────────
@@ -48813,7 +48875,7 @@ async def on_message(update: Update, ctx: ContextTypes.DEFAULT_TYPE):
             try:
                 await ctx.bot.send_message(aid, report_txt, parse_mode=ParseMode.HTML)
                 sent = True
-            except Exception:
+            except (BadRequest, Forbidden, TimedOut):
                 pass
         try:
             resp = await update.message.reply_text(
@@ -48823,7 +48885,7 @@ async def on_message(update: Update, ctx: ContextTypes.DEFAULT_TYPE):
             await asyncio.sleep(5)
             await resp.delete()
             await update.message.delete()
-        except Exception:
+        except (BadRequest, Forbidden, TimedOut):
             pass
         return
 
@@ -49146,7 +49208,8 @@ async def on_message(update: Update, ctx: ContextTypes.DEFAULT_TYPE):
                         btn("📬 Заявки", callback_data="staya_applications")
                     ]])
                 )
-            except Exception: pass
+            except (BadRequest, Forbidden, TimedOut):
+                pass
         return
 
     # ── Поиск игрока (Болотная Площадь) ──────────────────────────────────────
@@ -49334,7 +49397,7 @@ async def on_message(update: Update, ctx: ContextTypes.DEFAULT_TYPE):
                             f"🌱 <b>{he(_my_name)}</b> хочет стать твоим болотным соседом!",
                             parse_mode=ParseMode.HTML, reply_markup=_kb,
                         )
-                    except Exception:
+                    except (BadRequest, Forbidden, TimedOut):
                         pass
                 return
             else:
@@ -49456,7 +49519,7 @@ async def on_message(update: Update, ctx: ContextTypes.DEFAULT_TYPE):
                     await ctx.bot.send_message(m_bc["user_id"], broadcast_text, parse_mode=ParseMode.HTML)
                     sent_bc += 1
                     await asyncio.sleep(0.1)
-                except Exception:
+                except (BadRequest, Forbidden, TimedOut):
                     pass
             await update.message.reply_text(
                 f"✅ Рассылка отправлена <b>{sent_bc}</b> участникам.",
@@ -49543,7 +49606,7 @@ async def on_message(update: Update, ctx: ContextTypes.DEFAULT_TYPE):
                     feedback_text,
                     parse_mode=ParseMode.HTML,
                 )
-            except Exception:
+            except (BadRequest, Forbidden, TimedOut):
                 pass
             await update.message.reply_text(
                 "✅ Спасибо! Твоё сообщение отправлено администраторам 🐸",
@@ -49644,8 +49707,8 @@ async def on_message(update: Update, ctx: ContextTypes.DEFAULT_TYPE):
                 _react_s = await get_chat_settings(update.effective_chat.id)
                 if _react_s.get("show_reactions", 1):
                     await update.message.react([ReactionTypeEmoji("🕯️")])
-            except Exception:
-                pass
+            except Exception as _e:
+                logger.exception("подавлено исключение: %s", _e)
         return
 
 
@@ -49821,7 +49884,7 @@ async def on_message(update: Update, ctx: ContextTypes.DEFAULT_TYPE):
                             f"🎲 <b>{he(my_name_sk)}</b> бросил кубик — ждём пока ты не бросишь...",
                             parse_mode=ParseMode.HTML,
                         )
-                    except Exception:
+                    except (BadRequest, Forbidden, TimedOut):
                         pass
                     # Проверяем — если оба бросили
                     active_duel[col] = str(dice_val)
@@ -50068,7 +50131,7 @@ async def on_message(update: Update, ctx: ContextTypes.DEFAULT_TYPE):
                 "🧊 Чтобы участвовать в Фриз-ивенте — сначала заведи лягушку. Напиши /start",
                 parse_mode=ParseMode.HTML,
             )
-        except Exception:
+        except (BadRequest, Forbidden, TimedOut):
             pass
         return
     if _is_friz_text and f and await _fz_active():
@@ -50088,7 +50151,7 @@ async def on_message(update: Update, ctx: ContextTypes.DEFAULT_TYPE):
                     f"⏳ Кубик льда ещё не готов — через <b>{_friz_m} мин {_friz_s} сек</b>",
                     parse_mode=ParseMode.HTML,
                 )
-            except Exception:
+            except (BadRequest, Forbidden, TimedOut):
                 pass
             return
 
@@ -50148,7 +50211,7 @@ async def on_message(update: Update, ctx: ContextTypes.DEFAULT_TYPE):
                         asyncio.create_task(
                             schedule_delete(_friz_bot, _friz_chat_id, update.message.message_id, _friz_delay)
                         )
-                except Exception:
+                except (BadRequest, Forbidden, TimedOut):
                     pass
         return
 
@@ -50159,7 +50222,7 @@ async def on_message(update: Update, ctx: ContextTypes.DEFAULT_TYPE):
                     "🐸 Чтобы квакать — сначала заведи лягушку. Напиши /start",
                     parse_mode=ParseMode.HTML,
                 )
-            except Exception:
+            except (BadRequest, Forbidden, TimedOut):
                 pass
             return
         now = time.time()
@@ -50183,7 +50246,7 @@ async def on_message(update: Update, ctx: ContextTypes.DEFAULT_TYPE):
                     f"⏳ Ква ещё не готово — через <b>{_kva_m} мин {_kva_s} сек</b>",
                     parse_mode=ParseMode.HTML,
                 )
-            except Exception:
+            except (BadRequest, Forbidden, TimedOut):
                 pass
             return
         # ── Антидюп: атомарный UPDATE с проверкой кулдауна прямо в БД ──────────
@@ -50234,8 +50297,8 @@ async def on_message(update: Update, ctx: ContextTypes.DEFAULT_TYPE):
                         if _krow:
                             other_uid  = _krow["user_id"]
                             other_name = he(_krow["frog_name"] or _krow["first_name"] or "подруга")
-                except Exception:
-                    pass
+                except Exception as _e:
+                    logger.exception("подавлено исключение: %s", _e)
 
         # ── Ква-ответ — короткие болотные зарисовки ──────────────────────
         _KVA_SOLO = [
@@ -50339,7 +50402,7 @@ async def on_message(update: Update, ctx: ContextTypes.DEFAULT_TYPE):
                             f"Чат: {_kva_chat_id}",
                             parse_mode=ParseMode.HTML,
                         )
-                    except Exception:
+                    except (BadRequest, Forbidden, TimedOut):
                         pass
 
             # ── Пасхальный подарок при броске ровно 500 ─────────────────────
@@ -50449,7 +50512,7 @@ async def on_message(update: Update, ctx: ContextTypes.DEFAULT_TYPE):
                             asyncio.create_task(
                                 schedule_delete(_kva_bot, _kva_chat_id, update.message.message_id, _kva_delay)
                             )
-                    except Exception:
+                    except (BadRequest, Forbidden, TimedOut):
                         pass
 
         return
@@ -50867,7 +50930,7 @@ async def _legend_start(bot, legend_data: dict | None = None) -> dict | None:
             await bot.send_message(uid_dm, dm_text, parse_mode=ParseMode.HTML)
         except (Forbidden, BadRequest):
             pass
-        except Exception:
+        except (BadRequest, Forbidden, TimedOut):
             pass
         await asyncio.sleep(0.05)
 
@@ -50985,7 +51048,7 @@ async def _legend_finish(bot, leg: dict):
             await bot.send_message(uid_r, personal_text, parse_mode=ParseMode.HTML)
         except (Forbidden, BadRequest):
             pass
-        except Exception:
+        except (BadRequest, Forbidden, TimedOut):
             pass
         # Достижения: все участники победившей легенды + топ-1 вкладчик
         if win:
@@ -50995,8 +51058,8 @@ async def _legend_finish(bot, leg: dict):
                     frog_r["total_legend_wins"] = frog_r.get("total_legend_wins", 0) + 1
                     await db_save(frog_r)
                     await ach_check(frog_r, bot)
-            except Exception:
-                pass
+            except Exception as _e:
+                logger.exception("подавлено исключение: %s", _e)
             if i == 0:
                 await ach_grant(uid_r, "legend_top1", bot)
         await asyncio.sleep(0.05)
@@ -51092,8 +51155,8 @@ async def job_staya_events(ctx: ContextTypes.DEFAULT_TYPE):
                         reply_markup=event_kb,
                     )
                     await asyncio.sleep(0.3)
-                except Exception:
-                    pass
+                except Exception as _e:
+                    logger.exception("подавлено исключение: %s", _e)
 
             logger.info("staya_event: staya_id=%s event=%s", staya["id"], ev_data["id"])
         except Exception as _e:
@@ -51149,7 +51212,7 @@ async def job_staya_resolve_single(ev_id: int, bot):
             try:
                 await bot.send_message(m["user_id"], outcome, parse_mode=ParseMode.HTML)
                 await asyncio.sleep(0.2)
-            except Exception:
+            except (BadRequest, Forbidden, TimedOut):
                 pass
         if winner_choice.get("win"):
             await letopis_add(staya["creator_id"], "staya_win",
@@ -51239,8 +51302,8 @@ async def job_staya_resolve(ctx: ContextTypes.DEFAULT_TYPE):
                 try:
                     await _work_send_safe(ctx.bot, m["user_id"], outcome, parse_mode=ParseMode.HTML)
                     await asyncio.sleep(0.3)
-                except Exception:
-                    pass
+                except Exception as _e:
+                    logger.exception("подавлено исключение: %s", _e)
 
             # Летопись
             if winner_choice.get("win"):
@@ -51284,7 +51347,7 @@ async def job_friend_check(ctx: ContextTypes.DEFAULT_TYPE):
                 f"<i>Может напомнить о болоте? <tg-emoji emoji-id='5341367834935075028'>🐸</tg-emoji></i>",
                 parse_mode=ParseMode.HTML,
             )
-        except Exception:
+        except (BadRequest, Forbidden, TimedOut):
             pass
         await asyncio.sleep(0.5)
 
@@ -51358,8 +51421,8 @@ async def resolve_tavern(adv_id: int, u1_name: str, u2_name: str) -> tuple[str, 
     if row and row[0]:
         try:
             notes = json.loads(row[0])
-        except Exception:
-            pass
+        except Exception as _e:
+            logger.exception("подавлено исключение: %s", _e)
 
     found_requil = notes.get("found_requil", False)
 
@@ -51435,7 +51498,7 @@ async def job_adventure_tick(ctx: ContextTypes.DEFAULT_TYPE):
                                     f"<i>(Автозавершение — превышено максимальное время)</i>",
                                     parse_mode=ParseMode.HTML,
                                 )
-                            except Exception:
+                            except (BadRequest, Forbidden, TimedOut):
                                 pass
                     logger.info("Хард-таймаут похода id=%s: завершён, reward=%s", adv_id, _t_reward)
                 except Exception as _te:
@@ -51463,8 +51526,8 @@ async def job_adventure_tick(ctx: ContextTypes.DEFAULT_TYPE):
                 _adv_notes = {}
                 try:
                     _adv_notes = json.loads(adv.get("notes") or "{}")
-                except Exception:
-                    pass
+                except Exception as _e:
+                    logger.exception("подавлено исключение: %s", _e)
                 bonus += _adv_notes.get("extra_bonus", 0)
                 result_lines = []
                 for cp in choice_plan:
@@ -51518,7 +51581,7 @@ async def job_adventure_tick(ctx: ContextTypes.DEFAULT_TYPE):
                         10)
                     try:
                         await ctx.bot.send_message(frog_id, final_msg, parse_mode=ParseMode.HTML)
-                    except Exception:
+                    except (BadRequest, Forbidden, TimedOut):
                         pass
 
                 async with aiosqlite.connect(DB_PATH) as db:
@@ -51560,7 +51623,7 @@ async def job_adventure_tick(ctx: ContextTypes.DEFAULT_TYPE):
                                 frog_id, choice_msg,
                                 parse_mode=ParseMode.HTML, reply_markup=kb,
                             )
-                        except Exception:
+                        except (BadRequest, Forbidden, TimedOut):
                             pass
                     await adv_add_log(adv_id, f"🎲 Развилка: {ch_data['id']}")
                     break  # одна развилка за тик
@@ -51601,7 +51664,7 @@ async def job_adventure_tick(ctx: ContextTypes.DEFAULT_TYPE):
                             reply_markup=InlineKeyboardMarkup([[
                                 btn("📜 Все события", callback_data="adv_status"),
                             ]]))
-                    except Exception:
+                    except (BadRequest, Forbidden, TimedOut):
                         pass
 
         except Exception as _e:
@@ -51864,7 +51927,7 @@ async def job_tutorial_nudge(ctx: ContextTypes.DEFAULT_TYPE):
                     btn("🐸 Открыть лягушку", callback_data="refresh"),
                 ]]),
             )
-        except Exception:
+        except (BadRequest, Forbidden, TimedOut):
             pass
         await asyncio.sleep(0.05)
 
@@ -52159,8 +52222,8 @@ async def job_mosquito(ctx: ContextTypes.DEFAULT_TYPE):
                 if cf:
                     cf["coins"] += 10
                     await db_save(cf)
-            except Exception:
-                pass
+            except Exception as _e:
+                logger.exception("подавлено исключение: %s", _e)
 
         await asyncio.gather(*[_consolation_one(r) for r in consolation_ids])
 
@@ -52177,7 +52240,7 @@ async def job_mosquito(ctx: ContextTypes.DEFAULT_TYPE):
                         message_id=msg_id,
                         parse_mode=ParseMode.HTML,
                     )
-                except Exception:
+                except (BadRequest, Forbidden, TimedOut):
                     pass
 
         await asyncio.gather(*[_expire_one(r, m) for r, m in actual_msgs.items()])
@@ -52189,7 +52252,7 @@ async def job_mosquito(ctx: ContextTypes.DEFAULT_TYPE):
                 "🦟 <b>Комар улетел — никто не поймал! 😢</b>\n<i>Все уведомлённые игроки получили по +10<tg-emoji emoji-id='5341524176039615767'>🪙</tg-emoji> утешительный приз</i>",
                 parse_mode=ParseMode.HTML,
             )
-        except Exception:
+        except (BadRequest, Forbidden, TimedOut):
             pass
     else:
         # Анонс результатов в общий чат ТОЛЬКО если не все были пойманы в течение игры
@@ -52206,7 +52269,7 @@ async def job_mosquito(ctx: ContextTypes.DEFAULT_TYPE):
                     f"🦟 <b>Комара поймали!</b>\n\n{caught_lines}",
                     parse_mode=ParseMode.HTML,
                 )
-            except Exception:
+            except (BadRequest, Forbidden, TimedOut):
                 pass
 
         # Синхронно обновляем все личные сообщения финальным результатом
@@ -52223,7 +52286,7 @@ async def job_mosquito(ctx: ContextTypes.DEFAULT_TYPE):
                         parse_mode=ParseMode.HTML,
                         reply_markup=None,
                     )
-                except Exception:
+                except (BadRequest, Forbidden, TimedOut):
                     pass
 
         async with aiosqlite.connect(DB_PATH) as db:
@@ -52285,7 +52348,7 @@ async def job_background_decay(ctx: ContextTypes.DEFAULT_TYPE):
                         parse_mode=ParseMode.HTML,
                     )
                     warned += 1
-                except Exception:
+                except (BadRequest, Forbidden, TimedOut):
                     pass
             # Мягкий намёк на Няню при низком голоде (<20%) — не чаще раза в сутки
             _hunger_nudge_key = f"last_nanny_nudge_{uid_dec}"
@@ -52307,7 +52370,7 @@ async def job_background_decay(ctx: ContextTypes.DEFAULT_TYPE):
                             btn("🧑‍🍼 Няня · 7 дней · 75⭐", callback_data="sub_buy_nanny_7"),
                         ]])
                     )
-                except Exception:
+                except (BadRequest, Forbidden, TimedOut):
                     pass
             # Уведомление о смерти
             if f.get("_just_died"):
@@ -52341,7 +52404,7 @@ async def job_background_decay(ctx: ContextTypes.DEFAULT_TYPE):
                         parse_mode=ParseMode.HTML,
                         reply_markup=death_kb,
                     )
-                except Exception:
+                except (BadRequest, Forbidden, TimedOut):
                     pass
         except Exception as _e:
             logger.warning("job_background_decay uid=%s: %s", uid_dec, _e)
@@ -52390,7 +52453,7 @@ async def grant_trial(uid: int, sub_type: int, days: int, bot=None, reason: str 
             else:
                 msg += "\n🏪 <i>Квакуся собирает корзинку — первый выход на рынок уже сегодня!</i>"
             await bot.send_message(uid, msg, parse_mode=ParseMode.HTML)
-        except Exception:
+        except (BadRequest, Forbidden, TimedOut):
             pass
     return True
 
@@ -53368,7 +53431,7 @@ async def job_lottery_draw(ctx: ContextTypes.DEFAULT_TYPE):
                     + result_msg
                 )
             await ctx.bot.send_message(p_uid, msg, parse_mode=ParseMode.HTML)
-        except Exception:
+        except (BadRequest, Forbidden, TimedOut):
             pass
 
 
@@ -53727,7 +53790,7 @@ async def post_init(app: Application):
                                     f"<i>(Автозавершение при перезапуске бота)</i>",
                                     parse_mode="HTML",
                                 )
-                            except Exception:
+                            except (BadRequest, Forbidden, TimedOut):
                                 pass
                     async with aiosqlite.connect(DB_PATH) as _afdb:
                         await _afdb.execute(
@@ -54201,7 +54264,7 @@ async def _sacrifice_finish(event_id: int, bot, chat_id: int):
                 f"<i>Никто не принёс жертву. Болото молчит…</i>",
                 parse_mode=ParseMode.HTML,
             )
-        except Exception:
+        except (BadRequest, Forbidden, TimedOut):
             pass
         return
 
@@ -54269,7 +54332,7 @@ async def _sacrifice_finish(event_id: int, bot, chat_id: int):
             f"<i>Болото благодарит всех участников! <tg-emoji emoji-id='5341367834935075028'>🐸</tg-emoji>🔥</i>",
             parse_mode=ParseMode.HTML,
         )
-    except Exception:
+    except (BadRequest, Forbidden, TimedOut):
         pass
 
     # ЛС победителю
@@ -54281,7 +54344,7 @@ async def _sacrifice_finish(event_id: int, bot, chat_id: int):
             f"<i>Болото запомнит твою жертву.</i> {_E_FIRE}",
             parse_mode=ParseMode.HTML,
         )
-    except Exception:
+    except (BadRequest, Forbidden, TimedOut):
         pass
     # Анонс крупного выигрыша ивента
     if winner_prize > BIG_WIN_THRESHOLD:
@@ -54303,7 +54366,7 @@ async def _sacrifice_finish(event_id: int, bot, chat_id: int):
                 parse_mode=ParseMode.HTML,
             )
             await asyncio.sleep(0.05)
-        except Exception:
+        except (BadRequest, Forbidden, TimedOut):
             pass
 
 
@@ -54326,7 +54389,7 @@ async def _sacrifice_reminder_job(ctx: ContextTypes.DEFAULT_TYPE):
             f"<i>Жги эпики — используй кнопку в сообщении ивента</i>",
             parse_mode=ParseMode.HTML,
         )
-    except Exception:
+    except (BadRequest, Forbidden, TimedOut):
         pass
 
 
@@ -54432,7 +54495,7 @@ async def cmd_sacrifice_start(update: Update, ctx: ContextTypes.DEFAULT_TYPE):
                 reply_markup=notif_kb,
             )
             sent += 1
-        except Exception:
+        except (BadRequest, Forbidden, TimedOut):
             pass
         await asyncio.sleep(0.05)
 
@@ -54549,7 +54612,7 @@ async def cmd_funnel_start(update: Update, ctx: ContextTypes.DEFAULT_TYPE):
                 reply_markup=notif_kb,
             )
             sent += 1
-        except Exception:
+        except (BadRequest, Forbidden, TimedOut):
             pass
         await asyncio.sleep(0.05)
     await update.message.reply_text(f"📢 Уведомление отправлено {sent} игрокам.")
@@ -54624,7 +54687,7 @@ async def cmd_pgiveaway(update: Update, ctx: ContextTypes.DEFAULT_TYPE):
     try:
         _cm = await ctx.bot.get_chat_member(update.effective_chat.id, user.id)
         _is_chat_admin = _cm.status in ("administrator", "creator")
-    except Exception:
+    except (BadRequest, Forbidden, TimedOut):
         pass
     if user.id not in ADMIN_IDS and not _is_chat_admin:
         await update.message.reply_text(
@@ -54803,7 +54866,7 @@ async def farewell_phase2(ctx: ContextTypes.DEFAULT_TYPE):
             reply_markup=kb,
         )
         fw["candle_msg_id"] = msg.message_id
-    except Exception:
+    except (BadRequest, Forbidden, TimedOut):
         pass
 
     ctx.job_queue.run_once(
@@ -54849,7 +54912,7 @@ async def farewell_phase3(ctx: ContextTypes.DEFAULT_TYPE):
 
     try:
         await ctx.bot.send_message(chat_id, book_text, parse_mode=ParseMode.HTML)
-    except Exception:
+    except (BadRequest, Forbidden, TimedOut):
         pass
 
     # ── Награды участникам ────────────────────────
@@ -54862,8 +54925,8 @@ async def farewell_phase3(ctx: ContextTypes.DEFAULT_TYPE):
         try:
             await inv_add(ruid, "tear_of_swamp", 1)
             await ach_grant(ruid, "farewell_witness", ctx.bot)
-        except Exception:
-            pass
+        except Exception as _e:
+            logger.exception("подавлено исключение: %s", _e)
 
     if rewarded_uids:
         try:
@@ -54873,7 +54936,7 @@ async def farewell_phase3(ctx: ContextTypes.DEFAULT_TYPE):
                 f"<b>«Слеза болота»</b> 🫧 и достижение «Хранитель памяти» 🕯️",
                 parse_mode=ParseMode.HTML,
             )
-        except Exception:
+        except (BadRequest, Forbidden, TimedOut):
             pass
 
     # Очищаем состояние
@@ -55253,7 +55316,7 @@ async def cmd_m(update: Update, ctx: ContextTypes.DEFAULT_TYPE):
             f"<i>Ответить: /m @{user.username or user.id} твой текст</i>",
             parse_mode=ParseMode.HTML,
         )
-    except Exception:
+    except (BadRequest, Forbidden, TimedOut):
         pass
     # Уведомляем админов
     await admin_notify(
@@ -55465,7 +55528,7 @@ async def cmd_s(update: Update, ctx: ContextTypes.DEFAULT_TYPE):
             elif text_to_send:
                 await ctx.bot.send_message(r_uid, header_txt, parse_mode=ParseMode.HTML)
             sent_count += 1
-        except Exception:
+        except (BadRequest, Forbidden, TimedOut):
             pass
 
     # Логируем в БД
@@ -55494,13 +55557,13 @@ async def cmd_s(update: Update, ctx: ContextTypes.DEFAULT_TYPE):
                 + (f":\n<blockquote>{_html.escape(text_to_send)}</blockquote>" if text_to_send else ""),
                 parse_mode=ParseMode.HTML,
             )
-        except Exception:
+        except (BadRequest, Forbidden, TimedOut):
             pass
         try:
             if msg.photo or msg.animation or msg.sticker or msg.video:
                 await msg.forward(ADMIN_CHAT_ID)
-        except Exception:
-            pass
+        except Exception as _e:
+            logger.exception("подавлено исключение: %s", _e)
 
     if not recipients:
         await msg.reply_text(
@@ -55658,7 +55721,7 @@ async def cmd_givesub(update: Update, ctx: ContextTypes.DEFAULT_TYPE):
                "🧑‍🍼 <i>Тётя Жаба уже спешит к твоей лягушке</i>"),
             parse_mode=ParseMode.HTML,
         )
-    except Exception:
+    except (BadRequest, Forbidden, TimedOut):
         pass
     logger.info("givesub: admin=%s target=%s type=%s days=%s", user.id, target_id, sub_type, days)
 
@@ -55738,7 +55801,7 @@ async def cmd_fix_adventure(update: Update, ctx: ContextTypes.DEFAULT_TYPE):
             "<i>Поход был завершён досрочно администратором.</i>",
             parse_mode=ParseMode.HTML,
         )
-    except Exception:
+    except (BadRequest, Forbidden, TimedOut):
         pass
 
     await update.message.reply_text(
@@ -55822,7 +55885,7 @@ async def cmd_fix_adventures_all(update: Update, ctx: ContextTypes.DEFAULT_TYPE)
                 parse_mode=ParseMode.HTML,
             )
             notified += 1
-        except Exception:
+        except (BadRequest, Forbidden, TimedOut):
             pass
 
     await status_msg.edit_text(
@@ -56276,7 +56339,7 @@ async def cmd_add_soseda(update: Update, ctx: ContextTypes.DEFAULT_TYPE):
             parse_mode=ParseMode.HTML,
             reply_markup=kb,
         )
-    except Exception:
+    except (BadRequest, Forbidden, TimedOut):
         pass
 
 
@@ -56383,7 +56446,7 @@ async def cmd_gift_friend(update: Update, ctx: ContextTypes.DEFAULT_TYPE):
                         btn("🚫 Продлить 24ч", callback_data=f"gift_keepfreeze_{_review_id}"),
                     ]])
                 )
-            except Exception:
+            except (BadRequest, Forbidden, TimedOut):
                 pass
         await update.message.reply_text("🚫 Подозрительная активность. Переводы временно заморожены.")
         return
@@ -56415,7 +56478,7 @@ async def cmd_gift_friend(update: Update, ctx: ContextTypes.DEFAULT_TYPE):
             f"<i>Болотные соседи заботятся друг о друге {_E_LEAF}</i>",
             parse_mode=ParseMode.HTML,
         )
-    except Exception:
+    except (BadRequest, Forbidden, TimedOut):
         pass
     # ── Уведомление администратору о переводе ──────────────────────────
     if ADMIN_CHAT_ID:
@@ -56431,7 +56494,7 @@ async def cmd_gift_friend(update: Update, ctx: ContextTypes.DEFAULT_TYPE):
                 f"🕐 {datetime.now(timezone.utc).strftime('%d.%m.%Y %H:%M')} UTC",
                 parse_mode=ParseMode.HTML,
             )
-        except Exception:
+        except (BadRequest, Forbidden, TimedOut):
             pass
     # XP дружбе
     await friend_add_xp(user.id, target_id, 5)
@@ -56883,7 +56946,7 @@ async def _run_broadcast_return(bot, targets: list, status_msg):
                     f"📨 Прогресс: {i+1}/{total}\n✅ {sent} {_E_CROSS} {failed}",
                     parse_mode=ParseMode.HTML,
                 )
-            except Exception:
+            except (BadRequest, Forbidden, TimedOut):
                 pass
 
         await asyncio.sleep(1.5 if (i + 1) % 20 == 0 else 0.35)
@@ -56896,7 +56959,7 @@ async def _run_broadcast_return(bot, targets: list, status_msg):
             f"{_E_BAN} Не доставлено: <b>{failed}</b>",
             parse_mode=ParseMode.HTML,
         )
-    except Exception:
+    except (BadRequest, Forbidden, TimedOut):
         pass
 
 
@@ -56952,7 +57015,7 @@ async def cmd_broadcast_nft(update: Update, ctx: ContextTypes.DEFAULT_TYPE):
             f"✅ Рассылка NFT-холдерам завершена!\n"
             f"📨 Доставлено: {sent}\n{_E_CROSS} Не доставлено: {failed}"
         )
-    except Exception:
+    except (BadRequest, Forbidden, TimedOut):
         pass
 
 
@@ -57443,7 +57506,8 @@ async def _chk_do_bot_move(gid, gd, q, ctx):
                 f"♟️ <b>Шашки vs Бот</b>\n\n{_E_TROPHY} <b>{h_name}</b> победил(а)!\nБот не может ходить.",
                 parse_mode=ParseMode.HTML,
             )
-        except Exception: pass
+        except (BadRequest, Forbidden, TimedOut):
+            pass
         return
 
     # Выполняем ход (с поддержкой цепного взятия)
@@ -57477,7 +57541,8 @@ async def _chk_do_bot_move(gid, gd, q, ctx):
                 f"♟️ <b>Шашки vs Бот завершены!</b>\n\n{result}",
                 parse_mode=ParseMode.HTML,
             )
-        except Exception: pass
+        except (BadRequest, Forbidden, TimedOut):
+            pass
         return
 
     # Возвращаем ход игроку
@@ -57490,7 +57555,8 @@ async def _chk_do_bot_move(gid, gd, q, ctx):
             _chk_header(gd),
             parse_mode=ParseMode.HTML, reply_markup=kb,
         )
-    except Exception: pass
+    except (BadRequest, Forbidden, TimedOut):
+        pass
 
 
 async def handle_checkers_callback(q, d, uid, ctx):
@@ -57517,7 +57583,8 @@ async def handle_checkers_callback(q, d, uid, ctx):
                     "♟️ <b>Шашки vs Бот</b>",
                     parse_mode=ParseMode.HTML, reply_markup=kb,
                 )
-            except Exception: pass
+            except (BadRequest, Forbidden, TimedOut):
+                pass
         elif mode == "pvp":
             await q.answer()
             stakes = [25, 50, 100, 200]
@@ -57530,7 +57597,8 @@ async def handle_checkers_callback(q, d, uid, ctx):
                     "♟️ <b>Шашки vs Игрок</b>\n\nВыбери ставку (с каждого):",
                     parse_mode=ParseMode.HTML, reply_markup=kb,
                 )
-            except Exception: pass
+            except (BadRequest, Forbidden, TimedOut):
+                pass
         elif mode == "back":
             await q.answer()
             kb = InlineKeyboardMarkup([
@@ -57542,7 +57610,8 @@ async def handle_checkers_callback(q, d, uid, ctx):
                     "♟️ <b>Шашки</b>",
                     parse_mode=ParseMode.HTML, reply_markup=kb,
                 )
-            except Exception: pass
+            except (BadRequest, Forbidden, TimedOut):
+                pass
         return
 
     # ── Выбор ставки PvP ────────────────────────────────────────────────────
@@ -57571,7 +57640,8 @@ async def handle_checkers_callback(q, d, uid, ctx):
                 f"⚫ чёрные · ⚪ белые\n🔵🟡 дамки · ✅ ход",
                 parse_mode=ParseMode.HTML, reply_markup=kb,
             )
-        except Exception: pass
+        except (BadRequest, Forbidden, TimedOut):
+            pass
         return
 
     # ── Выбор стороны (vs бот) ───────────────────────────────────────────────
@@ -57604,7 +57674,8 @@ async def handle_checkers_callback(q, d, uid, ctx):
                 _chk_header(gd),
                 parse_mode=ParseMode.HTML, reply_markup=kb,
             )
-        except Exception: pass
+        except (BadRequest, Forbidden, TimedOut):
+            pass
         return
 
     # ── Вступление в игру PvP ────────────────────────────────────────────────
@@ -57636,7 +57707,8 @@ async def handle_checkers_callback(q, d, uid, ctx):
                 _chk_header(gd),
                 parse_mode=ParseMode.HTML, reply_markup=kb,
             )
-        except Exception: pass
+        except (BadRequest, Forbidden, TimedOut):
+            pass
         return
 
     # ── Выбор шашки ──────────────────────────────────────────────────────────
@@ -57664,7 +57736,8 @@ async def handle_checkers_callback(q, d, uid, ctx):
                 _chk_header(gd),
                 parse_mode=ParseMode.HTML, reply_markup=kb,
             )
-        except Exception: pass
+        except (BadRequest, Forbidden, TimedOut):
+            pass
         return
 
     # ── Отмена выбора ────────────────────────────────────────────────────────
@@ -57686,7 +57759,8 @@ async def handle_checkers_callback(q, d, uid, ctx):
                 _chk_header(gd),
                 parse_mode=ParseMode.HTML, reply_markup=kb,
             )
-        except Exception: pass
+        except (BadRequest, Forbidden, TimedOut):
+            pass
         return
 
     # ── Ход ──────────────────────────────────────────────────────────────────
@@ -57758,7 +57832,8 @@ async def handle_checkers_callback(q, d, uid, ctx):
                         f"{_E_TROPHY} <b>{_html.escape(w_name)}</b> победил(а)! +{prize}{_E_COIN}",
                         parse_mode=ParseMode.HTML,
                     )
-                except Exception: pass
+                except (BadRequest, Forbidden, TimedOut):
+                    pass
             else:
                 # vs bot
                 human_p = gd.get("human_player", 1)
@@ -57771,7 +57846,8 @@ async def handle_checkers_callback(q, d, uid, ctx):
                         f"♟️ <b>Шашки vs Бот завершены!</b>\n\n{result}",
                         parse_mode=ParseMode.HTML,
                     )
-                except Exception: pass
+                except (BadRequest, Forbidden, TimedOut):
+                    pass
             return
 
         if chain_mode:
@@ -57782,7 +57858,8 @@ async def handle_checkers_callback(q, d, uid, ctx):
                     _chk_header(gd),
                     parse_mode=ParseMode.HTML, reply_markup=kb,
                 )
-            except Exception: pass
+            except (BadRequest, Forbidden, TimedOut):
+                pass
             return
 
         # Ход бота (если режим bot и сейчас очередь бота)
@@ -57794,7 +57871,8 @@ async def handle_checkers_callback(q, d, uid, ctx):
                     _chk_header(gd) + "\n\n<i>🤖 Бот думает...</i>",
                     parse_mode=ParseMode.HTML, reply_markup=kb,
                 )
-            except Exception: pass
+            except (BadRequest, Forbidden, TimedOut):
+                pass
             await asyncio.sleep(0.6)
             await _chk_do_bot_move(gid, gd, q, ctx)
             return
@@ -57806,7 +57884,8 @@ async def handle_checkers_callback(q, d, uid, ctx):
                 _chk_header(gd),
                 parse_mode=ParseMode.HTML, reply_markup=kb,
             )
-        except Exception: pass
+        except (BadRequest, Forbidden, TimedOut):
+            pass
         return
 
     # ── Предложить ничью ─────────────────────────────────────────────────────
@@ -57839,7 +57918,8 @@ async def handle_checkers_callback(q, d, uid, ctx):
                         f"{'Ставка возвращена.' if stake else ''}",
                         parse_mode=ParseMode.HTML,
                     )
-                except Exception: pass
+                except (BadRequest, Forbidden, TimedOut):
+                    pass
             else:
                 await q.answer("🤖 Бот отказывает в ничьей — он в лучшей позиции", show_alert=True)
             return
@@ -57862,7 +57942,8 @@ async def handle_checkers_callback(q, d, uid, ctx):
                     f"🤝 Ничья по соглашению сторон!",
                     parse_mode=ParseMode.HTML,
                 )
-            except Exception: pass
+            except (BadRequest, Forbidden, TimedOut):
+                pass
             return
         gd["draw_offer"] = uid
         offerer_name = gd["p1n"] if uid == gd["p1"] else gd["p2n"]
@@ -57873,7 +57954,8 @@ async def handle_checkers_callback(q, d, uid, ctx):
                 parse_mode=ParseMode.HTML,
                 reply_markup=_chk_board_kb(gid, gd["board"], gd["turn"], gd.get("phase", "select"), sel=gd.get("sel")),
             )
-        except Exception: pass
+        except (BadRequest, Forbidden, TimedOut):
+            pass
         return
 
     # ── Сдаться / Отменить вызов ─────────────────────────────────────────────
@@ -57896,7 +57978,8 @@ async def handle_checkers_callback(q, d, uid, ctx):
                     f"♟️ <b>Шашки vs Бот</b>\n🏳 <b>{_html.escape(gd['p1n'])}</b> сдался.",
                     parse_mode=ParseMode.HTML,
                 )
-            except Exception: pass
+            except (BadRequest, Forbidden, TimedOut):
+                pass
             return
 
         # PvP
@@ -57912,7 +57995,8 @@ async def handle_checkers_callback(q, d, uid, ctx):
                     f"♟️ Вызов отменён. +{stake}{_E_COIN} возвращено.",
                     parse_mode=ParseMode.HTML,
                 )
-            except Exception: pass
+            except (BadRequest, Forbidden, TimedOut):
+                pass
             return
 
         # Сдача во время игры
@@ -57931,7 +58015,8 @@ async def handle_checkers_callback(q, d, uid, ctx):
                 f"{_E_TROPHY} Победа <b>{_html.escape(w_name)}</b>! +{prize}{_E_COIN}",
                 parse_mode=ParseMode.HTML,
             )
-        except Exception: pass
+        except (BadRequest, Forbidden, TimedOut):
+            pass
         return
 
 
@@ -60998,7 +61083,7 @@ async def _exp_broadcast(bot, exp_id: int, text: str, reply_markup=None,
                 parse_mode=ParseMode.HTML,
                 reply_markup=reply_markup,
             )
-        except Exception:
+        except (BadRequest, Forbidden, TimedOut):
             pass
 
 
@@ -61925,7 +62010,7 @@ async def _handle_member_death(bot, exp: dict, m: dict, f: dict, cause: str):
             continue
         try:
             await bot.send_message(sm["user_id"], death_msg, parse_mode=ParseMode.HTML)
-        except Exception:
+        except (BadRequest, Forbidden, TimedOut):
             pass
     logger.info("expedition member dead: exp=%s user=%s cause=%s", exp_id, m["user_id"], cause)
 
@@ -62216,7 +62301,7 @@ async def _exp_resolve_vote(bot, exp: dict, ev: dict):
                     "\n".join(announce_lines_personal),
                     parse_mode=ParseMode.HTML,
                 )
-            except Exception:
+            except (BadRequest, Forbidden, TimedOut):
                 pass
 
     # ── Обработка sacrifice_victim: урон выбранной жертве ────────────────
@@ -62255,7 +62340,7 @@ async def _exp_resolve_vote(bot, exp: dict, ev: dict):
                         sacrifice_victim_m["user_id"], vic_personal,
                         parse_mode=ParseMode.HTML,
                     )
-                except Exception:
+                except (BadRequest, Forbidden, TimedOut):
                     pass
 
             # Анонс всем кто пожертвован
@@ -62395,7 +62480,7 @@ async def _exp_finish(bot, exp: dict, force_wipe: bool = False):
         )
         try:
             await bot.send_message(m["user_id"], personal_text, parse_mode=ParseMode.HTML)
-        except Exception:
+        except (BadRequest, Forbidden, TimedOut):
             pass
 
         stats_list.append({
@@ -62778,7 +62863,7 @@ async def job_canteen_tick(ctx: ContextTypes.DEFAULT_TYPE):
                                 f"{effects_msg}",
                                 parse_mode=ParseMode.HTML,
                             )
-                        except Exception:
+                        except (BadRequest, Forbidden, TimedOut):
                             pass
                         break
 
@@ -62815,7 +62900,7 @@ async def job_canteen_tick(ctx: ContextTypes.DEFAULT_TYPE):
                                 f"{effects_msg}",
                                 parse_mode=ParseMode.HTML,
                             )
-                        except Exception:
+                        except (BadRequest, Forbidden, TimedOut):
                             pass
                         break
 
@@ -62900,8 +62985,8 @@ async def job_expedition_tick(ctx: ContextTypes.DEFAULT_TYPE):
                                     _hmf["adventure_locked_until"] = 0
                                     await db_save(_hmf)
                         await _hdb.commit()
-                except Exception:
-                    pass
+                except Exception as _e:
+                    logger.exception("подавлено исключение: %s", _e)
 
     # ── Обработать активные ────────────────────────────────────────
     for exp in active_exps:
@@ -63232,7 +63317,7 @@ async def _show_exp_status(msg_or_query, user_id: int, exp: dict):
     else:
         try:
             await msg_or_query.edit_message_text(text, parse_mode=ParseMode.HTML, reply_markup=kb)
-        except Exception:
+        except (BadRequest, Forbidden, TimedOut):
             pass
 
 
@@ -63485,7 +63570,7 @@ async def exp_handle_callback(q, uid: int, d: str,
         try:
             await q.edit_message_text("\n".join(lines), parse_mode=ParseMode.HTML,
                                       reply_markup=InlineKeyboardMarkup(buttons))
-        except Exception:
+        except (BadRequest, Forbidden, TimedOut):
             pass
         await q.answer()
         return True
@@ -63605,8 +63690,8 @@ async def exp_handle_callback(q, uid: int, d: str,
                     (sent.message_id, exp_id),
                 )
                 await db.commit()
-        except Exception:
-            pass
+        except Exception as _e:
+            logger.exception("подавлено исключение: %s", _e)
 
         await q.edit_message_text(lobby_text, parse_mode=ParseMode.HTML, reply_markup=lobby_kb)
         await q.answer("✅ Экспедиция создана")
@@ -63819,15 +63904,15 @@ async def exp_handle_callback(q, uid: int, d: str,
                 for sm in staya_members:
                     if sm["user_id"] != uid:
                         invite_uids.add(sm["user_id"])
-            except Exception:
-                pass
+            except Exception as _e:
+                logger.exception("подавлено исключение: %s", _e)
         # Соседи (bond_with)
         try:
             bonds = await get_user_bonds(uid)
             for b in bonds:
                 invite_uids.add(b["partner_id"])
-        except Exception:
-            pass
+        except Exception as _e:
+            logger.exception("подавлено исключение: %s", _e)
 
         try:
             _bot_me2 = await ctx.bot.get_me()
@@ -63970,7 +64055,7 @@ async def exp_handle_callback(q, uid: int, d: str,
         lobby_kb = _exp_lobby_kb(exp, members, uid)
         try:
             await q.edit_message_text(lobby_text, parse_mode=ParseMode.HTML, reply_markup=lobby_kb)
-        except Exception:
+        except (BadRequest, Forbidden, TimedOut):
             pass
         await q.answer("Обновлено")
         return True
@@ -64262,7 +64347,7 @@ async def exp_handle_callback(q, uid: int, d: str,
                             victim_m["user_id"], f"😤 {victim_text}",
                             parse_mode=ParseMode.HTML,
                         )
-                    except Exception:
+                    except (BadRequest, Forbidden, TimedOut):
                         pass
                     # Обновить предателя
                     m["betrayal_done"] = 1
@@ -64530,7 +64615,7 @@ async def exp_handle_callback(q, uid: int, d: str,
                     f"😔 Команда проголосовала за твоё исключение из экспедиции "
                     f"({bc_kick_name}).\nТы выбыл из группы.",
                 )
-            except Exception:
+            except (BadRequest, Forbidden, TimedOut):
                 pass
             await q.answer((f"✅ {target_name} исключён из экспедиции")[:200], show_alert=True)
         else:
@@ -65008,7 +65093,7 @@ async def _war_callbacks_v2(q, d: str, uid: int, f: dict, ctx) -> bool:
                 "\n".join(lines), parse_mode=ParseMode.HTML,
                 reply_markup=InlineKeyboardMarkup(kb),
             )
-        except Exception:
+        except (BadRequest, Forbidden, TimedOut):
             pass
         return True
 
@@ -65038,7 +65123,7 @@ async def _war_callbacks_v2(q, d: str, uid: int, f: dict, ctx) -> bool:
                 text, parse_mode=ParseMode.HTML,
                 reply_markup=InlineKeyboardMarkup([[btn("◀️ Назад", callback_data="war_menu")]]),
             )
-        except Exception:
+        except (BadRequest, Forbidden, TimedOut):
             pass
         return True
 
@@ -65263,7 +65348,7 @@ async def _war_callbacks_v2(q, d: str, uid: int, f: dict, ctx) -> bool:
         await q.answer("🛡️ Ты встал на защиту. Добыча врага упадёт вдвое.", show_alert=True)
         try:
             await q.message.edit_reply_markup(reply_markup=None)
-        except Exception:
+        except (BadRequest, Forbidden, TimedOut):
             pass
 
         # Статистика охранника
@@ -65325,7 +65410,7 @@ async def _war_callbacks_v2(q, d: str, uid: int, f: dict, ctx) -> bool:
             if p_uid == uid:
                 try:
                     await q.message.edit_reply_markup(reply_markup=new_kb)
-                except Exception:
+                except (BadRequest, Forbidden, TimedOut):
                     pass
             else:
                 # Пробуем обновить последнее сообщение другого участника
@@ -65343,7 +65428,7 @@ async def _war_callbacks_v2(q, d: str, uid: int, f: dict, ctx) -> bool:
                         parse_mode=ParseMode.HTML,
                         reply_markup=new_kb if not p_voted else None,
                     )
-                except Exception:
+                except (BadRequest, Forbidden, TimedOut):
                     pass
         return True
 
@@ -65539,7 +65624,7 @@ async def _war_callbacks_v2(q, d: str, uid: int, f: dict, ctx) -> bool:
                     parse_mode=ParseMode.HTML, reply_markup=join_kb,
                 )
                 _gather_msg_ids[str(m["user_id"])] = _sent.message_id
-            except Exception:
+            except (BadRequest, Forbidden, TimedOut):
                 pass
 
         await q.answer("Стычка объявлена")
@@ -65646,7 +65731,7 @@ async def _war_callbacks_v2(q, d: str, uid: int, f: dict, ctx) -> bool:
             await q.message.edit_text(
                 status_upd, parse_mode=ParseMode.HTML, reply_markup=join_kb_upd,
             )
-        except Exception:
+        except (BadRequest, Forbidden, TimedOut):
             pass
 
         # Обновляем счётчик у остальных
@@ -65668,7 +65753,7 @@ async def _war_callbacks_v2(q, d: str, uid: int, f: dict, ctx) -> bool:
                     parse_mode=ParseMode.HTML,
                     reply_markup=join_kb_upd,
                 )
-            except Exception:
+            except (BadRequest, Forbidden, TimedOut):
                 pass
 
         if both_full:
@@ -65726,7 +65811,7 @@ async def _war_callbacks_v2(q, d: str, uid: int, f: dict, ctx) -> bool:
         await q.answer("💪 Поддержка отправлена. Боец получит +1 HP в следующем раунде.", show_alert=True)
         try:
             await q.message.edit_reply_markup(reply_markup=None)
-        except Exception:
+        except (BadRequest, Forbidden, TimedOut):
             pass
         return True
 
@@ -65771,7 +65856,7 @@ async def _war_callbacks_v2(q, d: str, uid: int, f: dict, ctx) -> bool:
         await q.answer(f"Выбрано: {_RPS_EMOJI[choice]} {_RPS_NAME[choice]}")
         try:
             await q.message.edit_reply_markup(reply_markup=None)
-        except Exception:
+        except (BadRequest, Forbidden, TimedOut):
             pass
 
         # Перечитываем из БД — атомарно
@@ -65824,7 +65909,7 @@ async def _war_callbacks_v2(q, d: str, uid: int, f: dict, ctx) -> bool:
             await q.message.edit_reply_markup(
                 reply_markup=_sk_eo_keyboard_with_num(duel_id, role, num)
             )
-        except Exception:
+        except (BadRequest, Forbidden, TimedOut):
             pass
         return True
 
@@ -65875,7 +65960,7 @@ async def _war_callbacks_v2(q, d: str, uid: int, f: dict, ctx) -> bool:
         await q.answer(f"Загадал {num}, ставка: {parity_ru} ✅")
         try:
             await q.message.edit_reply_markup(reply_markup=None)
-        except Exception:
+        except (BadRequest, Forbidden, TimedOut):
             pass
 
         duel_fresh = await sk_get_duel(duel_id)
@@ -65925,7 +66010,7 @@ async def _war_callbacks_v2(q, d: str, uid: int, f: dict, ctx) -> bool:
         await q.answer("🏃 Ты сдался. Поражение засчитано.", show_alert=True)
         try:
             await q.message.edit_reply_markup(reply_markup=None)
-        except Exception:
+        except (BadRequest, Forbidden, TimedOut):
             pass
 
         fled_f = await db_get(uid)
@@ -65961,7 +66046,8 @@ async def _war_callbacks_v2(q, d: str, uid: int, f: dict, ctx) -> bool:
             await db.commit()
         await q.answer(f"Выбрал {num_g} ✅")
         try: await q.message.edit_reply_markup(reply_markup=None)
-        except Exception: pass
+        except (BadRequest, Forbidden, TimedOut):
+            pass
         fresh_g = await sk_get_duel(duel_id_g)
         if fresh_g and fresh_g["att_choice"] and fresh_g["def_choice"]:
             att_f_g = await db_get(fresh_g["att_uid"]); def_f_g = await db_get(fresh_g["def_uid"])
@@ -65989,7 +66075,8 @@ async def _war_callbacks_v2(q, d: str, uid: int, f: dict, ctx) -> bool:
             await db.commit()
         await q.answer("💥 Нажал")
         try: await q.message.edit_reply_markup(reply_markup=None)
-        except Exception: pass
+        except (BadRequest, Forbidden, TimedOut):
+            pass
         return True
 
     # 6. Лотерея — выбор карты
@@ -66009,7 +66096,8 @@ async def _war_callbacks_v2(q, d: str, uid: int, f: dict, ctx) -> bool:
             await db.commit()
         await q.answer("🃏 Карта выбрана. Ждём соперника...")
         try: await q.message.edit_reply_markup(reply_markup=lottery_keyboard(duel_id_l, role_l, [card_l]))
-        except Exception: pass
+        except (BadRequest, Forbidden, TimedOut):
+            pass
         fresh_l = await sk_get_duel(duel_id_l)
         if fresh_l and fresh_l["att_choice"] and fresh_l["def_choice"]:
             att_f_l = await db_get(fresh_l["att_uid"]); def_f_l = await db_get(fresh_l["def_uid"])
@@ -66043,7 +66131,8 @@ async def _war_callbacks_v2(q, d: str, uid: int, f: dict, ctx) -> bool:
         decl_ru = "Правда ✅" if decl_b2 == "truth" else "Блеф 🤥"
         await q.answer(f"Заявил: {decl_ru}")
         try: await q.message.edit_reply_markup(reply_markup=None)
-        except Exception: pass
+        except (BadRequest, Forbidden, TimedOut):
+            pass
         # Если оба заявили — показываем кнопки ответа
         fresh_b2 = await sk_get_duel(duel_id_b2)
         gs2 = json.loads(fresh_b2.get("game_state") or "{}")
@@ -66061,7 +66150,8 @@ async def _war_callbacks_v2(q, d: str, uid: int, f: dict, ctx) -> bool:
                 await _edit_or_send(bot, fresh_b2["def_uid"], live_ids_b2.get(fresh_b2["def_uid"]),
                     f"⚡ {he(att_name_b2)} заявил: <b>{opp_decl_def}</b>\nВеришь?",
                     bluff_believe_keyboard(duel_id_b2, "def"))
-            except Exception: pass
+            except Exception as _e:
+                logger.exception("подавлено исключение: %s", _e)
         return True
 
     # 7. Блеф — ответ (верю/не верю)
@@ -66084,7 +66174,8 @@ async def _war_callbacks_v2(q, d: str, uid: int, f: dict, ctx) -> bool:
         resp_ru = "Верю 👍" if resp_br == "believe" else "Не верю 👎"
         await q.answer(resp_ru)
         try: await q.message.edit_reply_markup(reply_markup=None)
-        except Exception: pass
+        except (BadRequest, Forbidden, TimedOut):
+            pass
         fresh_br = await sk_get_duel(duel_id_br)
         gs_fresh_br = json.loads(fresh_br.get("game_state") or "{}")
         if gs_fresh_br.get("att_resp") and gs_fresh_br.get("def_resp"):
@@ -66136,7 +66227,8 @@ async def _war_callbacks_v2(q, d: str, uid: int, f: dict, ctx) -> bool:
             await db.commit()
         await q.answer(f"Ответил: {answer_p}")
         try: await q.message.edit_reply_markup(reply_markup=None)
-        except Exception: pass
+        except (BadRequest, Forbidden, TimedOut):
+            pass
         fresh_p = await sk_get_duel(duel_id_p)
         if fresh_p and fresh_p["att_choice"] and fresh_p["def_choice"]:
             att_f_p = await db_get(fresh_p["att_uid"]); def_f_p = await db_get(fresh_p["def_uid"])
@@ -66167,7 +66259,7 @@ async def _war_callbacks_v2(q, d: str, uid: int, f: dict, ctx) -> bool:
                 await q.message.edit_reply_markup(
                     reply_markup=_bet_side_keyboard(duel_id_b)
                 )
-            except Exception:
+            except (BadRequest, Forbidden, TimedOut):
                 pass
             return True
         try:
@@ -66207,7 +66299,7 @@ async def _war_callbacks_v2(q, d: str, uid: int, f: dict, ctx) -> bool:
                 parse_mode=ParseMode.HTML,
                 reply_markup=_bet_amount_keyboard(duel_id_s, side_s),
             )
-        except Exception:
+        except (BadRequest, Forbidden, TimedOut):
             pass
         return True
 
@@ -66249,7 +66341,7 @@ async def _war_callbacks_v2(q, d: str, uid: int, f: dict, ctx) -> bool:
                         )
                     ]])
                 )
-            except Exception:
+            except (BadRequest, Forbidden, TimedOut):
                 pass
         elif result == "already":
             await q.answer("Ты уже поставил", show_alert=True)
@@ -66290,7 +66382,7 @@ async def _war_callbacks_v2(q, d: str, uid: int, f: dict, ctx) -> bool:
                     btn("❌ Отмена", callback_data=f"bet_cancel_{uid}")
                 ]]),
             )
-        except Exception:
+        except (BadRequest, Forbidden, TimedOut):
             pass
         return True
 
@@ -66299,7 +66391,7 @@ async def _war_callbacks_v2(q, d: str, uid: int, f: dict, ctx) -> bool:
         await q.answer("Отменено")
         try:
             await q.message.edit_reply_markup(reply_markup=None)
-        except Exception:
+        except (BadRequest, Forbidden, TimedOut):
             pass
         return True
 
@@ -66371,7 +66463,7 @@ async def _war_callbacks(q, d, uid, f, ctx):
         try:
             await q.message.edit_text(text, parse_mode=ParseMode.HTML,
                                        reply_markup=InlineKeyboardMarkup(kb_rows))
-        except Exception:
+        except (BadRequest, Forbidden, TimedOut):
             pass
         return True
 
@@ -66443,7 +66535,7 @@ async def _war_callbacks(q, d, uid, f, ctx):
                 parse_mode=ParseMode.HTML,
                 reply_markup=InlineKeyboardMarkup(kb),
             )
-        except Exception:
+        except (BadRequest, Forbidden, TimedOut):
             pass
         return True
 
@@ -66507,7 +66599,7 @@ async def _war_callbacks(q, d, uid, f, ctx):
         try:
             await q.message.edit_text(text, parse_mode=ParseMode.HTML,
                                       reply_markup=InlineKeyboardMarkup(rows))
-        except Exception:
+        except (BadRequest, Forbidden, TimedOut):
             pass
         return True
 
@@ -66561,7 +66653,7 @@ async def _war_callbacks(q, d, uid, f, ctx):
                 parse_mode=ParseMode.HTML,
                 reply_markup=InlineKeyboardMarkup(kb),
             )
-        except Exception:
+        except (BadRequest, Forbidden, TimedOut):
             pass
         return True
 
@@ -66630,7 +66722,7 @@ async def _war_callbacks(q, d, uid, f, ctx):
                 parse_mode=ParseMode.HTML,
                 reply_markup=InlineKeyboardMarkup(kb_war),
             )
-        except Exception:
+        except (BadRequest, Forbidden, TimedOut):
             pass
         return True
 
@@ -66697,7 +66789,7 @@ async def _war_callbacks(q, d, uid, f, ctx):
                 parse_mode=ParseMode.HTML,
                 reply_markup=InlineKeyboardMarkup(kb_t),
             )
-        except Exception:
+        except (BadRequest, Forbidden, TimedOut):
             pass
         return True
 
@@ -66766,9 +66858,9 @@ async def _war_callbacks(q, d, uid, f, ctx):
         except BadRequest:
             try:
                 await q.message.reply_text(text_pick, parse_mode=ParseMode.HTML, reply_markup=kb_pick)
-            except Exception:
+            except (BadRequest, Forbidden, TimedOut):
                 pass
-        except Exception:
+        except (BadRequest, Forbidden, TimedOut):
             pass
         return True
 
@@ -66838,7 +66930,7 @@ async def _war_callbacks(q, d, uid, f, ctx):
                         btn("🛡️ ПЕРЕХВАТИТЬ", callback_data=f"raid_intercept_{raid_id}", style="success")
                     ]]),
                 )
-            except Exception:
+            except (BadRequest, Forbidden, TimedOut):
                 pass
 
         has_citadel = target.get("level", 1) >= 13
@@ -66861,7 +66953,7 @@ async def _war_callbacks(q, d, uid, f, ctx):
                     btn(labels[2], callback_data=f"raid_choose_{raid_id}_2"),
                 ]]),
             )
-        except Exception:
+        except (BadRequest, Forbidden, TimedOut):
             pass
         return True
 
@@ -66885,7 +66977,7 @@ async def _war_callbacks(q, d, uid, f, ctx):
         await q.answer("🛡️ Перехват активирован. Добыча нападающего упадёт в 2×.", show_alert=True)
         try:
             await q.message.edit_reply_markup(reply_markup=None)
-        except Exception:
+        except (BadRequest, Forbidden, TimedOut):
             pass
         return True
 
@@ -66970,7 +67062,7 @@ async def _war_callbacks(q, d, uid, f, ctx):
                             f"украла <b>{stolen}{_E_COIN}</b> из котла!{_intercept_note}",
                             parse_mode=ParseMode.HTML,
                         )
-                    except Exception:
+                    except (BadRequest, Forbidden, TimedOut):
                         pass
                 await asyncio.gather(*[_notify_raid_success(m) for m in members_t])
         else:
@@ -67005,7 +67097,7 @@ async def _war_callbacks(q, d, uid, f, ctx):
                             f"Штраф зачислен в ваш котёл.",
                             parse_mode=ParseMode.HTML,
                         )
-                    except Exception:
+                    except (BadRequest, Forbidden, TimedOut):
                         pass
                 await asyncio.gather(*[_notify_raid_fail(m) for m in members_t])
 
@@ -67016,7 +67108,7 @@ async def _war_callbacks(q, d, uid, f, ctx):
                 parse_mode=ParseMode.HTML,
                 reply_markup=InlineKeyboardMarkup([[btn("◀️ В меню войны", callback_data="war_menu")]]),
             )
-        except Exception:
+        except (BadRequest, Forbidden, TimedOut):
             pass
         return True
 
@@ -67057,7 +67149,7 @@ async def _war_callbacks(q, d, uid, f, ctx):
                         parse_mode=ParseMode.HTML,
                         reply_markup=InlineKeyboardMarkup([[btn("◀️ Назад", callback_data="war_menu")]]),
                     )
-                except Exception:
+                except (BadRequest, Forbidden, TimedOut):
                     pass
                 return True
         # Список целей
@@ -67085,7 +67177,7 @@ async def _war_callbacks(q, d, uid, f, ctx):
                 parse_mode=ParseMode.HTML,
                 reply_markup=InlineKeyboardMarkup(kb_sk),
             )
-        except Exception:
+        except (BadRequest, Forbidden, TimedOut):
             pass
         return True
 
@@ -67115,7 +67207,7 @@ async def _war_callbacks(q, d, uid, f, ctx):
                     [btn("◀️ Назад", callback_data="skirmish_start")],
                 ]),
             )
-        except Exception:
+        except (BadRequest, Forbidden, TimedOut):
             pass
         return True
 
@@ -67167,7 +67259,7 @@ async def _war_callbacks(q, d, uid, f, ctx):
                             f"Авто-победа без боя — захвачено <b>{_dragon_steal}{_E_COIN}</b> из котла!",
                             parse_mode=ParseMode.HTML,
                         )
-                    except Exception:
+                    except (BadRequest, Forbidden, TimedOut):
                         pass
             await q.answer("🐉 Дракон атаковал. Авто-победа.", show_alert=True)
             try:
@@ -67177,7 +67269,7 @@ async def _war_callbacks(q, d, uid, f, ctx):
                     parse_mode=ParseMode.HTML,
                     reply_markup=InlineKeyboardMarkup([[btn("◀️ Меню войны", callback_data="war_menu")]]),
                 )
-            except Exception:
+            except (BadRequest, Forbidden, TimedOut):
                 pass
             return True
 
@@ -67223,7 +67315,7 @@ async def _war_callbacks(q, d, uid, f, ctx):
                         btn("Не сейчас", callback_data="plaza"),
                     ]]),
                 )
-            except Exception:
+            except (BadRequest, Forbidden, TimedOut):
                 pass
         await asyncio.gather(*[_notify_skirmish(m) for m in all_members])
 
@@ -67235,7 +67327,7 @@ async def _war_callbacks(q, d, uid, f, ctx):
                 parse_mode=ParseMode.HTML,
                 reply_markup=InlineKeyboardMarkup([[btn("◀️ Меню войны", callback_data="war_menu")]]),
             )
-        except Exception:
+        except (BadRequest, Forbidden, TimedOut):
             pass
         # Запускаем таймер
         asyncio.create_task(_sk_gather_timeout(ctx.bot, sk_id, gather_until))
@@ -67297,8 +67389,8 @@ async def _war_callbacks(q, d, uid, f, ctx):
                 parse_mode=ParseMode.HTML,
                 reply_markup=_join_markup,
             )
-        except Exception:
-            pass
+        except Exception as _e:
+            logger.exception("подавлено исключение: %s", _e)
 
         # Авто-старт — если обе стороны заполнены
         if _both_full:
@@ -67340,7 +67432,7 @@ async def _war_callbacks(q, d, uid, f, ctx):
         await q.answer(f"Выбор сделан: {_RPS_EMOJI[choice]} {_RPS_NAME[choice]}")
         try:
             await q.message.edit_reply_markup(reply_markup=None)
-        except Exception:
+        except (BadRequest, Forbidden, TimedOut):
             pass
         # Если оба выбрали — разрешаем
         duel[col] = choice
@@ -67383,7 +67475,7 @@ async def _war_callbacks(q, d, uid, f, ctx):
         await q.answer(f"Ты загадал: {number} 🤫")
         try:
             await q.message.edit_reply_markup(reply_markup=None)
-        except Exception:
+        except (BadRequest, Forbidden, TimedOut):
             pass
         # Теперь предлагаем поставить на чётность
         kb_eo = InlineKeyboardMarkup([[
@@ -67396,7 +67488,7 @@ async def _war_callbacks(q, d, uid, f, ctx):
                 parse_mode=ParseMode.HTML,
                 reply_markup=kb_eo,
             )
-        except Exception:
+        except (BadRequest, Forbidden, TimedOut):
             pass
         return True
 
@@ -67434,7 +67526,7 @@ async def _war_callbacks(q, d, uid, f, ctx):
         await q.answer(f"Ставка сделана: {side_ru}")
         try:
             await q.message.edit_reply_markup(reply_markup=None)
-        except Exception:
+        except (BadRequest, Forbidden, TimedOut):
             pass
         # Проверяем — если оба сделали ставку
         duel[col] = side
@@ -67486,7 +67578,7 @@ async def _war_callbacks(q, d, uid, f, ctx):
         await q.answer("🏃 Ты сбежал. Поражение засчитано.", show_alert=True)
         try:
             await q.message.edit_reply_markup(reply_markup=None)
-        except Exception:
+        except (BadRequest, Forbidden, TimedOut):
             pass
         asyncio.create_task(_skirmish_check_all_done(ctx.bot, duel["skirmish_id"]))
         return True
@@ -67673,7 +67765,7 @@ async def cmd_m_new(update: Update, ctx: ContextTypes.DEFAULT_TYPE):
                     parse_mode=ParseMode.HTML,
                 )
                 sent_count += 1
-            except Exception:
+            except (BadRequest, Forbidden, TimedOut):
                 pass
 
         # Зеркалируем сообщение в админ-чат
@@ -67686,7 +67778,7 @@ async def cmd_m_new(update: Update, ctx: ContextTypes.DEFAULT_TYPE):
                     f"<blockquote>{he(msg_text)}</blockquote>",
                     parse_mode=ParseMode.HTML,
                 )
-            except Exception:
+            except (BadRequest, Forbidden, TimedOut):
                 pass
 
         await update.message.reply_text(
@@ -67755,7 +67847,7 @@ async def cmd_m_new(update: Update, ctx: ContextTypes.DEFAULT_TYPE):
             f"<i>Ответить: /m @{user.username or user.id} твой текст</i>",
             parse_mode=ParseMode.HTML,
         )
-    except Exception:
+    except (BadRequest, Forbidden, TimedOut):
         pass
 
 
@@ -68159,8 +68251,8 @@ def main():
     try:
         loop = asyncio.get_event_loop()
         loop.set_exception_handler(_asyncio_exception_handler)
-    except Exception:
-        pass
+    except Exception as _e:
+        logger.exception("подавлено исключение: %s", _e)
 
     print("🚀 Бот v6 работает!")
 
