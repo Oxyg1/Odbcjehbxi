@@ -17348,7 +17348,7 @@ async def announce(bot, text: str, reply_markup=None, admin_only=False, delete_a
             if not admin_only and delete_after > 0 and sent:
                 asyncio.create_task(schedule_delete(bot, int(cid), sent.message_id, delete_after))
         except Exception as e:
-            print(f"{_E_CROSS} Ошибка отправки в чат {cid}: {e}")
+            print(f"❌ Ошибка отправки в чат {cid}: {e}")
     else:
         print("⚠️ announce: не задан ID чата для уведомлений")
 
@@ -32210,7 +32210,7 @@ async def admin_router(update: Update, ctx: ContextTypes.DEFAULT_TYPE):
             ])
             await q.message.edit_text("\n".join(lines), parse_mode=ParseMode.HTML, reply_markup=kb_det)
         except Exception as e:
-            print(f"{_E_CROSS} admin_refdetail error: {e}")
+            print(f"❌ admin_refdetail error: {e}")
             try:
                 await q.message.edit_text(
                     f"{_E_CROSS} <b>Ошибка при загрузке расследования</b>\n\n<code>{_html.escape(str(e))}</code>",
@@ -68079,7 +68079,7 @@ def check_required_config() -> None:
         return
     names = ", ".join(_MISSING_REQUIRED)
     print(
-        f"\n{_E_CROSS} Не заданы обязательные настройки: {names}\n"
+        f"\n❌ Не заданы обязательные настройки: {names}\n"
         f"   Создай файл .env рядом с bot.py (образец — .env.example)\n"
         f"   или передай переменные окружения при запуске.\n"
     )
