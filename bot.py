@@ -30,7 +30,7 @@ import logging.handlers
 import threading
 import aiosqlite
 import aiohttp
-from datetime import datetime, timezone
+from datetime import datetime, timedelta, timezone
 from telegram import (
     Update,
     InlineKeyboardButton,
@@ -6376,30 +6376,56 @@ SECRET_GIFT_ADMIN_PASS = "Russia_top114"
 _admin_gift_waiting_pass: set = set()
 
 # ══════════════════════════════════════════
-# 💫 ПАКЕТЫ STARS (1 звезда = 2 КваКоины)
+# 💫 ПАКЕТЫ STARS
 # ══════════════════════════════════════════
+# ВАЖНО: платёж находит пакет по ИНДЕКСУ в этом списке (payload = "coins_<i>").
+# Поэтому строки отсюда не удаляют — иначе у счёта, выставленного минуту назад,
+# оплатится соседний пакет. Ненужное помечается "hidden": True и пропадает с
+# витрины, оставаясь на своём месте в списке.
 STAR_PACKAGES = [
     # Новичковый пакет — только для тех, кто ещё не донатил (stars_spent == 0)
     # 1⭐ = 10 монет — сильный «якорь», задаёт высокую планку
-    {"stars": 10,   "coins": 100,  "label": "100🪙 🎁 Новичок", "newbie": True, "farm_min": 17},
+    {"stars": 10,   "coins": 100,  "label": "100🪙 🎁 Новичок", "newbie": True},
     # Ежедневное предложение — раз в сутки, скидка ~20%
-    {"stars": 8,    "coins": 50,   "label": "50🪙 🌅 Ежедневное предложение", "daily_deal": True, "farm_min": 8},
-    # Обычные пакеты с бонусом за объём (база 1⭐ = 5, бонус за объём → эффективный курс 1⭐ = 5.2–5.3)
-    {"stars": 10,   "coins": 50,   "label": "50🪙",   "farm_min": 8},
-    {"stars": 25,   "coins": 130,  "label": "130🪙",  "farm_min": 22},
-    {"stars": 50,   "coins": 260,  "label": "260🪙",  "farm_min": 44},
-    {"stars": 100,  "coins": 520,  "label": "520🪙",  "farm_min": 90},
-    {"stars": 250,  "coins": 1300, "label": "1300🪙", "farm_min": 222},
-    {"stars": 500,  "coins": 2600, "label": "2600🪙", "farm_min": 444},
-    {"stars": 1000, "coins": 5300, "label": "5300🪙", "farm_min": 909},
+    {"stars": 8,    "coins": 50,   "label": "50🪙 🌅 Ежедневное предложение", "daily_deal": True},
+    # Мелкие пакеты — «не хватило чуть-чуть» перед конкретной покупкой.
+    # Крупные скрыты: 1300–5300 монет не на что потратить (самая дорогая личная
+    # трата в игре — 1000), а ценник в 375–1500₽ рядом делает всю витрину
+    # дорогой на вид и роняет продажи мелких позиций.
+    {"stars": 10,   "coins": 50,   "label": "50🪙"},
+    {"stars": 25,   "coins": 130,  "label": "130🪙"},
+    {"stars": 50,   "coins": 260,  "label": "260🪙"},
+    {"stars": 100,  "coins": 520,  "label": "520🪙"},
+    {"stars": 250,  "coins": 1300, "label": "1300🪙", "hidden": True},
+    {"stars": 500,  "coins": 2600, "label": "2600🪙", "hidden": True},
+    {"stars": 1000, "coins": 5300, "label": "5300🪙", "hidden": True},
     # ── Подписки ──────────────────────────────────────────────────────────
-    # Болотная Няня: пробный пакет на 7 дней (~$1.2)
+    # Болотная Няня: пробный заход на 7 дней
     {"stars": 50,   "coins": 0,  "label": "🧑‍🍼 Болотная Няня — 7 дней",  "subscription": "nanny",  "days": 7},
-    # Болотная Няня: ~$5/мес, только автоуход (без фарма)
+    # Болотная Няня на месяц, только автоуход (без фарма)
     {"stars": 200,  "coins": 0,  "label": "🧑‍🍼 Болотная Няня — 30 дней", "subscription": "nanny",  "days": 30},
-    # Трудяга: ~$25/мес, автоуход + автофарм 400–700 монет/день
-    {"stars": 800,  "coins": 0,  "label": "🏪 Трудяга — 30 дней",         "subscription": "worker", "days": 30},
+    # Трудяга: автоуход + автофарм. Было 800⭐ — это ~1200₽/мес, цена подписки
+    # на большую игру. Для телеграм-тамагочи потолок месячного чека ниже.
+    {"stars": 350,  "coins": 0,  "label": "🏪 Трудяга — 30 дней",         "subscription": "worker", "days": 30},
 ]
+
+
+def sub_price(kind: str, days: int = 30) -> int:
+    """
+    Цена подписки в звёздах — из STAR_PACKAGES, а не числом в тексте.
+
+    Цена «Трудяги» была вписана руками в девяти местах: на кнопках, в описании,
+    в подсказке после смены тарифа. После переоценки часть из них осталась бы
+    со старым числом, и игрок увидел бы одну цену, а заплатил другую.
+    """
+    for p in STAR_PACKAGES:
+        if p.get("subscription") == kind and p.get("days") == days:
+            return p["stars"]
+    return 0
+
+
+SUB_NANNY_STARS  = sub_price("nanny")
+SUB_WORKER_STARS = sub_price("worker")
 
 # ══════════════════════════════════════════
 # 🎟 ПАКЕТЫ БИЛЕТОВ ГАЧИ (Stars)
@@ -14021,6 +14047,61 @@ async def plog(
         logger.debug("plog error: %s", _e)
 
 
+# ══════════════════════════════════════════════════════════════════════════════
+# 📊  СЧЁТЧИКИ ПРОДАЖ
+# ══════════════════════════════════════════════════════════════════════════════
+# stars_spent считает только общую сумму по игроку и не отвечает на вопрос
+# «что именно берут». Без ответа на него любая правка витрины — гадание.
+#
+# Складываем по дням в settings одной строкой JSON: {позиция: [показов, покупок,
+# звёзд]}. Новых таблиц не заводим, а player_action_log не годится — он
+# чистится через неделю, а время до первой покупки меряется месяцами.
+
+async def sales_bump(sku: str, field: int, stars: int = 0) -> None:
+    """field: 0 — показали предложение, 1 — купили."""
+    key = f"sales_{today_str()}"
+    try:
+        raw = await db_setting(key)
+        data = json.loads(raw) if raw else {}
+    except ValueError:
+        data = {}
+    row = data.get(sku) or [0, 0, 0]
+    row[field] += 1
+    row[2] += stars
+    data[sku] = row
+    await db_setting(key, json.dumps(data, ensure_ascii=False))
+
+
+async def offer_shown(sku: str) -> None:
+    """Игроку показали платное предложение."""
+    await sales_bump(sku, 0)
+
+
+async def purchase_log(uid: int, sku: str, stars: int) -> None:
+    """Покупка состоялась: в дневной счётчик и в личный лог игрока."""
+    await sales_bump(sku, 1, stars)
+    asyncio.create_task(plog(uid, "buy", f"{sku} за {stars}⭐"))
+
+
+async def sales_report(days: int = 7) -> list[tuple[str, int, int, int]]:
+    """Сводка за N дней: (позиция, показов, покупок, звёзд), по выручке вниз."""
+    total: dict[str, list[int]] = {}
+    today = datetime.now(timezone.utc).date()
+    for back in range(days):
+        raw = await db_setting(f"sales_{(today - timedelta(days=back)).strftime('%Y-%m-%d')}")
+        if not raw:
+            continue
+        try:
+            data = json.loads(raw)
+        except ValueError:
+            continue
+        for sku, row in data.items():
+            acc = total.setdefault(sku, [0, 0, 0])
+            for i in range(3):
+                acc[i] += row[i]
+    return sorted(((s, *v) for s, v in total.items()), key=lambda r: -r[3])
+
+
 async def plog_purge_old(days: int = 7) -> int:
     """Удалить записи старше N дней. Возвращает количество удалённых строк."""
     cutoff = time.time() - days * 86400
@@ -16443,6 +16524,66 @@ async def games_screen(f: dict, is_private: bool) -> tuple[str, InlineKeyboardMa
         hint=hint,
     )
     return text, InlineKeyboardMarkup(rows)
+
+
+# ══════════════════════════════════════════════════════════════════════════════
+# ⏳  ЭКРАН КУЛДАУНА
+# ══════════════════════════════════════════════════════════════════════════════
+# Единственная позиция магазина, которую реально покупают, — доп. слот
+# экспедиции. Работает она не из-за цены, а из-за момента: кнопка появляется
+# ровно там, где игра сказала «нельзя». Ускорение ухода сделано по тому же
+# правилу, поэтому отказ по кулдауну — это экран, а не всплывашка: во
+# всплывашку кнопку положить нельзя.
+#
+# Цена растёт вместе с длиной кулдауна: пропустить двадцать минут и пропустить
+# сутки — разные вещи.
+SPEEDUP_ACTIONS = {
+    #  ключ:  (поле времени,     кулдаун,   ⭐, иконка, что ускоряем)
+    "play":  ("last_play",       20 * 60,    2, "🎮", "Игра"),
+    "heal":  ("last_heal",       3600,       3, "❤️", "Лечение"),
+    "wash":  ("last_wash",       2 * 3600,   3, "🧼", "Купание"),
+    "sleep": ("last_sleep",      3 * 3600,   4, "😴", "Сон"),
+    "feed":  ("last_fly_feed",   86400,      8, "🍖", "Муха"),
+}
+
+
+def speedup_left(f: dict, action: str) -> int:
+    """Сколько секунд ещё ждать. 0 — можно прямо сейчас."""
+    field, cd, *_ = SPEEDUP_ACTIONS[action]
+    return max(0, int(cd - (time.time() - (f.get(field) or 0))))
+
+
+def cooldown_screen(f: dict, action: str, reason: str) -> tuple[str, InlineKeyboardMarkup]:
+    """Экран «ещё рано» с кнопкой пропустить ожидание за звёзды."""
+    _, _, stars, icon, name = SPEEDUP_ACTIONS[action]
+    left = speedup_left(f, action)
+    if left >= 3600:
+        when = f"{left // 3600} ч {left % 3600 // 60} мин"
+    elif left >= 60:
+        when = f"{left // 60} мин"
+    else:
+        when = f"{left} сек"
+    text = ui_card(
+        ui_title(icon, name),
+        ui_kv("Готово через", when),
+        hint=reason,
+    )
+    kb = InlineKeyboardMarkup([
+        [btn(f"⭐ Не ждать · {stars}", callback_data=f"speedup_{action}", style="primary")],
+        [btn("◀️ Назад", callback_data="refresh")],
+    ])
+    return text, kb
+
+
+async def show_cooldown(q, f: dict, action: str, reason: str) -> None:
+    """Показать экран кулдауна вместо прежнего alert'а."""
+    await q.answer()
+    asyncio.create_task(offer_shown(f"speedup_{action}"))
+    text, kb = cooldown_screen(f, action, reason)
+    try:
+        await q.message.edit_text(text, parse_mode=ParseMode.HTML, reply_markup=kb)
+    except (BadRequest, Forbidden, TimedOut):
+        pass
 
 
 def settings_screen(f: dict) -> tuple[str, InlineKeyboardMarkup]:
@@ -20460,6 +20601,38 @@ async def cmd_adminbackup(update: Update, ctx: ContextTypes.DEFAULT_TYPE):
 # ══════════════════════════════════════════════════════════════════════════════
 # 📋  /adminlogs — скачать файл логов прямо в Telegram
 # ══════════════════════════════════════════════════════════════════════════════
+
+async def cmd_adminsales(update: Update, ctx: ContextTypes.DEFAULT_TYPE):
+    """/adminsales [дней] — что покупают и с какой конверсией."""
+    if update.effective_user.id not in ADMIN_IDS:
+        return
+    try:
+        days = max(1, min(int(ctx.args[0]), 90)) if ctx.args else 7
+    except (ValueError, IndexError):
+        days = 7
+
+    rows = await sales_report(days)
+    if not rows:
+        await update.message.reply_text(
+            f"{_E_CHART} Продаж за {days} дн. нет.\n"
+            f"<i>Счётчики пишутся с момента установки этой версии.</i>",
+            parse_mode=ParseMode.HTML,
+        )
+        return
+
+    total_stars = sum(r[3] for r in rows)
+    total_buys = sum(r[2] for r in rows)
+    lines = [
+        ui_title(_E_CHART, f"Продажи за {days} дн."),
+        ui_line(f"{total_buys} покупок", f"{total_stars}{_E_STARS}"),
+        "",
+    ]
+    for sku, shown, bought, stars in rows:
+        # Показы считаются не у всех позиций — конверсию пишем только там, где есть
+        conv = f" · {bought * 100 // shown}%" if shown else ""
+        lines.append(f"<code>{sku}</code>\n  {bought} × {stars}{_E_STARS}{conv}")
+    await update.message.reply_text("\n".join(lines), parse_mode=ParseMode.HTML)
+
 
 async def cmd_adminlogs(update: Update, ctx: ContextTypes.DEFAULT_TYPE):
     """
@@ -25076,14 +25249,14 @@ async def cmd_buy(update: Update, ctx: ContextTypes.DEFAULT_TYPE):
         if not trial_used:
             sub_rows.append([btn("🎁 3 дня Трудяги — БЕСПЛАТНО", callback_data="sub_trial_worker", style="success")])
         sub_rows.append([
-            btn("🧑‍🍼 Няня · 200⭐/мес", callback_data="sub_buy_nanny"),
-            btn("🏪 Трудяга · 800⭐/мес", callback_data="sub_buy_worker"),
+            btn(f"🧑‍🍼 Няня · {SUB_NANNY_STARS}⭐/мес", callback_data="sub_buy_nanny"),
+            btn(f"🏪 Трудяга · {SUB_WORKER_STARS}⭐/мес", callback_data="sub_buy_worker"),
         ])
 
     # ── Раздел 2: КваКоины ────────────────────────────────────────────
     coin_rows = []
     for i, p in enumerate(STAR_PACKAGES):
-        if p.get("subscription"):
+        if p.get("hidden") or p.get("subscription"):
             continue
         if p.get("newbie") and not is_newbie_b:
             continue
@@ -25108,8 +25281,8 @@ async def cmd_buy(update: Update, ctx: ContextTypes.DEFAULT_TYPE):
     rate_note  = f"  ✨ Буст ×{stars_mult_b:.1f}" if stars_mult_b > 1.0 else ""
     ticket_str = f" · {_E_COSMETIC}{ui_plural(ticket_count, 'билет', 'билета', 'билетов')}" if ticket_count else ""
     sub_hint   = "" if sub_active else (
-        "\n🧑‍🍼 <b>Няня</b> — автоуход, 200⭐/мес"
-        "\n🏪 <b>Трудяга</b> — уход + 400–700🪙/день, 800⭐/мес"
+        f"\n🧑‍🍼 <b>Няня</b> — автоуход, {SUB_NANNY_STARS}⭐/мес"
+        f"\n🏪 <b>Трудяга</b> — уход + 400–700🪙/день, {SUB_WORKER_STARS}⭐/мес"
     )
 
     text = (
@@ -25279,12 +25452,12 @@ async def cmd_subscribe(update: Update, ctx: ContextTypes.DEFAULT_TYPE):
 
     # ── Карточки подписок ──────────────────────────────────────────────
     nanny_card = (
-        "🧑‍🍼 <b>Болотная Няня</b> <code>200⭐/мес</code>\n"
+        f"🧑‍🍼 <b>Болотная Няня</b> <code>{SUB_NANNY_STARS}⭐/мес</code>\n"
         "Тётя Жаба кормит, моет и укладывает спать лягушку пока ты занят.\n"
         "Показатели держатся на 85% — чтобы тебе было чем заняться после.\n"
     )
     worker_card = (
-        "🏪 <b>Трудяга</b> <code>800⭐/мес</code>\n"
+        f"🏪 <b>Трудяга</b> <code>{SUB_WORKER_STARS}⭐/мес</code>\n"
         "Всё что делает Няня + лягушка ходит на Болотный Рынок.\n"
         "Каждый вечер приносит <b>400–700🪙</b> и отчёт о приключениях.\n"
     )
@@ -25303,15 +25476,15 @@ async def cmd_subscribe(update: Update, ctx: ContextTypes.DEFAULT_TYPE):
             [btn("🔄 Продлить подписку", callback_data="sub_renew")],
         ]
         if sub_type == 1:
-            kb_rows.append([btn("🔼 Улучшить до Трудяги · 800⭐", callback_data="sub_buy_worker", style="primary")])
+            kb_rows.append([btn(f"🔼 Улучшить до Трудяги · {SUB_WORKER_STARS}⭐", callback_data="sub_buy_worker", style="primary")])
     else:
         status_block = "\n❌ <b>Подписка не активна</b>"
         kb_rows = []
         if not trial_used:
             kb_rows.append([btn("🎁 3 дня Трудяги — БЕСПЛАТНО", callback_data="sub_trial_worker", style="success")])
         kb_rows += [
-            [btn("🧑‍🍼 Болотная Няня · 200⭐/мес", callback_data="sub_buy_nanny")],
-            [btn("🏪 Трудяга · 800⭐/мес", callback_data="sub_buy_worker", style="primary")],
+            [btn(f"🧑‍🍼 Болотная Няня · {SUB_NANNY_STARS}⭐/мес", callback_data="sub_buy_nanny")],
+            [btn(f"🏪 Трудяга · {SUB_WORKER_STARS}⭐/мес", callback_data="sub_buy_worker", style="primary")],
         ]
 
     # ── Дневник рабочего дня (только для Трудяги) ─────────────────────
@@ -25404,7 +25577,7 @@ async def cmd_trial(update: Update, ctx: ContextTypes.DEFAULT_TYPE):
             await update.message.reply_text(
                 "😔 <b>Пробный период уже использован.</b>\n\n"
                 "Чтобы снова отправить Квакусю на рынок:\n"
-                "👉 /subscribe → 🏪 Трудяга — 800⭐/мес",
+                f"👉 /subscribe → 🏪 Трудяга — {SUB_WORKER_STARS}⭐/мес",
                 parse_mode=ParseMode.HTML,
             )
         return
@@ -36730,7 +36903,7 @@ async def shop_router(update: Update, ctx: ContextTypes.DEFAULT_TYPE):
             toggle_ss = "⏸ Выключить авто-продление" if sub_auto_ss else "▶️ Включить авто-продление"
             rows_ss.append([btn(toggle_ss, callback_data="sub_toggle_auto")])
             if sub_type_ss == 1:
-                rows_ss.append([btn("🔼 Улучшить до Трудяги — 800⭐", callback_data="sub_buy_worker")])
+                rows_ss.append([btn(f"🔼 Улучшить до Трудяги — {SUB_WORKER_STARS}⭐", callback_data="sub_buy_worker")])
             rows_ss.append([btn("🔄 Продлить подписку", callback_data="sub_renew")])
         else:
             # Бесплатный пробник Трудяги — только после того как пробник Няни уже закончился
@@ -36738,8 +36911,8 @@ async def shop_router(update: Update, ctx: ContextTypes.DEFAULT_TYPE):
                 rows_ss.append([btn("🎁 3 дня Болотной Няни бесплатно", callback_data="sub_trial_nanny")])
             elif nanny_trial_expired and not trial_worker:
                 rows_ss.append([btn("🎁 1 день Трудяги бесплатно", callback_data="sub_trial_worker")])
-            rows_ss.append([btn("🧑‍🍼 Болотная Няня — 200⭐/мес", callback_data="sub_buy_nanny")])
-            rows_ss.append([btn("🏪 Трудяга — 800⭐/мес", callback_data="sub_buy_worker")])
+            rows_ss.append([btn(f"🧑‍🍼 Болотная Няня — {SUB_NANNY_STARS}⭐/мес", callback_data="sub_buy_nanny")])
+            rows_ss.append([btn(f"🏪 Трудяга — {SUB_WORKER_STARS}⭐/мес", callback_data="sub_buy_worker")])
 
         # Дневник рабочего дня (только для активной Трудяги)
         workday_block_ss = ""
@@ -37546,19 +37719,21 @@ async def shop_router(update: Update, ctx: ContextTypes.DEFAULT_TYPE):
         daily_used_q = await db_setting(f"deal_{uid}") == today_s_q
         kb_rows = []
         for i, p in enumerate(STAR_PACKAGES):
+            if p.get("hidden") or p.get("subscription"):
+                continue
             if p.get("newbie") and not user_is_newbie_q:
                 continue
             if p.get("daily_deal") and daily_used_q:
                 continue
             coins_display_quick = int(p["coins"] * stars_mult_quick)
-            farm_min = p.get("farm_min", 0)
-            farm_str = f"≈{farm_min}мин" if farm_min < 60 else f"≈{farm_min//60}ч"
+            # Раньше на кнопке стояло «≈8мин» — за сколько это фармится даром.
+            # Витрина сама отговаривала от покупки.
             if p.get("newbie"):
-                lbl_quick = f"{_E_GIFT} {p['stars']}{_E_STARS} → {coins_display_quick}🪙 ({farm_str})"
+                lbl_quick = f"{_E_GIFT} {p['stars']}{_E_STARS} → {coins_display_quick}🪙 первая"
             elif p.get("daily_deal"):
-                lbl_quick = f"🌅 {p['stars']}{_E_STARS} → {coins_display_quick}🪙 (ежедн.)"
+                lbl_quick = f"🌅 {p['stars']}{_E_STARS} → {coins_display_quick}🪙 сегодня"
             else:
-                lbl_quick = f"{_E_STARS} {p['stars']} Stars → {coins_display_quick}🪙 ({farm_str})"
+                lbl_quick = f"{_E_STARS} {p['stars']} → {coins_display_quick}🪙"
             if stars_mult_quick > 1.0 and not p.get("newbie") and not p.get("daily_deal"):
                 lbl_quick += " ✨"
             kb_rows.append([btn(lbl_quick, callback_data=f"buy_pkg_{i}")])
@@ -37670,7 +37845,7 @@ async def shop_router(update: Update, ctx: ContextTypes.DEFAULT_TYPE):
 
         coin_rows = []
         for i, p in enumerate(STAR_PACKAGES):
-            if p.get("subscription"):
+            if p.get("hidden") or p.get("subscription"):
                 continue  # подписки — не монеты, убираем из этого списка
             if p.get("newbie") and not user_is_newbie:
                 continue
@@ -37678,14 +37853,12 @@ async def shop_router(update: Update, ctx: ContextTypes.DEFAULT_TYPE):
                 if daily_used:
                     continue  # уже использовано сегодня
             coins_display = int(p["coins"] * stars_mult)
-            farm_min = p.get("farm_min", 0)
-            farm_str = f"≈{farm_min}мин" if farm_min < 60 else f"≈{farm_min//60}ч{farm_min%60 or ''}мин"
             if p.get("newbie"):
-                lbl = f"{_E_GIFT} {p['stars']}{_E_STARS} → {coins_display}🪙 ({farm_str})"
+                lbl = f"{_E_GIFT} {p['stars']}{_E_STARS} → {coins_display}🪙 первая"
             elif p.get("daily_deal"):
-                lbl = f"🌅 {p['stars']}{_E_STARS} → {coins_display}🪙 Ежедн. предложение"
+                lbl = f"🌅 {p['stars']}{_E_STARS} → {coins_display}🪙 сегодня"
             else:
-                lbl = f"{_E_STARS} {p['stars']} Stars → {coins_display}🪙 ({farm_str})"
+                lbl = f"{_E_STARS} {p['stars']} → {coins_display}🪙"
                 if is_boosted:
                     lbl += " ✨"
             coin_rows.append(
@@ -37891,7 +38064,7 @@ async def shop_router(update: Update, ctx: ContextTypes.DEFAULT_TYPE):
             # Обновляем экран подписки
             try:
                 await q.message.edit_reply_markup(reply_markup=InlineKeyboardMarkup([
-                    [btn("🏪 Трудяга — 800⭐/мес", callback_data="sub_buy_worker")],
+                    [btn(f"🏪 Трудяга — {SUB_WORKER_STARS}⭐/мес", callback_data="sub_buy_worker")],
                     [btn("🎁 1 день Трудяги бесплатно", callback_data="sub_trial_worker")],
                     [btn("◀️ Назад", callback_data="menu_shop")],
                 ]))
@@ -38205,6 +38378,31 @@ async def on_callback(update: Update, ctx: ContextTypes.DEFAULT_TYPE):
             msg_key = f"{q.message.chat.id}_{q.message.message_id}"
             ctx.bot_data.setdefault("msg_owner", {})[msg_key] = uid
         await show_status(q, f, edit=True)
+        return
+
+    # ── Пропустить кулдаун ухода за Stars ───────────────────────────────
+    if d.startswith("speedup_") and d[len("speedup_"):] in SPEEDUP_ACTIONS:
+        action = d[len("speedup_"):]
+        _, _, stars_sp, icon_sp, name_sp = SPEEDUP_ACTIONS[action]
+        if speedup_left(f, action) <= 0:
+            # Пока игрок думал, кулдаун истёк — деньги за это брать не за что
+            await q.answer("Уже можно, счёт не нужен")
+            await show_status(q, f, edit=True)
+            return
+        await q.answer()
+        try:
+            await ctx.bot.send_invoice(
+                chat_id=uid,
+                title=f"{icon_sp} {name_sp} без ожидания",
+                description="Кулдаун снимется сразу после оплаты.",
+                payload=f"speedup_{action}",
+                provider_token="",
+                currency="XTR",
+                prices=[LabeledPrice(f"{name_sp} сейчас", stars_sp)],
+            )
+        except (BadRequest, Forbidden, TimedOut) as e:
+            logger.warning("счёт на ускорение не ушёл: %s", e)
+            await q.answer("Не получилось выставить счёт", show_alert=True)
         return
 
     # ── ВОСКРЕШЕНИЕ ЧЕРЕЗ КНОПКУ (confirm) ─────────
@@ -38729,9 +38927,7 @@ async def on_callback(update: Update, ctx: ContextTypes.DEFAULT_TYPE):
         now = time.time()
         cd = 20 * 60
         if now - f["last_play"] < cd:
-            await q.answer(
-                f"⏳ Ещё {int((cd-(now-f['last_play']))/60)} мин.", show_alert=True
-            )
+            await show_cooldown(q, f, "play", "Лягушка ещё не наигралась")
             return
         kb = InlineKeyboardMarkup(
             [
@@ -38775,9 +38971,7 @@ async def on_callback(update: Update, ctx: ContextTypes.DEFAULT_TYPE):
         now = time.time()
         cd = 20 * 60
         if now - f["last_play"] < cd:
-            await q.answer(
-                f"⏳ Ещё {int((cd-(now-f['last_play']))/60)} мин.", show_alert=True
-            )
+            await show_cooldown(q, f, "play", "Лягушка ещё не наигралась")
             return
         label, xp_b, hap_b, anim_text = PLAY_OPTS[d]
         await send_action_sticker(ctx.bot, q.message.chat.id, "play")
@@ -38824,10 +39018,7 @@ async def on_callback(update: Update, ctx: ContextTypes.DEFAULT_TYPE):
         now = time.time()
         cd = 2 * 3600
         if now - f.get("last_wash", 0) < cd:
-            await q.answer(
-                f"🛁 Ещё чистая. Подожди {int((cd-(now-f['last_wash']))/60)} мин.",
-                show_alert=True,
-            )
+            await show_cooldown(q, f, "wash", "Лягушка ещё чистая")
             return
         await send_action_sticker(ctx.bot, q.message.chat.id, "wash")
         await send_wash_sticker(ctx.bot, q.message.chat.id)
@@ -38870,10 +39061,7 @@ async def on_callback(update: Update, ctx: ContextTypes.DEFAULT_TYPE):
         now = time.time()
         cd = 3 * 3600
         if now - f.get("last_sleep", 0) < cd:
-            await q.answer(
-                f"😴 Не хочет спать. Подожди {int((cd-(now-f['last_sleep']))/60)} мин.",
-                show_alert=True,
-            )
+            await show_cooldown(q, f, "sleep", "Лягушка не хочет спать")
             return
         await send_action_sticker(ctx.bot, q.message.chat.id, "sleep")
         await send_sleep_sticker(ctx.bot, q.message.chat.id)
@@ -39614,13 +39802,13 @@ async def on_callback(update: Update, ctx: ContextTypes.DEFAULT_TYPE):
             toggle_ss = "⏸ Поставить на паузу" if sub_auto_ss else "▶️ Возобновить"
             rows_ss.append([btn(toggle_ss, callback_data="sub_toggle_auto")])
             if sub_type_ss == 1:
-                rows_ss.append([btn("🔼 Улучшить до Трудяги — 800⭐", callback_data="sub_buy_worker")])
+                rows_ss.append([btn(f"🔼 Улучшить до Трудяги — {SUB_WORKER_STARS}⭐", callback_data="sub_buy_worker")])
             rows_ss.append([btn("🔄 Продлить подписку", callback_data="sub_renew")])
         else:
             if not trial_used_ss:
                 rows_ss.append([btn("🎁 3 дня Трудяги бесплатно", callback_data="sub_trial_worker")])
-            rows_ss.append([btn("🧑‍🍼 Болотная Няня — 200⭐/мес", callback_data="sub_buy_nanny")])
-            rows_ss.append([btn("🏪 Трудяга — 800⭐/мес", callback_data="sub_buy_worker")])
+            rows_ss.append([btn(f"🧑‍🍼 Болотная Няня — {SUB_NANNY_STARS}⭐/мес", callback_data="sub_buy_nanny")])
+            rows_ss.append([btn(f"🏪 Трудяга — {SUB_WORKER_STARS}⭐/мес", callback_data="sub_buy_worker")])
 
         # ── Дневник рабочего дня (только для Трудяги) ────────────────────────
         workday_block_ss = ""
@@ -48385,6 +48573,7 @@ async def successful_payment(update: Update, ctx: ContextTypes.DEFAULT_TYPE):
         f["stars_spent"] = f.get("stars_spent", 0) + stars_paid
         await db_save(f)
         await _pay_ref_commission(user.id, stars_paid)
+        await purchase_log(user.id, "exp_extra_slot", stars_paid)
         # Показываем активные лобби сразу после оплаты
         try:
             async with aiosqlite.connect(DB_PATH) as _edb:
@@ -48602,6 +48791,9 @@ async def successful_payment(update: Update, ctx: ContextTypes.DEFAULT_TYPE):
         f["stars_spent"] = f.get("stars_spent", 0) + stars_paid
         await db_save(f)
         await _pay_ref_commission(user.id, stars_paid)
+        await purchase_log(user.id, "kva_retry", stars_paid)
+        await purchase_log(user.id, "kva_retry_10", stars_paid)
+        await purchase_log(user.id, "adv_extra_slot", stars_paid)
         await update.message.reply_text(
             "⚔️ <b>Дополнительный слот похода открыт!</b>\n\n"
             "Сегодня доступно ещё <b>8 часов</b> болотных приключений.\n"
@@ -48611,6 +48803,24 @@ async def successful_payment(update: Update, ctx: ContextTypes.DEFAULT_TYPE):
         await announce(ctx.bot,
             f"{_E_STARS} <b>Stars: доп. слот похода!</b> {user.first_name} купил +8ч за {stars_paid}{_E_STARS}",
             admin_only=True,
+        )
+        return
+
+    if payload.startswith("speedup_") and payload[len("speedup_"):] in SPEEDUP_ACTIONS:
+        action = payload[len("speedup_"):]
+        field, _, _, icon_sp, name_sp = SPEEDUP_ACTIONS[action]
+        f[field] = 0                      # кулдаун считается от этого времени
+        f["stars_spent"] = f.get("stars_spent", 0) + stars_paid
+        await db_save(f)
+        await _pay_ref_commission(user.id, stars_paid)
+        await purchase_log(user.id, f"speedup_{action}", stars_paid)
+        await update.message.reply_text(
+            ui_card(
+                ui_title(icon_sp, f"{name_sp} без ожидания"),
+                "Кулдаун снят, можно прямо сейчас.",
+            ),
+            parse_mode=ParseMode.HTML,
+            reply_markup=InlineKeyboardMarkup([[btn("🐸 К лягушке", callback_data="refresh")]]),
         )
         return
 
@@ -48624,6 +48834,7 @@ async def successful_payment(update: Update, ctx: ContextTypes.DEFAULT_TYPE):
         f["stars_spent"] = f.get("stars_spent", 0) + stars_paid
         await db_save(f)
         await _pay_ref_commission(user.id, stars_paid)
+        await purchase_log(user.id, "revive_instant", stars_paid)
         frog_n = fname(f)
         await update.message.reply_text(
             f"✨ <b>{frog_n} воскресла!</b>\n\n"
@@ -48651,6 +48862,7 @@ async def successful_payment(update: Update, ctx: ContextTypes.DEFAULT_TYPE):
             f["stars_spent"] = f.get("stars_spent", 0) + stars_paid
             await db_save(f)
             await _pay_ref_commission(user.id, stars_paid)
+            await purchase_log(user.id, "seasonal_skin", stars_paid)
             until_p = datetime.fromtimestamp(sdata_p["ends_at"], tz=timezone.utc).strftime("%d.%m.%Y")
             await update.message.reply_text(
                 f"✨ <b>Сезонный облик получен!</b>\n\n"
@@ -48687,6 +48899,7 @@ async def successful_payment(update: Update, ctx: ContextTypes.DEFAULT_TYPE):
         f["stars_spent"] = f.get("stars_spent", 0) + stars_paid
         await db_save(f)
         await _pay_ref_commission(user.id, stars_paid)
+        await purchase_log(user.id, "subscription", stars_paid)
         async with aiosqlite.connect(DB_PATH) as _db:
             await _db.execute(
                 "INSERT INTO coin_log(user_id, amount, reason, ts) VALUES(?,?,?,?)",
@@ -48722,6 +48935,7 @@ async def successful_payment(update: Update, ctx: ContextTypes.DEFAULT_TYPE):
         f["stars_spent"] = f.get("stars_spent", 0) + stars_paid
         await db_save(f)
         await _pay_ref_commission(user.id, stars_paid)
+        await purchase_log(user.id, "gacha_ticket", stars_paid)
         await announce(
             ctx.bot,
             f"🎟 <b>Покупка билетов!</b>\n"
@@ -48753,6 +48967,7 @@ async def successful_payment(update: Update, ctx: ContextTypes.DEFAULT_TYPE):
         f["stars_spent"] = f.get("stars_spent", 0) + stars_paid
         await db_save(f)
         await _pay_ref_commission(user.id, stars_paid)
+        await purchase_log(user.id, "secretgift", stars_paid)
         if ok:
             await announce(
                 ctx.bot,
@@ -48808,6 +49023,7 @@ async def successful_payment(update: Update, ctx: ContextTypes.DEFAULT_TYPE):
     f["stars_spent"] = f.get("stars_spent", 0) + stars_paid
     await db_save(f)
     await _pay_ref_commission(user.id, stars_paid)
+    await purchase_log(user.id, f"coins_{pkg['stars']}", stars_paid)
     boost_note = f" (×{stars_mult:.1f} Золотая лягушка)" if stars_mult > 1.0 else ""
     await announce(
         ctx.bot,
@@ -68279,6 +68495,7 @@ def main():
     app.add_handler(CommandHandler("backup", cmd_backup))
     app.add_handler(CommandHandler("adminbackup", cmd_adminbackup))
     app.add_handler(CommandHandler("adminlogs",   cmd_adminlogs))
+    app.add_handler(CommandHandler("adminsales",  cmd_adminsales))
     app.add_handler(CommandHandler("admin_nft_recheck", cmd_admin_nft_recheck))
     app.add_handler(CommandHandler("admin_nft_invite",  cmd_admin_nft_invite))
     # ── Расследование ботоводов ───────────────────────────────────────────
