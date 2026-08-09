@@ -14092,6 +14092,41 @@ async def purchase_log(uid: int, sku: str, stars: int) -> None:
     asyncio.create_task(plog(uid, "buy", f"{sku} за {stars}⭐"))
 
 
+async def funnel_bump(step) -> None:
+    """
+    Отметить прохождение шага знакомства.
+
+    Считается так же, как продажи: одна JSON-строка на день в settings. Нужен,
+    чтобы разговор «работает ли онбординг» шёл по цифрам, а не по ощущениям —
+    видно, на каком шаге люди закрывают бота.
+    """
+    key = f"funnel_{today_str()}"
+    try:
+        raw = await db_setting(key)
+        data = json.loads(raw) if raw else {}
+    except ValueError:
+        data = {}
+    data[str(step)] = data.get(str(step), 0) + 1
+    await db_setting(key, json.dumps(data, ensure_ascii=False))
+
+
+async def funnel_report(days: int = 7) -> dict[str, int]:
+    """Сколько человек дошло до каждого шага за N дней."""
+    total: dict[str, int] = {}
+    today = datetime.now(timezone.utc).date()
+    for back in range(days):
+        raw = await db_setting(f"funnel_{(today - timedelta(days=back)).strftime('%Y-%m-%d')}")
+        if not raw:
+            continue
+        try:
+            data = json.loads(raw)
+        except ValueError:
+            continue
+        for step, n in data.items():
+            total[step] = total.get(step, 0) + n
+    return total
+
+
 async def sales_report(days: int = 7) -> list[tuple[str, int, int, int]]:
     """Сводка за N дней: (позиция, показов, покупок, звёзд), по выручке вниз."""
     total: dict[str, list[int]] = {}
@@ -16534,6 +16569,144 @@ async def games_screen(f: dict, is_private: bool) -> tuple[str, InlineKeyboardMa
         hint=hint,
     )
     return text, InlineKeyboardMarkup(rows)
+
+
+# ══════════════════════════════════════════════════════════════════════════════
+# 🐣  ЗНАКОМСТВО
+# ══════════════════════════════════════════════════════════════════════════════
+# Раньше первым, что видел человек, был вопрос «Как назовёшь свою лягушку?
+# Напиши имя (1–20 символов)». То есть первым действием в игре было печатать
+# текст — самый высокий барьер, какой можно поставить. Награды до самого конца
+# не было ни одной, а облик предлагалось выбрать из тринадцати названий
+# человеку, который игры ещё не видел.
+#
+# Теперь наоборот: сначала три тапа с наградой за каждый, имя — в конце, когда
+# игроку уже есть к кому привязываться. Ни одного ввода текста до самого конца,
+# ни одного экрана с правилами: кнопка появляется тогда, когда до неё дошёл ход.
+#
+# Награды здесь свои, а не боевые: за настоящие муху, игру и купание новичок
+# получил бы 5 монет и 42 XP — этого мало и на второй уровень не хватает.
+# Сумма XP подобрана так, чтобы третье действие ровно закрывало первый уровень
+# (xp_need(1) = 50), а 50 монет хватило на первый облик в лавке.
+ONBOARD_STEPS = {
+    1: {
+        "cb":     "ob_feed",
+        "button": "🍖 Покормить",
+        "title":  "Лягушка",
+        "body":   "На кочке перед тобой сидит лягушка.\nСмотрит выжидающе.",
+        "hint":   "Кажется, она голодная",
+    },
+    2: {
+        "cb":     "ob_play",
+        "button": "🎮 Поиграть",
+        "title":  "Съела муху",
+        "body":   "<i>Хвать! Муха исчезла.</i>",
+        "hint":   "Ей понравилось — подпрыгивает",
+        "reward": {"xp": 10, "coins": 15, "hunger": 15},
+    },
+    3: {
+        "cb":     "ob_wash",
+        "button": "🧼 Искупать",
+        "title":  "Наигралась",
+        "body":   "<i>Прыг-прыг по кочкам.</i>",
+        "hint":   "Довольная, но вся в тине",
+        "reward": {"xp": 20, "coins": 20, "happiness": 25},
+    },
+    4: {
+        "cb":     None,          # шаг имени — кнопки собираются отдельно
+        "title":  "Чистая",
+        "body":   "<i>Бульк-бульк.</i>\n\nСытая, довольная и, кажется,\nсчитает тебя своим.",
+        "hint":   "Как её зовут?",
+        "reward": {"xp": 20, "coins": 15, "cleanliness": 25},
+    },
+}
+
+
+def onboard_default_name(f: dict) -> str:
+    """Имя, которое предлагается кнопкой: из Telegram, обрезанное под лимит игры."""
+    return (f.get("first_name") or "Квакуша").strip()[:20] or "Квакуша"
+
+
+def onboard_screen(f: dict, step: int, extra: str = "") -> tuple[str, InlineKeyboardMarkup]:
+    """Экран знакомства. Один шаг — одна кнопка, читать нечего."""
+    s = ONBOARD_STEPS[step]
+    blocks = [s["body"]]
+    if extra:
+        blocks.append(extra)
+
+    if step == 4:
+        # Имя предлагается кнопкой: печатать необязательно.
+        # На кнопке подрезаем до двенадцати знаков — с длинным именем из
+        # Telegram подпись уезжает за ширину экрана телефона.
+        default_name = onboard_default_name(f)
+        shown = default_name if len(default_name) <= 12 else default_name[:11] + "…"
+        kb = InlineKeyboardMarkup([
+            [btn(f"Пусть будет {shown}", callback_data="ob_name_keep", style="success")],
+            [btn("✏️ Придумаю сам", callback_data="ob_name_ask")],
+        ])
+    else:
+        kb = InlineKeyboardMarkup([[btn(s["button"], callback_data=s["cb"], style="primary")]])
+
+    return ui_card(ui_title(_E_FROG, s["title"]), *blocks, hint=s["hint"]), kb
+
+
+def onboard_reward_line(f: dict, reward: dict, leveled: bool = False) -> str:
+    """
+    Награда шага и прогресс.
+
+    Если шаг закрыл уровень, полоску не показываем: после повышения она
+    обнуляется, и вместо праздника игрок увидел бы пустую шкалу к следующему.
+    """
+    parts = []
+    if reward.get("coins"):
+        parts.append(f"+{reward['coins']}{_E_COIN}")
+    if reward.get("xp"):
+        parts.append(f"+{reward['xp']} XP")
+    head = f"<b>{' '.join(parts)}</b>"
+    if leveled:
+        return f"{head}\n{_E_LEVEL} <b>Уровень {f['level']}</b>"
+    need = xp_need(f["level"])
+    pct = min(100, int(f["xp"] / need * 100)) if need else 100
+    return f"{head}\n<code>{bar(pct)}</code> до {f['level'] + 1} уровня"
+
+
+async def onboard_apply(f: dict, step: int, bot) -> str:
+    """Начислить награду шага. Возвращает готовую строку для экрана."""
+    reward = ONBOARD_STEPS[step].get("reward")
+    if not reward:
+        return ""
+    for stat in ("hunger", "happiness", "cleanliness"):
+        if reward.get(stat):
+            f[stat] = min(100, f.get(stat, 0) + reward[stat])
+    f["coins"] = f.get("coins", 0) + reward.get("coins", 0)
+    was_level = f.get("level", 1)
+    add_xp(f, reward.get("xp", 0))
+    # Кулдауны намеренно не трогаем: это показательное действие, и сразу после
+    # знакомства игрок должен иметь возможность сделать то же самое по-настоящему.
+    await levelup(f, bot)
+    return onboard_reward_line(f, reward, leveled=f.get("level", 1) > was_level)
+
+
+async def onboard_finish(q, f: dict, ctx) -> None:
+    """Знакомство закончено — отдаём игрока обычному экрану лягушки."""
+    f["onboard_step"] = 0
+    f["first_time"] = 0
+    await db_save(f)
+    await funnel_bump("done")
+    is_grp = q.message.chat.type in ("group", "supergroup") if q.message else False
+    text = ui_card(
+        status_text(f),
+        f"{_E_LEAF} Загляни завтра — начнётся серия.",
+    )
+    try:
+        await q.message.edit_text(
+            text,
+            parse_mode=ParseMode.HTML,
+            reply_markup=await main_kb_live(f, is_group=is_grp),
+            link_preview_options=LinkPreviewOptions(),
+        )
+    except (BadRequest, Forbidden, TimedOut):
+        pass
 
 
 # ══════════════════════════════════════════════════════════════════════════════
@@ -19384,11 +19557,14 @@ async def new_frog(user) -> dict:
         "skin": "Brownie",
         "level": 1,
         "xp": 0,
-        "hunger": 100,
-        "happiness": 100,
-        "health": 100,
-        "cleanliness": 100,
-        "energy": 100,
+        # Лягушку только что нашли на болоте — она не в идеальной форме.
+        # Иначе первый экран знакомства («кажется, она голодная») врёт, а три
+        # первых действия не дают увидеть, что от них что-то меняется.
+        "hunger": 55,
+        "happiness": 60,
+        "health": 85,
+        "cleanliness": 45,
+        "energy": 70,
         "coins": 50,
         "last_feed": 0,
         "last_fly_feed": 0,
@@ -20641,6 +20817,42 @@ async def cmd_adminsales(update: Update, ctx: ContextTypes.DEFAULT_TYPE):
         # Показы считаются не у всех позиций — конверсию пишем только там, где есть
         conv = f" · {bought * 100 // shown}%" if shown else ""
         lines.append(f"<code>{sku}</code>\n  {bought} × {stars}{_E_STARS}{conv}")
+    await update.message.reply_text("\n".join(lines), parse_mode=ParseMode.HTML)
+
+
+async def cmd_adminfunnel(update: Update, ctx: ContextTypes.DEFAULT_TYPE):
+    """/adminfunnel [дней] — сколько новичков доходит до каждого шага знакомства."""
+    if update.effective_user.id not in ADMIN_IDS:
+        return
+    try:
+        days = max(1, min(int(ctx.args[0]), 90)) if ctx.args else 7
+    except (ValueError, IndexError):
+        days = 7
+
+    data = await funnel_report(days)
+    started = data.get("1", 0)
+    if not started:
+        await update.message.reply_text(
+            f"{_E_CHART} Новичков за {days} дн. нет.\n"
+            f"<i>Счётчик пишется с момента установки этой версии.</i>",
+            parse_mode=ParseMode.HTML,
+        )
+        return
+
+    names = {
+        "1": "Открыл бота",
+        "2": "Покормил",
+        "3": "Поиграл",
+        "4": "Искупал",
+        "done": "Назвал и дошёл",
+    }
+    lines = [ui_title(_E_CHART, f"Знакомство за {days} дн."), ""]
+    for key, label in names.items():
+        n = data.get(key, 0)
+        pct = n * 100 // started
+        lines.append(f"<code>{bar(pct)}</code> {n} · {label}")
+    lost = started - data.get("done", 0)
+    lines.append(f"\n<i>Не дошло: {lost} из {started}</i>")
     await update.message.reply_text("\n".join(lines), parse_mode=ParseMode.HTML)
 
 
@@ -22663,22 +22875,20 @@ async def cmd_start(update: Update, ctx: ContextTypes.DEFAULT_TYPE):
                 # Чисто → выдаём +50 монет рефереру сразу
                 await _referral_stage_reward(referrer_id, user.id, 0, ctx.bot)
 
-        # ── ОНБОРДИНГ — шаг 1: имя лягушки ────────────────────────────────────
-        ctx.user_data[f"onboard_naming_{user.id}"] = True
+        # ── ЗНАКОМСТВО — шаг 1: одна кнопка, ноль чтения ──────────────────────
+        f["onboard_step"] = 1
+        await db_save(f)
+        await funnel_bump(1)
+        _ob_extra = ""
+        if referrer_id:
+            _ref_f = await db_get(referrer_id)
+            if _ref_f:
+                _ob_extra = f"{_E_USERS} Тебя позвал {he(fname(_ref_f))}."
+        _ob_text, _ob_kb = onboard_screen(f, 1, extra=_ob_extra)
         await update.message.reply_text(
-            f"🐸 <b>Добро пожаловать!</b>\n\n"
-            f"Как назовёшь свою лягушку?\n"
-            f"<i>Напиши имя (1–20 символов) или нажми «Пропустить»</i>",
-            parse_mode=ParseMode.HTML,
-            reply_markup=InlineKeyboardMarkup([[
-                btn("⏭ Пропустить", callback_data="onboard_skip"),
-            ]]),
+            _ob_text, parse_mode=ParseMode.HTML, reply_markup=_ob_kb,
         )
-        return  # ── конец онбординга ──
-
-        # ── Текущий режим: сразу показываем меню ── (недостижимо, оставлено для отката)
-        f = decay(f)
-        await show_status(update, f)
+        return
     else:
         f = decay(f)
         f["first_name"] = user.first_name or f["first_name"]
@@ -35433,6 +35643,80 @@ async def duel_run(q, uid: int, f: dict, duel_id: int, ctx) -> None:
     return
 
 
+# ══════════════════════════════════════════════════════════════════════════════
+# 🐣  РОУТЕР ЗНАКОМСТВА
+# ══════════════════════════════════════════════════════════════════════════════
+# Отдельный роутер с pattern=^ob_, чтобы первые нажатия новичка не проходили
+# через сотни чужих условий: первое впечатление — это в том числе скорость.
+async def onboard_router(update: Update, ctx: ContextTypes.DEFAULT_TYPE):
+    q = update.callback_query
+    uid = q.from_user.id
+    d = q.data
+    f = await db_get(uid)
+    if not f:
+        await q.answer("Сначала напиши /start", show_alert=True)
+        return
+
+    # Шаг → какое нажатие его закрывает
+    step_by_cb = {s["cb"]: n for n, s in ONBOARD_STEPS.items() if s["cb"]}
+
+    if d in step_by_cb:
+        done_step = step_by_cb[d]
+        next_step = done_step + 1
+        await q.answer()
+        await funnel_bump(next_step)
+        s = ONBOARD_STEPS[done_step]
+        # Анимация даёт ту самую паузу перед наградой: цифры не должны
+        # появляться мгновенно, иначе действие не ощущается как событие.
+        await animate(q, ui_card(ui_title(_E_FROG, s["title"]), f"<i>{s['button'][2:]}…</i>"))
+        reward_line = await onboard_apply(f, next_step, ctx.bot)
+        f["onboard_step"] = next_step
+        await db_save(f)
+        text, kb = onboard_screen(f, next_step, extra=reward_line)
+        try:
+            await q.message.edit_text(text, parse_mode=ParseMode.HTML, reply_markup=kb)
+        except (BadRequest, Forbidden, TimedOut):
+            pass
+        return
+
+    if d == "ob_name_keep":
+        await q.answer()
+        f["frog_name"] = censor_frog_name(onboard_default_name(f))
+        await onboard_finish(q, f, ctx)
+        return
+
+    if d == "ob_name_ask":
+        await q.answer()
+        ctx.user_data[f"onboard_naming_{uid}"] = True
+        try:
+            await q.message.edit_text(
+                ui_card(
+                    ui_title(_E_PENCIL, "Имя"),
+                    "Напиши, как её зовут.",
+                    hint="От 1 до 20 символов",
+                ),
+                parse_mode=ParseMode.HTML,
+                reply_markup=InlineKeyboardMarkup([[
+                    btn("◀️ Назад", callback_data="ob_name_back"),
+                ]]),
+            )
+        except (BadRequest, Forbidden, TimedOut):
+            pass
+        return
+
+    if d == "ob_name_back":
+        await q.answer()
+        ctx.user_data.pop(f"onboard_naming_{uid}", None)
+        text, kb = onboard_screen(f, 4)
+        try:
+            await q.message.edit_text(text, parse_mode=ParseMode.HTML, reply_markup=kb)
+        except (BadRequest, Forbidden, TimedOut):
+            pass
+        return
+
+    await on_callback(update, ctx)
+
+
 async def duel_router(update: Update, ctx: ContextTypes.DEFAULT_TYPE):
     _g = await cb_guard(update, ctx)
     if _g is None:
@@ -39603,60 +39887,13 @@ async def on_callback(update: Update, ctx: ContextTypes.DEFAULT_TYPE):
             pass
         return
 
-    if d in ("onboard_try_feed", "onboard_try_wash", "onboard_try_sleep",
-             "onboard_to_games"):
-        # Устаревшие шаги туториала — просто завершаем онбординг
+    # Кнопки прежней схемы знакомства. Живут только ради сообщений, которые
+    # уже висят у игроков в чате: нажатие должно что-то делать, а не молчать.
+    if d.startswith("onboard_"):
         await q.answer()
-        f["onboard_step"] = 0
-        f["first_time"] = 0
-        await db_save(f)
-        _is_grp = q.message.chat.type in ("group", "supergroup") if q.message else False
-        try:
-            await q.message.edit_text(
-                status_text(f),
-                parse_mode=ParseMode.HTML,
-                reply_markup=await main_kb_live(f, is_group=_is_grp),
-                link_preview_options=LinkPreviewOptions(),
-            )
-        except (BadRequest, Forbidden, TimedOut):
-            pass
-        return
-
-    if d == "onboard_finish":
-        await q.answer()
-        f["onboard_step"] = 0
-        f["first_time"] = 0
-        await db_save(f)
-        _is_grp = q.message.chat.type in ("group", "supergroup") if q.message else False
-        try:
-            await q.message.edit_text(
-                status_text(f),
-                parse_mode=ParseMode.HTML,
-                reply_markup=await main_kb_live(f, is_group=_is_grp),
-                link_preview_options=LinkPreviewOptions(),
-            )
-        except (BadRequest, Forbidden, TimedOut):
-            pass
-        return
-
-    if d == "onboard_skip":
-        await q.answer()
-        # Устанавливаем имя из Telegram если не было задано в онбординге
         if not f.get("frog_name"):
-            f["frog_name"] = (q.from_user.first_name or "Лягушка")[:20]
-        f["first_time"] = 0
-        f["onboard_step"] = 0
-        await db_save(f)
-        _is_grp = q.message.chat.type in ("group", "supergroup") if q.message else False
-        try:
-            await q.message.edit_text(
-                status_text(f),
-                parse_mode=ParseMode.HTML,
-                reply_markup=await main_kb_live(f, is_group=_is_grp),
-                link_preview_options=LinkPreviewOptions(),
-            )
-        except (BadRequest, Forbidden, TimedOut):
-            pass
+            f["frog_name"] = censor_frog_name((q.from_user.first_name or "Квакуша")[:20])
+        await onboard_finish(q, f, ctx)
         return
 
     # ── КОНКУРС: личная статистика (кнопка из главного меню / меню игр) ──────
@@ -49667,31 +49904,31 @@ async def on_message(update: Update, ctx: ContextTypes.DEFAULT_TYPE):
                 f_ob["frog_name"] = censor_frog_name(text)
                 f_ob["onboard_step"] = 2
                 await db_save(f_ob)
-            # Шаг 2: выбор стартового облика из обычных
-            common_skins = [(k, v) for k, v in SKINS.items() if v.get("rarity") == "common"]
-            skin_rows = []
-            row = []
-            for i, (sk, sv) in enumerate(common_skins):
-                row.append(skin_btn(sk, sk, f"onboard_skin_{sk}"))
-                if len(row) == 2 or i == len(common_skins) - 1:
-                    skin_rows.append(row)
-                    row = []
-            # Кнопка пропуска выбора облика
-            skin_rows.append([btn("⏭ Пропустить выбор облика", callback_data="onboard_skip")])
-            kb_skins = InlineKeyboardMarkup(skin_rows)
-            await update.message.reply_text(
-                f"✨ Отлично! Твою лягушку зовут <b>{he(text)}</b>!\n\n"
-                f"🎨 <b>Стартовый облик</b>",
-                parse_mode=ParseMode.HTML,
-                reply_markup=kb_skins,
-            )
+            # Имя было последним шагом — знакомство закончено
+            if f_ob:
+                f_ob["onboard_step"] = 0
+                f_ob["first_time"] = 0
+                await db_save(f_ob)
+                await funnel_bump("done")
+                await update.message.reply_text(
+                    ui_card(
+                        status_text(f_ob),
+                        f"{_E_LEAF} Загляни завтра — начнётся серия.",
+                    ),
+                    parse_mode=ParseMode.HTML,
+                    reply_markup=await main_kb_live(f_ob, is_group=is_group(update)),
+                    link_preview_options=LinkPreviewOptions(),
+                )
         elif text:
             await update.message.reply_text(
-                "❌ Имя должно быть от 1 до 20 символов. Попробуй ещё раз:\n\n"
-                "<i>Или нажми кнопку ниже чтобы пропустить и начать с именем из Telegram.</i>",
+                ui_card(
+                    ui_title(_E_PENCIL, "Не подошло"),
+                    "Имя должно быть от 1 до 20 символов.",
+                    hint="Напиши ещё раз",
+                ),
                 parse_mode=ParseMode.HTML,
                 reply_markup=InlineKeyboardMarkup([[
-                    btn("⏭ Пропустить", callback_data="onboard_skip")
+                    btn("◀️ Назад", callback_data="ob_name_back")
                 ]]),
             )
         return
@@ -68546,6 +68783,7 @@ def main():
     app.add_handler(CommandHandler("adminbackup", cmd_adminbackup))
     app.add_handler(CommandHandler("adminlogs",   cmd_adminlogs))
     app.add_handler(CommandHandler("adminsales",  cmd_adminsales))
+    app.add_handler(CommandHandler("adminfunnel", cmd_adminfunnel))
     app.add_handler(CommandHandler("admin_nft_recheck", cmd_admin_nft_recheck))
     app.add_handler(CommandHandler("admin_nft_invite",  cmd_admin_nft_invite))
     # ── Расследование ботоводов ───────────────────────────────────────────
@@ -68570,6 +68808,7 @@ def main():
     # Порядок важен: админка идёт первой, чтобы nft_approve/nft_reject не
     # перехватил роутер NFT. Общий обработчик — всегда последним.
     for _pattern, _router in (
+        (r"^ob_",                                    onboard_router),
         (r"^(admin|ca_|cs_|nft_approve|nft_reject)", admin_router),
         (r"^gacha",                                  gacha_router),
         (r"^nft_",                                   nft_router),
