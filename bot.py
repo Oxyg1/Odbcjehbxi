@@ -57,8 +57,17 @@ from telegram.ext import (
     PreCheckoutQueryHandler,
     InlineQueryHandler,
 )
-from telegram.constants import ParseMode
+from telegram.constants import ChatAction, ParseMode
 from telegram.error import BadRequest, Forbidden, TimedOut
+
+# Ограничитель темпа запросов. Ставится вместе с aiolimiter; если пакета нет,
+# бот работает как раньше — просто без защиты от флуд-лимита.
+try:
+    from telegram.ext import AIORateLimiter
+    AIORateLimiter()          # конструктор и проверяет наличие aiolimiter
+    _RATE_LIMITER_OK = True
+except (ImportError, RuntimeError):
+    _RATE_LIMITER_OK = False
 import telegram
 
 print("Telegram Bot version:", telegram.__version__)
@@ -14919,6 +14928,7 @@ def nft_status_line(f: dict) -> str:
 # Надбавки к наградам. Раньше эти семь чисел были зашиты внутри функции, и
 # понять, во что обойдётся включение бонусов, можно было только чтением кода.
 REWARD_BONUS_DEFAULT = False   # включены ли бонусы, пока админ не решил иначе
+PREMIUM_DAILY_BONUS = 15       # надбавка к ежедневному бонусу за Telegram Premium
 SKIN_BONUS_SECRET    = 1.0
 SKIN_BONUS_MYTHIC    = 0.5
 SKIN_BONUS_LEGENDARY = 0.25
@@ -28325,6 +28335,19 @@ async def cmd_mystats(update: Update, ctx: ContextTypes.DEFAULT_TYPE):
 # 🎁 НОВЫЕ КОМАНДЫ: интеграция See.tg API
 # ══════════════════════════════════════════════════════════════════════════════
 
+async def thinking(update) -> None:
+    """
+    Показать «печатает…» перед долгим ответом.
+
+    Запросы в See.tg идут через сеть и занимают секунды. Без этого бот выглядит
+    зависшим: игрок отправил команду и не понимает, дошла ли она.
+    """
+    try:
+        await update.effective_chat.send_chat_action(ChatAction.TYPING)
+    except (BadRequest, Forbidden, TimedOut):
+        pass
+
+
 async def cmd_portfolio(update: Update, ctx: ContextTypes.DEFAULT_TYPE):
     """
     /portfolio [@username | telegram_id] — стоимость портфеля гифтов через See.tg API.
@@ -28332,6 +28355,7 @@ async def cmd_portfolio(update: Update, ctx: ContextTypes.DEFAULT_TYPE):
     """
     if not await group_cmd_guard(update, "portfolio", ctx):
         return
+    await thinking(update)
     user = update.effective_user
 
     target_tg_id: int | None = None
@@ -28426,6 +28450,7 @@ async def cmd_giftcheck(update: Update, ctx: ContextTypes.DEFAULT_TYPE):
     """
     if not await group_cmd_guard(update, "giftcheck", ctx):
         return
+    await thinking(update)
 
     slug, num_str = None, None
     if ctx.args:
@@ -28876,6 +28901,7 @@ async def cmd_giftfloors(update: Update, ctx: ContextTypes.DEFAULT_TYPE):
     """
     if not await group_cmd_guard(update, "giftfloors", ctx):
         return
+    await thinking(update)
 
     slug = ctx.args[0].strip() if ctx.args else "KissedFrog"
     msg = await update.message.reply_text(
@@ -39193,6 +39219,11 @@ async def on_callback(update: Update, ctx: ContextTypes.DEFAULT_TYPE):
         # Скромная +10 монет к ежедневному бонусу
         pers_daily = PERSONALITIES.get(f.get("personality", ""), {})
         coins += pers_daily.get("daily_coins_bonus", 0)
+        # Небольшая надбавка обладателям Telegram Premium. Флаг приходит прямо
+        # в объекте пользователя, хранить его не нужно — и он всегда свежий,
+        # в отличие от копии в базе, которая протухла бы после отмены подписки.
+        premium_bonus = PREMIUM_DAILY_BONUS if q.from_user.is_premium else 0
+        coins += premium_bonus
         # Погода: радуга all_mult
         weather_daily = _get_today_weather()
         mult *= weather_daily.get("all_mult", 1.0)
@@ -39264,7 +39295,9 @@ async def on_callback(update: Update, ctx: ContextTypes.DEFAULT_TYPE):
                 bond_note = "\n" + " · ".join(bond_notes)
 
         mult_str = f" ✨×{mult:.2f}" if mult > 1.0 else ""
-        _daily_answer = f"📅 +{coins_final}{coin_plain()} +{xp_final}XP 🔥Стрик {f['streak']}д!{mult_str}{bond_note}"
+        prem_str = f" · Premium +{premium_bonus}" if premium_bonus else ""
+        _daily_answer = (f"📅 +{coins_final}{coin_plain()} +{xp_final}XP "
+                         f"🔥Стрик {f['streak']}д{mult_str}{prem_str}{bond_note}")
         await q.answer(_daily_answer[:200], show_alert=True)
         await show_status(q, f, edit=True)
         return
@@ -48516,6 +48549,14 @@ async def on_callback(update: Update, ctx: ContextTypes.DEFAULT_TYPE):
         logger.debug("[exp] exp_handle_callback вернул: %s", _exp_handled)
     if _exp_handled:
         return
+
+    # Ни одна ветка не подошла. Без ответа Telegram оставляет на кнопке
+    # крутящиеся часики, и игрок думает, что бот завис.
+    logger.info("нажатие без обработчика: uid=%s d=%s", uid, d)
+    try:
+        await q.answer()
+    except (BadRequest, Forbidden, TimedOut):
+        pass
 
 
 
@@ -68310,7 +68351,7 @@ def main():
         print(f"⚙️  {ENV_FILE}: загружено переменных — {_ENV_LOADED}")
     if _overridden:
         print(f"⚙️  Переопределено из окружения: {', '.join(sorted(_overridden))}")
-    app = (
+    builder = (
         Application.builder()
         .token(BOT_TOKEN)
         .post_init(post_init)
@@ -68320,8 +68361,17 @@ def main():
         .connect_timeout(30)
         .read_timeout(60)
         .write_timeout(60)
-        .build()
     )
+
+    # Очередь запросов к Telegram. Без неё рассылка на двенадцать тысяч
+    # аккаунтов упирается во флуд-лимит: часть писем теряется, а бот рискует
+    # получить временный бан. Лимитер сам держит темп и повторяет после 429.
+    if _RATE_LIMITER_OK:
+        builder = builder.rate_limiter(AIORateLimiter(max_retries=3))
+    else:
+        print("⚠️  Без ограничителя запросов — pip install aiolimiter")
+
+    app = builder.build()
 
     cmds = [
         ("start", cmd_start),

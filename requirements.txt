@@ -2,7 +2,9 @@
 # отложенное удаление сообщений и все ночные задачи падают на первом же вызове.
 # PTB 22.x нужен из-за кнопочных style и icon_custom_emoji_id (Bot API 9.4);
 # LinkPreviewOptions появился в 20.8.
-python-telegram-bot[job-queue]>=22.0,<23
+# rate-limiter держит темп запросов к Telegram: рассылка на двенадцать тысяч
+# аккаунтов иначе упирается во флуд-лимит и рискует временным баном.
+python-telegram-bot[job-queue,rate-limiter]>=22.0,<23
 
 aiosqlite>=0.20
 aiohttp>=3.9
