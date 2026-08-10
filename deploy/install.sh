@@ -4,8 +4,8 @@
 #
 #   sudo bash deploy/install.sh
 #
-# Скрипт идемпотентный: можно запускать повторно для обновления. База, .env
-# и логи при этом не трогаются.
+# Скрипт идемпотентный: можно запускать повторно для обновления. База, .env,
+# автобэкапы и логи при этом не трогаются.
 #
 set -euo pipefail
 
@@ -55,18 +55,25 @@ fi
 mkdir -p "${APP_DIR}"
 
 # ── 3. Код ────────────────────────────────────────────────────────────────────
-# Копируем всё, кроме .env, базы и логов — они живут на сервере и переживают
-# обновление. Каталог назначения может совпадать с исходным (обновление на месте).
+# Копируем всё, кроме .env, базы, автобэкапов и логов — они живут на сервере
+# и переживают обновление. Каталог назначения может совпадать с исходным
+# (обновление на месте).
+#
+# db_backups исключается отдельно от *.db: сами файлы бэкапов (frog_*.db)
+# и так защищены паттерном *.db, но rsync --delete всё равно пытался снести
+# опустевший с его точки зрения каталог db_backups и падал с "cannot delete
+# non-empty directory" — внутри оставались те самые защищённые файлы.
+EXCLUDES=(.git .env venv '*.db' '*.db-*' logs db_backups)
 if [[ "${SRC_DIR}" != "${APP_DIR}" ]]; then
     say "Копирую код в ${APP_DIR}"
     if command -v rsync >/dev/null 2>&1; then
-        rsync -a --delete \
-            --exclude '.git' --exclude '.env' --exclude 'venv' \
-            --exclude '*.db' --exclude '*.db-*' --exclude 'logs' \
-            "${SRC_DIR}/" "${APP_DIR}/"
+        rsync_excludes=()
+        for pat in "${EXCLUDES[@]}"; do rsync_excludes+=(--exclude "${pat}"); done
+        rsync -a --delete "${rsync_excludes[@]}" "${SRC_DIR}/" "${APP_DIR}/"
     else
-        find "${SRC_DIR}" -maxdepth 1 -mindepth 1 \
-            ! -name '.git' ! -name '.env' ! -name 'venv' ! -name '*.db' ! -name 'logs' \
+        find_excludes=()
+        for pat in "${EXCLUDES[@]}"; do find_excludes+=(! -name "${pat}"); done
+        find "${SRC_DIR}" -maxdepth 1 -mindepth 1 "${find_excludes[@]}" \
             -exec cp -a {} "${APP_DIR}/" \;
     fi
 fi
