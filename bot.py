@@ -4453,7 +4453,7 @@ def run_sync_migration():
         for row_uid, row_born in rows_no_pers:
             pers = _rnd2.choice(_pers_keys)
             born = row_born or __import__('time').time()
-            month = __import__('datetime').datetime.utcfromtimestamp(born).month
+            month = __import__('datetime').datetime.fromtimestamp(born, timezone.utc).month
             zs = _zodiac_signs[(month - 1) % len(_zodiac_signs)]
             cur.execute("UPDATE frogs SET personality=?, zodiac_sign=? WHERE user_id=?", (pers, zs, row_uid))
         conn.commit()
@@ -6212,7 +6212,7 @@ import datetime as _dt
 
 def _season_end(month: int, day: int, year: int | None = None) -> float:
     """Возвращает timestamp конца сезонного события."""
-    y = year or _dt.datetime.utcnow().year
+    y = year or _dt.datetime.now(_dt.timezone.utc).year
     return _dt.datetime(y, month, day, 23, 59, 59, tzinfo=_dt.timezone.utc).timestamp()
 
 SEASONAL_SKINS: dict[str, dict] = {
@@ -12692,7 +12692,7 @@ SWAMP_WEATHER_POOL = [
 ]
 
 def _get_today_weather() -> dict:
-    day_of_year = datetime.utcnow().timetuple().tm_yday
+    day_of_year = datetime.now(timezone.utc).timetuple().tm_yday
     return SWAMP_WEATHER_POOL[day_of_year % len(SWAMP_WEATHER_POOL)]
 
 # ── 😴 Сновидения
@@ -13017,7 +13017,7 @@ HOROSCOPE_COST = 100  # монет за гороскоп
 
 def _get_zodiac(born_at: float) -> dict:
     """Определяет знак болотного зодиака по дате рождения лягушки."""
-    month = datetime.utcfromtimestamp(born_at).month
+    month = datetime.fromtimestamp(born_at, timezone.utc).month
     return SWAMP_ZODIAC[(month - 1) % len(SWAMP_ZODIAC)]
 
 def _assign_personality() -> str:
@@ -13027,7 +13027,7 @@ def _assign_personality() -> str:
 def _get_horoscope_text(sign: str) -> str:
     """Возвращает гороскоп на сегодня (детерминированно по дню)."""
     pool = HOROSCOPE_TEXTS.get(sign, HOROSCOPE_TEXTS["toad"])
-    day  = datetime.utcnow().timetuple().tm_yday
+    day  = datetime.now(timezone.utc).timetuple().tm_yday
     return pool[day % len(pool)]
 
 
@@ -21520,7 +21520,7 @@ async def cmd_adminrisk(update: Update, ctx: ContextTypes.DEFAULT_TYPE) -> None:
     label = _RISK_LEVEL_LABELS.get(level, str(level))
     reason = risk_data.get("risk_reason") or "—"
     updated = risk_data.get("risk_updated", 0)
-    updated_str = datetime.utcfromtimestamp(updated).strftime("%Y-%m-%d %H:%M UTC") if updated else "никогда"
+    updated_str = datetime.fromtimestamp(updated, timezone.utc).strftime("%Y-%m-%d %H:%M UTC") if updated else "никогда"
 
     # Суточная статистика
     day_start = time.time() - 86400
@@ -25766,10 +25766,10 @@ async def cmd_subscribe(update: Update, ctx: ContextTypes.DEFAULT_TYPE):
         scene_raw   = f.get("worker_scene_json", "")
         last_report = f.get("last_worker_report", 0)
         if phase == 0 and last_report > 0:
-            today_msk = datetime.utcfromtimestamp(time.time() + 3*3600).strftime("%Y-%m-%d")
-            last_msk  = datetime.utcfromtimestamp(last_report + 3*3600).strftime("%Y-%m-%d")
-            last_dt   = datetime.utcfromtimestamp(last_report + 3*3600).strftime("%d.%m в %H:%M")
-            hour_msk  = (datetime.utcnow().hour + 3) % 24
+            today_msk = datetime.fromtimestamp(time.time() + 3*3600, timezone.utc).strftime("%Y-%m-%d")
+            last_msk  = datetime.fromtimestamp(last_report + 3*3600, timezone.utc).strftime("%Y-%m-%d")
+            last_dt   = datetime.fromtimestamp(last_report + 3*3600, timezone.utc).strftime("%d.%m в %H:%M")
+            hour_msk  = (datetime.now(timezone.utc).hour + 3) % 24
             if today_msk == last_msk:
                 next_msg = "Следующий выход — завтра утром в 07:00 МСК"
             elif hour_msk < 7:
@@ -33081,7 +33081,7 @@ async def admin_router(update: Update, ctx: ContextTypes.DEFAULT_TYPE):
         await q.answer()
         leg = await legend_active()
         if leg:
-            ends_dt = datetime.utcfromtimestamp(leg["ends_at"] + 3*3600).strftime("%d.%m в %H:%M")
+            ends_dt = datetime.fromtimestamp(leg["ends_at"] + 3*3600, timezone.utc).strftime("%d.%m в %H:%M")
             goals   = leg["goals"]
             prog    = leg["progress"]
             pct_parts = []
@@ -37283,12 +37283,12 @@ async def shop_router(update: Update, ctx: ContextTypes.DEFAULT_TYPE):
         if active_ss and sub_type_ss >= 2:
             phase_ss       = f.get("worker_phase", 0)
             last_report_ss = f.get("last_worker_report", 0)
-            hour_msk_ss    = (datetime.utcnow().hour + 3) % 24
+            hour_msk_ss    = (datetime.now(timezone.utc).hour + 3) % 24
             now_ss2        = time.time()
             if phase_ss == 0 and last_report_ss > 0:
-                today_msk_ss = datetime.utcfromtimestamp(now_ss2 + 3*3600).strftime("%Y-%m-%d")
-                last_msk_ss  = datetime.utcfromtimestamp(last_report_ss + 3*3600).strftime("%Y-%m-%d")
-                last_dt_ss   = datetime.utcfromtimestamp(last_report_ss + 3*3600).strftime("%d.%m в %H:%M")
+                today_msk_ss = datetime.fromtimestamp(now_ss2 + 3*3600, timezone.utc).strftime("%Y-%m-%d")
+                last_msk_ss  = datetime.fromtimestamp(last_report_ss + 3*3600, timezone.utc).strftime("%Y-%m-%d")
+                last_dt_ss   = datetime.fromtimestamp(last_report_ss + 3*3600, timezone.utc).strftime("%d.%m в %H:%M")
                 if today_msk_ss == last_msk_ss:
                     next_ss = "Следующий выход — завтра в 07:00 МСК"
                 elif hour_msk_ss < 18:
@@ -38588,7 +38588,7 @@ async def on_callback(update: Update, ctx: ContextTypes.DEFAULT_TYPE):
 
         goals    = leg["goals"]
         progress = leg["progress"]
-        ends_dt  = datetime.utcfromtimestamp(leg["ends_at"] + 3*3600).strftime("%d.%m в %H:%M")
+        ends_dt  = datetime.fromtimestamp(leg["ends_at"] + 3*3600, timezone.utc).strftime("%d.%m в %H:%M")
 
         lines = [
             f"{leg['emoji']} <b>Болотная Легенда</b>\n",
@@ -40140,13 +40140,13 @@ async def on_callback(update: Update, ctx: ContextTypes.DEFAULT_TYPE):
             phase_ss     = f.get("worker_phase", 0)
             scene_raw_ss = f.get("worker_scene_json", "")
             last_report_ss = f.get("last_worker_report", 0)
-            hour_msk_ss  = (datetime.utcnow().hour + 3) % 24
+            hour_msk_ss  = (datetime.now(timezone.utc).hour + 3) % 24
             now_ss2      = time.time()
 
             if phase_ss == 0 and last_report_ss > 0:
-                today_msk_ss = datetime.utcfromtimestamp(now_ss2 + 3*3600).strftime("%Y-%m-%d")
-                last_msk_ss  = datetime.utcfromtimestamp(last_report_ss + 3*3600).strftime("%Y-%m-%d")
-                last_dt_ss   = datetime.utcfromtimestamp(last_report_ss + 3*3600).strftime("%d.%m в %H:%M")
+                today_msk_ss = datetime.fromtimestamp(now_ss2 + 3*3600, timezone.utc).strftime("%Y-%m-%d")
+                last_msk_ss  = datetime.fromtimestamp(last_report_ss + 3*3600, timezone.utc).strftime("%Y-%m-%d")
+                last_dt_ss   = datetime.fromtimestamp(last_report_ss + 3*3600, timezone.utc).strftime("%d.%m в %H:%M")
                 if today_msk_ss == last_msk_ss:
                     next_ss = "Следующий выход — завтра в 07:00 МСК"
                 elif hour_msk_ss < 18:
@@ -45203,7 +45203,7 @@ async def on_callback(update: Update, ctx: ContextTypes.DEFAULT_TYPE):
             return
         lines = ["📖 <b>Болотная Летопись</b>\n"]
         for ev in events:
-            dt = datetime.utcfromtimestamp(ev["created_at"] + 3*3600).strftime("%d.%m %H:%M")
+            dt = datetime.fromtimestamp(ev["created_at"] + 3*3600, timezone.utc).strftime("%d.%m %H:%M")
             likes = ev.get("like_count", 0)
             like_str = f"  ❤️{likes}" if likes else ""
             lines.append(f"<i>{dt}</i> {ev['text']}{like_str}")
@@ -51650,7 +51650,7 @@ def _legend_build_text(leg: dict) -> str:
     """Формирует текст анонса/обновления легенды."""
     goals    = leg["goals"]
     progress = leg["progress"]
-    ends_dt  = datetime.utcfromtimestamp(leg["ends_at"] + 3*3600).strftime("%d.%m в %H:%M")
+    ends_dt  = datetime.fromtimestamp(leg["ends_at"] + 3*3600, timezone.utc).strftime("%d.%m в %H:%M")
 
     lines = [
         f"{leg['emoji']} <b>Болотная Легенда</b>\n",
@@ -51704,7 +51704,7 @@ async def _legend_start(bot, legend_data: dict | None = None) -> dict | None:
         await db.commit()
 
     now    = time.time()
-    dt_now = datetime.utcfromtimestamp(now)
+    dt_now = datetime.fromtimestamp(now, timezone.utc)
     days_to_sunday = (6 - dt_now.weekday()) % 7 or 7
     ends_dt = dt_now.replace(hour=18, minute=0, second=0, microsecond=0)
     ends_dt = ends_dt + __import__("datetime").timedelta(days=days_to_sunday)
@@ -51740,7 +51740,7 @@ async def _legend_start(bot, legend_data: dict | None = None) -> dict | None:
             await db.commit()
 
     # ── ЛС рассылка всем живым игрокам ───────────────────────────────────────
-    ends_dt_msk = datetime.utcfromtimestamp(ends_at + 3*3600).strftime("%d.%m в %H:%M")
+    ends_dt_msk = datetime.fromtimestamp(ends_at + 3*3600, timezone.utc).strftime("%d.%m в %H:%M")
     goals_lines = []
     for action, goal in legend_data["goals"].items():
         icon, label = _LEGEND_ACTION_LABELS.get(action, ("▫️", action))
@@ -52614,6 +52614,12 @@ async def job_swamp_weather(ctx: ContextTypes.DEFAULT_TYPE):
             )
             await db.commit()
 
+    # Сводка идёт в главный игровой чат. Без настроенного CHAT_ID Telegram
+    # отвечает «Chat not found», и в логе каждый раз висит невнятная ошибка
+    # вместо понятной причины.
+    if not CHAT_ID:
+        logger.info("job_swamp_weather: CHAT_ID не задан в .env — сводка не отправлена")
+        return
     try:
         await ctx.bot.send_message(
             CHAT_ID,
@@ -52624,7 +52630,11 @@ async def job_swamp_weather(ctx: ContextTypes.DEFAULT_TYPE):
             parse_mode=ParseMode.HTML,
         )
     except Exception as _e:
-        logger.warning("job_swamp_weather: %s", _e)
+        logger.warning(
+            "job_swamp_weather: не отправить в CHAT_ID=%s (%s). "
+            "Проверь ID главного чата в .env — узнать его можно командой /chatid",
+            CHAT_ID, _e,
+        )
 
 
 async def job_birthday_check(ctx: ContextTypes.DEFAULT_TYPE):
@@ -53523,8 +53533,8 @@ async def _work_phase_morning(now: float, bot, catch_up: bool = False) -> list[i
                 continue
             last_report = f.get("last_worker_report", 0)
             if last_report > 0:
-                today_msk = datetime.utcfromtimestamp(now + 3*3600).strftime("%Y-%m-%d")
-                last_msk  = datetime.utcfromtimestamp(last_report + 3*3600).strftime("%Y-%m-%d")
+                today_msk = datetime.fromtimestamp(now + 3*3600, timezone.utc).strftime("%Y-%m-%d")
+                last_msk  = datetime.fromtimestamp(last_report + 3*3600, timezone.utc).strftime("%Y-%m-%d")
                 if today_msk == last_msk:
                     continue
 
@@ -56887,7 +56897,7 @@ async def cmd_fix_workers(update: Update, ctx: ContextTypes.DEFAULT_TYPE):
 
     now = time.time()
     uids = await _worker_get_eligible(now)
-    today_msk = datetime.utcfromtimestamp(now + 3*3600).strftime("%Y-%m-%d")
+    today_msk = datetime.fromtimestamp(now + 3*3600, timezone.utc).strftime("%Y-%m-%d")
 
     stats = {"skipped": 0, "morning_sent": 0, "midday_sent": 0, "evening_sent": 0, "errors": 0}
 
@@ -56905,7 +56915,7 @@ async def cmd_fix_workers(update: Update, ctx: ContextTypes.DEFAULT_TYPE):
 
             # Уже получил отчёт сегодня и phase=0 — всё ок
             if phase == 0 and last_report > 0:
-                last_msk = datetime.utcfromtimestamp(last_report + 3*3600).strftime("%Y-%m-%d")
+                last_msk = datetime.fromtimestamp(last_report + 3*3600, timezone.utc).strftime("%Y-%m-%d")
                 if last_msk == today_msk:
                     stats["skipped"] += 1
                     continue
@@ -57249,7 +57259,7 @@ async def cmd_letopis(update: Update, ctx: ContextTypes.DEFAULT_TYPE):
         return
     lines = ["📖 <b>Болотная Летопись</b>\n"]
     for ev in events:
-        dt = datetime.utcfromtimestamp(ev["created_at"] + 3*3600).strftime("%d.%m %H:%M")
+        dt = datetime.fromtimestamp(ev["created_at"] + 3*3600, timezone.utc).strftime("%d.%m %H:%M")
         likes = ev.get("like_count", 0)
         like_str = f"  {_E_HEART}{likes}" if likes else ""
         lines.append(f"<i>{dt}</i> {ev['text']}{like_str}")
@@ -63254,7 +63264,10 @@ async def job_nft_catalog_refresh(ctx: ContextTypes.DEFAULT_TYPE):
     _out_path = _os2.path.join(_bot_dir, "kissed_frog_on_sale.json")
 
     if not _os2.path.exists(_pars_path):
-        logger.warning("job_nft_catalog_refresh: pars.py не найден по пути %s", _pars_path)
+        logger.info(
+            "job_nft_catalog_refresh: pars.py нет по пути %s — обновление каталога "
+            "NFT пропущено. Это необязательная часть, на игру не влияет.", _pars_path,
+        )
         return
 
     logger.info("job_nft_catalog_refresh: запускаем парсер NFT KissedFrog...")
