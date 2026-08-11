@@ -5251,8 +5251,8 @@ _LANGS = {
         "yes":             "✅ Да",
         "no":              "❌ Нет",
         "error":           "⚠️ Ошибка",
-        "no_frog":         "Сначала напиши /start",
-        "dead_frog":       _E_SKULL + " Лягушка мертва! /revive",
+        "no_frog":         "Сначала /start",
+        "dead_frog":       _E_SKULL + " Лягушка мертва. /revive",
         "cooldown":        "⏳",
         "coins":           "🪙",
         # ── Меню ──
@@ -5285,7 +5285,7 @@ _LANGS = {
         "stat_frozen":     "❄️ АНАБИОЗ — лягушка заморожена",
         "stat_thaws_in":   "⏳ Разморозится через",
         "stat_trial":      _E_SKULL + " Испытание",
-        "stat_trial_done": "Выполни все задания, чтобы воскресить лягушку!",
+        "stat_trial_done": "Выполни все три — и она вернётся",
         "stat_boost":      "✨ Золотая лягушка активна! 1⭐=3🪙, леги ×2 🍀",
         "stat_frog_default": "Лягушка",
         "frog_level_reward": "Уровень",
@@ -5304,7 +5304,7 @@ _LANGS = {
         "daily_ok":        "📅 Ежедневный бонус: +{coins}🪙 +" + _E_XP + "{xp}!",
         "daily_already":   "📅 Бонус уже получен сегодня.",
         "action_cd":       "⏳ Подожди ещё {time}.",
-        "action_dead":     _E_SKULL + " Лягушка мертва. Сначала /revive.",
+        "action_dead":     _E_SKULL + " Лягушка мертва. Сначала /revive",
         "levelup":         "🎉 Уровень {level}! +{coins}🪙",
         # ── Казино ──
         "casino_title":    "🎰 Казино",
@@ -6268,6 +6268,18 @@ R_DOT = {
     "rare":     _E_DOT_BLUE,
     "uncommon": _E_DOT_GREEN,
     "common":   _E_DOT_WHITE,
+}
+
+# Как игра реагирует на выпавшее. Обычное — пожатие плечами, мифик — капслок.
+# Только так капслок и восклицание сохраняют вес к моменту, когда они нужны.
+GACHA_REVEAL = {
+    "common":    "Хм. Обычный.",
+    "uncommon":  "Ну, ничего.",
+    "rare":      "О, неплохо.",
+    "epic":      "Ого.",
+    "legendary": "ОГО. Легендарный.",
+    "mythic":    "СТОП. ЭТО МИФИК.",
+    "secret":    "Так. Так-так-так. СЕКРЕТНЫЙ.",
 }
 
 R_NAME = {
@@ -8067,8 +8079,8 @@ def league_badge(league_id: int) -> str:
 LETOPIS_TYPES = {
     "streak":     "🔥 {name} — {val} дней стрика!",
     "level":      "⭐️ {name} достигла {val} уровня!",
-    "death":      "💀 {name} умерла от {val}",
-    "revive":     "✨ {name} воскресла из мёртвых!",
+    "death":      "💀 {name} не выдержала: {val}",
+    "revive":     "✨ {name} вернулась",
     "mosquito":   "🦟 {name} поймала комара и получила {val}🪙",
     "legendary":  "🌟 {name} вытащила легендарный облик из гачи!",
     "staya_win":  "🏆 Стая {val} победила в событии!",
@@ -11802,8 +11814,8 @@ async def skirmish_resolve_duel(bot, skirmish_id: int, duel: dict, winner: str):
         await db.commit()
 
     result_text = (
-        f"Дуэль: <b>{he(att_name)}</b> vs <b>{he(def_name)}</b>\n"
-        f"Победитель: <b>{he(winner_name)}</b>"
+        f"<b>{he(att_name)}</b> против <b>{he(def_name)}</b>\n"
+        f"Сильнее оказался: <b>{he(winner_name)}</b>"
     )
     # Результат — всем участникам стычки (они параллельно в своих дуэлях)
     await skirmish_broadcast(bot, skirmish_id, result_text)
@@ -12187,11 +12199,11 @@ async def skirmish_finish(bot, skirmish_id: int):
     loser_name  = def_name if winner_side == "attacker" else att_name
 
     result_text = (
-        f"<b>Стычка завершена</b>\n"
-        f"Победитель: <b>{he(winner_name)}</b>\n"
+        f"{_E_SWORDS} <b>Стычка окончена</b>\n"
+        f"Верх взяли: <b>{he(winner_name)}</b>\n"
         f"Счёт: <b>{att_wins} : {def_wins}</b>"
-        + (f"\nЗахвачено из котла: <b>{cauldron_taken}</b> монет" if cauldron_taken else "") +
-        f"\n\nВсе участники получили XP."
+        + (f"\nИз котла унесли: <b>{cauldron_taken}</b>{_E_COIN}" if cauldron_taken else "") +
+        f"\n\nXP получили все."
     )
     await skirmish_broadcast(bot, skirmish_id, result_text)
 
@@ -12696,25 +12708,26 @@ def _get_today_weather() -> dict:
     return SWAMP_WEATHER_POOL[day_of_year % len(SWAMP_WEATHER_POOL)]
 
 # ── 😴 Сновидения
+# Сон рассказывает сама лягушка. {name} внутри не нужен — она говорит о себе.
 DREAM_POOL = [
-    "🦟 Приснилось огромное облако сонных мух. {name} проснулась с улыбкой — и сразу захотела есть.",
-    "🌙 {name} летела над болотом под луной. Крылья были из лилий.",
-    "🐉 Болотный дракон угощал чаем. {name} вежливо отказалась от третьей чашки.",
-    "🌊 Бесконечный пруд с кристальной водой. {name} плавала часами.",
-    "🍄 Огромные грибы говорили загадками. {name} ни одной не разгадала, но было интересно.",
-    "⭐ Звёзды складывались в слова. {name} почти прочитала — но проснулась в самый важный момент.",
-    "🏰 Болотный замок из тростника. {name} была королевой. Все жабы кланялись.",
-    "🎵 Кто-то пел колыбельную. {name} не помнит слов, но мотив крутится в голове весь день.",
-    "🌈 Радуга вела к горшку с мухами. {name} нашла его — но проснулась до того как съела.",
-    "🐟 Золотая рыбка исполняла желания. {name} попросила бесконечные мухи. Рыбка сказала «окей».",
-    "🌿 Огромное болото без края. {name} была самой маленькой лягушкой — и самой счастливой.",
-    "🔮 Видела своё будущее. Там было хорошо. Подробности не помнит, но ощущение осталось.",
-    "🦋 Бабочки несли {name} на крыльях над облаками. Было немного щекотно.",
-    "🎪 Болотный цирк. {name} выступала на арене — все аплодировали стоя.",
-    "🌺 Цветущее болото. Каждая кочка — цветок. {name} собирала букет до рассвета.",
-    "👑 Приснилось что выиграла «Мисс Болото». Корона немного жала.",
-    "🚀 Летела в космос на болотном шаттле. Земля снизу — как огромная кочка.",
-    "😌 Тихое болото, полная луна, никого. Просто покой. {name} говорит — лучший сон в жизни.",
+    "Облако сонных мух. Встала голодная.",
+    "Летела. Крылья из лилий.",
+    "Дракон поил чаем. Третью не осилила.",
+    "Пруд без края. Плавала долго.",
+    "Грибы загадывали. Не отгадала.",
+    "Звёзды сложились в слова. Не дочитала.",
+    "Замок из тростника. Я королева.",
+    "Пели колыбельную. Мотив остался.",
+    "Радуга вела к мухам. Не успела.",
+    "Рыбка обещала мух. Обманула.",
+    "Болото без края. Я в нём мелкая.",
+    "Видела будущее. Там хорошо.",
+    "Бабочки несли меня. Щекотно.",
+    "Цирк. Выступала. Хлопали стоя.",
+    "Кочки цвели. Собирала букет.",
+    "Выиграла «Мисс Болото». Корона жала.",
+    "Была в космосе. Земля как кочка.",
+    "Тихо, луна, никого. Покой.",
 ]
 
 # ── 🍎 Тексты кормёжки по настроению
@@ -16363,12 +16376,17 @@ def he(s) -> str:
     return _html.escape(str(s))
 
 
+# Голос питомца: первое лицо, женский род, три речевые фишки —
+#   «Квак.» вместо точки (редко, не в каждой строке),
+#   рубленый ритм «утверждение. уточнение.»,
+#   лягушка констатирует, а не жалуется.
 M_SAY = {
-    "happy": ["Квак! Жизнь прекрасна! 🌿", "Я счастлива! 💚", "Лучший день!"],
-    "neutral": ["Квак... норм.", "Могло быть лучше.", "Хм, квак."],
-    "sad": ["Квааак... есть хочу...", "Поиграй со мной 😢", "Мне грустно..."],
-    "sick": ["Кхе-квак... плохо мне 🤒", "Нужен врач...", "Всё болит..."],
-    "dead": ["...", "💀"],
+    "happy":   ["Хорошо мне. Квак.", "Сегодня болото удачное.",
+                "Довольна. Редкий случай."],
+    "neutral": ["Нормально. Бывало лучше.", "Сижу. Думаю.", "Квак. Без новостей."],
+    "sad":     ["Живот бурчит.", "Поиграл бы со мной кто.", "Скучно мне."],
+    "sick":    ["Кхе. Плохо мне.", "Кажется, приболела.", "Болит. Даже лапки."],
+    "dead":    ["...", "💀"],
 }
 
 
@@ -23834,7 +23852,7 @@ async def cmd_gift(update: Update, ctx: ContextTypes.DEFAULT_TYPE):
     _user_cache.invalidate(user.id)
     f = await db_get(user.id)  # свежий баланс после SQL UPDATE
     if not f:
-        await update.message.reply_text("Ошибка, попробуй снова.")
+        await update.message.reply_text("Не вышло. Попробуй ещё раз.")
         return
 
     # Атомарно начисляем получателю через SQL — НЕ через db_save (перезапишет кэш)
@@ -24346,7 +24364,7 @@ async def cmd_battle(update: Update, ctx: ContextTypes.DEFAULT_TYPE):
         return
     if not f["alive"]:
         await update.message.reply_text(
-            f"{_E_SKULL} <b>Лягушка мертва</b>\n\nСначала воскреси её — /revive",
+            f"{_E_SKULL} <b>Лягушка мертва</b>\n\nВерни её: /revive",
             parse_mode=ParseMode.HTML,
         )
         return
@@ -24621,7 +24639,7 @@ async def cmd_duel(update: Update, ctx: ContextTypes.DEFAULT_TYPE):
         return
     if not target["alive"]:
         t_display = f"@{target['username']}" if target.get("username") else he(target.get("first_name", ""))
-        await update.message.reply_text(f"{_E_SKULL} Лягушка {t_display} умерла!", parse_mode=ParseMode.HTML)
+        await update.message.reply_text(f"{_E_SKULL} Лягушка {t_display} умерла.", parse_mode=ParseMode.HTML)
         return
     if f["coins"] < stake:
         await update.message.reply_text(
@@ -24756,7 +24774,10 @@ async def cmd_feed(update: Update, ctx: ContextTypes.DEFAULT_TYPE):
 
     if not target["alive"]:
         t_disp = f"@{target['username']}" if target.get("username") else he(target.get("first_name",""))
-        await update.message.reply_text(f"💀 Лягушка {t_disp} умерла! Нечего кормить.")
+        await update.message.reply_text(
+            f"{_E_SKULL} Лягушка {t_disp} умерла. Кормить нечего.",
+            parse_mode=ParseMode.HTML,
+        )
         return
 
     # ── Лимит кормлений одной цели: не более 20 от разных игроков за 1 час ──
@@ -28300,7 +28321,7 @@ async def cmd_casino(update: Update, ctx: ContextTypes.DEFAULT_TYPE):
     if await db_setting("casino_disabled") == "1":
         await update.message.reply_text(
             f"{_E_CASINO} <b>Казино временно недоступно.</b>\n"
-            "<i>Ведётся техническое обслуживание. Попробуй позже.</i>",
+            "<i>Чиним. Загляни через несколько минут.</i>",
             parse_mode=ParseMode.HTML,
         )
         return
@@ -31790,7 +31811,7 @@ async def admin_router(update: Update, ctx: ContextTypes.DEFAULT_TYPE):
             try:
                 await ctx.bot.send_message(
                     target_uid_rev,
-                    "💚 <b>Тебя воскресила администрация!</b>\n\nТвоя лягушка снова жива! <tg-emoji emoji-id='5341367834935075028'>🐸</tg-emoji>",
+                    f"{_E_HEART} <b>Лягушка снова жива</b>\n\nЕё вернула администрация. {_E_FROG}",
                     parse_mode=ParseMode.HTML,
                 )
             except (BadRequest, Forbidden, TimedOut):
@@ -34008,10 +34029,10 @@ async def gacha_router(update: Update, ctx: ContextTypes.DEFAULT_TYPE):
     if d == "gacha_confirm":
         cost = 50
         if f["coins"] < cost:
-            await q.answer((f"Нужно {cost} 🪙. Зарабатывай через /daily и квесты.")[:200], show_alert=True)
+            await q.answer(f"Нужно {cost} 🪙. Не хватает."[:200], show_alert=True)
             return
         try:
-            await q.message.edit_text(f"{_E_CASINO} <b>Крутим гачу...</b>\n\n✨ · ✨ · ✨", parse_mode=ParseMode.HTML)
+            await q.message.edit_text(f"{_E_CASINO} <b>Так... что там...</b>\n\n✨ · ✨ · ✨", parse_mode=ParseMode.HTML)
         except (BadRequest, Forbidden, TimedOut):
             pass
         await asyncio.sleep(1.5)
@@ -34039,7 +34060,7 @@ async def gacha_router(update: Update, ctx: ContextTypes.DEFAULT_TYPE):
         # ── Финальный результат ─────────────────────────────────────────
         new_tag = ""
         if is_new:
-            new_tag = " 🆕 <b>Новый!</b>"
+            new_tag = " — новый"
             if _skin_tickets_earned > 0:
                 new_tag += f" 🎟+{_skin_tickets_earned}"
         elif qty > 1:
@@ -34051,14 +34072,14 @@ async def gacha_router(update: Update, ctx: ContextTypes.DEFAULT_TYPE):
             rarity_label = {"secret": "🌑 СЕКРЕТНЫЙ", "mythic": "✨ МИФИЧЕСКИЙ", "legendary": "👑 ЛЕГЕНДАРНЫЙ"}.get(s["rarity"], "ЛЕГЕНДАРНЫЙ")
             await announce(
                 ctx.bot,
-                f"{rarity_prefix} <b>{rarity_label} ДРОП!</b>{dup_tag}\n"
-                f"<b>{_html.escape(q.from_user.first_name)}</b> получил в гаче:\n"
-                f"{R_DOT[s['rarity']]} <b>{_html.escape(skin)}</b> {pemoji(skin)} 🍀",
+                f"{rarity_prefix} <b>{rarity_label}</b>{dup_tag}\n"
+                f"У <b>{_html.escape(q.from_user.first_name)}</b> выпал:\n"
+                f"{R_DOT[s['rarity']]} <b>{_html.escape(skin)}</b> {pemoji(skin)}",
                 delete_after=60,
             )
         pity_line = f"\n🎯 Питти: <b>{f.get('gacha_pity', 0)}/{PITY_THRESHOLD}</b>" if not pity_triggered else "\n🌟 <b>Питти сработал!</b> Гарантированная легенда!"
         text = (
-            f"{_E_CASINO} <b>Результат гачи!</b>{new_tag}\n\n"
+            f"<b>{GACHA_REVEAL.get(s['rarity'], 'Выпало.')}</b>{new_tag}\n\n"
             f"{R_DOT[s['rarity']]} {display_skin(skin, use_st)}\n"
             f"Редкость: <b>{R_NAME[s['rarity']]}</b>\n"
             f"Осталось: {f['coins']}{coin_emoji()} · {_E_XP} +20 XP"
@@ -34318,7 +34339,7 @@ async def gacha_router(update: Update, ctx: ContextTypes.DEFAULT_TYPE):
         # Анонс и результат
         new_tag = ""
         if is_new:
-            new_tag = " 🆕 <b>Новый!</b>"
+            new_tag = " — новый"
             if _skin_tickets_t > 0:
                 new_tag += f" 🎟+{_skin_tickets_t}"
         elif qty > 1:
@@ -34650,7 +34671,7 @@ async def casino_router(update: Update, ctx: ContextTypes.DEFAULT_TYPE):
             try:
                 await q.message.edit_text(
                     f"{_E_CASINO} <b>Казино временно недоступно.</b>\n"
-                    "<i>Ведётся техническое обслуживание. Попробуй позже.</i>",
+                    "<i>Чиним. Загляни через несколько минут.</i>",
                     parse_mode=ParseMode.HTML,
                     reply_markup=InlineKeyboardMarkup([[
                         btn("◀️ Назад", callback_data="menu_games")
@@ -38678,11 +38699,10 @@ async def on_callback(update: Update, ctx: ContextTypes.DEFAULT_TYPE):
         try:
             await ctx.bot.send_message(
                 uid,
-                f"💔 <b>Лягушка {frog_name} умерла!</b>\n\n"
-                f"Что хочешь сделать?\n\n"
-                f"• <b>Воскресить</b> — стоит 100{_E_COIN}, лягушка ожьёт с 50% всех показателей\n"
-                f"• <b>Испытание</b> — бесплатно, выполни 3 задания, чтобы воскресить лягушку "
-                f"с <b>полными</b> показателями и получить бонусные монеты и XP",
+                f"{_E_SKULL} <b>{frog_name} умерла</b>\n\n"
+                f"Её можно вернуть.\n\n"
+                f"<b>Воскресить</b> — 100{_E_COIN}, вернётся с половиной сил\n"
+                f"<b>Испытание</b> — бесплатно, три задания, вернётся полной",
                 parse_mode=ParseMode.HTML,
                 reply_markup=kb_death,
             )
@@ -38695,9 +38715,9 @@ async def on_callback(update: Update, ctx: ContextTypes.DEFAULT_TYPE):
         try:
             await ctx.bot.send_message(
                 uid,
-                f"⚠️ <b>Лягушка {frog_name} в опасности!</b>\n\n"
-                f"{_E_HEART} Здоровье: <b>{f['health']}%</b> — срочно покорми и вылечи!\n"
-                f"Если здоровье упадёт до 0 — лягушка умрёт.",
+                f"{_E_HEART} <b>{frog_name} слабеет</b>\n\n"
+                f"Здоровье: <b>{f['health']}%</b>. На нуле — умрёт.\n"
+                f"Покорми и вылечи.",
                 parse_mode=ParseMode.HTML,
             )
         except (BadRequest, Forbidden, TimedOut):
@@ -39115,7 +39135,7 @@ async def on_callback(update: Update, ctx: ContextTypes.DEFAULT_TYPE):
         mult_str = f"  ✨×{mult:.2f}" if mult > 1.0 else ""
         result = f"🪰 <b>Съела муху!</b> <i>Ням-ням...</i>\n🍖+{food['hunger']} {_E_XP}+{int(base_xp*mult)} {coin_emoji()}+{int(base_coins*mult)}{mult_str}"
         for lvl, skin in rewards:
-            result += f"\n🎉 <b>Уровень {lvl}!</b> Открыт облик: {display_skin(skin)}"
+            result += f"\n{_E_LEVEL} <b>Уровень {lvl}!</b> Новый облик: {display_skin(skin)}"
             await announce(
                 ctx.bot,
                 f"🎉 <b>{fname(f)}</b> ({q.from_user.first_name}) достигла ур.{lvl}! Облик: {display_skin(skin)}",
@@ -39182,11 +39202,12 @@ async def on_callback(update: Update, ctx: ContextTypes.DEFAULT_TYPE):
         asyncio.create_task(update_trial_progress(uid, "feeds", bot=ctx.bot))
         await legend_track(uid, "feeds", bot=ctx.bot)
         await ach_check(f, ctx.bot)
-        _feed_lore = _get_feed_text(f)
         _feed_reaction = _frog_reaction("feed")
-        result = f"<i>{_feed_lore}</i>\n\n{food['emoji']} <b>{he(food['name'])}</b> съедена!\n{_E_FOOD}+{food['hunger']} 😄+{food['happy']} {_E_XP}+{food['xp']}\n\n🐸 <i>{_feed_reaction}</i>"
+        result = (f"{food['emoji']} <b>Съела {he(food['name'].lower())}</b>\n"
+                  f"{_E_FOOD}+{food['hunger']} {_E_HAPPY}+{food['happy']} {_E_XP}+{food['xp']}\n\n"
+                  f"{_E_FROG} <i>{_feed_reaction}</i>")
         for lvl, skin in rewards:
-            result += f"\n🎉 <b>Уровень {lvl}!</b> Открыт облик: {display_skin(skin)}"
+            result += f"\n{_E_LEVEL} <b>Уровень {lvl}!</b> Новый облик: {display_skin(skin)}"
         # Возвращаем в меню кормления, а не в главное меню
         feed_kb = await build_feed_kb(uid, f)
         try:
@@ -39291,7 +39312,7 @@ async def on_callback(update: Update, ctx: ContextTypes.DEFAULT_TYPE):
         now = time.time()
         cd = 20 * 60
         if now - f["last_play"] < cd:
-            await show_cooldown(q, f, "play", "Лягушка ещё не наигралась")
+            await show_cooldown(q, f, "play", "Я ещё не наигралась")
             return
         kb = InlineKeyboardMarkup(
             [
@@ -39335,7 +39356,7 @@ async def on_callback(update: Update, ctx: ContextTypes.DEFAULT_TYPE):
         now = time.time()
         cd = 20 * 60
         if now - f["last_play"] < cd:
-            await show_cooldown(q, f, "play", "Лягушка ещё не наигралась")
+            await show_cooldown(q, f, "play", "Я ещё не наигралась")
             return
         label, xp_b, hap_b, anim_text = PLAY_OPTS[d]
         await send_action_sticker(ctx.bot, q.message.chat.id, "play")
@@ -39382,7 +39403,7 @@ async def on_callback(update: Update, ctx: ContextTypes.DEFAULT_TYPE):
         now = time.time()
         cd = 2 * 3600
         if now - f.get("last_wash", 0) < cd:
-            await show_cooldown(q, f, "wash", "Лягушка ещё чистая")
+            await show_cooldown(q, f, "wash", "Я ещё чистая")
             return
         await send_action_sticker(ctx.bot, q.message.chat.id, "wash")
         await send_wash_sticker(ctx.bot, q.message.chat.id)
@@ -39401,9 +39422,10 @@ async def on_callback(update: Update, ctx: ContextTypes.DEFAULT_TYPE):
         await legend_track(uid, "washes", bot=ctx.bot)
         await ach_check(f, ctx.bot)
         mult_str = f"  ✨×{mult:.2f}" if mult > 1.0 else ""
-        _wash_lore = random.choice(WASH_TEXTS).format(name=fname(f))
         _wash_reaction = _frog_reaction("wash")
-        result = f"🛁 <b>Лягушка чистенькая!</b>\n\n<i>{_wash_lore}</i>\n\n🛁100% 😄+20 {_E_HEART}+10 {_E_XP}+{int(15*mult)}{mult_str}\n\n🐸 <i>{_wash_reaction}</i>"
+        result = (f"{_E_SOAP} <b>Чистая</b>\n"
+                  f"{_E_SOAP}100% {_E_HAPPY}+20 {_E_HEART}+10 {_E_XP}+{int(15*mult)}{mult_str}\n\n"
+                  f"{_E_FROG} <i>{_wash_reaction}</i>")
         for lvl, skin in rewards:
             result += f"\n🎉 <b>Уровень {lvl}!</b> Облик: {display_skin(skin)}"
         try:
@@ -39425,7 +39447,7 @@ async def on_callback(update: Update, ctx: ContextTypes.DEFAULT_TYPE):
         now = time.time()
         cd = 3 * 3600
         if now - f.get("last_sleep", 0) < cd:
-            await show_cooldown(q, f, "sleep", "Лягушка не хочет спать")
+            await show_cooldown(q, f, "sleep", "Спать не хочу")
             return
         await send_action_sticker(ctx.bot, q.message.chat.id, "sleep")
         await send_sleep_sticker(ctx.bot, q.message.chat.id)
@@ -39454,10 +39476,13 @@ async def on_callback(update: Update, ctx: ContextTypes.DEFAULT_TYPE):
         await legend_track(uid, "sleeps", bot=ctx.bot)
         await ach_check(f, ctx.bot)
         mult_str = f"  ✨×{mult:.2f}" if mult > 1.0 else ""
-        _sleep_lore = random.choice(SLEEP_TEXTS).format(name=fname(f))
         _dream = random.choice(DREAM_POOL).format(name=fname(f))
         _sleep_reaction = _frog_reaction("sleep")
-        result = f"😴 <b>Лягушка выспалась!</b>\n\n<i>{_sleep_lore}</i>\n\n💤 <b>Приснилось:</b> {_dream}\n\n{_E_BOLT}+{gain} {_E_HEART}+15 😄+10 {_E_XP}+{int(10*mult)}{mult_str}\n\n🐸 <i>{_sleep_reaction}</i>"
+        # Через раз сновидение, через раз просто реплика — оба голоса лягушкины
+        _sleep_line = random.choice([f"Снилось: {_dream}", _sleep_reaction])
+        result = (f"😴 <b>Выспалась</b>\n"
+                  f"{_E_BOLT}+{gain} {_E_HEART}+15 {_E_HAPPY}+10 {_E_XP}+{int(10*mult)}{mult_str}\n\n"
+                  f"{_E_FROG} <i>{_sleep_line}</i>")
         for lvl, skin in rewards:
             result += f"\n🎉 <b>Уровень {lvl}!</b> Облик: {display_skin(skin)}"
         try:
@@ -52780,60 +52805,60 @@ async def job_tutorial_nudge(ctx: ContextTypes.DEFAULT_TYPE):
 
 # ── Реакции лягушки на уход — короткие живые фразы ───────────────────────────
 _FROG_FEED_REACTIONS = [
-    "Съела всё и посмотрела — мало.",
-    "Жевала долго. Потом попросила добавку.",
-    "Сначала понюхала. Потом съела. Порядок.",
-    "Ела молча. Это хороший знак.",
+    "Съела. Мало.",
+    "Жевала долго. Потом попросила ещё.",
+    "Понюхала. Съела. Порядок.",
+    "Ела молча. У меня так бывает.",
     "Проглотила не жуя. Голодная была.",
-    "Поморщилась. Съела. Опять поморщилась.",
-    "Схватила и убежала в угол. Странная.",
-    "Поделилась с листочком рядом. Добрая.",
-    "Два раза чихнула и продолжила есть.",
-    "Ела аккуратно. Явно выпендривается.",
-    "Запасла половину под листом. Хозяйственная.",
-    "Съела и сразу заснула. Мечта.",
-    "Пихнула лапкой — проверила свежесть. Потом съела.",
+    "Поморщилась. Но съела.",
+    "Схватила и убежала в угол. Там вкуснее.",
+    "Поделилась с листочком. Он не стал.",
+    "Чихнула дважды. Продолжила.",
+    "Ела аккуратно. Я умею.",
+    "Половину спрятала под лист. На потом.",
+    "Съела и захотела спать.",
+    "Потыкала лапкой. Свежее. Съела.",
     "Не оценила. Но съела.",
-    "Урчала. Это хорошо.",
+    "Урчу. Это хорошо.",
 ]
 
 _FROG_WASH_REACTIONS = [
-    "Фыркнула. Но всё равно отмылась.",
-    "Сидела неподвижно всё время. Терпела.",
-    "Потребовала полотенце. Сама потом нашла листок.",
-    "Плеснула водой обратно. Случайно.",
-    "Вышла из воды и сразу испачкалась снова.",
-    "Довольна. Блестит.",
-    "Помылась. Теперь нюхает себя.",
-    "Сопротивлялась. Но чистая.",
-    "Любит это. Не признаётся.",
-    "Мыться согласна. Сушиться — нет.",
+    "Фыркнула. Но отмылась.",
+    "Сидела смирно. Терпела.",
+    "Где полотенце? Ладно, вот листок.",
+    "Плеснула в тебя. Случайно.",
+    "Вылезла и сразу испачкалась.",
+    "Блещу.",
+    "Помылась. Теперь себя нюхаю.",
+    "Сопротивлялась. Чистая.",
+    "Люблю это. Но не скажу.",
+    "Мыться — да. Сушиться — нет.",
     "Стояла смирно. Подозрительно смирно.",
-    "Попросила пену. Пены не было. Обиделась чуть-чуть.",
+    "Просила пену. Пены нет. Обидно.",
 ]
 
 _FROG_SLEEP_REACTIONS = [
     "Засыпала долго. Ворочалась.",
-    "Зевнула три раза и отключилась.",
+    "Зевнула три раза и всё.",
     "Свернулась. Маленькая.",
-    "Приснилось что-то — лапки дёргались.",
-    "Проспала пять минут и уже бодрая.",
+    "Снилось что-то. Лапки дёргались.",
+    "Поспала пять минут. Уже бодрая.",
     "Укрылась листом. Уютно.",
     "Засыпала под бурчание болота.",
-    "Спит. Не беспокоить.",
-    "Мурлычет во сне. Лягушки не мурлычат — но эта мурлычет.",
-    "Спала так крепко что не слышала комара рядом.",
+    "Сплю. Не буди.",
+    "Мурлычу во сне. Лягушки так не умеют.",
+    "Спала крепко. Комара не слышала.",
 ]
 
 _FROG_PLAY_REACTIONS = [
-    "Бегала кругами. Потом остановилась и сидела.",
-    "Прыгала выше обычного. Тренируется.",
-    "Нашла жука и играла с ним. Жук не оценил.",
+    "Бегала кругами. Потом просто сидела.",
+    "Прыгала выше обычного. Тренируюсь.",
+    "Нашла жука. Играли. Жук не рад.",
     "Устала быстро. Зато довольна.",
     "Гонялась за тенью. Почти поймала.",
-    "Играла. Потом делала вид что не играла.",
-    "Завела новую игру — катать камушек. Правила неясны.",
-    "Прыгала на кувшинках. Одна утонула.",
+    "Играла. Потом делала вид, что нет.",
+    "Катала камушек. Правила мои.",
+    "Прыгала по кувшинкам. Одна утонула.",
     "Квакала в ритм. Болото подхватило.",
     "Проиграла сама себе. Всё равно рада.",
 ]
@@ -56441,7 +56466,8 @@ async def cmd_staya_top(update: Update, ctx: ContextTypes.DEFAULT_TYPE):
             rows = [dict(r) for r in await c.fetchall()]
 
     if not rows:
-        await update.message.reply_text("🌿 Стаи ещё не созданы!")
+        await update.message.reply_text(f"{_E_LEAF} Стай пока нет. Создай первую.",
+                                        parse_mode=ParseMode.HTML)
         return
 
     lines = ["🏆 <b>Рейтинг Болотных Стай</b>\n",
@@ -57590,13 +57616,10 @@ async def _run_broadcast_return(bot, targets: list, status_msg):
     total  = len(targets)
 
     text_br = (
-        "🐸 <b>Привет! Твоя лягушка скучает по тебе...</b>\n\n"
-        "Она ждёт на болоте уже несколько дней.\n\n"
-        "Мы хотим предложить тебе вернуться:\n"
-        "🌿 <b>Бесплатное воскрешение</b> — одна кнопка\n"
-        "🧑\u200d🍼 <b>3 дня Болотной Няни</b> в подарок — она сама позаботится о лягушке, "
-        "пока ты будешь обживаться заново\n\n"
-        "<i>Предложение одноразовое.</i>"
+        f"{_E_FROG} <b>Пока тебя не было, на болоте кое-что поменялось</b>\n\n"
+        f"Твоя лягушка на месте. Вернуть её — одна кнопка, бесплатно.\n"
+        f"И три дня Няни сверху: она присмотрит, пока ты осваиваешься.\n\n"
+        f"<i>Предложение одноразовое.</i>"
     )
     kb_br = InlineKeyboardMarkup([[
         btn("🌿 Воскресить бесплатно", callback_data="return_revive", style="success")
