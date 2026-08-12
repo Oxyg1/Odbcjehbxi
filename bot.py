@@ -52938,33 +52938,40 @@ async def job_reminders(ctx: ContextTypes.DEFAULT_TYPE):
         uid_r  = f["user_id"]
         last_r = f.get("last_remind", 0)
 
-        # Кнопка быстрого доступа
+        # Кнопка быстрого доступа.
+        # Раньше здесь была url-кнопка на https://t.me/<бот>. Такая ссылка
+        # только открывает переписку и ничего не отправляет: /start Telegram
+        # шлёт сам лишь в пустом чате, а у получателя напоминания переписка
+        # заведомо не пустая. Игрок жал кнопку и оказывался в чате без экрана.
+        # Сообщение приходит в личку от самого бота, поэтому здесь работает
+        # обычный callback — экран ухода открывается прямо на месте.
         frog_kb = InlineKeyboardMarkup([[
-            btn("🐸 Открыть лягушку", url=f"https://t.me/{ctx.bot.username}")
+            btn("Покормить и вылечить", callback_data="menu_care",
+                style="primary", icon_id=ICON_CARE)
         ]])
 
         # ── Критично: HP < 10% или голод = 0 → предупреждаем раз в 1ч ──
         if (hp < 10 or hunger == 0) and now - last_r > 3600:
+            # Кнопка теперь делает всё на месте, поэтому «срочно зайди» из
+            # текстов убрано: указание никуда не идти уже неверно, а гнать
+            # человека паникой ради возврата — ровно то, чего гайд не велит.
             if hp < 10:
                 text = (
-                    f"🚨 <b>{name} умирает!</b>\n\n"
-                    f"❤️ HP: <b>{hp}%</b> — осталось мало!\n"
-                    f"Срочно зайди и вылечи лягушку."
+                    f"{_E_HEART} <b>{name} при смерти</b>\n\n"
+                    f"Здоровье: <b>{hp}%</b>. На нуле — умрёт."
                 )
             else:
                 text = (
-                    f"💀 <b>{name}</b> голодает до смерти!\n\n"
-                    f"🍖 Голод: <b>0%</b> — HP падает каждый час.\n"
-                    f"Срочно зайди и покорми!"
+                    f"{_E_FOOD} <b>{name} голодает</b>\n\n"
+                    f"Голод: <b>0%</b>. Пока пусто — здоровье тает каждый час."
                 )
             to_remind.append((f, text, frog_kb))
 
         # ── Плохо: HP 10–25% или голод < 20% → раз в 4ч ──
         elif (10 <= hp < 25 or hunger < 20) and now - last_r > 4 * 3600:
             text = (
-                f"⚠️ <b>{name}</b> плохо себя чувствует\n\n"
-                f"❤️ {hp}% 🍖 {hunger}%\n"
-                f"Зайди и покорми/полечи."
+                f"{_E_HEART} <b>{name} расклеилась</b>\n\n"
+                f"{_E_HEART} {hp}% {_E_FOOD} {hunger}%"
             )
             to_remind.append((f, text, frog_kb))
 
@@ -52973,8 +52980,8 @@ async def job_reminders(ctx: ContextTypes.DEFAULT_TYPE):
             m = get_mood(f)
             if m in ("sad", "sick"):
                 text = (
-                    f"😢 <b>{name}</b> скучает и голодает\n\n"
-                    f"🍖 {hunger}% 😄 {f.get('happiness',100)}%"
+                    f"{_E_FOOD} <b>{name} заскучала</b>\n\n"
+                    f"{_E_FOOD} {hunger}% {_E_HAPPY} {f.get('happiness',100)}%"
                 )
                 to_remind.append((f, text, frog_kb))
 
