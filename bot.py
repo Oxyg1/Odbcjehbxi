@@ -5290,6 +5290,8 @@ _LANGS = {
         "stat_frog_default": "Лягушка",
         "frog_level_reward": "Уровень",
         # ── Моод-фразы ──
+        # Русские значения перезаписываются из M_SAY сразу после его объявления —
+        # искать актуальный текст надо там, здесь он только для полноты словаря.
         "mood_happy":  ["Квак! Мне хорошо!", "Жизнь прекрасна!", "Кваак! 🐸", "Я счастлива!", "Хочу прыгать!"],
         "mood_neutral": ["Квак...", "Всё нормально.", "Жду чего-то интересного.", "Никто не кормит..."],
         "mood_sad":    ["Мне грустно...", "Покорми меня!", "Поиграй со мной...", "😢"],
@@ -16389,6 +16391,12 @@ M_SAY = {
     "dead":    ["...", "💀"],
 }
 
+# Банков фраз настроения было два, и они разошлись: M_SAY читает только экран
+# соседей, а карточка лягушки — главный экран игры — берёт фразу из _LANGS
+# через t_mood(). Русский язык теперь один источник, M_SAY; en и zh остаются
+# при своих переводах.
+_LANGS["ru"].update({f"mood_{mood}": say for mood, say in M_SAY.items()})
+
 
 def bar(v: int) -> str:
     """
@@ -17022,10 +17030,12 @@ def back_to_main(f: dict = None) -> InlineKeyboardMarkup:
 # ══════════════════════════════════════════
 # 🛠  ВСПОМОГАТЕЛЬНЫЕ
 # ══════════════════════════════════════════
-async def show_status(target, f: dict, edit=False, app=None):
+async def show_status(target, f: dict, edit=False, app=None, header: str = ""):
+    """header — итог только что совершённого действия. Ставится над карточкой,
+    чтобы награда осталась в переписке, а не мигнула алертом и пропала."""
     # Подтягиваем флаг буста прямо в словарь f (временно)
     f["_boost_active"] = await boost_is_active()
-    text = status_text(f)
+    text = f"{header}\n\n{status_text(f)}" if header else status_text(f)
     # Определяем тип чата для адаптивного меню
     _is_group = False
     try:
@@ -38579,6 +38589,150 @@ async def shop_router(update: Update, ctx: ContextTypes.DEFAULT_TYPE):
     await on_callback(update, ctx)
 
 
+# ══════════════════════════════════════════════════════════════════════════════
+# ЕЖЕДНЕВНЫЙ БОНУС
+# Одна реализация на два входа: кнопку «Бонус» и команду /daily. Логика жила
+# внутри ветки колбэка и командой была недоступна — /daily висел в меню Telegram
+# и молчал. Отсюда и вынос: дублировать сто строк начисления нельзя.
+# ══════════════════════════════════════════════════════════════════════════════
+async def daily_claim(user, f: dict, ctx: ContextTypes.DEFAULT_TYPE) -> tuple[bool, str]:
+    """Выдаёт ежедневный бонус. Возвращает (успех, готовый HTML-текст).
+
+    При отказе текст — короткая строка без разметки: её показывают алертом,
+    а алерт HTML не разбирает.
+    """
+    uid = user.id
+    now = time.time()
+    today_start = (
+        datetime.now(timezone.utc)
+        .replace(hour=0, minute=0, second=0, microsecond=0)
+        .timestamp()
+    )
+    if f["last_daily"] >= today_start:
+        nxt = today_start + 86400
+        h, m = int((nxt - now) / 3600), int(((nxt - now) % 3600) / 60)
+        return False, f"Уже забрал. Следующий через {h}ч {m}мин"
+
+    yesterday = today_start - 86400
+    f["streak"] = (f["streak"] + 1) if f["last_daily"] >= yesterday else 1
+    # Анонс вехи стрика в чат
+    _streak_milestone = STREAK_MILESTONES.get(f["streak"])
+    if _streak_milestone:
+        _sm_icon, _sm_text = _streak_milestone
+        asyncio.create_task(letopis_add(uid, 'streak', f"{_sm_icon} {_sm_text.format(name=fname(f))}"))
+        asyncio.create_task(announce(
+            ctx.bot,
+            f"{_sm_icon} <b>Болотная летопись!</b>\n{_sm_text.format(name=fname(f))}",
+            delete_after=300,
+        ))
+    coins = 20 + min(f["streak"] * 5, 100)
+    xp = 30 + min(f["streak"] * 3, 60)
+    mult = await get_reward_multiplier(uid, f)
+    # Скромная +10 монет к ежедневному бонусу
+    pers_daily = PERSONALITIES.get(f.get("personality", ""), {})
+    coins += pers_daily.get("daily_coins_bonus", 0)
+    # Небольшая надбавка обладателям Telegram Premium. Флаг приходит прямо
+    # в объекте пользователя, хранить его не нужно — и он всегда свежий,
+    # в отличие от копии в базе, которая протухла бы после отмены подписки.
+    premium_bonus = PREMIUM_DAILY_BONUS if user.is_premium else 0
+    coins += premium_bonus
+    # Погода: радуга all_mult
+    weather_daily = _get_today_weather()
+    mult *= weather_daily.get("all_mult", 1.0)
+    coins_final = int(coins * mult)
+    xp_final = int(xp * mult)
+    f["coins"] += coins_final
+    add_xp(f, xp_final)
+    f["hunger"] = min(100, f["hunger"] + 20)
+    f["happiness"] = min(100, f["happiness"] + 15)
+    f["last_daily"] = now
+    rewards = await levelup(f, ctx.bot)
+    await db_save(f)
+    await ach_check(f, ctx.bot)
+
+    # ── Болотная Связь — проверка стрика для ВСЕХ связей ─────────────
+    # ИСПРАВЛЕНО: раньше обновлялась только связь с bond_with (первый партнёр),
+    # теперь итерируем по всей таблице user_bonds.
+    bond_lines = []
+    my_bonds = await get_user_bonds(uid)
+    for _bond in my_bonds or []:
+        _partner_id = _bond["partner_id"]
+        partner = await db_get(_partner_id)
+        if not partner or partner.get("last_daily", 0) < today_start:
+            continue  # партнёр сегодня не заходил — стрик не растёт
+        new_streak = _bond.get("streak", 0) + 1
+        async with aiosqlite.connect(DB_PATH) as _bdb:
+            await _bdb.execute(
+                "UPDATE user_bonds SET streak=?, bond_last=? WHERE user_id=? AND partner_id=?",
+                (new_streak, now, uid, _partner_id)
+            )
+            await _bdb.execute(
+                "UPDATE user_bonds SET streak=?, bond_last=? WHERE user_id=? AND partner_id=?",
+                (new_streak, now, _partner_id, uid)
+            )
+            await _bdb.commit()
+        # Синхронизируем legacy bond_streak в frogs только для первого партнёра
+        if f.get("bond_with") == _partner_id:
+            f["bond_streak"] = new_streak
+            f["bond_last"]   = now
+            await db_save(f)
+        milestone = BOND_MILESTONES.get(new_streak)
+        pname = partner.get("frog_name") or partner.get("first_name") or "?"
+        if milestone:
+            icon, _mtext = milestone
+            bond_reward = new_streak * 10
+            f["coins"] += bond_reward
+            await db_save(f)
+            bond_lines.append(f"{icon} Связь с {he(pname)}: {new_streak} дней, +{bond_reward}{_E_COIN}")
+            try:
+                await ctx.bot.send_message(
+                    _partner_id,
+                    f"{icon} <b>Болотная Связь</b>\n\n"
+                    f"<b>{fname(f)}</b> и <b>{he(pname)}</b> вместе уже {new_streak} дней.\n"
+                    f"Обоим +{bond_reward}{_E_COIN}",
+                    parse_mode=ParseMode.HTML,
+                )
+                partner["coins"] = partner.get("coins", 0) + bond_reward
+                await db_save(partner)
+            except Exception as _e:
+                logger.exception("подавлено исключение: %s", _e)
+            await letopis_add(uid, "friend",
+                f"💚 {fname(f)} и {he(pname)}: {new_streak} дней Болотной Связи!")
+        else:
+            bond_lines.append(f"💚 Связь с {he(pname)}: {_E_FIRE}{new_streak} дней")
+
+    # ── Итог. Раньше он уезжал в алерт на 200 символов: связи и повышения
+    #    уровня туда не помещались и терялись, а <tg-emoji> показывался
+    #    сырой разметкой, потому что алерт HTML не разбирает.
+    lines = [f"📅 <b>Ежедневный бонус</b>", ""]
+    lines.append(f"{_E_COIN}+{coins_final} {_E_XP}+{xp_final} XP")
+    lines.append(f"{_E_FIRE} Стрик: <b>{f['streak']}</b> дн.")
+    if mult > 1.0:
+        lines.append(f"✨ Множитель ×{mult:.2f}")
+    if premium_bonus:
+        lines.append(f"{_E_STARS} Premium: +{premium_bonus}{_E_COIN}")
+    lines += bond_lines
+    for lvl, skin in rewards:
+        lines.append(f"{_E_LEVEL} <b>Уровень {lvl}!</b> Новый облик: {display_skin(skin)}")
+    return True, "\n".join(lines)
+
+
+async def cmd_daily(update: Update, ctx: ContextTypes.DEFAULT_TYPE):
+    """Ежедневный бонус — /daily. То же, что кнопка «Бонус» на карточке."""
+    if not await group_cmd_guard(update, "daily", ctx):
+        return
+    user = update.effective_user
+    f = await db_get(user.id)
+    if not f:
+        await group_reply(update, "Сначала /start")
+        return
+    ok, msg = await daily_claim(user, f, ctx)
+    if not ok:
+        await group_reply(update, msg)
+        return
+    await show_status(update.message, f, header=msg)
+
+
 async def on_callback(update: Update, ctx: ContextTypes.DEFAULT_TYPE):
     _g = await cb_guard(update, ctx)
     if _g is None:
@@ -39552,123 +39706,13 @@ async def on_callback(update: Update, ctx: ContextTypes.DEFAULT_TYPE):
 
     # ── ЕЖЕДНЕВНЫЙ БОНУС ───────────────────────────
     if d == "daily":
-        now = time.time()
-        today_start = (
-            datetime.now(timezone.utc)
-            .replace(hour=0, minute=0, second=0, microsecond=0)
-            .timestamp()
-        )
-        if f["last_daily"] >= today_start:
-            nxt = today_start + 86400
-            h, m = int((nxt - now) / 3600), int(((nxt - now) % 3600) / 60)
-            await q.answer((f"Уже получен. Через {h}ч {m}мин")[:200], show_alert=True)
+        ok, msg = await daily_claim(q.from_user, f, ctx)
+        if not ok:
+            await q.answer(msg[:200], show_alert=True)
             return
-        yesterday = today_start - 86400
-        prev_streak = f["streak"]
-        f["streak"] = (f["streak"] + 1) if f["last_daily"] >= yesterday else 1
-        # Анонс вехи стрика в чат
-        _streak_milestone = STREAK_MILESTONES.get(f["streak"])
-        if _streak_milestone:
-            _sm_icon, _sm_text = _streak_milestone
-            asyncio.create_task(letopis_add(uid, 'streak', f"{_sm_icon} {_sm_text.format(name=fname(f))}"))
-            asyncio.create_task(announce(
-                ctx.bot,
-                f"{_sm_icon} <b>Болотная летопись!</b>\n{_sm_text.format(name=fname(f))}",
-                delete_after=300,
-            ))
-        coins = 20 + min(f["streak"] * 5, 100)
-        xp = 30 + min(f["streak"] * 3, 60)
-        mult = await get_reward_multiplier(uid, f)
-        # Скромная +10 монет к ежедневному бонусу
-        pers_daily = PERSONALITIES.get(f.get("personality", ""), {})
-        coins += pers_daily.get("daily_coins_bonus", 0)
-        # Небольшая надбавка обладателям Telegram Premium. Флаг приходит прямо
-        # в объекте пользователя, хранить его не нужно — и он всегда свежий,
-        # в отличие от копии в базе, которая протухла бы после отмены подписки.
-        premium_bonus = PREMIUM_DAILY_BONUS if q.from_user.is_premium else 0
-        coins += premium_bonus
-        # Погода: радуга all_mult
-        weather_daily = _get_today_weather()
-        mult *= weather_daily.get("all_mult", 1.0)
-        coins_final = int(coins * mult)
-        xp_final = int(xp * mult)
-        f["coins"] += coins_final
-        add_xp(f, xp_final)
-        f["hunger"] = min(100, f["hunger"] + 20)
-        f["happiness"] = min(100, f["happiness"] + 15)
-        f["last_daily"] = now
-        rewards = await levelup(f, ctx.bot)
-        await db_save(f)
-        await ach_check(f, ctx.bot)
-
-        # ── Болотная Связь — проверка стрика для ВСЕХ связей ─────────────
-        # ИСПРАВЛЕНО: раньше обновлялась только связь с bond_with (первый партнёр),
-        # теперь итерируем по всей таблице user_bonds.
-        bond_note = ""
-        my_bonds = await get_user_bonds(uid)
-        if my_bonds:
-            bond_notes = []
-            for _bond in my_bonds:
-                _partner_id = _bond["partner_id"]
-                partner = await db_get(_partner_id)
-                if not partner or partner.get("last_daily", 0) < today_start:
-                    continue  # партнёр сегодня не заходил — стрик не растёт
-                cur_bond_streak = _bond.get("streak", 0)
-                new_streak = cur_bond_streak + 1
-                async with aiosqlite.connect(DB_PATH) as _bdb:
-                    await _bdb.execute(
-                        "UPDATE user_bonds SET streak=?, bond_last=? WHERE user_id=? AND partner_id=?",
-                        (new_streak, now, uid, _partner_id)
-                    )
-                    await _bdb.execute(
-                        "UPDATE user_bonds SET streak=?, bond_last=? WHERE user_id=? AND partner_id=?",
-                        (new_streak, now, _partner_id, uid)
-                    )
-                    await _bdb.commit()
-                # Синхронизируем legacy bond_streak в frogs только для первого партнёра
-                if f.get("bond_with") == _partner_id:
-                    f["bond_streak"] = new_streak
-                    f["bond_last"]   = now
-                    await db_save(f)
-                milestone = BOND_MILESTONES.get(new_streak)
-                if milestone:
-                    icon, _mtext = milestone
-                    bond_reward = new_streak * 10
-                    f["coins"] += bond_reward
-                    await db_save(f)
-                    pname = partner.get("frog_name") or partner.get("first_name") or "?"
-                    bond_notes.append(f"{icon} Связь с {he(pname)}: {new_streak} дней! +{bond_reward}{_E_COIN}")
-                    try:
-                        await ctx.bot.send_message(
-                            _partner_id,
-                            f"{icon} <b>Болотная Связь!</b>\n\n"
-                            f"<b>{fname(f)}</b> и <b>{he(pname)}</b> — {new_streak} дней вместе!\n"
-                            f"Оба получают +{bond_reward}{_E_COIN} {_E_LEAF}",
-                            parse_mode=ParseMode.HTML,
-                        )
-                        partner["coins"] = partner.get("coins", 0) + bond_reward
-                        await db_save(partner)
-                    except Exception as _e:
-                        logger.exception("подавлено исключение: %s", _e)
-                    await letopis_add(uid, "friend",
-                        f"💚 {fname(f)} и {he(pname)}: {new_streak} дней Болотной Связи!")
-                else:
-                    bond_notes.append(f"💚 Связь {_E_FIRE}{new_streak} дней")
-            if bond_notes:
-                bond_note = "\n" + " · ".join(bond_notes)
-
-        mult_str = f" ✨×{mult:.2f}" if mult > 1.0 else ""
-        prem_str = f" · Premium +{premium_bonus}" if premium_bonus else ""
-        _daily_answer = (f"📅 +{coins_final}{coin_plain()} +{xp_final}XP "
-                         f"🔥Стрик {f['streak']}д{mult_str}{prem_str}{bond_note}")
-        await q.answer(_daily_answer[:200], show_alert=True)
-        await show_status(q, f, edit=True)
+        await q.answer()
+        await show_status(q, f, edit=True, header=msg)
         return
-
-
-
-
-
 
     # ── НАДЕТЬ ОБЛИК ───────────────────────────────
     if d.startswith("equip_"):
@@ -68738,6 +68782,7 @@ def main():
         ("mystats", cmd_mystats),
         ("mymenu", cmd_mymenu),
         ("cooldowns", cmd_cooldowns),
+        ("daily", cmd_daily),
         ("help", cmd_help),
         ("chatid", cmd_chatid),
         ("setsticker", cmd_setsticker),
