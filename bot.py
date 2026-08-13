@@ -4087,6 +4087,10 @@ def run_sync_migration():
         ("last_tutorial_day",  "INTEGER DEFAULT 0"),  # последний отправленный день (1/2/3)
         # ── Заморозка бонуса облика ───────────────────────
         ("frozen_skin",        "TEXT    DEFAULT ''"),
+        # ── Недосписанные доли затухания ──────────────────
+        # JSON вида {"hunger": 0.62, "energy": 0.15, …}. Без него частые
+        # вызовы decay() отбрасывали остаток, и показатели замирали.
+        ("decay_frac",         "TEXT    DEFAULT ''"),
     ]
 
     for col, typedef in frogs_cols:
@@ -16295,6 +16299,43 @@ _STAYA_BONUS_CACHE: dict[int, dict] = {}
 _STAYA_BOOST_CACHE: dict[int, dict] = {}
 
 
+# Скорость затухания в единицах за час при множителе 1.0. Раньше эти числа
+# были размазаны по decay() как «int(d * 0.4)», где d — целые единицы за вызов.
+# На частых вызовах d равнялось единице, int(1 * 0.4) давал ноль, а last_decay
+# всё равно сдвигался на now — прошедшее время просто выбрасывалось. Показатель
+# с множителем меньше единицы не падал вообще: чистота и энергия у активного
+# игрока стояли на 100 вечно.
+DECAY_RATES = {
+    "hunger":      7.0,
+    "happiness":   7.0,
+    "cleanliness": 7.0 * 0.4,
+    "energy":      7.0 * 0.3,
+    "health":      7.0 * 0.5,      # только при нулевом голоде
+}
+
+
+def _decay_frac_load(f: dict) -> dict:
+    """Недосписанные доли единиц. Хранятся строкой JSON в колонке decay_frac."""
+    raw = f.get("decay_frac") or ""
+    if not raw:
+        return {}
+    try:
+        data = json.loads(raw)
+    except (ValueError, TypeError):
+        return {}
+    if not isinstance(data, dict):
+        return {}
+    # Доля по определению меньше единицы; всё прочее — мусор, и копить его
+    # нельзя: подпорченное значение иначе списало бы показатель разом.
+    return {k: v for k, v in data.items()
+            if k in DECAY_RATES and isinstance(v, (int, float)) and 0 <= v < 1}
+
+
+def _decay_frac_store(f: dict, frac: dict) -> None:
+    kept = {k: round(v, 4) for k, v in frac.items() if v > 0}
+    f["decay_frac"] = json.dumps(kept, separators=(",", ":")) if kept else ""
+
+
 def decay(f: dict) -> dict:
     now = time.time()
     # ── Анабиоз: пропускаем деградацию ──────────────────
@@ -16310,8 +16351,7 @@ def decay(f: dict) -> dict:
         return f
 
     hours = (now - f["last_decay"]) / 3600
-    d = int(hours * 7)
-    if not d:
+    if hours <= 0:
         return f
 
     # ── Погода: применяем множители ──────────────────────
@@ -16331,15 +16371,28 @@ def decay(f: dict) -> dict:
     staya_id_d = f.get("staya_id") or 0
     if staya_id_d and staya_id_d in _STAYA_BONUS_CACHE:
         hunger_mult *= _STAYA_BONUS_CACHE[staya_id_d].get("hunger_decay_mult", 1.0)
-
-    f["hunger"]      = max(0, f["hunger"]                       - int(d * hunger_mult))
-    f["happiness"]   = max(0, f["happiness"]                    - int(d * happy_mult))
     # Бонус стаи ур.7: чистота падает медленнее
     _clean_mult_d = _STAYA_BONUS_CACHE.get(staya_id_d, {}).get("clean_decay_mult", 1.0)
-    f["cleanliness"] = max(0, f.get("cleanliness", 100)         - int(d * 0.4 * _clean_mult_d))
-    f["energy"]      = max(0, f.get("energy", 100)              - int(d * 0.3 * energy_mult))
+
+    # Недосписанный остаток с прошлых вызовов — без него показатель замирает.
+    frac = _decay_frac_load(f)
+
+    def _take(stat: str, mult: float) -> int:
+        """Целые единицы к списанию; дробный хвост остаётся на следующий раз."""
+        due = frac.get(stat, 0.0) + hours * DECAY_RATES[stat] * mult
+        whole = int(due)
+        frac[stat] = due - whole
+        return whole
+
+    f["hunger"]      = max(0, f["hunger"]               - _take("hunger", hunger_mult))
+    f["happiness"]   = max(0, f["happiness"]            - _take("happiness", happy_mult))
+    f["cleanliness"] = max(0, f.get("cleanliness", 100) - _take("cleanliness", _clean_mult_d))
+    f["energy"]      = max(0, f.get("energy", 100)      - _take("energy", energy_mult))
     if f["hunger"] == 0:
-        f["health"] = max(0, f["health"] - int(d * 0.5 * health_mult))
+        f["health"] = max(0, f["health"] - _take("health", health_mult))
+    else:
+        frac.pop("health", None)      # сыта — счётчик голодного урона обнуляем
+    _decay_frac_store(f, frac)
     f["last_decay"] = now
 
     # ── Предупреждение о низком здоровье (< 20%) ──
@@ -18603,7 +18656,8 @@ async def cmd_reset_stats(update: Update, ctx: ContextTypes.DEFAULT_TYPE):
         await db.commit()
 
     await msg.edit_text(
-        f"{_E_CHECK} <b>\u0413\u043e\u0442\u043e\u0432\u043e!</b> \u0423 <b>{count}</b> \u0438\u0433\u0440\u043e\u043a\u043e\u0432 \u0432\u0441\u0435 \u043f\u0430\u0440\u0430\u043c\u0435\u0442\u0440\u044b \u0441\u043d\u0438\u0436\u0435\u043d\u044b \u0434\u043e {int(TARGET)}%.\\n"
+        f"{_E_CHECK} <b>Готово.</b> У <b>{count}</b> игроков параметры "
+        f"снижены до {int(TARGET)}%.\n"
         f"<i>Затронуто: здоровье, счастье, голод, чистота, энергия.</i>",
         parse_mode=ParseMode.HTML,
     )
