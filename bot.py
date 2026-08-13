@@ -3577,6 +3577,28 @@ _BTN_LEAD_EMOJI = re.compile(
 )
 
 
+_TG_EMOJI_TAG = re.compile(r'<tg-emoji\s+emoji-id=["\'](\d+)["\']>(.*?)</tg-emoji>')
+
+
+def _button_premium_tags(text: str, icon_id: str | None) -> tuple[str, str | None]:
+    """
+    Разбирает <tg-emoji> в подписи кнопки.
+
+    В тексте кнопки Telegram HTML не разбирает: тег показывается игроку сырой
+    разметкой. Премиум-значку на кнопке отведено отдельное поле
+    icon_custom_emoji_id — туда и уносим ведущий значок. Остальные теги
+    сворачиваем до их же юникод-запаски: значок сохраняется, разметка уходит.
+    """
+    if not text or "<tg-emoji" not in text:
+        return text, icon_id
+    m = _TG_EMOJI_TAG.match(text)
+    if m and not icon_id:
+        rest = text[m.end():].lstrip()
+        if rest:                       # подпись не сводится к одному значку
+            text, icon_id = rest, m.group(1)
+    return _TG_EMOJI_TAG.sub(lambda mm: mm.group(2), text), icon_id
+
+
 def _split_button_icon(text: str, icon_id: str | None) -> tuple[str, str | None]:
     """
     Выносит ведущую эмодзи подписи в иконку кнопки, если для неё есть премиум-id.
@@ -3617,6 +3639,7 @@ def btn(
     Если style и icon_id не заданы — возвращает обычный InlineKeyboardButton
     (нет оверхеда от подкласса).
     """
+    text, icon_id = _button_premium_tags(text, icon_id)
     text, icon_id = _split_button_icon(text, icon_id)
     if style or icon_id:
         return _StyledButton(
@@ -28609,10 +28632,11 @@ async def cmd_mystats(update: Update, ctx: ContextTypes.DEFAULT_TYPE):
     m = get_mood(f)
     days = int((time.time() - f["born_at"]) / 86400)
     text = (
-        f"<tg-emoji emoji-id='5341367834935075028'>🐸</tg-emoji> <b>{fname(f)}</b> — ур.{f['level']} {R_DOT[s['rarity']]} {pemoji(f['skin'])}\n"
-        f"{_E_HEART} {f['health']}% {_E_FOOD} {f['hunger']}% 😄 {f['happiness']}%\n"
+        f"{_E_FROG} <b>{fname(f)}</b> — ур.{f['level']} {R_DOT[s['rarity']]} {pemoji(f['skin'])}\n"
+        f"{_E_HEART} {f['health']}% {_E_FOOD} {f['hunger']}% {_E_HAPPY} {f['happiness']}%\n"
         f"{f['coins']}{coin_emoji()} {_E_FIRE} {f['streak']}д 📅 {days}дн\n"
-        f"🗂 Коллекция: {len(coll)}/50 {_E_SWORDS} Побед в дуэлях: {f.get('total_duel_wins', 0)}\n"
+        # «Побед в дуэлях» не влезало в строку: пара уезжала на второй ряд
+        f"🗂 Коллекция: {len(coll)}/50 {_E_SWORDS} Дуэли: {f.get('total_duel_wins', 0)}\n"
         f"{M_ICON[m]} <i>«{random.choice(M_SAY[m])}»</i>"
     )
     ms_msg = await update.message.reply_text(
@@ -49474,6 +49498,60 @@ async def _sync_user_info(user) -> bool:
     return False
 
 
+async def cmd_report(update: Update, ctx: ContextTypes.DEFAULT_TYPE):
+    """Позвать администраторов чата — /report [причина], лучше ответом на сообщение.
+
+    Раньше этот разбор лежал внутри on_message, куда команды не доходят:
+    хендлер сообщений стоит с фильтром ~filters.COMMAND. На месте команды
+    была заглушка `lambda u, c: None`, а PTB результат хендлера ожидает —
+    поэтому каждый /report заканчивался TypeError и молчанием.
+    """
+    user = update.effective_user
+    if not user or not update.message:
+        return
+    if not is_group(update):
+        await update.message.reply_text("Команда работает в групповом чате.")
+        return
+
+    gid = update.effective_chat.id
+    reason = (update.message.text or "")[len("/report"):].strip() or "нарушение"
+    reported_user = None
+    if update.message.reply_to_message:
+        reported_user = update.message.reply_to_message.from_user
+    reporter_name = user.first_name or "Игрок"
+    chat_title = update.effective_chat.title or str(gid)
+    # Находим всех администраторов чата
+    try:
+        admins = await ctx.bot.get_chat_administrators(gid)
+        admin_ids = [a.user.id for a in admins if not a.user.is_bot]
+    except Exception:
+        admin_ids = []
+    report_txt = (
+        f"🚨 <b>Репорт из чата {he(chat_title)}</b>\n\n"
+        f"От: {he(reporter_name)}"
+        + (f" (@{user.username})" if user.username else "") + "\n"
+        + (f"На: <b>{he(reported_user.first_name)}</b>" if reported_user else "")
+        + f"\nПричина: {he(reason)}"
+    )
+    sent = False
+    for aid in admin_ids:
+        try:
+            await ctx.bot.send_message(aid, report_txt, parse_mode=ParseMode.HTML)
+            sent = True
+        except (BadRequest, Forbidden, TimedOut):
+            pass
+    try:
+        resp = await update.message.reply_text(
+            "Позвал администраторов." if sent else
+            "Некого позвать — администраторы чата не найдены.",
+        )
+        await asyncio.sleep(5)
+        await resp.delete()
+        await update.message.delete()
+    except (BadRequest, Forbidden, TimedOut):
+        pass
+
+
 async def on_message(update: Update, ctx: ContextTypes.DEFAULT_TYPE):
     if not update.message:
         return
@@ -49751,47 +49829,6 @@ async def on_message(update: Update, ctx: ContextTypes.DEFAULT_TYPE):
                             )
                         except (BadRequest, Forbidden, TimedOut):
                             pass
-
-    # ── Команда /report ─────────────────────────────────
-    if user and is_group(update) and text.startswith("/report"):
-        gid = update.effective_chat.id
-        reason = text[7:].strip() or "нарушение"
-        reported_user = None
-        if update.message.reply_to_message:
-            reported_user = update.message.reply_to_message.from_user
-        reporter_name = user.first_name or "Игрок"
-        chat_title = update.effective_chat.title or str(gid)
-        # Находим всех администраторов чата
-        try:
-            admins = await ctx.bot.get_chat_administrators(gid)
-            admin_ids = [a.user.id for a in admins if not a.user.is_bot]
-        except Exception:
-            admin_ids = []
-        report_txt = (
-            f"🚨 <b>Репорт из чата {he(chat_title)}</b>\n\n"
-            f"От: {he(reporter_name)}"
-            + (f" (@{user.username})" if user.username else "") + "\n"
-            + (f"На: <b>{he(reported_user.first_name)}</b>" if reported_user else "")
-            + f"\nПричина: {he(reason)}"
-        )
-        sent = False
-        for aid in admin_ids:
-            try:
-                await ctx.bot.send_message(aid, report_txt, parse_mode=ParseMode.HTML)
-                sent = True
-            except (BadRequest, Forbidden, TimedOut):
-                pass
-        try:
-            resp = await update.message.reply_text(
-                "✅ Репорт отправлен администраторам." if sent else
-                "⚠️ Не удалось найти администраторов для уведомления.",
-            )
-            await asyncio.sleep(5)
-            await resp.delete()
-            await update.message.delete()
-        except (BadRequest, Forbidden, TimedOut):
-            pass
-        return
 
     # ── Обновляем last_seen ──────────────────────────
     if user:
@@ -62024,7 +62061,7 @@ async def _exp_lobby_text(exp: dict, members: list[dict], bot) -> str:
     names_str = "\n".join(names) if names else "— пусто —"
 
     return (
-        f"{biome['emoji']} <b>{biome['name']}</b>\n"
+        f"<b>{biome['name']}</b>\n"          # эмодзи уже внутри name
         f"<i>{biome['desc']}</i>\n\n"
         f"{_E_USERS} <b>Команда</b> {len(members)}/{exp['max_players']}:\n"
         f"{names_str}\n\n"
@@ -63902,14 +63939,16 @@ async def _show_exp_menu(msg_or_q, f: dict, open_lobbies: list, back_data: str =
     # ── Биомы ────────────────────────────────────────────────────
     biome_rows = []
     for bk, bc in EXP_BIOMES.items():
+        # bc['name'] уже начинается со своей эмодзи, поэтому bc['emoji'] рядом
+        # не ставим: выходило «🌿 🌿 Гнилое Болото», да ещё и с переносом строки.
         if lvl >= bc["min_level"]:
             biome_rows.append(
-                f"{_E_CHECK} {bc['emoji']} <b>{bc['name']}</b>"
+                f"{_E_CHECK} <b>{bc['name']}</b>"
                 f"  <i>{bc['duration_h']}ч · до {bc['max_coins']}{_E_COIN}</i>"
             )
         else:
             biome_rows.append(
-                f"🔒 {bc['emoji']} {bc['name']}"
+                f"🔒 {bc['name']}"
                 f"  <i>ур.{bc['min_level']}+</i>"
             )
     biomes_block = "\n".join(biome_rows)
@@ -68873,7 +68912,7 @@ def main():
     app.add_handler(CommandHandler("rules",        cmd_chatrules))
     app.add_handler(CommandHandler("lang",         cmd_lang))
     app.add_handler(CommandHandler("language",     cmd_lang))
-    app.add_handler(CommandHandler("report",       lambda u,c: None))  # handled in on_message
+    app.add_handler(CommandHandler("report",       cmd_report))
     app.add_handler(CommandHandler("bonus", cmd_bonus))
     app.add_handler(CommandHandler("broadcast_nft", cmd_broadcast_nft))
     app.add_handler(CommandHandler("broadcast_return", cmd_broadcast_return))
