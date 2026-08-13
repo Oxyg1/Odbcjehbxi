@@ -4091,6 +4091,15 @@ def run_sync_migration():
         # JSON вида {"hunger": 0.62, "energy": 0.15, …}. Без него частые
         # вызовы decay() отбрасывали остаток, и показатели замирали.
         ("decay_frac",         "TEXT    DEFAULT ''"),
+        # ── Счётчики достижений ───────────────────────────
+        # Условия на эти поля были в ach_check с самого начала, а колонок не
+        # было: значение всегда читалось нулём, и 8 достижений не выдавались
+        # никому и никогда.
+        ("total_ttt_wins",     "INTEGER DEFAULT 0"),   # ttt_win_5 / ttt_win_20
+        ("total_hangman_wins", "INTEGER DEFAULT 0"),   # hangman_10
+        ("total_worker_days",  "INTEGER DEFAULT 0"),   # worker_30days / _100days
+        ("full_care_streak",   "INTEGER DEFAULT 0"),   # full_care_7
+        ("full_care_day",      "INTEGER DEFAULT 0"),   # день последнего зачёта
     ]
 
     for col, typedef in frogs_cols:
@@ -15974,6 +15983,18 @@ async def ach_check(f: dict, bot=None):
             "SELECT ach_id FROM achievements WHERE user_id=?", (uid,)
         ) as c:
             already_earned = {r[0] for r in await c.fetchall()}
+        # Рефералы и подарки живут в своих таблицах. Условия смотрели на поля
+        # лягушки total_referrals и total_gifts_sent, которых в frogs нет и
+        # никогда не было, — поэтому пять социальных достижений не выдавались.
+        # Заводить дублирующие счётчики незачем, данные уже есть: считаем их.
+        async with db.execute(
+            "SELECT COUNT(*) FROM referrals WHERE referrer_id=?", (uid,)
+        ) as c:
+            referrals_cnt = (await c.fetchone())[0]
+        async with db.execute(
+            "SELECT COUNT(*) FROM gift_log WHERE from_id=?", (uid,)
+        ) as c:
+            gifts_sent_cnt = (await c.fetchone())[0]
 
         leg = sum(1 for s in coll if SKINS.get(s, {}).get("rarity") == "legendary")
         has_mythic = any(SKINS.get(s, {}).get("rarity") == "mythic" for s in coll)
@@ -15989,6 +16010,34 @@ async def ach_check(f: dict, bot=None):
             f.get("health", 0) >= 100 and f.get("cleanliness", 0) >= 100 and
             f.get("energy", 0) >= 100
         )
+        # full_care_7: дни подряд с идеальным уходом. Стрик никто не считал —
+        # условие смотрело на full_care_streak, которого в таблице не было.
+        # Засчитываем не чаще раза в сутки; пропущенный день обнуляет счёт.
+        # Пишем сразу и в базу: ach_check зовут уже ПОСЛЕ db_save, так что
+        # правка одного словаря до диска бы не доехала.
+        if is_full_care:
+            today_num = int(time.time() // 86400)
+            last_num  = f.get("full_care_day", 0)
+            if last_num != today_num:
+                f["full_care_streak"] = (f.get("full_care_streak", 0) + 1
+                                         if last_num == today_num - 1 else 1)
+                f["full_care_day"] = today_num
+                await db.execute(
+                    "UPDATE frogs SET full_care_streak=?, full_care_day=? WHERE user_id=?",
+                    (f["full_care_streak"], today_num, uid),
+                )
+                await db.commit()                   # ниже коммит только если есть новые
+                if f.get("_orig") is not None:      # снимок для db_save не должен разойтись
+                    f["_orig"]["full_care_streak"] = f["full_care_streak"]
+                    f["_orig"]["full_care_day"] = today_num
+                # UPDATE идёт мимо db_save, а значит и мимо кэша на 60 секунд —
+                # обновляем его вручную, иначе db_get вернёт старый стрик.
+                _cached = _user_cache.get(uid)
+                if _cached is not None:
+                    _cached["full_care_streak"] = f["full_care_streak"]
+                    _cached["full_care_day"] = today_num
+                    _user_cache.set(uid, _cached)
+
         # all_care_master: все достижения по уходу открыты
         care_ach_ids = {aid for aid, a in ACHIEVEMENTS.items() if a.get("cat") == "care" and not a.get("secret")}
         all_care = care_ach_ids.issubset(already_earned)
@@ -16076,13 +16125,15 @@ async def ach_check(f: dict, bot=None):
             ("days_730",      days_alive >= 730),
             ("revived",       f.get("total_revives", 0) >= 1),
             ("revived_5",     f.get("total_revives", 0) >= 5),
-            ("daily_30",      f.get("daily_streak", 0) >= 30),
-            # Социальные
-            ("first_referral",f.get("total_referrals", 0) >= 1),
-            ("referral_5",    f.get("total_referrals", 0) >= 5),
-            ("referral_20",   f.get("total_referrals", 0) >= 20),
-            ("gift_sent_10",  f.get("total_gifts_sent", 0) >= 10),
-            ("gift_sent_50",  f.get("total_gifts_sent", 0) >= 50),
+            # Стрик ежедневного бонуса лежит в streak. Поля daily_streak в
+            # frogs нет — условие всегда было ложным.
+            ("daily_30",      f["streak"] >= 30),
+            # Социальные — считаются по таблицам referrals и gift_log
+            ("first_referral",referrals_cnt >= 1),
+            ("referral_5",    referrals_cnt >= 5),
+            ("referral_20",   referrals_cnt >= 20),
+            ("gift_sent_10",  gifts_sent_cnt >= 10),
+            ("gift_sent_50",  gifts_sent_cnt >= 50),
             # Особые (частичные — остальные выдаются вручную через ach_grant)
             ("all_care_master",  care_ach_ids.issubset(already_earned)),
             ("all_games_master", {aid for aid, a in ACHIEVEMENTS.items() if a.get("cat") == "games" and not a.get("secret")}.issubset(already_earned)),
@@ -41804,6 +41855,8 @@ async def on_callback(update: Update, ctx: ContextTypes.DEFAULT_TYPE):
                 if winner == player_mark_ttt:
                     f_fresh["coins"] += 12
                     add_xp(f_fresh, 20)
+                    # Счётчик для ttt_win_5 / ttt_win_20: побед никто не считал
+                    f_fresh["total_ttt_wins"] = f_fresh.get("total_ttt_wins", 0) + 1
                     res_txt = "🏆 <b>Победа!</b> +12🪙 +20XP"
                 elif not winner and full:
                     f_fresh["coins"] += 2
@@ -41840,6 +41893,8 @@ async def on_callback(update: Update, ctx: ContextTypes.DEFAULT_TYPE):
                 if winner == player_mark_ttt:
                     f_fresh["coins"] += 12
                     add_xp(f_fresh, 20)
+                    # Счётчик для ttt_win_5 / ttt_win_20: побед никто не считал
+                    f_fresh["total_ttt_wins"] = f_fresh.get("total_ttt_wins", 0) + 1
                     res_txt = "🏆 <b>Победа!</b> +12🪙 +20XP"
                 elif not winner and full:
                     f_fresh["coins"] += 2
@@ -42033,7 +42088,10 @@ async def on_callback(update: Update, ctx: ContextTypes.DEFAULT_TYPE):
                 wf = await db_get(winner_uid)
                 if wf:
                     wf["coins"] += prize
+                    # Счётчик для ttt_win_5 / ttt_win_20
+                    wf["total_ttt_wins"] = wf.get("total_ttt_wins", 0) + 1
                     await db_save(wf)
+                    await ach_check(wf, ctx.bot)
                 lf = await db_get(loser_uid)
                 if lf:
                     await db_save(lf)
@@ -42568,13 +42626,13 @@ async def on_callback(update: Update, ctx: ContextTypes.DEFAULT_TYPE):
     # Обратная совместимость
     HANGMAN_WORDS_RU = HANGMAN_WORDS_EASY
     HANGMAN_PICS = [
-        "```\n  +---+\n  |   |\n      |\n      |\n      |\n      |\n=========```",
-        "```\n  +---+\n  |   |\n  O   |\n      |\n      |\n      |\n=========```",
-        "```\n  +---+\n  |   |\n  O   |\n  |   |\n      |\n      |\n=========```",
-        "```\n  +---+\n  |   |\n  O   |\n /|   |\n      |\n      |\n=========```",
-        "```\n  +---+\n  |   |\n  O   |\n /|\\  |\n      |\n      |\n=========```",
-        "```\n  +---+\n  |   |\n  O   |\n /|\\  |\n /    |\n      |\n=========```",
-        "```\n  +---+\n  |   |\n  O   |\n /|\\  |\n / \\  |\n      |\n=========```",
+        "<pre>  +---+\n  |   |\n      |\n      |\n      |\n      |\n=========</pre>",
+        "<pre>  +---+\n  |   |\n  O   |\n      |\n      |\n      |\n=========</pre>",
+        "<pre>  +---+\n  |   |\n  O   |\n  |   |\n      |\n      |\n=========</pre>",
+        "<pre>  +---+\n  |   |\n  O   |\n /|   |\n      |\n      |\n=========</pre>",
+        "<pre>  +---+\n  |   |\n  O   |\n /|\\  |\n      |\n      |\n=========</pre>",
+        "<pre>  +---+\n  |   |\n  O   |\n /|\\  |\n /    |\n      |\n=========</pre>",
+        "<pre>  +---+\n  |   |\n  O   |\n /|\\  |\n / \\  |\n      |\n=========</pre>",
     ]
 
     def _hangman_display(word, guessed):
@@ -42597,6 +42655,95 @@ async def on_callback(update: Update, ctx: ContextTypes.DEFAULT_TYPE):
 
 
 
+
+    # ── ВИСЕЛИЦА: буква и сдача ──────────────────────────────────────────────
+    # Обработчика этих кнопок в боте не было вовсе: клавиатура рисовалась, а
+    # нажатия проваливались в пустоту. Игра запускалась и сразу застывала, а
+    # достижение hangman_10 не мог получить никто.
+    if d.startswith("hm_letter_") or d.startswith("hm_give_up_"):
+        _give_up = d.startswith("hm_give_up_")
+        _rest = d[len("hm_give_up_"):] if _give_up else d[len("hm_letter_"):]
+        if _give_up:
+            _gid, _letter = _rest, ""
+        else:
+            _gid, _, _letter = _rest.rpartition("_")
+        # Соло хранится у игрока, групповая — в общих данных бота
+        _store = ctx.user_data if f"hm_{_gid}" in ctx.user_data else ctx.bot_data
+        _st = _store.get(f"hm_{_gid}")
+        if not _st:
+            await q.answer("Игра уже закончилась", show_alert=True)
+            return
+        if _st.get("mode") == "solo" and uid != _st.get("owner"):
+            await q.answer("Это чужая игра", show_alert=True)
+            return
+        if not _give_up and _st.get("mode") == "group" and uid == _st.get("owner"):
+            await q.answer("Ты загадал слово — угадывают другие", show_alert=True)
+            return
+
+        _word = _st["word"]
+        _finished, _won = _give_up, False
+        if not _give_up:
+            if _letter in _st["guessed"]:
+                await q.answer(t("hm_letter_used", f), show_alert=False)
+                return
+            _st["guessed"].append(_letter)
+            if _letter in _word:
+                _won = all(ch in _st["guessed"] for ch in _word)
+                _finished = _won
+            else:
+                _st["errors"] += 1
+                _finished = _st["errors"] >= 6
+        await q.answer()
+
+        if _finished:
+            _store.pop(f"hm_{_gid}", None)
+            _wf = await db_get(uid) if _won else None
+            _tail = ""
+            if _won and _wf:
+                _prize = _st.get("stake") or int(15 * (1.5 if _st.get("hard") else 1))
+                _wf["coins"] += _prize
+                add_xp(_wf, 25)
+                # Счётчик для hangman_10 — побед никто не считал
+                _wf["total_hangman_wins"] = _wf.get("total_hangman_wins", 0) + 1
+                _wf["last_hangman"] = time.time()
+                await levelup(_wf, ctx.bot)
+                await db_save(_wf)
+                await ach_check(_wf, ctx.bot)
+                _tail = f"\n\n{t('hm_win', f)} +{_prize}{coin_emoji()} {_E_XP}+25"
+            else:
+                # Проигрыш и сдача тоже ставят кулдаун — иначе его нечем взвести
+                _lf = await db_get(uid)
+                if _lf:
+                    _lf["last_hangman"] = time.time()
+                    await db_save(_lf)
+                _tail = f"\n\n{t('hm_lose', f)} <b>{he(_word)}</b>"
+            try:
+                await q.message.edit_text(
+                    f"🪢 <b>Виселица</b>\n\n"
+                    f"{HANGMAN_PICS[min(_st['errors'], 6)]}\n\n"
+                    f"<code>{_hangman_display(_word, _word)}</code>"
+                    f"{_tail}",
+                    parse_mode=ParseMode.HTML,
+                )
+            except (BadRequest, Forbidden, TimedOut):
+                pass
+            return
+
+        _rows = _hangman_kb(_word, _st["guessed"], _gid)
+        _rows.append([btn(t("chk_surrender", f), callback_data=f"hm_give_up_{_gid}")])
+        try:
+            await q.message.edit_text(
+                f"🪢 <b>Виселица</b>\n"
+                f"Слово: {len(_word)} букв\n\n"
+                f"{HANGMAN_PICS[min(_st['errors'], 6)]}\n\n"
+                f"<code>{_hangman_display(_word, _st['guessed'])}</code>\n\n"
+                f"Ошибок: {_st['errors']}/6",
+                parse_mode=ParseMode.HTML,
+                reply_markup=InlineKeyboardMarkup(_rows),
+            )
+        except (BadRequest, Forbidden, TimedOut):
+            pass
+        return
 
     if d in ("hangman_solo_easy", "hangman_solo_hard"):
         now = time.time()
@@ -50629,13 +50776,13 @@ async def on_message(update: Update, ctx: ContextTypes.DEFAULT_TYPE):
                 "stake": stake_hm,
             }
             HANGMAN_PICS_LOCAL = [
-                "```\n  +---+\n  |   |\n      |\n      |\n      |\n      |\n=========```",
-                "```\n  +---+\n  |   |\n  O   |\n      |\n      |\n      |\n=========```",
-                "```\n  +---+\n  |   |\n  O   |\n  |   |\n      |\n      |\n=========```",
-                "```\n  +---+\n  |   |\n  O   |\n /|   |\n      |\n      |\n=========```",
-                "```\n  +---+\n  |   |\n  O   |\n /|\\  |\n      |\n      |\n=========```",
-                "```\n  +---+\n  |   |\n  O   |\n /|\\  |\n /    |\n      |\n=========```",
-                "```\n  +---+\n  |   |\n  O   |\n /|\\  |\n / \\  |\n      |\n=========```",
+                "<pre>  +---+\n  |   |\n      |\n      |\n      |\n      |\n=========</pre>",
+                "<pre>  +---+\n  |   |\n  O   |\n      |\n      |\n      |\n=========</pre>",
+                "<pre>  +---+\n  |   |\n  O   |\n  |   |\n      |\n      |\n=========</pre>",
+                "<pre>  +---+\n  |   |\n  O   |\n /|   |\n      |\n      |\n=========</pre>",
+                "<pre>  +---+\n  |   |\n  O   |\n /|\\  |\n      |\n      |\n=========</pre>",
+                "<pre>  +---+\n  |   |\n  O   |\n /|\\  |\n /    |\n      |\n=========</pre>",
+                "<pre>  +---+\n  |   |\n  O   |\n /|\\  |\n / \\  |\n      |\n=========</pre>",
             ]
             alphabet = "абвгдеёжзийклмнопрстуфхцчшщъыьэюя"
             rows_hm = []
@@ -53846,6 +53993,9 @@ async def _work_phase_evening(now: float, bot):
             else:
                 # пропуск — сбрасываем стрик
                 f["worker_consec_days"] = 1
+            # Всего отчётов за всё время — для worker_30days / worker_100days.
+            # Стрик для них не годится: он обнуляется при пропуске.
+            f["total_worker_days"] = f.get("total_worker_days", 0) + 1
             f["last_worker_report"] = now
             f["worker_phase"]       = 0
             f["worker_scene_json"]  = ""
@@ -57151,6 +57301,7 @@ async def cmd_fix_workers(update: Update, ctx: ContextTypes.DEFAULT_TYPE):
                     f["worker_consec_days"] = f.get("worker_consec_days", 0) + 1
                 else:
                     f["worker_consec_days"] = 1
+                f["total_worker_days"] = f.get("total_worker_days", 0) + 1
                 f["last_worker_report"] = now
                 f["worker_phase"]       = 0
                 f["worker_scene_json"]  = ""
