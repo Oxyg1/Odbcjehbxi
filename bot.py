@@ -15040,6 +15040,74 @@ async def nft_grant_skin(nft: dict, ctx) -> str:
     return skin_to_give
 
 
+async def _nft_bonus_of(count: int) -> float:
+    """Надбавка к наградам за столько-то подтверждённых жаб."""
+    if count >= 3:
+        return NFT_BONUS_3
+    if count == 2:
+        return NFT_BONUS_2
+    if count == 1:
+        return NFT_BONUS_1
+    return 0.0
+
+
+def nft_floor_stars() -> int:
+    """Самый дешёвый лот в каталоге — ответ на вопрос «сколько это стоит».
+
+    Ноль, если каталог не подгрузился: тогда цену просто не показываем, а не
+    выдумываем.
+    """
+    prices = [i["stars"] for i in get_nft_catalog() if i.get("stars", 0) > 0]
+    return min(prices) if prices else 0
+
+
+async def nft_pitch(uid: int, f: dict) -> tuple[str, InlineKeyboardMarkup]:
+    """
+    Экран «что даёт KissedFrog» для тех, у кого гифта ещё нет.
+
+    Раньше на его месте была строка «Пока ни одной» и формат команды — экран
+    разговаривал только с теми, у кого гифт уже есть. Человек, который мог бы
+    захотеть купить, не узнавал ни что это даёт, ни сколько стоит.
+
+    Обещаем ровно то, что игра действительно делает: если множитель наград
+    выключен админом, про множитель не заикаемся.
+    """
+    bonuses_on = await reward_bonus_enabled()
+    mult_now = await get_reward_multiplier(uid, f)
+    floor = nft_floor_stars()
+
+    lines = [f"{_E_FROG} <b>KissedFrog</b>", ""]
+    lines.append("Коллекционный гифт Telegram. В игре он не просто картинка.")
+    lines.append("")
+
+    if bonuses_on:
+        # Показываем свой нынешний множитель и тот, что станет: одна жаба — ×1.5
+        lines.append(f"{_E_XP} <b>Награды ×{1.0 + NFT_BONUS_1:.2f}</b> вместо ×{mult_now:.2f}")
+        lines.append("Монеты и опыт за весь уход. Три жабы — ×2.")
+        lines.append("")
+    lines.append(f"{_E_LEAF} <b>Свой облик</b>")
+    lines.append("Жаба из гифта становится обликом лягушки.")
+    lines.append("")
+    lines.append(f"{_E_TROPHY} <b>Кружок в топах</b>")
+    lines.append("Рядом с именем — цвет редкости твоей жабы.")
+    lines.append("")
+    lines.append(f"{_E_STARS} <b>Строка в карточке</b>")
+    lines.append("Номер и редкость видны всем, кто смотрит профиль.")
+
+    if floor:
+        lines.append("")
+        lines.append(f"<i>Сейчас на витрине от {floor:,}</i>".replace(",", " ")
+                     + f"{_E_STARS}")
+
+    rows = [[btn("Смотреть лоты", callback_data="nft_shop_0_all",
+                 style="primary", icon_id=ICON_SHOP)]]
+    if floor:
+        rows.append([btn("Купить Stars за рубли", url="https://t.me/FrogsStar_bot")])
+    rows.append([btn("У меня уже есть жаба", callback_data="nft_have")])
+    rows.append([btn("◀️ Назад", callback_data="menu_more")])
+    return "\n".join(lines), InlineKeyboardMarkup(rows)
+
+
 def nft_status_line(f: dict) -> str:
     """
     Строка статуса для профиля: какой гифт надет и насколько он редкий.
@@ -23395,6 +23463,10 @@ def _build_top_lines(rows: list[dict], mode: str = "all", user_row: dict = None,
             lines.append(f"#{user_rank}{total_str} <b>{name}</b> — <b>+{xp_val:,} XP</b> {pemoji(user_row.get('skin','Brownie'))}")
         else:
             lines.append(f"#{user_rank}{total_str} <b>{name}</b>{dead} — ур.{user_row.get('level',1)} {R_DOT[s['rarity']]} {pemoji(user_row.get('skin','Brownie'))}")
+    # Кружки владельцев гифтов в топе стояли без пояснения: игрок видел
+    # значок у чужого имени и не понимал, откуда он берётся и как получить свой.
+    if badges and any(badges.get(r["user_id"]) for r in rows[:len(medals)]):
+        lines.append("\n<i>Кружок у имени — редкость KissedFrog игрока.</i>")
     return "\n".join(lines)
 
 
@@ -34600,9 +34672,15 @@ async def nft_router(update: Update, ctx: ContextTypes.DEFAULT_TYPE):
             "legendary": "🟡 легендарные",
             "epic":      "🟣 эпические",
         }
+        # Раньше заголовок был чисто служебным — «страница, лотов». Человек,
+        # впервые сюда попавший, не понимал, зачем ему эти лоты.
+        _bonus_line = (f"{_E_XP} Награды ×{1.0 + NFT_BONUS_1:.2f} · облик жабы · кружок в топах\n"
+                       if await reward_bonus_enabled() else
+                       f"{_E_LEAF} Облик жабы в игре · кружок редкости в топах\n")
         header = (
-            f"🐸 <b>NFT KissedFrog</b> · {flt_labels.get(flt, flt)}\n"
-            f"<i>Стр. {page+1}/{total_pages} · {total} лотов</i>"
+            f"{_E_FROG} <b>NFT KissedFrog</b>\n"
+            f"{_bonus_line}\n"
+            f"<i>{flt_labels.get(flt, flt)}{SEP}стр. {page+1}/{total_pages}{SEP}{total} лотов</i>"
         )
 
         buttons = []
@@ -34652,6 +34730,26 @@ async def nft_router(update: Update, ctx: ContextTypes.DEFAULT_TYPE):
         except (BadRequest, Forbidden, TimedOut):
             pass
         return
+    # Как привязать уже купленный гифт. Инструкция висела на общем экране NFT
+    # и мешала тем, кто про гифты ещё ничего не знает.
+    if d == "nft_have":
+        await q.answer()
+        try:
+            await q.message.edit_text(
+                f"{_E_FROG} <b>Привязать жабу</b>\n\n"
+                f"Пришли ссылку на свой гифт:\n"
+                f"<code>/nft https://t.me/nft/KissedFrog-XXXX</code>\n\n"
+                f"Или просто <code>/nft</code> — найду все твои жабы сам.\n\n"
+                f"<i>После проверки облик жабы можно надеть на лягушку.</i>",
+                parse_mode=ParseMode.HTML,
+                reply_markup=InlineKeyboardMarkup([
+                    [btn("◀️ Назад", callback_data="nft_menu")],
+                ]),
+            )
+        except (BadRequest, Forbidden, TimedOut):
+            pass
+        return
+
     if d == "nft_menu":
         await q.answer()
         async with aiosqlite.connect(DB_PATH) as db:
@@ -34686,19 +34784,22 @@ async def nft_router(update: Update, ctx: ContextTypes.DEFAULT_TYPE):
                             )
                         ]
                     )
+            # Владельцу показываем, что жабы уже дают и что добавит следующая:
+            # раньше экран был просто списком ссылок, без единой цифры.
+            _verified = sum(1 for n in nfts if n["verified"])
+            if _verified and await reward_bonus_enabled():
+                _next = {0: NFT_BONUS_1, 1: NFT_BONUS_2}.get(_verified)
+                lines.append(f"\n{_E_XP} Награды: <b>×{1.0 + await _nft_bonus_of(_verified):.2f}</b>")
+                if _next is not None:
+                    lines.append(f"<i>Ещё одна жаба — ×{1.0 + _next:.2f}</i>")
             lines.append("\n<i>Добавить ещё: /nft ссылка</i>")
             text = "\n".join(lines)
+            kb_rows.append([btn("Смотреть лоты", callback_data="nft_shop_0_all",
+                                icon_id=ICON_SHOP)])
             kb_rows.append([btn("◀️ Назад", callback_data="menu_more")])
             kb = InlineKeyboardMarkup(kb_rows)
         else:
-            text = (
-                "🪸 <b>KissedFrog NFT</b>\n\n"
-                "Пока ни одной. Есть жаба из коллекции — добавь ссылкой:\n"
-                "<code>/nft https://t.me/nft/KissedFrog-XXXX</code>"
-            )
-            kb = InlineKeyboardMarkup(
-                [[btn("◀️ Назад", callback_data="menu_more")]]
-            )
+            text, kb = await nft_pitch(uid, f)
         try:
             await q.message.edit_text(
                 text,
@@ -40244,8 +40345,11 @@ async def on_callback(update: Update, ctx: ContextTypes.DEFAULT_TYPE):
                 btn("🔨 Крафт", callback_data="craft_menu"),
                 btn(sub_lbl, callback_data="shop_sub"),
             ],
+            # В магазине это была ссылка прямо в каталог лотов. Тому, кто ещё не
+            # знает, что такое KissedFrog, сначала нужен ответ «зачем», а уже
+            # оттуда — лоты.
             [
-                btn("🐸 NFT KissedFrog", callback_data="nft_shop_0_all"),
+                btn("🐸 NFT KissedFrog", callback_data="nft_menu", style="success"),
             ],
         ]
         if _active_seasons:
@@ -43058,7 +43162,13 @@ async def on_callback(update: Update, ctx: ContextTypes.DEFAULT_TYPE):
             if frozen_skin else
             "❄️ Заморозить бонус облика (1000🪙)"
         )
+        # Строка «NFT (0 шт): +0%» была тупиком: показывала недостающий бонус и
+        # не говорила, откуда его взять. Даём ход прямо отсюда.
+        _nft_row = ([[btn(f"Что даёт KissedFrog{SEP}+{int(NFT_BONUS_1 * 100)}%",
+                          callback_data="nft_menu", icon_id=ICON_SHOP)]]
+                    if not nft_count else [])
         kb = InlineKeyboardMarkup([
+            *_nft_row,
             [btn(freeze_label, callback_data="skin_freeze_menu",
                  style="danger" if frozen_skin else "success")],
             [btn("◀️ Главное меню", callback_data="refresh")],
