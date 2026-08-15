@@ -6820,6 +6820,11 @@ def _load_nft_catalog() -> list:
                 "model":       m.get("name", "") if isinstance(m, dict) else str(m),
                 "model_doc":   m.get("document_id", 0) if isinstance(m, dict) else 0,
                 "rarity":      m.get("rarity_permille", 0) if isinstance(m, dict) else 0,
+                # Редкость гифта определяется самым редким из трёх атрибутов, а
+                # не одной моделью — так считает профиль и топы. Витрина брала
+                # только модель и красила лоты иначе, чем остальной бот.
+                "pattern_r":   p.get("rarity_permille", 0) if isinstance(p, dict) else 0,
+                "backdrop_r":  b.get("rarity_permille", 0) if isinstance(b, dict) else 0,
                 "pattern":     p.get("name", "") if isinstance(p, dict) else str(p),
                 "pattern_doc": p.get("document_id", 0) if isinstance(p, dict) else 0,
                 "backdrop":    b.get("name", "") if isinstance(b, dict) else str(b),
@@ -6851,6 +6856,44 @@ NFT_RARITY_LABELS = {
     40: ("⚪", "Обычный"),
 }
 NFT_PAGE_SIZE = 5  # NFT на одну страницу
+
+# Курс для группировки лотов по цене. Лоты на маркетплейсе выставляют и в
+# звёздах, и в тонах; ценовые фильтры подписаны в звёздах, и без пересчёта
+# TON-лоты не попадали ни в один фильтр — списки выходили пустыми.
+# Число нужно ТОЛЬКО чтобы разложить лоты по трём корзинам: на кнопке всегда
+# показывается настоящая цена в своей валюте. Курс плавает — правится через
+# FROG_NFT_TON_IN_STARS, не трогая код.
+NFT_TON_IN_STARS = 400
+
+
+def nft_lot_stars(item: dict) -> int:
+    """Цена лота, приведённая к звёздам, — для фильтров и сортировки."""
+    if item.get("stars"):
+        return int(item["stars"])
+    return int(round(float(item.get("ton") or 0) * NFT_TON_IN_STARS))
+
+
+def nft_lot_rarity(item: dict) -> str:
+    """
+    Ключ редкости лота для R_ICON — по самому редкому из трёх атрибутов.
+
+    Шкала общая с NFT_TIERS, по которой рисуются значки в профиле и топах:
+    раньше витрина считала по своей и красила тот же гифт другим цветом.
+    Нулевая редкость означает «атрибут не пришёл», а не «легендарный» —
+    прежняя проверка `permille <= 5` записывала такие лоты в легендарные.
+    """
+    vals = [v for v in (item.get("rarity"), item.get("pattern_r"), item.get("backdrop_r"))
+            if isinstance(v, (int, float)) and v > 0]
+    if not vals:
+        return "common"
+    rarest = min(vals)
+    if rarest <= 5:
+        return "legendary"
+    if rarest <= 15:
+        return "epic"
+    if rarest <= 50:
+        return "rare"
+    return "common"
 
 WORK_BASE_MIN = 300
 WORK_BASE_MAX = 400
@@ -34790,27 +34833,21 @@ async def nft_router(update: Update, ctx: ContextTypes.DEFAULT_TYPE):
             page = 0
         flt = parts[1] if len(parts) > 1 else "all"
 
-        # permille → rarity key для R_ICON
-        def _nft_rarity(permille: int) -> str:
-            if permille <= 5:  return "legendary"
-            if permille <= 10: return "epic"
-            if permille <= 20: return "rare"
-            if permille <= 30: return "uncommon"
-            return "common"
-
-        # Фильтрация. Ценовые фильтры подписаны в звёздах, поэтому лот,
-        # выставленный только за TON, под них не подводим — он попадёт в «Все».
+        # Фильтрация. Цена приводится к звёздам, иначе лоты за TON не попадали
+        # ни в одну корзину и все три ценовых фильтра выдавали пустой список.
         catalog = NFT_CATALOG
         if flt == "cheap":
-            catalog = [x for x in catalog if 0 < x["stars"] < 10_000]
+            catalog = [x for x in catalog if 0 < nft_lot_stars(x) < 10_000]
         elif flt == "mid":
-            catalog = [x for x in catalog if 10_000 <= x["stars"] < 50_000]
+            catalog = [x for x in catalog if 10_000 <= nft_lot_stars(x) < 50_000]
         elif flt == "rare":
-            catalog = [x for x in catalog if x["stars"] >= 50_000]
+            catalog = [x for x in catalog if nft_lot_stars(x) >= 50_000]
         elif flt == "legendary":
-            catalog = [x for x in catalog if x["rarity"] <= 5]
+            catalog = [x for x in catalog if nft_lot_rarity(x) == "legendary"]
         elif flt == "epic":
-            catalog = [x for x in catalog if x["rarity"] <= 10]
+            # Раньше условие было rarity <= 10 и захватывало заодно легендарные:
+            # фильтры 🟡 и 🟣 показывали пересекающиеся списки.
+            catalog = [x for x in catalog if nft_lot_rarity(x) == "epic"]
 
         total = len(catalog)
         total_pages = max(1, (total + NFT_PAGE_SIZE - 1) // NFT_PAGE_SIZE)
@@ -34838,7 +34875,7 @@ async def nft_router(update: Update, ctx: ContextTypes.DEFAULT_TYPE):
 
         buttons = []
         for item in slice_items:
-            rarity_key = _nft_rarity(item["rarity"])
+            rarity_key = nft_lot_rarity(item)
             rarity_icon = R_ICON.get(rarity_key, "⚪")
             # Показываем ту валюту, в которой лот действительно выставлен.
             # Подпись кнопки HTML не разбирает — значок только юникодом.
