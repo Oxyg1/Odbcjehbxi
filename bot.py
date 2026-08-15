@@ -3677,13 +3677,17 @@ def _split_button_icon(text: str, icon_id: str | None) -> tuple[str, str | None]
 
     Подпись при этом становится короче примерно на 1.3W — заметно для кнопок
     в ряду из двух, где бюджет всего 9.5W.
+
+    Если icon_id задан явно, ведущая эмодзи подписи всё равно уезжает — иначе
+    на кнопке видно два значка подряд: премиум в слоте иконки и сразу за ним
+    тот же (или похожий) юникод в тексте.
     """
-    if icon_id or not text:
+    if not text:
         return text, icon_id
     m = _BTN_LEAD_EMOJI.match(text)
     if not m:
         return text, icon_id
-    premium = BUTTON_ICONS.get(m.group(1))
+    premium = icon_id or BUTTON_ICONS.get(m.group(1))
     if not premium:
         return text, icon_id
     rest = text[m.end():]
@@ -6873,15 +6877,30 @@ def nft_lot_stars(item: dict) -> int:
     return int(round(float(item.get("ton") or 0) * NFT_TON_IN_STARS))
 
 
+# Название облика → редкость в игре. Ключи приведены к нижнему регистру:
+# парсер отдаёт имя модели как есть с маркетплейса, регистр там не гарантирован.
+_SKIN_RARITY_BY_NAME: dict[str, str] = {
+    _n.lower(): _v.get("rarity", "common") for _n, _v in SKINS.items()
+}
+
+# Редкости от самой редкой к самой частой — порядок общий для витрины.
+NFT_RARITY_ORDER = ("secret", "mythic", "legendary", "epic",
+                    "rare", "uncommon", "common")
+
+
 def nft_lot_rarity(item: dict) -> str:
     """
-    Ключ редкости лота для R_ICON — по самому редкому из трёх атрибутов.
+    Ключ редкости лота для R_ICON — по названию облика, как в самой игре.
 
-    Шкала общая с NFT_TIERS, по которой рисуются значки в профиле и топах:
-    раньше витрина считала по своей и красила тот же гифт другим цветом.
-    Нулевая редкость означает «атрибут не пришёл», а не «легендарный» —
-    прежняя проверка `permille <= 5` записывала такие лоты в легендарные.
+    Облик у лота и облик в игре — одно и то же: Brewtoad легендарный и на
+    витрине, и в коллекции. Проценты промилле с маркетплейса шкалу игры не
+    повторяют, поэтому один и тот же Brewtoad оказывался на витрине то
+    эпическим, то обычным. Промилле остаются запасным вариантом — только для
+    обликов, которых в SKINS нет (новые модели до обновления игры).
     """
+    name = str(item.get("model") or "").strip().lower()
+    if name in _SKIN_RARITY_BY_NAME:
+        return _SKIN_RARITY_BY_NAME[name]
     vals = [v for v in (item.get("rarity"), item.get("pattern_r"), item.get("backdrop_r"))
             if isinstance(v, (int, float)) and v > 0]
     if not vals:
@@ -34863,7 +34882,10 @@ async def nft_router(update: Update, ctx: ContextTypes.DEFAULT_TYPE):
         elif flt == "rare":
             catalog = [x for x in catalog if nft_lot_stars(x) >= 50_000]
         elif flt == "legendary":
-            catalog = [x for x in catalog if nft_lot_rarity(x) == "legendary"]
+            # Секрет и мифик реже легендарного — прятать их от фильтра «самое
+            # редкое» незачем, иначе Happy Pepe не виден ни в одном фильтре.
+            catalog = [x for x in catalog
+                       if nft_lot_rarity(x) in ("secret", "mythic", "legendary")]
         elif flt == "epic":
             # Раньше условие было rarity <= 10 и захватывало заодно легендарные:
             # фильтры 🟡 и 🟣 показывали пересекающиеся списки.
@@ -39185,6 +39207,32 @@ async def cmd_daily(update: Update, ctx: ContextTypes.DEFAULT_TYPE):
         await group_reply(update, msg)
         return
     await show_status(update.message, f, header=msg)
+
+
+# ══════════════════════════════════════════════════════════════════════════════
+# 🛠  РОУТЕР АДМИНКИ
+# ══════════════════════════════════════════════════════════════════════════════
+# Вынесен из on_callback. Регистрируется с pattern=, поэтому админские нажатия
+# больше не проходят через сотни чужих условий, а чужие — через админские.
+#
+# Все ветки здесь самодостаточны и заканчиваются return, так что порядок между
+# ними значения не имеет.
+async def admin_router(update: Update, ctx: ContextTypes.DEFAULT_TYPE):
+    q = update.callback_query
+    uid = q.from_user.id
+    d = q.data
+
+    # Права проверяются внутри каждой ветки: часть экранов (cs_, ca_) доступна
+    # администраторам чата, а не только владельцам бота.
+    f = await db_get(uid)
+    if not f:
+        await q.answer("Сначала напиши /start", show_alert=True)
+        return
+    f = decay(f)
+
+
+    # Ни одна ветка не подошла — отдаём нажатие общему обработчику.
+    await on_callback(update, ctx)
 
 
 async def on_callback(update: Update, ctx: ContextTypes.DEFAULT_TYPE):
