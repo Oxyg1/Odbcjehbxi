@@ -24,12 +24,17 @@ import os
 import time
 from pathlib import Path
 
-from dotenv import load_dotenv
+from dotenv import find_dotenv, load_dotenv
 from telethon import TelegramClient, functions, types
 
 # ── Настройки ────────────────────────────────────────────────────────────────
 
-load_dotenv()
+# find_dotenv ищет .env от каталога самого скрипта вверх по дереву, а не от
+# текущего каталога. То есть настройки берутся из файла рядом с pars.py —
+# на сервере это /opt/frogbot/.env. Путь запоминаем, чтобы при незаполненных
+# ключах показать в ошибке именно его, а не гадать.
+ENV_PATH = find_dotenv(usecwd=False)
+load_dotenv(ENV_PATH or None)
 
 API_ID = int(os.getenv("API_ID", "0"))
 API_HASH = os.getenv("API_HASH", "")
@@ -394,6 +399,24 @@ async def main():
         help=f"Файл для результатов (по умолчанию: {OUTPUT_FILE})",
     )
     args = parser.parse_args()
+
+    # Проверяем настройки до Telethon: без этого он падает невнятным
+    # «API ID or Hash cannot be empty», и непонятно, какой именно .env пуст.
+    # Промах здесь типовой: .env исключён из деплоя и живёт только рядом с
+    # ботом, а правят его в каталоге с исходниками.
+    missing = [n for n, v in (("API_ID", API_ID), ("API_HASH", API_HASH),
+                              ("PHONE_NUMBER", PHONE_NUMBER)) if not v]
+    if missing:
+        log.error("Не заданы: %s", ", ".join(missing))
+        if ENV_PATH:
+            log.error("Прочитан файл: %s", ENV_PATH)
+            log.error("Допишите в него недостающие строки.")
+        else:
+            log.error(".env не найден рядом с %s", Path(__file__).resolve().parent)
+            log.error("Настройки берутся из файла рядом с pars.py, то есть из "
+                      "каталога бота. Копия .env в исходниках на сервер не "
+                      "попадает — она в исключениях деплоя.")
+        raise SystemExit(2)
 
     client = TelegramClient(SESSION_NAME, API_ID, API_HASH)
     await client.start(phone=PHONE_NUMBER)
