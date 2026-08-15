@@ -63,7 +63,13 @@ mkdir -p "${APP_DIR}"
 # и так защищены паттерном *.db, но rsync --delete всё равно пытался снести
 # опустевший с его точки зрения каталог db_backups и падал с "cannot delete
 # non-empty directory" — внутри оставались те самые защищённые файлы.
-EXCLUDES=(.git .env venv '*.db' '*.db-*' logs db_backups)
+#
+# *.session — сессия Telethon для pars.py. Создаётся один раз вручную вводом
+# кода из Telegram; снесём её деплоем — парсер снова попросит код, ответить
+# ему будет некому, и витрина NFT встанет. Каталог лотов тоже живёт на
+# сервере: его пересобирает парсер, в репозитории его нет.
+EXCLUDES=(.git .env venv '*.db' '*.db-*' logs db_backups
+          '*.session' '*.session-journal' kissed_frog_on_sale.json)
 if [[ "${SRC_DIR}" != "${APP_DIR}" ]]; then
     say "Копирую код в ${APP_DIR}"
     if command -v rsync >/dev/null 2>&1; then

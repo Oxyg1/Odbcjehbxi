@@ -6799,10 +6799,24 @@ def _load_nft_catalog() -> list:
             m = item.get("model") or {}
             p = item.get("pattern") or {}
             b = item.get("backdrop") or {}
+            # Цена бывает в звёздах, в тонах или сразу в обеих. Раньше сюда шло
+            # одно поле price без учёта валюты: лот за 12.5 TON превращался в
+            # «12⭐», а лот за 5000 звёзд — в «0⭐».
+            _stars = int(item.get("price_stars") or 0)
+            _ton   = float(item.get("price_ton") or 0)
+            if not _stars and not _ton:
+                # Старый формат парсера: одно поле price плюс currency
+                _cur = str(item.get("currency") or "").lower()
+                _val = item.get("price") or 0
+                if _cur == "ton":
+                    _ton = float(_val)
+                else:
+                    _stars = int(_val)
             entry = {
                 "num":         item.get("num", 0),
                 "url":         item.get("marketplace_url") or item.get("url", ""),
-                "stars":       int(item.get("price", 0)),
+                "stars":       _stars,
+                "ton":         _ton,
                 "model":       m.get("name", "") if isinstance(m, dict) else str(m),
                 "model_doc":   m.get("document_id", 0) if isinstance(m, dict) else 0,
                 "rarity":      m.get("rarity_permille", 0) if isinstance(m, dict) else 0,
@@ -34784,10 +34798,11 @@ async def nft_router(update: Update, ctx: ContextTypes.DEFAULT_TYPE):
             if permille <= 30: return "uncommon"
             return "common"
 
-        # Фильтрация
+        # Фильтрация. Ценовые фильтры подписаны в звёздах, поэтому лот,
+        # выставленный только за TON, под них не подводим — он попадёт в «Все».
         catalog = NFT_CATALOG
         if flt == "cheap":
-            catalog = [x for x in catalog if x["stars"] < 10_000]
+            catalog = [x for x in catalog if 0 < x["stars"] < 10_000]
         elif flt == "mid":
             catalog = [x for x in catalog if 10_000 <= x["stars"] < 50_000]
         elif flt == "rare":
@@ -34825,8 +34840,15 @@ async def nft_router(update: Update, ctx: ContextTypes.DEFAULT_TYPE):
         for item in slice_items:
             rarity_key = _nft_rarity(item["rarity"])
             rarity_icon = R_ICON.get(rarity_key, "⚪")
-            stars_fmt = f"{item['stars']:,}".replace(",", "\u202f")  # narrow no-break space
-            label = f"{item['model']} {rarity_icon} {stars_fmt}{_E_STARS}"
+            # Показываем ту валюту, в которой лот действительно выставлен.
+            # Подпись кнопки HTML не разбирает — значок только юникодом.
+            if item["stars"]:
+                price_fmt = f"{item['stars']:,}".replace(",", "\u202f") + "\u2b50"
+            elif item.get("ton"):
+                price_fmt = f"{item['ton']:g} TON"
+            else:
+                price_fmt = "\u2014"
+            label = f"{item['model']} {rarity_icon} {price_fmt}"
             buttons.append([btn(
                 label,
                 url=item["url"],
