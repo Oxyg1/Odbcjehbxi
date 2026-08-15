@@ -2077,7 +2077,7 @@ async def cmd_fzquiz(update: Update, ctx: ContextTypes.DEFAULT_TYPE) -> None:
         return
 
     text = (
-        "🐸 <b>БОЛОТНЫЙ КВИЗ — +5 кубиков льда</b>\n\n"
+        f"{_E_FROG} <b>БОЛОТНЫЙ КВИЗ — +5 кубиков льда</b>\n\n"
         "Как называется летняя спячка лягушек в жару?\n"
         "Лягушки зарываются в грунт, замедляют дыхание "
         "и оборачиваются в кокон из кожи против обезвоживания.\n\n"
@@ -3064,7 +3064,7 @@ async def cmd_resetwar(update: Update, ctx: ContextTypes.DEFAULT_TYPE) -> None:
                 try:
                     await ctx.bot.send_message(
                         p_uid,
-                        "⚔️ <b>Набег принудительно завершён администратором.</b>\n"
+                        f"{_E_SWORDS} <b>Набег принудительно завершён администратором.</b>\n"
                         "Взносы не возвращаются. Теперь можешь начать новый.",
                         parse_mode=ParseMode.HTML,
                     )
@@ -3100,7 +3100,7 @@ async def cmd_resetwar(update: Update, ctx: ContextTypes.DEFAULT_TYPE) -> None:
                 try:
                     await ctx.bot.send_message(
                         m_uid,
-                        "⚔️ <b>Стычка принудительно завершена администратором.</b>\n"
+                        f"{_E_SWORDS} <b>Стычка принудительно завершена администратором.</b>\n"
                         "Теперь можешь участвовать в новой.",
                         parse_mode=ParseMode.HTML,
                     )
@@ -5661,9 +5661,9 @@ _LANGS = {
         "btn_sing":          "🎵 Пение",
         "btn_feed_all":      "🍽 Скормить всё",
         "games_hint_private": "<i>В личных сообщениях доступны соло-игры и дуэли.\nГрупповые игры (КНБ/крестики в чате) — только в чате</i>\n\n",
-        "games_title":       "🎲 <b>Игры</b>",
-        "more_title":        "⚙️ <b>Профиль</b>",
-        "shop_title_full":   "🛒 <b>Магазин</b>",
+        "games_title":       f"{_E_DICE} <b>Игры</b>",
+        "more_title":        f"{_E_GEAR} <b>Профиль</b>",
+        "shop_title_full":   f"{_E_SHOP} <b>Магазин</b>",
     },
     "en": {
         # ── General ──
@@ -5911,9 +5911,9 @@ _LANGS = {
         "btn_sing":          "🎵 Singing",
         "btn_feed_all":      "🍽 Feed All",
         "games_hint_private": "<i>Solo games and duels available in DMs.\nGroup games (RPS/TicTacToe) — in chat only</i>\n\n",
-        "games_title":       "🎲 <b>Games</b>",
-        "more_title":        "⚙️ <b>Profile</b>",
-        "shop_title_full":   "🛒 <b>Shop</b>",
+        "games_title":       f"{_E_DICE} <b>Games</b>",
+        "more_title":        f"{_E_GEAR} <b>Profile</b>",
+        "shop_title_full":   f"{_E_SHOP} <b>Shop</b>",
     },
     "zh": {
         # ── 通用 ──
@@ -6161,9 +6161,9 @@ _LANGS = {
         "btn_sing":          "🎵 歌唱",
         "btn_feed_all":      "🍽 全部喂食",
         "games_hint_private": "<i>私聊中可玩单人游戏和决斗。\n群聊游戏（石头剪刀布/井字棋）仅在群聊中可用！</i>\n\n",
-        "games_title":       "🎲 <b>游戏</b>",
-        "more_title":        "⚙️ <b>个人资料</b>",
-        "shop_title_full":   "🛒 <b>商店</b>",
+        "games_title":       f"{_E_DICE} <b>游戏</b>",
+        "more_title":        f"{_E_GEAR} <b>个人资料</b>",
+        "shop_title_full":   f"{_E_SHOP} <b>商店</b>",
     },
 }
 
@@ -6863,7 +6863,7 @@ NFT_PAGE_SIZE = 5  # NFT на одну страницу
 # Число нужно ТОЛЬКО чтобы разложить лоты по трём корзинам: на кнопке всегда
 # показывается настоящая цена в своей валюте. Курс плавает — правится через
 # FROG_NFT_TON_IN_STARS, не трогая код.
-NFT_TON_IN_STARS = 400
+NFT_TON_IN_STARS = 89
 
 
 def nft_lot_stars(item: dict) -> int:
@@ -11939,7 +11939,7 @@ SKIRMISH_MODE_INSTRUCTIONS = {
         "⏳ У тебя <b>3 минуты</b> на выбор!"
     ),
     "dice": (
-        "🎲 <b>Режим: Кубик</b>\n\n"
+        f"{_E_DICE} <b>Режим: Кубик</b>\n\n"
         "• Открой меню эмодзи в Telegram (😊) и найди 🎲\n"
         "• Отправь его прямо в этот чат — бот зафиксирует выпавшее число\n"
         "• Противник делает то же самое\n"
@@ -12762,7 +12762,7 @@ ADV_CHOICES = [
     },
     {
         "id": "strange_door",
-        "text": "🚪 <b>Загадочная дверь!</b>\n\nПосреди леса стоит дверь. Открыть?\n\nУ вас 10 минут!",
+        "text": f"{_E_DOOR} <b>Загадочная дверь!</b>\n\nПосреди леса стоит дверь. Открыть?\n\nУ вас 10 минут!",
         "options": [
             {"key": "open",    "label": "🔓 Открыть",           "bonus": 120, "text": "За дверью — сокровищница! Сегодня повезло."},
             {"key": "knock",   "label": "✊ Постучать",          "bonus": 60,  "text": "Никто не открыл. Но на пороге лежал кошель с монетами."},
@@ -12772,7 +12772,7 @@ ADV_CHOICES = [
     },
     {
         "id": "lost_frog",
-        "text": "🐸 <b>Потерявшаяся лягушка!</b>\n\nМаленькая лягушка плачет на тропе. Что делать?\n\nУ вас 10 минут!",
+        "text": f"{_E_FROG} <b>Потерявшаяся лягушка!</b>\n\nМаленькая лягушка плачет на тропе. Что делать?\n\nУ вас 10 минут!",
         "options": [
             {"key": "help",    "label": "🤗 Помочь найти дом",  "bonus": 80,  "text": "Проводили домой. Родители щедро отблагодарили!"},
             {"key": "food",    "label": "🍎 Накормить и идти",  "bonus": 40,  "text": "Покормили, успокоили. Дальше она справится."},
@@ -14710,7 +14710,7 @@ async def update_giveaway_message(gid: int, ctx):
     prize_text = row["prize_text"] if row["prize_text"] else None
     kva_only   = row["kva_only"]
     prize_line = f"{_E_GIFT} Приз: <b>{_html.escape(prize_text)}</b>" if prize_text else f"💰 Приз: <b>{total}{coin_emoji()}</b>"
-    kva_note   = "\n<i>🐸 Участие только для квакавших в этом чате</i>" if kva_only else ""
+    kva_note   = f"\n<i>{_E_FROG} Участие только для квакавших в этом чате</i>" if kva_only else ""
     text = (
         f"{_E_GIFT} <b>Розыгрыш!</b>\n\n"
         f"Организатор: {he(creator_name)}\n"
@@ -15252,7 +15252,17 @@ def nft_floor_stars() -> int:
     return min(prices) if prices else 0
 
 
-async def nft_pitch(uid: int, f: dict) -> tuple[str, InlineKeyboardMarkup]:
+def _nft_back_target(origin: str) -> str:
+    """Куда ведёт «Назад» с экранов NFT — туда, откуда реально пришли.
+
+    Раньше он был вшит намертво в menu_more: экран NFT открывается ещё из
+    Магазина и из карточки множителя наград, и с обоих «Назад» уносил в
+    Ещё вместо настоящего предыдущего экрана.
+    """
+    return {"shop": "menu_shop", "bonus": "bonus_menu"}.get(origin, "menu_more")
+
+
+async def nft_pitch(uid: int, f: dict, origin: str = "more") -> tuple[str, InlineKeyboardMarkup]:
     """
     Экран «что даёт KissedFrog» для тех, у кого гифта ещё нет.
 
@@ -15294,8 +15304,8 @@ async def nft_pitch(uid: int, f: dict) -> tuple[str, InlineKeyboardMarkup]:
                  style="primary", icon_id=ICON_SHOP)]]
     if floor:
         rows.append([btn("Купить Stars за рубли", url="https://t.me/FrogsStar_bot")])
-    rows.append([btn("У меня уже есть жаба", callback_data="nft_have")])
-    rows.append([btn("◀️ Назад", callback_data="menu_more")])
+    rows.append([btn("У меня уже есть жаба", callback_data=f"nft_have_{origin}")])
+    rows.append([btn("◀️ Назад", callback_data=_nft_back_target(origin))])
     return "\n".join(lines), InlineKeyboardMarkup(rows)
 
 
@@ -18753,7 +18763,7 @@ async def cmd_kvastat(update: Update, ctx: ContextTypes.DEFAULT_TYPE):
         )
         return
 
-    won = "🏆 <b>ДА! Ты выиграл NFT!</b>" if row["won_nft"] else "❌ Пока нет"
+    won = f"{_E_TROPHY} <b>ДА! Ты выиграл NFT!</b>" if row["won_nft"] else "❌ Пока нет"
     proximity = int(row["best_roll"] / NFT_KVA_TOTAL * 100)
 
     total_tries = row['kva_count'] + row['retry_coins'] + row['retry_stars']
@@ -18916,7 +18926,7 @@ async def cmd_trustlist(update: Update, ctx: ContextTypes.DEFAULT_TYPE):
     if not rows:
         await update.message.reply_text("Доверенных чатов нет.")
         return
-    lines = ["✅ <b>Доверенные чаты (NFT-розыгрыш):</b>\n"]
+    lines = [f"{_E_CHECK} <b>Доверенные чаты (NFT-розыгрыш):</b>\n"]
     for r in rows:
         lines.append(f"• <code>{r['chat_id']}</code> — {_html.escape(r['chat_title'] or '—')}")
     await update.message.reply_text("\n".join(lines), parse_mode=ParseMode.HTML)
@@ -20921,7 +20931,7 @@ async def handle_antibot_callback(q, d, uid, ctx):
                 "ORDER BY tr.added_at DESC"
             ) as c:
                 rows = await c.fetchall()
-        lines = ["⭐ <b>Доверенные рефереры (инфлюэнсеры)</b>\n"]
+        lines = [f"{_E_STARS} <b>Доверенные рефереры (инфлюэнсеры)</b>\n"]
         buttons = []
         for uid_r, first_name_r, uname, note, at in rows:
             name = first_name_r or uname or str(uid_r)
@@ -26153,7 +26163,7 @@ async def cmd_subscribe(update: Update, ctx: ContextTypes.DEFAULT_TYPE):
     worker_card = (
         f"🏪 <b>Трудяга</b> <code>{SUB_WORKER_STARS}⭐/мес</code>\n"
         "Всё что делает Няня + лягушка ходит на Болотный Рынок.\n"
-        "Каждый вечер приносит <b>400–700🪙</b> и отчёт о приключениях.\n"
+        f"Каждый вечер приносит <b>400–700{_E_COIN}</b> и отчёт о приключениях.\n"
     )
 
     # ── Статус ────────────────────────────────────────────────────────
@@ -26172,7 +26182,7 @@ async def cmd_subscribe(update: Update, ctx: ContextTypes.DEFAULT_TYPE):
         if sub_type == 1:
             kb_rows.append([btn(f"🔼 Улучшить до Трудяги · {SUB_WORKER_STARS}⭐", callback_data="sub_buy_worker", style="primary")])
     else:
-        status_block = "\n❌ <b>Подписка не активна</b>"
+        status_block = f"\n{_E_CROSS} <b>Подписка не активна</b>"
         kb_rows = []
         if not trial_used:
             kb_rows.append([btn("🎁 3 дня Трудяги — БЕСПЛАТНО", callback_data="sub_trial_worker", style="success")])
@@ -26436,7 +26446,7 @@ async def cmd_adminsubscription(update: Update, ctx: ContextTypes.DEFAULT_TYPE):
                 f"{_E_GIFT} <b>Администратор выдал тебе подписку!</b>\n\n"
                 f"{sub_name} активирована на <b>{days} дней</b>.\n"
                 + (f"{_E_NANNY} <i>Тётя Жаба уже спешит</i>" if sub_type == 1
-                   else "🏪 <i>Квакуся собирается на рынок!</i>"),
+                   else f"{_E_STORE} <i>Квакуся собирается на рынок!</i>"),
                 parse_mode=ParseMode.HTML,
             )
         except (BadRequest, Forbidden, TimedOut):
@@ -26927,7 +26937,7 @@ async def cmd_admincasino(update: Update, ctx: ContextTypes.DEFAULT_TYPE):
     is_disabled = status_val == "1"
 
     if not ctx.args:
-        state_str = "🔴 <b>Отключено</b>" if is_disabled else "🟢 <b>Работает</b>"
+        state_str = f"{_E_DOT_RED} <b>Отключено</b>" if is_disabled else f"{_E_DOT_GREEN} <b>Работает</b>"
         await update.message.reply_text(
             f"{_E_CASINO} <b>Казино</b> — {state_str}\n\n"
             f"<code>/admincasino off</code> — отключить\n"
@@ -28632,7 +28642,7 @@ async def cmd_unban(update: Update, ctx: ContextTypes.DEFAULT_TYPE):
     try:
         await ctx.bot.send_message(
             target["user_id"],
-            "✅ <b>Ваш аккаунт разблокирован!</b>",
+            f"{_E_CHECK} <b>Ваш аккаунт разблокирован!</b>",
             parse_mode=ParseMode.HTML,
         )
     except (BadRequest, Forbidden, TimedOut):
@@ -28661,7 +28671,7 @@ async def cmd_lottery(update: Update, ctx: ContextTypes.DEFAULT_TYPE):
         f"через ~{next_draw_hours}ч" if next_draw_hours > 0 else "СЕГОДНЯ в 18:00 МСК"
     )
     text = (
-        "🎟 <b>Ежедневная лотерея</b>\n\n"
+        f"{_E_TICKET} <b>Ежедневная лотерея</b>\n\n"
         f"💰 Текущий банк: <b>{pool}{coin_emoji()}</b>\n"
         f"🎫 Билетов всего: <b>{total_t}</b>\n"
         f"🎟 Твоих билетов: <b>{my_t}</b>\n\n"
@@ -28760,11 +28770,11 @@ async def cmd_jackpot(update: Update, ctx: ContextTypes.DEFAULT_TYPE):
     """/jackpot — банк казино"""
     pool = await jackpot_get()
     text = (
-        "🎰 <b>Джекпот</b>\n\n"
+        f"{_E_CASINO} <b>Джекпот</b>\n\n"
         f"💰 Накоплено: <b>{pool:,}{coin_emoji()}</b>\n\n"
         "10% от каждого проигрыша в казино идёт сюда.\n"
-        "Весь банк забирает тот, кто выбьет <b>🎰 Джекпот</b> в слотах!\n\n"
-        "<i>Сыграть: /casino или кнопка 🎮 в меню</i>"
+        f"Весь банк забирает тот, кто выбьет <b>{_E_CASINO} Джекпот</b> в слотах!\n\n"
+        f"<i>Сыграть: /casino или кнопка {_E_GAMES} в меню</i>"
     )
     await update.message.reply_text(text, parse_mode=ParseMode.HTML)
 
@@ -29568,7 +29578,7 @@ async def cmd_admin_nft_invite(update: Update, ctx: ContextTypes.DEFAULT_TYPE):
 
     # Финальный отчёт
     report_lines = [
-        "✅ <b>Рассылка завершена</b>",
+        f"{_E_CHECK} <b>Рассылка завершена</b>",
         "",
         f"{_E_CHART} Всего NFT-держателей: <b>{total}</b>",
         f"✅ Уже в чате: <b>{in_chat}</b>",
@@ -30237,7 +30247,7 @@ async def _nft_contest_menu_text(uid: int) -> tuple[str, InlineKeyboardMarkup]:
 
     if not contest:
         text = (
-            "🏆 <b>NFT-лига</b>\n\n"
+            f"{_E_TROPHY} <b>NFT-лига</b>\n\n"
             "Конкурс сейчас не активен.\n"
             "Следи за анонсами в чате!"
         )
@@ -30259,12 +30269,12 @@ async def _nft_contest_menu_text(uid: int) -> tuple[str, InlineKeyboardMarkup]:
     )
 
     lines = [
-        "🏆 <b>NFT-лига</b>",
+        f"{_E_TROPHY} <b>NFT-лига</b>",
         "",
         "Конкурсная лига:",
         f"{league_names}",
         "",
-        "<b>🎁 Призы (топ-3 общего зачёта):</b>",
+        f"<b>{_E_GIFT} Призы (топ-3 общего зачёта):</b>",
     ]
     medals = ["🥇", "🥈", "🥉"]
     if prizes:
@@ -31094,7 +31104,7 @@ async def _contest_my_stats_text(uid: int) -> tuple[str, InlineKeyboardMarkup]:
             async with db.execute("SELECT * FROM ref_contests ORDER BY id DESC LIMIT 1") as c:
                 row = await c.fetchone()
         if not row:
-            return "🎟 <b>Конкурс ещё не запускался.</b>\n\nСледи за анонсами!", \
+            return f"{_E_TICKET} <b>Конкурс ещё не запускался.</b>\n\nСледи за анонсами!", \
                 InlineKeyboardMarkup([[btn("◀️ Назад", callback_data="refresh")]])
         contest = {"id": row[0], "title": row[1], "active": 0}
 
@@ -31258,7 +31268,7 @@ async def cmd_mymenu(update: Update, ctx: ContextTypes.DEFAULT_TYPE):
 async def cmd_help(update: Update, ctx: ContextTypes.DEFAULT_TYPE):
     await group_reply(
         update,
-        "🐸 <b>Помощь</b>\n\n"
+        f"{_E_FROG} <b>Помощь</b>\n\n"
         "Все основные действия — через <b>кнопки</b> под статусом.\n"
         "Напиши <code>/frog</code> чтобы открыть 👇\n\n"
         "<b>Основные команды:</b>\n"
@@ -31279,7 +31289,7 @@ async def cmd_help(update: Update, ctx: ContextTypes.DEFAULT_TYPE):
         "💡 <b>Как зарабатывать КваКоины:</b>\n"
         "Кормёжка, игра, ежедневный бонус, квесты,\n"
         "казино, дуэли, поимка комаров, квак в чате\n\n"
-        "⚔️ <b>Дуэли — бонус от облика:</b>\n"
+        f"{_E_SWORDS} <b>Дуэли — бонус от облика:</b>\n"
         "🔴 Мифический: +3 к броску кубика\n"
         "🟡 Легендарный: +2\n"
         "🟣 Эпический: +1",
@@ -32792,7 +32802,7 @@ async def admin_router(update: Update, ctx: ContextTypes.DEFAULT_TYPE):
 
         lines = [
             "🃏 <b>Статистика казино</b>\n",
-            "📊 <b>Общее (всё время)</b>",
+            f"{_E_CHART} <b>Общее (всё время)</b>",
             f"  Игр: <b>{total_games:,}</b> │ Побед: <b>{total_wins:,}</b> ({wr}%)",
             f"  КваКоинов поставлено: <b>{total_spent:,}</b>",
             f"  КваКоинов в экономике: <b>{total_balance:,}</b>",
@@ -32813,12 +32823,12 @@ async def admin_router(update: Update, ctx: ContextTypes.DEFAULT_TYPE):
             f"  Доход казино: <b>{'+'if house_profit_week>=0 else ''}{house_profit_week:,}</b>🪙",
         ]
         if top_wins_rows:
-            lines += ["", "💰 <b>Топ-5 выигрышей (всё время)</b>"]
+            lines += ["", f"{_E_MONEYBAG} <b>Топ-5 выигрышей (всё время)</b>"]
             for i, r in enumerate(top_wins_rows, 1):
                 nm = f"@{r[1]}" if r[1] else he(r[0] or "?")
                 lines.append(f"  {i}. {nm} — <b>{r[2]:,}</b>{_E_COIN} (ставка {r[3]:,})")
         if top_players_rows:
-            lines += ["", "🎰 <b>Топ-5 по числу игр</b>"]
+            lines += ["", f"{_E_CASINO} <b>Топ-5 по числу игр</b>"]
             for i, r in enumerate(top_players_rows, 1):
                 nm = f"@{r[1]}" if r[1] else he(r[0] or "?")
                 lines.append(f"  {i}. {nm} — <b>{r[2]:,}</b> игр")
@@ -32879,7 +32889,7 @@ async def admin_router(update: Update, ctx: ContextTypes.DEFAULT_TYPE):
             else:
                 skin_map[r["skin"]][r["user_id"]] = [r["first_name"] or "?", r["username"] or "", True]
 
-        lines = ["🔴 <b>Владельцы мифических обликов</b>\n"]
+        lines = [f"{_E_DOT_RED} <b>Владельцы мифических обликов</b>\n"]
         total_owners = 0
         for sname in sorted(skin_map.keys()):
             sdata = SKINS.get(sname, {})
@@ -34391,6 +34401,10 @@ async def gacha_router(update: Update, ctx: ContextTypes.DEFAULT_TYPE):
             kb_rows.append(
                 [btn("🎫 Купить билеты", callback_data="stars_menu", style="primary")]
             )
+        # Проценты сами по себе не отвечают на «а что вообще выпадает» — цвет
+        # без названий и примеров ничего не говорит новичку. Ссылка на каталог
+        # даёт настоящий список обликов по каждой редкости.
+        kb_rows.append([btn("📖 Что выпадает", callback_data="catalog_0")])
         kb_rows.append([btn("❌ Отмена", callback_data="refresh", style="danger")])
         kb = InlineKeyboardMarkup(kb_rows)
 
@@ -34407,6 +34421,11 @@ async def gacha_router(update: Update, ctx: ContextTypes.DEFAULT_TYPE):
             f"{_E_DOT_PURPLE} 6%{SEP}{_E_DOT_BLUE} 15%{SEP}"
             f"{_E_DOT_GREEN} 25%{SEP}{_E_DOT_WHITE} 50%"
         )
+        # Дословно расписать все семь редкостей негде — уже впритык на 21W
+        # даже по три (tools/msgwidth.py). Порядок и так виден по цвету: учим
+        # ему один раз здесь, и это же чтение переносится на топы и профиль,
+        # где та же цветовая шкала.
+        rarity_order_hint = "<i>Слева — реже, справа — чаще</i>"
         not_enough = ("" if f["coins"] >= cost
                       else f"Не хватает {cost - f['coins']}{coin_emoji()}")
         try:
@@ -34420,6 +34439,7 @@ async def gacha_router(update: Update, ctx: ContextTypes.DEFAULT_TYPE):
                     + (f"\n{_E_COSMETIC} {ui_plural(ticket_count, 'билет', 'билета', 'билетов')}"
                        if ticket_count else ""),
                     chance_lines,
+                    rarity_order_hint,
                     hint=not_enough,
                 ),
                 parse_mode=ParseMode.HTML,
@@ -34929,8 +34949,12 @@ async def nft_router(update: Update, ctx: ContextTypes.DEFAULT_TYPE):
         return
     # Как привязать уже купленный гифт. Инструкция висела на общем экране NFT
     # и мешала тем, кто про гифты ещё ничего не знает.
-    if d == "nft_have":
+    if d == "nft_have" or d.startswith("nft_have_"):
         await q.answer()
+        # Origin тянется дальше в nft_menu_<origin>, чтобы «Назад» оттуда тоже
+        # довёл до настоящего предыдущего экрана, а не до Ещё по умолчанию.
+        origin = d[len("nft_have_"):] if d.startswith("nft_have_") else "more"
+        back_to_nft = "nft_menu" if origin == "more" else f"nft_menu_{origin}"
         try:
             await q.message.edit_text(
                 f"{_E_FROG} <b>Привязать жабу</b>\n\n"
@@ -34940,15 +34964,18 @@ async def nft_router(update: Update, ctx: ContextTypes.DEFAULT_TYPE):
                 f"<i>После проверки облик жабы можно надеть на лягушку.</i>",
                 parse_mode=ParseMode.HTML,
                 reply_markup=InlineKeyboardMarkup([
-                    [btn("◀️ Назад", callback_data="nft_menu")],
+                    [btn("◀️ Назад", callback_data=back_to_nft)],
                 ]),
             )
         except (BadRequest, Forbidden, TimedOut):
             pass
         return
 
-    if d == "nft_menu":
+    if d == "nft_menu" or d.startswith("nft_menu_"):
         await q.answer()
+        # Экран открывается из трёх мест (Ещё, Магазин, карточка множителя
+        # наград) с разным ожиданием, куда вернёт «Назад».
+        origin = d[len("nft_menu_"):] if d.startswith("nft_menu_") else "more"
         async with aiosqlite.connect(DB_PATH) as db:
             db.row_factory = aiosqlite.Row
             async with db.execute(
@@ -34993,10 +35020,10 @@ async def nft_router(update: Update, ctx: ContextTypes.DEFAULT_TYPE):
             text = "\n".join(lines)
             kb_rows.append([btn("Смотреть лоты", callback_data="nft_shop_0_all",
                                 icon_id=ICON_SHOP)])
-            kb_rows.append([btn("◀️ Назад", callback_data="menu_more")])
+            kb_rows.append([btn("◀️ Назад", callback_data=_nft_back_target(origin))])
             kb = InlineKeyboardMarkup(kb_rows)
         else:
-            text, kb = await nft_pitch(uid, f)
+            text, kb = await nft_pitch(uid, f, origin=origin)
         try:
             await q.message.edit_text(
                 text,
@@ -35164,7 +35191,7 @@ async def casino_router(update: Update, ctx: ContextTypes.DEFAULT_TYPE):
             ]
             kb = InlineKeyboardMarkup(kb_rows)
             extra_info = (
-                "\n\n🎲 <b>Как играть:</b> ставка списывается сразу. После каждого раунда "
+                f"\n\n{_E_DICE} <b>Как играть:</b> ставка списывается сразу. После каждого раунда "
                 "можно <b>забрать банк</b> или <b>рискнуть</b> и удвоить. "
                 "Шанс 50/50. Максимум 10 удвоений = ×1024!"
             )
@@ -35207,7 +35234,7 @@ async def casino_router(update: Update, ctx: ContextTypes.DEFAULT_TYPE):
             extra = (
                 f"\n\n<b>{_E_LIST} Таблица выплат:</b>\n"
                 f"7️⃣ 7️⃣ 7️⃣ → <b>×10</b> + Джекпот-банк {_E_PARTY}\n"
-                "BAR BAR BAR → <b>×6</b> 🔥\n"
+                f"BAR BAR BAR → <b>×6</b> {_E_FIRE}\n"
                 "🍇 🍇 🍇 → <b>×4</b>\n"
                 "🍋 🍋 🍋 → <b>×3</b>\n"
                 f"Два 7️⃣ → <b>×4</b> {_E_SPARK}\n\n"
@@ -35682,9 +35709,9 @@ async def casino_router(update: Update, ctx: ContextTypes.DEFAULT_TYPE):
             if gtype == "dice":
                 # 🎲 1-6: 5→×2, 6→×3.7  EV=(2+3.7)/6=0.95
                 if val == 6:
-                    return int(stake * 3.7), "🎲 <b>6</b> — УДАЧА! ×3.7!"
+                    return int(stake * 3.7), f"{_E_DICE} <b>6</b> — УДАЧА! ×3.7!"
                 elif val == 5:
-                    return stake * 2, "🎲 <b>5</b> — выигрыш ×2!"
+                    return stake * 2, f"{_E_DICE} <b>5</b> — выигрыш ×2!"
                 else:
                     return 0, f"🎲 <b>{val}</b> — проигрыш"
             elif gtype == "dart":
@@ -35699,7 +35726,7 @@ async def casino_router(update: Update, ctx: ContextTypes.DEFAULT_TYPE):
                 # 🏀 ДИАПАЗОН 1-5 (не 1-6!)
                 # 5=slam dunk ×2.75, 4=попадание ×2  EV=(2+2.75)/5=0.95
                 if val == 5:
-                    return int(stake * 2.75), "🏀 <b>5</b> — SLAM DUNK! ×2.75! 🔥"
+                    return int(stake * 2.75), f"🏀 <b>5</b> — SLAM DUNK! ×2.75! {_E_FIRE}"
                 elif val == 4:
                     return stake * 2, f"🏀 <b>4</b> — Попадание! ×2! {_E_TARGET}"
                 else:
@@ -37496,7 +37523,7 @@ async def shop_router(update: Update, ctx: ContextTypes.DEFAULT_TYPE):
     if d == "market_main":
         await q.answer()
         listings = await market_get_listings(limit=10)
-        lines = ["🏪 <b>Болотный Рынок</b>\n\n<i>Покупай и продавай облики за КваКоины.</i>\n<i>Комиссия продавца — 10%.</i>\n"]
+        lines = [f"{_E_STORE} <b>Болотный Рынок</b>\n\n<i>Покупай и продавай облики за КваКоины.</i>\n<i>Комиссия продавца — 10%.</i>\n"]
         kb_rows_m = []
         if listings:
             for lot in listings[:8]:
@@ -37757,16 +37784,16 @@ async def shop_router(update: Update, ctx: ContextTypes.DEFAULT_TYPE):
 
         nanny_desc  = f"{_E_NANNY} <b>Болотная Няня</b> — автоуход за лягушкой (кормит, моет, укладывает спать)"
         worker_desc = (
-            "🏪 <b>Трудяга</b> — всё от Няни + лягушка каждый день ходит на работу\n"
+            f"{_E_STORE} <b>Трудяга</b> — всё от Няни + лягушка каждый день ходит на работу\n"
             "Профессии: торговка, IT-фрилансер, лекарь, художница, детектив, 🚀 космонавт\n"
             f"Заработок: <b>400–700🪙</b>/день обычно, до <b>2 000🪙</b> если выпадет Космонавт\n"
             f"<i>Пример: {he(f.get('frog_name') or 'Квакуся')} вышла на рынок в туман, нашла грибную поляну и продала урожай втридорога. Итог: +520🪙</i>"
         )
         trial_note  = ""
         if not trial_nanny:
-            trial_note = "\n\n🎁 <i>Тебе доступен бесплатный пробник — попробуй прежде чем платить</i>"
+            trial_note = f"\n\n{_E_GIFT} <i>Тебе доступен бесплатный пробник — попробуй прежде чем платить</i>"
         elif nanny_trial_expired and not trial_worker:
-            trial_note = "\n\n🎁 <i>Пробник Няни закончился — можешь бесплатно попробовать 1 день Трудяги</i>"
+            trial_note = f"\n\n{_E_GIFT} <i>Пробник Няни закончился — можешь бесплатно попробовать 1 день Трудяги</i>"
 
         rows_ss.append([btn("◀️ Назад", callback_data="menu_shop")])
         try:
@@ -38119,7 +38146,7 @@ async def shop_router(update: Update, ctx: ContextTypes.DEFAULT_TYPE):
         shard_count = coll_qty.get(MYTHIC_SHARD_KEY, 0)
 
         lines = [
-            "🔨 <b>Крафт обликов</b>\n\n"
+            f"{_E_HAMMER} <b>Крафт обликов</b>\n\n"
             "<i>Комбинируй облики одной редкости → получи более редкий</i>\n"
         ]
         rows = []
@@ -38296,7 +38323,7 @@ async def shop_router(update: Update, ctx: ContextTypes.DEFAULT_TYPE):
         for lvl, rskin in rewards:
             text += f"\n🎉 <b>Уровень {lvl}!</b> Облик: {display_skin(rskin)}"
         kb = InlineKeyboardMarkup([
-            [btn("🔨 Крафт", callback_data="craft_menu")],
+            [btn("🔨 Крафт", callback_data="craft_menu", icon_id="5836997023554870252")],
             [btn("◀️ Главное меню", callback_data="refresh")],
         ])
         try:
@@ -38379,13 +38406,13 @@ async def shop_router(update: Update, ctx: ContextTypes.DEFAULT_TYPE):
             for lvl, rskin in rewards:
                 text += f"\n🎉 <b>Уровень {lvl}!</b> Облик: {display_skin(rskin, use_st)}"
             kb = InlineKeyboardMarkup([
-                [btn("🔨 Крафтить ещё", callback_data="craft_menu")],
+                [btn("🔨 Крафтить ещё", callback_data="craft_menu", icon_id="5836997023554870252")],
                 [btn("◀️ Назад", callback_data="refresh")],
             ])
             if shard_now >= MYTHIC_SHARDS_NEEDED:
                 kb = InlineKeyboardMarkup([
                     [btn("🔮 Собрать Мифический", callback_data="craft_assemble_mythic")],
-                    [btn("🔨 Крафтить ещё", callback_data="craft_menu")],
+                    [btn("🔨 Крафтить ещё", callback_data="craft_menu", icon_id="5836997023554870252")],
                 ])
             try:
                 await q.message.edit_text(text, parse_mode=ParseMode.HTML, reply_markup=kb,
@@ -38412,7 +38439,7 @@ async def shop_router(update: Update, ctx: ContextTypes.DEFAULT_TYPE):
                 f"{fail_text}"
             )
             kb = InlineKeyboardMarkup([
-                [btn("🔨 Попробовать снова", callback_data=f"craft_{rar}")],
+                [btn("🔨 Попробовать снова", callback_data=f"craft_{rar}", icon_id="5836997023554870252")],
                 [btn("◀️ Назад", callback_data="craft_menu")],
             ])
             try:
@@ -38448,7 +38475,7 @@ async def shop_router(update: Update, ctx: ContextTypes.DEFAULT_TYPE):
         kb = InlineKeyboardMarkup([
             [btn(f"✅ Надеть {result_skin}", callback_data=f"equip_{result_skin}")],
             [
-                btn("🔨 Крафтить ещё", callback_data="craft_menu"),
+                btn("🔨 Крафтить ещё", callback_data="craft_menu", icon_id="5836997023554870252"),
                 btn("◀️ Назад", callback_data="refresh"),
             ],
         ])
@@ -39541,7 +39568,7 @@ async def on_callback(update: Update, ctx: ContextTypes.DEFAULT_TYPE):
         f["trial_quests"] = json.dumps(trial_quests)
         f["trial_progress"] = json.dumps({tq["id"]: 0 for tq in trial_quests})
         await db_save(f)
-        lines = ["⚔️ <b>Испытание началось!</b>\n\n"
+        lines = [f"{_E_SWORDS} <b>Испытание началось!</b>\n\n"
                  "Выполни все задания, чтобы воскресить лягушку с полными показателями и получить бонус:\n"]
         for i, tq in enumerate(trial_quests, 1):
             lines.append(f"{i}. {tq['desc']} (+{tq['coins']}{_E_COIN}, +{tq['xp']} XP)")
@@ -39574,7 +39601,7 @@ async def on_callback(update: Update, ctx: ContextTypes.DEFAULT_TYPE):
         f["trial_progress"] = json.dumps({tq["id"]: 0 for tq in trial_quests})
         await db_save(f)
         logger.info("TRIAL RESET: uid=%s trial_active forced to 1, quests=%s", uid, [tq["id"] for tq in trial_quests])
-        lines = ["⚔️ <b>Испытание переинициализировано!</b>\n\n"
+        lines = [f"{_E_SWORDS} <b>Испытание переинициализировано!</b>\n\n"
                  "Теперь прогресс кормления будет засчитываться. Выполни задания:\n"]
         for i, tq in enumerate(trial_quests, 1):
             lines.append(f"{i}. {tq['desc']} (+{tq['coins']}{_E_COIN}, +{tq['xp']} XP)")
@@ -40539,14 +40566,18 @@ async def on_callback(update: Update, ctx: ContextTypes.DEFAULT_TYPE):
                 btn(t("btn_shop_stars", f), callback_data="stars_menu"),
             ],
             [
-                btn("🔨 Крафт", callback_data="craft_menu"),
+                btn("🔨 Крафт", callback_data="craft_menu", icon_id="5836997023554870252"),
                 btn(sub_lbl, callback_data="shop_sub"),
             ],
             # В магазине это была ссылка прямо в каталог лотов. Тому, кто ещё не
             # знает, что такое KissedFrog, сначала нужен ответ «зачем», а уже
             # оттуда — лоты.
+            # icon_id задан явно (не через общий BUTTON_ICONS["🎁"]) — эта
+            # иконка только для входа в NFT, обычные подарочные кнопки её не
+            # получают.
             [
-                btn("🐸 NFT KissedFrog", callback_data="nft_menu", style="success"),
+                btn("🐸 NFT KissedFrog", callback_data="nft_menu_shop", style="success",
+                    icon_id="5395653021805860507"),
             ],
         ]
         if _active_seasons:
@@ -40884,7 +40915,7 @@ async def on_callback(update: Update, ctx: ContextTypes.DEFAULT_TYPE):
                 else "СЕГОДНЯ в 18:00 МСК"
             )
             text = (
-                "🎟 <b>Ежедневная лотерея</b>\n\n"
+                f"{_E_TICKET} <b>Ежедневная лотерея</b>\n\n"
                 f"💰 Текущий банк: <b>{pool}{coin_emoji()}</b>\n"
                 f"🎫 Билетов всего: <b>{total_t}</b>\n"
                 f"🎟 Твоих билетов: <b>{my_t}</b>\n\n"
@@ -40922,11 +40953,11 @@ async def on_callback(update: Update, ctx: ContextTypes.DEFAULT_TYPE):
         else:  # menu_jackpot
             jp_pool = await jackpot_get()
             text = (
-                "🎰 <b>Джекпот</b>\n\n"
+                f"{_E_CASINO} <b>Джекпот</b>\n\n"
                 f"💰 Накоплено: <b>{jp_pool:,}{coin_emoji()}</b>\n\n"
                 "10% от каждого проигрыша в казино идёт сюда.\n"
-                "Весь банк забирает тот, кто выбьет <b>🎰 Джекпот</b> в слотах!\n\n"
-                "<i>Сыграть в слоты → 🎲 Казино → 🎰 Слоты</i>"
+                f"Весь банк забирает тот, кто выбьет <b>{_E_CASINO} Джекпот</b> в слотах!\n\n"
+                f"<i>Сыграть в слоты → {_E_DICE} Казино → {_E_CASINO} Слоты</i>"
             )
             kb = InlineKeyboardMarkup(
                 [
@@ -41926,7 +41957,7 @@ async def on_callback(update: Update, ctx: ContextTypes.DEFAULT_TYPE):
                 if res == "win":
                     if not is_on_cd_5:
                         f_fr["coins"] += 20; add_xp(f_fr, 25)
-                    txt = "🏆 <b>Победа!</b> +20🪙 +25XP" if not is_on_cd_5 else "🏆 <b>Победа!</b> (без награды — КД)"
+                    txt = f"{_E_TROPHY} <b>Победа!</b> +20{_E_COIN} +25XP" if not is_on_cd_5 else f"{_E_TROPHY} <b>Победа!</b> (без награды — КД)"
                 elif res == "draw":
                     if not is_on_cd_5:
                         f_fr["coins"] += 5; add_xp(f_fr, 8)
@@ -42158,7 +42189,7 @@ async def on_callback(update: Update, ctx: ContextTypes.DEFAULT_TYPE):
                     add_xp(f_fresh, 20)
                     # Счётчик для ttt_win_5 / ttt_win_20: побед никто не считал
                     f_fresh["total_ttt_wins"] = f_fresh.get("total_ttt_wins", 0) + 1
-                    res_txt = "🏆 <b>Победа!</b> +12🪙 +20XP"
+                    res_txt = f"{_E_TROPHY} <b>Победа!</b> +12{_E_COIN} +20XP"
                 elif not winner and full:
                     f_fresh["coins"] += 2
                     add_xp(f_fresh, 5)
@@ -42196,7 +42227,7 @@ async def on_callback(update: Update, ctx: ContextTypes.DEFAULT_TYPE):
                     add_xp(f_fresh, 20)
                     # Счётчик для ttt_win_5 / ttt_win_20: побед никто не считал
                     f_fresh["total_ttt_wins"] = f_fresh.get("total_ttt_wins", 0) + 1
-                    res_txt = "🏆 <b>Победа!</b> +12🪙 +20XP"
+                    res_txt = f"{_E_TROPHY} <b>Победа!</b> +12{_E_COIN} +20XP"
                 elif not winner and full:
                     f_fresh["coins"] += 2
                     add_xp(f_fresh, 5)
@@ -43362,7 +43393,7 @@ async def on_callback(update: Update, ctx: ContextTypes.DEFAULT_TYPE):
         # Строка «NFT (0 шт): +0%» была тупиком: показывала недостающий бонус и
         # не говорила, откуда его взять. Даём ход прямо отсюда.
         _nft_row = ([[btn(f"Что даёт KissedFrog{SEP}+{int(NFT_BONUS_1 * 100)}%",
-                          callback_data="nft_menu", icon_id=ICON_SHOP)]]
+                          callback_data="nft_menu_bonus", icon_id=ICON_SHOP)]]
                     if not nft_count else [])
         kb = InlineKeyboardMarkup([
             *_nft_row,
@@ -43589,7 +43620,7 @@ async def on_callback(update: Update, ctx: ContextTypes.DEFAULT_TYPE):
         feed_block = ("\n\n<b>Болото сейчас:</b>\n" + "\n".join(feed_lines)) if feed_lines else ""
 
         text = (
-            "🌿 <b>Болотная Площадь</b>\n\n"
+            f"{_E_LEAF} <b>Болотная Площадь</b>\n\n"
             + "\n".join(header_lines)
             + feed_block
         )
@@ -43822,7 +43853,7 @@ async def on_callback(update: Update, ctx: ContextTypes.DEFAULT_TYPE):
         if not rows:
             await q.answer("Нет входящих заявок", show_alert=True)
             return
-        lines = ["📬 <b>Входящие заявки в соседи</b>\n"]
+        lines = [f"{_E_MAILBOX} <b>Входящие заявки в соседи</b>\n"]
         kb_rows = []
         for r in rows:
             name = r.get("frog_name") or r.get("first_name") or "?"
@@ -44261,7 +44292,7 @@ async def on_callback(update: Update, ctx: ContextTypes.DEFAULT_TYPE):
                 f"  (в котле: {staya['cauldron']:,}🪙)"
             )
         else:
-            next_line_pl = "\n🏆 <b>Максимальный уровень болота!</b>"
+            next_line_pl = f"\n{_E_TROPHY} <b>Максимальный уровень болота!</b>"
 
         text = (
             f"{staya['emoji']} <b>Стая «{he(staya['name'])}»</b>\n\n"
@@ -44330,13 +44361,13 @@ async def on_callback(update: Update, ctx: ContextTypes.DEFAULT_TYPE):
                 f"До ур.{lvl + 1}: ещё <b>{need:,}🪙</b>\n"
             )
         else:
-            progress_block = "\n🏆 <b>Максимальный уровень — Астральное Болото!</b>\n"
+            progress_block = f"\n{_E_TROPHY} <b>Максимальный уровень — Астральное Болото!</b>\n"
 
         lines = [
             f"🏔️ <b>Болото стаи «{he(staya['name'])}»</b>\n",
             f"Текущий уровень: <b>{lvl}</b> из {len(STAYA_UPGRADES)}",
             progress_block,
-            "<b>Как качать:</b> пополняйте 🪙 Котёл — когда монет в котле накопится "
+            f"<b>Как качать:</b> пополняйте {_E_COIN} Котёл — когда монет в котле накопится "
             "достаточно, болото автоматически переходит на следующий уровень.\n"
             "<i>5% монет каждого 🚀 Трудяги идёт в котёл автоматически. "
             "Остальные участники могут пополнять вручную.</i>\n",
@@ -44485,7 +44516,7 @@ async def on_callback(update: Update, ctx: ContextTypes.DEFAULT_TYPE):
             return
 
         lines = [
-            "⚔️ <b>Болотный Поход</b>\n\n"
+            f"{_E_SWORDS} <b>Болотный Поход</b>\n\n"
             "Выбери партнёра из соседей:\n"
             "<i>Нужен уровень Приятели и выше</i>"
         ]
@@ -45726,7 +45757,7 @@ async def on_callback(update: Update, ctx: ContextTypes.DEFAULT_TYPE):
                 rows = [dict(r) for r in await c.fetchall()]
         medals = ["🥇","🥈","🥉","4.","5.","6.","7.","8.","9.","10."]
         medals = ["🥇","🥈","🥉","4.","5.","6.","7.","8.","9.","10."]
-        lines = ["🏆 <b>Рейтинг Болотных Стай</b>\n"
+        lines = [f"{_E_TROPHY} <b>Рейтинг Болотных Стай</b>\n"
                  "<i>По общей сумме монет, вложенных в котёл за всё время</i>\n"]
         for i, s in enumerate(rows):
             cnt   = s.get("member_count") or 0
@@ -45930,7 +45961,7 @@ async def on_callback(update: Update, ctx: ContextTypes.DEFAULT_TYPE):
         if not rows:
             await q.answer("Нет входящих заявок", show_alert=True)
             return
-        lines = ["📬 <b>Входящие заявки</b>\n"]
+        lines = [f"{_E_MAILBOX} <b>Входящие заявки</b>\n"]
         kb_rows = []
         for r in rows:
             name = r.get("frog_name") or r.get("first_name") or "?"
@@ -47818,14 +47849,14 @@ async def on_callback(update: Update, ctx: ContextTypes.DEFAULT_TYPE):
         await q.answer()
         help_text = (
             "❓ <b>Помощь</b>\n\n"
-            "🐸 <b>/start</b> — открыть меню лягушки\n"
+            f"{_E_FROG} <b>/start</b> — открыть меню лягушки\n"
             "🔤 <b>/rename Имя</b> — переименовать лягушку\n"
-            "🎁 <b>/gift @user N</b> — подарить КваКоины\n"
-            "🏆 <b>/top</b> — рейтинг по уровню\n"
-            "📊 <b>/mystats</b> — личная статистика\n"
+            f"{_E_GIFT} <b>/gift @user N</b> — подарить КваКоины\n"
+            f"{_E_TROPHY} <b>/top</b> — рейтинг по уровню\n"
+            f"{_E_CHART} <b>/mystats</b> — личная статистика\n"
             "⏱ <b>/cooldowns</b> — все кулдауны\n"
-            "⚔️ <b>/duel @user N</b> — дуэль на ставку\n"
-            "❌ <b>/ttt</b> — крестики-нолики в чате\n"
+            f"{_E_SWORDS} <b>/duel @user N</b> — дуэль на ставку\n"
+            f"{_E_CROSS} <b>/ttt</b> — крестики-нолики в чате\n"
             "🪢 <b>/hangman</b> — виселица в чате\n"
             "✊ <b>/rps</b> — камень-ножницы-бумага в чате\n"
             f"{_E_LINK} <b>/referral</b> — реферальная программа\n\n"
@@ -48072,7 +48103,7 @@ async def on_callback(update: Update, ctx: ContextTypes.DEFAULT_TYPE):
 
         if not pages[0]:
             if tab == "locked":
-                body = "✅ <b>Все достижения открыты!</b> Ты легенда болота 🐸"
+                body = f"{_E_CHECK} <b>Все достижения открыты!</b> Ты легенда болота {_E_FROG}"
             elif tab == "earned":
                 body = "Пока нет ни одного достижения. Начни кормить лягушку! 🐸"
             else:
@@ -48888,7 +48919,7 @@ async def on_callback(update: Update, ctx: ContextTypes.DEFAULT_TYPE):
             else "СЕГОДНЯ в 18:00 МСК"
         )
         text = (
-            "🎟 <b>Ежедневная лотерея</b>\n\n"
+            f"{_E_TICKET} <b>Ежедневная лотерея</b>\n\n"
             f"💰 Текущий банк: <b>{pool}{coin_emoji()}</b>\n"
             f"🎫 Билетов всего: <b>{total_t}</b>\n"
             f"🎟 Твоих билетов: <b>{my_t}</b>\n\n"
@@ -49367,7 +49398,7 @@ async def on_callback(update: Update, ctx: ContextTypes.DEFAULT_TYPE):
         _roll = random.randint(1, NFT_KVA_TOTAL)
         if _roll == NFT_KVA_TOTAL:
             _nft_result = (
-                "\n\n🎁 <b>НЕВЕРОЯТНО! Ты поймал Chill Flame NFT!</b>\n"
+                f"\n\n{_E_GIFT} <b>НЕВЕРОЯТНО! Ты поймал Chill Flame NFT!</b>\n"
                 "<i>Свяжись с администратором для получения подарка</i>"
             )
             for _adm_id in ADMIN_IDS:
@@ -49580,7 +49611,7 @@ async def successful_payment(update: Update, ctx: ContextTypes.DEFAULT_TYPE):
             logger.warning("kva_retry_stars_10 stats error: %s", _p10e)
         _nft_result_10 = ""
         if _won_10:
-            _nft_result_10 = "\n\n🎁 <b>НЕВЕРОЯТНО! Ты поймал Chill Flame NFT!</b>\n<i>Свяжись с администратором</i>"
+            _nft_result_10 = f"\n\n{_E_GIFT} <b>НЕВЕРОЯТНО! Ты поймал Chill Flame NFT!</b>\n<i>Свяжись с администратором</i>"
             await announce(ctx.bot,
                 f"🔥 <b>Chill Flame NFT пойман!</b>\n"
                 f"<b>{_html.escape(user.first_name)}</b> квакнул ×10 и выиграл NFT-подарок!\n"
@@ -49607,7 +49638,7 @@ async def successful_payment(update: Update, ctx: ContextTypes.DEFAULT_TYPE):
                 f"👤 {_uname_10} (<code>{user.id}</code>)\n"
                 f"💰 Оплачено: <b>{stars_paid} Stars</b>\n"
                 f"🎲 Лучший бросок: <b>{_best_display}/{NFT_KVA_TOTAL}</b>"
-                + ("\n\n🏆 <b>ПОБЕДА — NFT!</b>" if _won_10 else ""),
+                + (f"\n\n{_E_TROPHY} <b>ПОБЕДА — NFT!</b>" if _won_10 else ""),
                 parse_mode=ParseMode.HTML,
             )
         except Exception as _n10e:
@@ -49615,7 +49646,7 @@ async def successful_payment(update: Update, ctx: ContextTypes.DEFAULT_TYPE):
         # Строим список результатов — показываем min(r, 1000) чтобы не светить x10_total
         _lines_10 = []
         for _i, (_r, _rd) in enumerate(zip(_rolls_10, _rolls_display), 1):
-            _mark = " 🏆 <b>NFT!</b>" if _r == _X10_TOTAL else ""
+            _mark = f" {_E_TROPHY} <b>NFT!</b>" if _r == _X10_TOTAL else ""
             _lines_10.append(f"  {_i}. {_rd}/{NFT_KVA_TOTAL}{_mark}")
         _retry_markup_10 = InlineKeyboardMarkup([
             [btn(f"{NFT_KVA_STARS} Stars", callback_data="kva_retry_stars", icon_id="6028338546736107668"),
@@ -49667,14 +49698,14 @@ async def successful_payment(update: Update, ctx: ContextTypes.DEFAULT_TYPE):
                 f"👤 {_uname_s1} (<code>{user.id}</code>)\n"
                 f"💰 Оплачено: <b>{stars_paid} Stars</b>\n"
                 f"🎲 Бросок: <b>{_roll}/{NFT_KVA_TOTAL}</b>"
-                + ("\n\n🏆 <b>ПОБЕДА — NFT!</b>" if _won_s1 else ""),
+                + (f"\n\n{_E_TROPHY} <b>ПОБЕДА — NFT!</b>" if _won_s1 else ""),
                 parse_mode=ParseMode.HTML,
             )
         except Exception as _ns1:
             logger.warning("kva_retry stars admin notify error: %s", _ns1)
         if _won_s1:
             _nft_result = (
-                "\n\n🎁 <b>НЕВЕРОЯТНО! Ты поймал Chill Flame NFT!</b>\n"
+                f"\n\n{_E_GIFT} <b>НЕВЕРОЯТНО! Ты поймал Chill Flame NFT!</b>\n"
                 "<i>Свяжись с администратором для получения подарка</i>"
             )
             await announce(ctx.bot,
@@ -51377,8 +51408,8 @@ async def on_message(update: Update, ctx: ContextTypes.DEFAULT_TYPE):
                 # Считаем результат — полная логика с реальными символами, RTP 95%
                 def _cr(gtype, val, stake):
                     if gtype == "dice":
-                        if val == 6: return int(stake * 3.2), "🎲 <b>6</b> — УДАЧА! ×3.2!"
-                        elif val == 5: return int(stake * 1.6), "🎲 <b>5</b> — выигрыш ×1.6!"
+                        if val == 6: return int(stake * 3.2), f"{_E_DICE} <b>6</b> — УДАЧА! ×3.2!"
+                        elif val == 5: return int(stake * 1.6), f"{_E_DICE} <b>5</b> — выигрыш ×1.6!"
                         else: return 0, f"🎲 <b>{val}</b> — проигрыш"
                     elif gtype == "dart":
                         if val == 6: return int(stake * 3.2), f"{_E_TARGET} <b>6</b> — В ЯБЛОЧКО! ×3.2!"
@@ -51386,7 +51417,7 @@ async def on_message(update: Update, ctx: ContextTypes.DEFAULT_TYPE):
                         else: return 0, f"🎯 <b>{val}</b> — мимо"
                     elif gtype == "basketball":
                         # 🏀 диапазон 1-5! EV=(1.6+2.4)/5=0.80
-                        if val == 5: return int(stake * 2.4), "🏀 <b>5</b> — SLAM DUNK! ×2.4! 🔥"
+                        if val == 5: return int(stake * 2.4), f"🏀 <b>5</b> — SLAM DUNK! ×2.4! {_E_FIRE}"
                         elif val == 4: return int(stake * 1.6), "🏀 <b>4</b> — Попадание! ×1.6!"
                         else: return 0, f"🏀 <b>{val}</b> — мимо корзины"
                     elif gtype == "slots":
@@ -51501,7 +51532,7 @@ async def on_message(update: Update, ctx: ContextTypes.DEFAULT_TYPE):
                                 f"💰 <b>+{_coins_r}🪙</b> всей команде"
                             )
                             if _luck_r:
-                                _msg_r += "\n⭐ <i>Следующее испытание пройдёт с удачей</i>"
+                                _msg_r += f"\n{_E_STARS} <i>Следующее испытание пройдёт с удачей</i>"
                             await _exp_broadcast(ctx.bot, _exp_id_r, _msg_r)
                             # Применяем бонус всем
                             for _mr in _members_r:
@@ -51830,7 +51861,7 @@ async def on_message(update: Update, ctx: ContextTypes.DEFAULT_TYPE):
 
             if _won_nft:
                 _nft_drop_text = (
-                    "\n\n🎁 <b>НЕВЕРОЯТНО! Ты поймал Chill Flame NFT!</b>\n"
+                    f"\n\n{_E_GIFT} <b>НЕВЕРОЯТНО! Ты поймал Chill Flame NFT!</b>\n"
                     "<i>Свяжись с администратором для получения подарка</i>"
                 )
                 await announce(
@@ -52878,7 +52909,7 @@ async def resolve_tavern(adv_id: int, u1_name: str, u2_name: str) -> tuple[str, 
     if found_requil:
         keeper_line = REQUIL_LORE["tavern_keeper_after_found"]
         bonus_note = (
-            "\n\n🪙 Хозяин протянул старую монетку Реквили. Особая — <b>+50 к награде</b>."
+            f"\n\n{_E_COIN} Хозяин протянул старую монетку Реквили. Особая — <b>+50 к награде</b>."
         )
         bonus = 200
     else:
@@ -53917,7 +53948,7 @@ async def grant_trial(uid: int, sub_type: int, days: int, bot=None, reason: str 
             if sub_type == 1:
                 msg += f"\n{_E_NANNY} <i>Тётя Жаба уже спешит к твоей лягушке</i>"
             else:
-                msg += "\n🏪 <i>Квакуся собирает корзинку — первый выход на рынок уже сегодня!</i>"
+                msg += f"\n{_E_STORE} <i>Квакуся собирает корзинку — первый выход на рынок уже сегодня!</i>"
             await bot.send_message(uid, msg, parse_mode=ParseMode.HTML)
         except (BadRequest, Forbidden, TimedOut):
             pass
@@ -54174,7 +54205,7 @@ async def _work_phase_morning(now: float, bot, catch_up: bool = False) -> list[i
                     "😅 Будильник подвёл. Но лягушка не сдаётся!",
                     "🌤️ Поздний старт, зато бодрая.",
                 ]).format(name=name)
-                footer = "<i>День сжатый — обед придёт скоро, вечером как обычно вернётся 🐸</i>"
+                footer = f"<i>День сжатый — обед придёт скоро, вечером как обычно вернётся {_E_FROG}</i>"
             else:
                 intro = random.choice(_WORK_MORNING_INTROS).format(name=name)
                 footer = "<i>Что-то произойдёт по пути... <tg-emoji emoji-id='5341367834935075028'>🐸</tg-emoji></i>"
@@ -54352,7 +54383,7 @@ _WINBACK_SEGMENTS = [
     (7, 14, 2,
      "🤒 <b>{name} заболела от одиночества!</b>\n\n"
      "Здоровье падает, лягушка грустит...\n"
-     "Возвращайся скорее! В подарок — <b>+50 🪙</b>\n\n"
+     f"Возвращайся скорее! В подарок — <b>+50 {_E_COIN}</b>\n\n"
      "<i>Открыть: /frog</i>",
      50),
     (14, 30, 3,
@@ -55025,7 +55056,7 @@ async def job_league_week(ctx: ContextTypes.DEFAULT_TYPE):
             await ctx.bot.send_message(
                 top1_uid,
                 f"{_E_CROWN} Ты лучший <b>Болотный Царь</b> недели!\n\n"
-                "🚽🔴 Тебе выдан эксклюзивный мифический облик <b>Toilet Frog</b>!\n"
+                f"🚽{_E_DOT_RED} Тебе выдан эксклюзивный мифический облик <b>Toilet Frog</b>!\n"
                 "Надень его в меню Ухаживать → Облик.",
                 parse_mode=ParseMode.HTML,
             )
@@ -56194,7 +56225,7 @@ async def cmd_pgiveaway(update: Update, ctx: ContextTypes.DEFAULT_TYPE):
         await db.commit()
         async with db.execute("SELECT last_insert_rowid()") as c:
             gid = (await c.fetchone())[0]
-    kva_note = "\n<i>🐸 Участие только для квакавших в этом чате</i>" if kva_only else ""
+    kva_note = f"\n<i>{_E_FROG} Участие только для квакавших в этом чате</i>" if kva_only else ""
     kb = InlineKeyboardMarkup([
         [btn("🎁 Участвовать (0 участников)", callback_data=f"giveaway_join_{gid}", style="success")],
         [btn("⏩ Завершить сейчас", callback_data=f"giveaway_force_{gid}", style="danger")],
@@ -57069,7 +57100,7 @@ async def cmd_staya_top(update: Update, ctx: ContextTypes.DEFAULT_TYPE):
                                         parse_mode=ParseMode.HTML)
         return
 
-    lines = ["🏆 <b>Рейтинг Болотных Стай</b>\n",
+    lines = [f"{_E_TROPHY} <b>Рейтинг Болотных Стай</b>\n",
              "<i>По общей сумме монет, вложенных в котёл за всё время</i>\n"]
     medals = ["🥇", "🥈", "🥉"] + [f"{i}." for i in range(4, 11)]
     for i, s in enumerate(rows):
@@ -57189,7 +57220,7 @@ async def cmd_givesub(update: Update, ctx: ContextTypes.DEFAULT_TYPE):
             target_id,
             f"{_E_GIFT} <b>Тебе выдана подписка {sub_name}!</b>\n\n"
             f"📅 Активна до <b>{until_dt}</b>\n\n"
-            + ("🏪 <i>Квакуся идёт на Болотный Рынок!</i>"
+            + (f"{_E_STORE} <i>Квакуся идёт на Болотный Рынок!</i>"
                if sub_type == 2 else
                f"{_E_NANNY} <i>Тётя Жаба уже спешит к твоей лягушке</i>"),
             parse_mode=ParseMode.HTML,
@@ -57270,7 +57301,7 @@ async def cmd_fix_adventure(update: Update, ctx: ContextTypes.DEFAULT_TYPE):
     try:
         await ctx.bot.send_message(
             target_uid,
-            "⚔️ <b>Твоя лягушка вернулась из похода!</b>\n\n"
+            f"{_E_SWORDS} <b>Твоя лягушка вернулась из похода!</b>\n\n"
             "<i>Поход был завершён досрочно администратором.</i>",
             parse_mode=ParseMode.HTML,
         )
@@ -57353,7 +57384,7 @@ async def cmd_fix_adventures_all(update: Update, ctx: ContextTypes.DEFAULT_TYPE)
         try:
             await ctx.bot.send_message(
                 uid,
-                "⚔️ <b>Твоя лягушка вернулась из похода!</b>\n\n"
+                f"{_E_SWORDS} <b>Твоя лягушка вернулась из похода!</b>\n\n"
                 "<i>Поход завис и был завершён автоматически.</i>",
                 parse_mode=ParseMode.HTML,
             )
@@ -58174,10 +58205,10 @@ async def cmd_broadcast_return(update: Update, ctx: ContextTypes.DEFAULT_TYPE):
     day14 = sum(1 for r in targets if r["last_seen"] >= now_br - 14 * 86400)
 
     preview = (
-        "🐸 <b>Привет! Твоя лягушка скучает по тебе...</b>\n\n"
+        f"{_E_FROG} <b>Привет! Твоя лягушка скучает по тебе...</b>\n\n"
         "Она ждёт на болоте уже несколько дней.\n\n"
         "Мы хотим предложить тебе вернуться:\n"
-        "🌿 <b>Бесплатное воскрешение</b> — одна кнопка\n"
+        f"{_E_LEAF} <b>Бесплатное воскрешение</b> — одна кнопка\n"
         "🧑\u200d🍼 <b>3 дня Болотной Няни</b> в подарок — она сама позаботится о лягушке, "
         "пока ты будешь обживаться заново\n\n"
         "<i>Предложение одноразовое.</i>"
@@ -58812,7 +58843,7 @@ async def _chk_do_bot_move(gid, gd, q, ctx):
         # Кто победил
         human_p = gd.get("human_player", 1)
         if (human_p == 1 and p1 == 0) or (human_p == 2 and p2 == 0) or not next_m:
-            result = "🤖 <b>Бот победил!</b> Попробуй ещё раз."
+            result = f"{_E_BOT} <b>Бот победил!</b> Попробуй ещё раз."
         else:
             result = f"{_E_TROPHY} <b>{_html.escape(gd['p1n'])}</b> победил(а)!"
         ctx.bot_data.pop(f"chk|{gid}", None)
@@ -59120,7 +59151,7 @@ async def handle_checkers_callback(q, d, uid, ctx):
                 human_p = gd.get("human_player", 1)
                 human_lost = (human_p == 1 and (p1 == 0 or (not next_m and gd["turn"] == human_p))) or \
                              (human_p == 2 and (p2 == 0 or (not next_m and gd["turn"] == human_p)))
-                result = "🤖 <b>Бот победил!</b>" if human_lost else f"{_E_TROPHY} <b>{_html.escape(gd['p1n'])}</b> победил(а)!"
+                result = f"{_E_BOT} <b>Бот победил!</b>" if human_lost else f"{_E_TROPHY} <b>{_html.escape(gd['p1n'])}</b> победил(а)!"
                 ctx.bot_data.pop(f"chk|{gid}", None)
                 try:
                     await q.message.edit_text(
@@ -59547,7 +59578,7 @@ EXP_EVENT_CATALOG = {
         "type": "passive", "phase": "mid", "weight": 3,
         "biomes": ["catacombs", "ruins"],
         "text": (
-            "💀 <b>Скелет авантюриста</b>\n\n"
+            f"{_E_SKULL} <b>Скелет авантюриста</b>\n\n"
             "У стены лежит скелет в потрёпанных доспехах. "
             "Его странствия закончились здесь. Но инвентарь... пустым не оказался."
         ),
@@ -59576,7 +59607,7 @@ EXP_EVENT_CATALOG = {
         "type": "passive", "phase": "early", "weight": 3,
         "biomes": ["swamp", "forest"],
         "text": (
-            "🌿 <b>Гнилая ветка</b>\n\n"
+            f"{_E_LEAF} <b>Гнилая ветка</b>\n\n"
             "{name} наступила не туда. Доска под болотной тиной треснула, "
             "нога провалилась в грязь — больно и обидно."
         ),
@@ -59712,7 +59743,7 @@ EXP_EVENT_CATALOG = {
             "🌊 <b>Переправа</b>\n\n"
             "Впереди широкая река — объезда нет.\n\n"
             "🏊 <b>Плыть</b> — быстро, рискованно\n"
-            "🔍 <b>Искать брод</b> — безопасно, но займёт время"
+            f"{_E_SEARCH} <b>Искать брод</b> — безопасно, но займёт время"
         ),
         "timeout_key": "ford",
         "options": [
@@ -59735,10 +59766,10 @@ EXP_EVENT_CATALOG = {
         "type": "team_vote", "phase": "mid", "weight": 2,
         "biomes": ["swamp", "forest", "catacombs"],
         "text": (
-            "🔥 <b>Незнакомец у костра</b>\n\n"
+            f"{_E_FIRE} <b>Незнакомец у костра</b>\n\n"
             "Странный путник у костра предлагает: отдайте мне монет, "
             "и я покажу вам кратчайший путь к сокровищам.\n\n"
-            "💰 <b>Заплатить 50🪙</b> — доверяешь ему?\n"
+            f"{_E_MONEYBAG} <b>Заплатить 50{_E_COIN}</b> — доверяешь ему?\n"
             "👋 <b>Пройти мимо</b> — не рисковать"
         ),
         "timeout_key": "pass",
@@ -60032,9 +60063,9 @@ EXP_EVENT_CATALOG = {
             "Из зарослей выходят раскрашенные болотные аборигены. "
             "Их вождь указывает на команду и что-то требует — переводчика нет, "
             "но смысл ясен: нужна жертва. Иначе — война.\n\n"
-            "🩸 <b>Отдать одного</b> — случайный участник теряет 45 HP и 30🪙, "
+            f"🩸 <b>Отдать одного</b> — случайный участник теряет 45 HP и 30{_E_COIN}, "
             "остальные проходят без потерь\n"
-            "⚔️ <b>Сражаться</b> — все получают по 25 HP урона, но сохраняют монеты"
+            f"{_E_SWORDS} <b>Сражаться</b> — все получают по 25 HP урона, но сохраняют монеты"
         ),
         "timeout_key": "fight",
         "options": [
@@ -60071,7 +60102,7 @@ EXP_EVENT_CATALOG = {
             "🌑 <b>Тёмный тоннель</b>\n\n"
             "Впереди — узкий тоннель, откуда слышны странные звуки. "
             "Кто-то должен пойти первым и проверить.\n\n"
-            "🏃 <b>Выдвинуть разведчика</b> — случайный участник идёт один: "
+            f"{_E_RUN} <b>Выдвинуть разведчика</b> — случайный участник идёт один: "
             "70% шанс найти клад (+80🪙), 30% — попасть в ловушку (-50 HP)\n"
             "🐢 <b>Идти всем вместе</b> — медленно и безопасно, "
             "но теряете время (+15 мин) и получаем по -10 HP от усталости"
@@ -60115,7 +60146,7 @@ EXP_EVENT_CATALOG = {
             "Он явно ценный — но несущий его будет терять HP всю оставшуюся дорогу.\n\n"
             "😈 <b>Взять реликвию</b> — случайный участник несёт её: "
             "теряет 5 HP каждые 20 мин, но в конце +120🪙 всей команде\n"
-            "🚫 <b>Оставить здесь</b> — ничего не происходит"
+            f"{_E_BAN} <b>Оставить здесь</b> — ничего не происходит"
         ),
         "timeout_key": "leave",
         "options": [
@@ -60146,12 +60177,12 @@ EXP_EVENT_CATALOG = {
         "type": "team_vote", "phase": "any", "weight": 3,
         "biomes": ["swamp", "forest", "catacombs", "ruins"],
         "text": (
-            "🚪 <b>Ворота-загадка</b>\n\n"
+            f"{_E_DOOR} <b>Ворота-загадка</b>\n\n"
             "Массивные ворота. В центре — горящая надпись:\n"
             "<i>«Я говорю без рта, слышу без ушей, "
             "нет тела — но оживаю от ветра. Что я?»</i>\n\n"
             "Неправильный ответ — всех ударит током. Голосуйте.\n\n"
-            "🔥 <b>Огонь</b> · 💨 <b>Эхо</b> · "
+            f"{_E_FIRE} <b>Огонь</b> · 💨 <b>Эхо</b> · "
             "🌊 <b>Вода</b> · 🌪️ <b>Ветер</b>"
         ),
         "timeout_key": "wind",
@@ -60194,7 +60225,7 @@ EXP_EVENT_CATALOG = {
             "Но у одного есть зелье нейтрализации яда.\n\n"
             "🧪 <b>Пожертвовать зелье</b> — "
             "очистить воду\n"
-            "💀 <b>Пить как есть</b> — "
+            f"{_E_SKULL} <b>Пить как есть</b> — "
             "сохранить зелье на потом"
         ),
         "timeout_key": "drink_poison",
@@ -60231,7 +60262,7 @@ EXP_EVENT_CATALOG = {
             "Дух стража обвиняет кого-то в команде в воровстве. "
             "Страж пропустит остальных только если виновный заплатит.\n\n"
             f"{_E_MONEYFLY} <b>Все платят поровну</b> — никто не выделяется\n"
-            "🎲 <b>Бросить жребий</b> — один заплатит за всех"
+            f"{_E_DICE} <b>Бросить жребий</b> — один заплатит за всех"
         ),
         "timeout_key": "all_pay",
         "options": [
@@ -60264,11 +60295,11 @@ EXP_EVENT_CATALOG = {
         "type": "team_vote", "phase": "mid", "weight": 2,
         "biomes": ["forest", "catacombs"],
         "text": (
-            "⚙️ <b>Механическая ловушка</b>\n\n"
+            f"{_E_GEAR} <b>Механическая ловушка</b>\n\n"
             "Один из участников наступил на плиту-активатор. "
             "Пока он стоит — ничего не происходит. "
             "Как только отступит — шипы вырвутся из стен.\n\n"
-            "🏃 <b>Рвануть всем сразу</b> — может повезёт, может нет\n"
+            f"{_E_RUN} <b>Рвануть всем сразу</b> — может повезёт, может нет\n"
             "🐌 <b>Выходить по одному</b> — медленно, кто-то останется последним"
         ),
         "timeout_key": "run",
@@ -60376,7 +60407,7 @@ EXP_EVENT_CATALOG = {
         "type": "personal_secret", "phase": "any", "weight": 2,
         "biomes": ["swamp", "forest", "catacombs", "ruins"],
         "text": (
-            "🎲 <b>Болотный игрок</b>\n\n"
+            f"{_E_DICE} <b>Болотный игрок</b>\n\n"
             "Незнакомец в капюшоне достаёт карту. "
             "<i>«Угадай масть — удвою твои монеты. "
             "Ошибёшься — заберу треть. Играем?»</i>\n\n"
@@ -60574,7 +60605,7 @@ EXP_EVENT_CATALOG = {
         "type": "passive", "phase": "early", "weight": 3,
         "biomes": ["swamp", "forest", "catacombs", "ruins"],
         "text": (
-            "🐸 <b>Болотные «наскальные» рисунки</b>\n\n"
+            f"{_E_FROG} <b>Болотные «наскальные» рисунки</b>\n\n"
             "{name} заметила на стене рисунок лягушки со стрелкой. "
             "Кто-то здесь уже был. Стрелка привела к небольшому тайнику."
         ),
@@ -60777,7 +60808,7 @@ EXP_EVENT_CATALOG = {
             "Команда наткнулась на чей-то брошенный лагерь. "
             "Костёр ещё тлеет — здесь были совсем недавно.\n\n"
             f"{_E_SLEEP} <b>Отдохнуть</b> — костёр тёплый, вокруг тихо\n"
-            "🏃 <b>Двигаться дальше</b> — время не ждёт"
+            f"{_E_RUN} <b>Двигаться дальше</b> — время не ждёт"
         ),
         "timeout_key": "move_on",
         "options": [
@@ -60800,7 +60831,7 @@ EXP_EVENT_CATALOG = {
         "type": "team_vote", "phase": "mid", "weight": 2,
         "biomes": ["forest", "catacombs", "ruins"],
         "text": (
-            "💰 <b>Клад — и делёж</b>\n\n"
+            f"{_E_MONEYBAG} <b>Клад — и делёж</b>\n\n"
             "Команда нашла клад! Но как делить?\n\n"
             "⚖️ <b>Поровну</b> — честно\n"
             f"{_E_TARGET} <b>Нашедшему больше</b> — кто нашёл, тот и решает"
@@ -60830,7 +60861,7 @@ EXP_EVENT_CATALOG = {
         "text": (
             "🌫️ <b>Развилка в тумане</b>\n\n"
             "Дорога раздваивается. Туман не даёт ничего разглядеть.\n\n"
-            "🎲 <b>Пойти наугад</b> — интуиция подскажет\n"
+            f"{_E_DICE} <b>Пойти наугад</b> — интуиция подскажет\n"
             "⏳ <b>Ждать, пока туман рассеется</b> — иногда терпение важнее скорости"
         ),
         "timeout_key": "wait",
@@ -60862,7 +60893,7 @@ EXP_EVENT_CATALOG = {
         "type": "team_vote", "phase": "mid", "weight": 2,
         "biomes": ["catacombs", "ruins"],
         "text": (
-            "⚙️ <b>Древний механизм</b>\n\n"
+            f"{_E_GEAR} <b>Древний механизм</b>\n\n"
             "Гигантский механизм с шестерёнками и рычагами. "
             "Три позиции: A, B, C. Что-то запустится — но что?\n\n"
             "🅰️ Рычаг A — оттуда доносится гудение\n"
@@ -60976,7 +61007,7 @@ EXP_EVENT_CATALOG = {
             "🛤️ <b>Соблазнительный срезь</b>\n\n"
             "Заметна узкая тропка в сторону — похоже на срезь. "
             "Но кто знает, что там?\n\n"
-            "🌿 <b>Пойти по срезю</b> — соблазнительно...\n"
+            f"{_E_LEAF} <b>Пойти по срезю</b> — соблазнительно...\n"
             "🛣️ <b>Главная дорога</b> — проверенная тропа"
         ),
         "timeout_key": "main_road",
@@ -61012,7 +61043,7 @@ EXP_EVENT_CATALOG = {
             "👻 <b>Призрачный базар</b>\n\n"
             "Среди руин — торговые ряды. Покупатели и продавцы полупрозрачны. "
             "Призраки торгуют. Что будем делать?\n\n"
-            "🛒 <b>Торговать с призраками</b> — рискованное предложение\n"
+            f"{_E_SHOP} <b>Торговать с призраками</b> — рискованное предложение\n"
             "👁️ <b>Наблюдать</b> — просто смотреть и пройти"
         ),
         "timeout_key": "observe",
@@ -61292,7 +61323,7 @@ EXP_EVENT_CATALOG = {
             {
                 "weight": 30,
                 "text_scout": (
-                    "⚔️ <b>Засада!</b> В тоннеле ждала тварь. "
+                    f"{_E_SWORDS} <b>Засада!</b> В тоннеле ждала тварь. "
                     "Ты отбился, но не без потерь."
                 ),
                 "text_team": "🩹 {scout} вернулся из тоннеля — потрёпанный, но живой.",
@@ -61413,7 +61444,7 @@ EXP_EVENT_CATALOG = {
         "type": "passive", "phase": "any", "weight": 3,
         "biomes": ["swamp", "forest", "ruins"],
         "text": (
-            "🪙 <b>Монетка в грязи</b>\n\n"
+            f"{_E_COIN} <b>Монетка в грязи</b>\n\n"
             "{name} случайно пнула что-то твёрдое. "
             "Монетка — старая, с незнакомым гербом. "
             "На обороте что-то стёрлось, но металл качественный.\n\n"
@@ -61471,7 +61502,7 @@ EXP_EVENT_CATALOG = {
         "type": "passive", "phase": "any", "weight": 2,
         "biomes": ["swamp", "forest"],
         "text": (
-            "🔥 <b>Жаба у костра</b>\n\n"
+            f"{_E_FIRE} <b>Жаба у костра</b>\n\n"
             "Морщинистая жаба сидит у крошечного огня и смотрит в небо. "
             "Она не просит ничего — только кивает, когда {name} проходит мимо.\n\n"
             "<i>«Болото помнит каждого, кто идёт с открытым сердцем»</i> — "
@@ -61550,7 +61581,7 @@ EXP_EVENT_CATALOG = {
         "type": "combat", "phase": "early", "weight": 3,
         "biomes": ["swamp", "forest"],
         "text": (
-            "🐸 <b>Жаба-разбойник</b>\n\n"
+            f"{_E_FROG} <b>Жаба-разбойник</b>\n\n"
             "{name} столкнулась лицом к лицу с жабой в рваном плаще. "
             "Та ухмыляется и достаёт ржавый крюк.\n"
             "<i>«Кошелёк или лапа»</i> — квакает она не без юмора.\n\n"
@@ -61728,7 +61759,7 @@ EXP_EVENT_CATALOG = {
             f"{_E_BAG} <b>Чужой схрон</b>\n\n"
             "За отодвинутым камнем — тайник. "
             "Монеты, припасы, записка: <i>«Не трогать»</i>.\n\n"
-            "💰 <b>Взять всё</b> — монеты и припасы ваши\n"
+            f"{_E_MONEYBAG} <b>Взять всё</b> — монеты и припасы ваши\n"
             f"{_E_HANDSHAKE} <b>Взять чуть-чуть</b> — немного, но совесть чище\n"
             "🚶 <b>Не трогать</b> — уважить записку"
         ),
@@ -61808,9 +61839,9 @@ EXP_EVENT_CATALOG = {
             "Огромный рак у переправы. "
             "Говорит на жабьем — с акцентом, но понятно:\n"
             "<i>«Перевезу. Но каждый платит»</i>.\n\n"
-            "🪙 <b>Заплатить</b> — по 30🪙 с каждого, быстро и сухо\n"
+            f"{_E_COIN} <b>Заплатить</b> — по 30{_E_COIN} с каждого, быстро и сухо\n"
             "🏊 <b>Вплавь</b> — бесплатно, но болотная вода холодная\n"
-            "🔍 <b>Поискать брод</b> — потратить время"
+            f"{_E_SEARCH} <b>Поискать брод</b> — потратить время"
         ),
         "timeout_key": "find_ford",
         "options": [
@@ -62624,7 +62655,7 @@ async def _exp_start(exp_id: int, bot):
             await db.commit()
         await _exp_broadcast(
             bot, exp_id,
-            "❌ <b>Экспедиция отменена</b>\n\nНедостаточно участников собралось. "
+            f"{_E_CROSS} <b>Экспедиция отменена</b>\n\nНедостаточно участников собралось. "
             "Монеты и припасы возвращены.",
             only_alive=False,
         )
@@ -63713,8 +63744,8 @@ async def _exp_finish(bot, exp: dict, force_wipe: bool = False):
         )
 
         outcome_line = (
-            "✅ <b>Выжила!</b>" if is_alive else
-            "💀 <b>Погибла в экспедиции</b>"
+            f"{_E_CHECK} <b>Выжила!</b>" if is_alive else
+            f"{_E_SKULL} <b>Погибла в экспедиции</b>"
         )
 
         betrayal_line = ""
@@ -64485,7 +64516,7 @@ async def _show_exp_menu(msg_or_q, f: dict, open_lobbies: list, back_data: str =
             + "\n".join(lobby_rows)
         )
     else:
-        lobbies_block = "\n🚪 <i>Открытых комнат пока нет — создай первой</i>"
+        lobbies_block = f"\n{_E_DOOR} <i>Открытых комнат пока нет — создай первой</i>"
 
     text = (
         f"🗺️ <b>Экспедиции</b>\n"
@@ -65748,7 +65779,7 @@ async def exp_handle_callback(q, uid: int, d: str,
             await q.answer()
             return True
 
-        lines = ["🚪 <b>Открытые экспедиции:</b>\n"]
+        lines = [f"{_E_DOOR} <b>Открытые экспедиции:</b>\n"]
         buttons_join = []
         for exp in open_lobbies[:8]:
             async with aiosqlite.connect(DB_PATH) as db:
@@ -65993,7 +66024,7 @@ async def exp_handle_callback(q, uid: int, d: str,
     # ── Магазин предметов ────────────────────────────────────────
     if d == "exp_shop":
         inv = (json.loads(f["inventory"]) if isinstance(f.get("inventory"), str) else f.get("inventory")) or {}
-        lines = ["🏪 <b>Магазин экспедиций</b>\n"]
+        lines = [f"{_E_STORE} <b>Магазин экспедиций</b>\n"]
         for k, info in EXP_SHOP_PRICES.items():
             lines.append(f"{info['emoji']} <b>{info['name']}</b> — {info['price']}{_E_COIN} (у тебя: {inv.get(k, 0)})")
         lines.append(f"\n{_E_MONEYBAG} Твои монеты: {f.get('coins', 0)}{_E_COIN}")
@@ -66019,7 +66050,7 @@ async def exp_handle_callback(q, uid: int, d: str,
         f["inventory"] = json.dumps(inv)
         await db_save(f)
         await q.answer(f"✅ Куплено: {info['emoji']} {info['name']}", show_alert=False)
-        lines = ["🏪 <b>Магазин экспедиций</b>\n"]
+        lines = [f"{_E_STORE} <b>Магазин экспедиций</b>\n"]
         for k, si in EXP_SHOP_PRICES.items():
             lines.append(f"{si['emoji']} <b>{si['name']}</b> — {si['price']}{_E_COIN} (у тебя: {inv.get(k, 0)})")
         lines.append(f"\n{_E_MONEYBAG} Твои монеты: {f.get('coins', 0)}{_E_COIN}")
@@ -66048,7 +66079,7 @@ async def exp_handle_callback(q, uid: int, d: str,
             await q.answer("Ещё не было ни одной экспедиции", show_alert=True)
             return True
 
-        lines = ["📊 <b>История экспедиций</b>\n"]
+        lines = [f"{_E_CHART} <b>История экспедиций</b>\n"]
         total_earned = 0
         total_survived = 0
         for row in history:
@@ -66353,7 +66384,7 @@ async def _war_callbacks_v2(q, d: str, uid: int, f: dict, ctx) -> bool:
             f"🛡️ Охранник котла: <b>{he(guard_name)}</b> {guard_icon}",
             "",
             "🏹 <b>Набег</b> — твоя стая нападает на котёл врага",
-            "⚔️ <b>Стычка</b> — командный бой, серия дуэлей 1 на 1",
+            f"{_E_SWORDS} <b>Стычка</b> — командный бой, серия дуэлей 1 на 1",
         ]
         kb = []
         if lvl >= 5:
