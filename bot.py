@@ -3930,6 +3930,14 @@ class _UserCache:
         with self._lock:
             self._data.pop(uid, None)
 
+    def clear(self):
+        """
+        Выбрасывает весь кэш. Нужен после массового UPDATE по таблице frogs
+        (смена сезона): там расходится с базой не одна запись, а все сразу.
+        """
+        with self._lock:
+            self._data.clear()
+
     def cleanup(self):
         """Удаляет протухшие записи (запускать раз в 5 мин)."""
         now = time.time()
@@ -6377,6 +6385,9 @@ SKINS = {
     "Midas Hopper": {"chance": 0.005, "sid": 103, "rarity": "secret", "emoji": "✨"},
     # 🔨 АУКЦИОН — выдаётся только через аукцион
     "Couch Potato": {"chance": 0, "sid": 104, "rarity": "legendary", "emoji": "🛋️", "emoji_id": "5244634137658170700", "award": "auction"},
+    # 🏅 СЕЗОН — топ-10 закрытого сезона. В гаче не выпадает и второй раз за
+    # тот же сезон не выдаётся: это отметка о месте, а не предмет.
+    "Season Champ": {"chance": 0, "sid": 105, "rarity": "mythic", "emoji": "🏅", "award": "season"},
 }
 
 # ══════════════════════════════════════════════════════════════════════════════
@@ -8292,36 +8303,101 @@ def _staya_bar(current: int, target: int, width: int = 12) -> str:
 # 🏅 ЛИГИ
 # ══════════════════════════════════════════════════════════════════════════════
 
+# Лига одна на всех — это просто общий недельный лидерборд. Пять лиг делили
+# игроков на пять почти пустых таблиц: в каждой свой «первый», сравнить себя
+# было не с кем, а переход между лигами игрок воспринимал как наказание.
+# Наградой теперь служит место в единой таблице, а не буква лиги.
 LEAGUES = [
     # (id, emoji, name, min_xp_week, coin_reward)
-    (0, "🥚", "Икринка",        0,      0),
-    (1, "🐛", "Головастик",    500,    20),
-    (2, "🐸", "Лягушонок",    3000,   50),
-    (3, "🌿", "Болотник",     8000,  100),
-    (4, "👑", "Болотный Царь", 20000, 400),
+    (0, "🏆", "Лидерборд", 0, 0),
 ]
 
+# Монеты за место в недельной таблице. Раньше платили за удержание лиги —
+# теперь за место, потому что мест столько же, сколько игроков.
+WEEK_PLACE_COINS = [400, 250, 150, 100, 100, 50, 50, 50, 50, 50]
+
+
 def get_league(xp_week: int) -> int:
-    """Возвращает id лиги по набранному за неделю XP."""
-    league_id = 0
-    for lid, _emoji, _name, min_xp, _coins in LEAGUES:
-        if xp_week >= min_xp:
-            league_id = lid
-    return league_id
+    """Лига одна: всегда 0. Оставлено, чтобы старые вызовы не падали."""
+    return 0
 
 def league_info(league_id: int) -> tuple:
     """Возвращает (emoji, name, min_xp, coin_reward) для лиги."""
     for lid, emoji, name, min_xp, coins in LEAGUES:
         if lid == league_id:
             return emoji, name, min_xp, coins
-    return "🥚", "Икринка", 0, 0
+    return LEAGUES[0][1], LEAGUES[0][2], 0, 0
 
 def league_badge(league_id: int) -> str:
-    """Значок лиги для показа в профиле (пусто для Икринки)."""
-    if league_id == 0:
+    """Лига одна — отличать некого, значка нет."""
+    return ""
+
+
+def week_place_coins(place: int) -> int:
+    """Монеты за место в недельной таблице (place — с единицы)."""
+    if 1 <= place <= len(WEEK_PLACE_COINS):
+        return WEEK_PLACE_COINS[place - 1]
+    return 0
+
+
+# ══════════════════════════════════════════════════════════════════════════════
+# 🏆 СЕЗОНЫ
+# ══════════════════════════════════════════════════════════════════════════════
+# Сезон — это отрезок, в конце которого прогресс обнуляется всем сразу, чтобы
+# вернувшийся ветеран и новичок начинали с одной точки. Даты конца нет: сезон
+# закрывается вручную командой /seasonstart, она же открывает следующий.
+#
+# Что сбрасывается: уровень, опыт, монеты, боевые характеристики, недельный и
+# месячный зачёт. Что остаётся: облики, NFT-жабы, подписка, звёзды, достижения,
+# стая, друзья, имя жабы. За купленное игрок платил — это не отбирается.
+
+SEASON_FIRST = 1                 # номер сезона до первого /seasonstart
+SEASON_START_COINS = 50          # столько монет у всех на старте сезона
+SEASON_TOP_SKIN_PLACES = 10      # скольким лучшим достаётся облик сезона
+
+# «Наследие» — компенсация за откат. Даёт не фору на старте, а скорость
+# возврата: чем выше был уровень в прошлом сезоне, тем больше прибавка к опыту,
+# и тем быстрее она тает. К уровню LEGACY_FADE_LEVEL прибавка равна нулю, и
+# дальше ветеран идёт наравне со всеми — иначе сброс не имел бы смысла.
+LEGACY_CAP_LEVEL = 40      # выше этого прошлый уровень уже не считаем
+LEGACY_FADE_LEVEL = 40     # на этом уровне прибавка обнуляется
+LEGACY_MAX_BONUS = 1.0     # максимум +100% к опыту (двойной опыт в начале)
+
+
+def legacy_xp_mult(legacy_level: int, cur_level: int) -> float:
+    """
+    Множитель опыта по наследию прошлого сезона.
+
+    Ветеран 80-го уровня в начале получает почти двойной опыт, к 20-му — в
+    полтора раза, к 40-му — как все. Игрок, у которого прошлый сезон был
+    скромным, получает пропорционально меньше: наследие отражает то, что было,
+    а не выдаёт всем поровну.
+    """
+    if legacy_level < 2 or cur_level >= LEGACY_FADE_LEVEL:
+        return 1.0
+    depth = min(int(legacy_level), LEGACY_CAP_LEVEL) / LEGACY_CAP_LEVEL
+    fade = 1.0 - (max(1, int(cur_level)) / LEGACY_FADE_LEVEL)
+    return 1.0 + LEGACY_MAX_BONUS * depth * max(0.0, fade)
+
+
+# Итоги прошлых сезонов в памяти: карточка профиля рисуется синхронно, ходить
+# за бейджем в базу на каждую отрисовку нельзя. Строк столько же, сколько
+# игроков, и они короткие. {user_id: {"season", "level", "rank", "total"}}
+_SEASON_LEGACY: dict[int, dict] = {}
+
+
+def legacy_of(uid: int) -> dict:
+    """Итог прошлого сезона игрока. Пустой словарь, если он в нём не играл."""
+    return _SEASON_LEGACY.get(int(uid), {})
+
+
+def legacy_badge(uid: int) -> str:
+    """Строка «🏅 Сезон 1 · ур.80 · #3» для профиля. Пусто, если наследия нет."""
+    lg = legacy_of(uid)
+    if not lg:
         return ""
-    emoji, name, *_ = league_info(league_id)
-    return f"{emoji}"
+    place = f"{SEP}#{lg['rank']}" if lg.get("rank") else ""
+    return f"🏅 Сезон {lg['season']}{SEP}ур.{lg['level']}{place}"
 
 # ── Летопись — типы событий ───────────────────────────────────────────────────
 LETOPIS_TYPES = {
@@ -13884,6 +13960,21 @@ async def init_db():
             user_id INTEGER, ach_id TEXT, earned_at REAL,
             PRIMARY KEY (user_id, ach_id)
         );
+        -- Итоги закрытых сезонов. Пишется один раз при /seasonstart и дальше
+        -- только читается: из этой таблицы берётся бейдж «Сезон N · ур.X · #Y»
+        -- и наследие, ускоряющее возврат ветерана.
+        CREATE TABLE IF NOT EXISTS season_archive (
+            season      INTEGER,
+            user_id     INTEGER,
+            level       INTEGER DEFAULT 1,
+            xp          INTEGER DEFAULT 0,
+            coins       INTEGER DEFAULT 0,
+            power       REAL    DEFAULT 0,
+            rank        INTEGER DEFAULT 0,
+            total       INTEGER DEFAULT 0,
+            archived_at REAL    DEFAULT 0,
+            PRIMARY KEY (season, user_id)
+        );
         CREATE TABLE IF NOT EXISTS daily_quests (
             user_id    INTEGER,
             quest_date TEXT,
@@ -15021,6 +15112,112 @@ async def get_nft_count(uid: int) -> int:
 
 
 # ══════════════════════════════════════════════════════════════════════════════
+# 🏆  СЕЗОНЫ — чтение состояния, архив, сброс
+# ══════════════════════════════════════════════════════════════════════════════
+
+async def season_current() -> int:
+    """Номер идущего сезона. До первого /seasonstart — первый."""
+    val = await db_setting("season_no")
+    try:
+        return max(1, int(val))
+    except (TypeError, ValueError):
+        return SEASON_FIRST
+
+
+async def season_started_at() -> float:
+    """Когда начался идущий сезон. 0 — если сезоны ещё ни разу не переключали."""
+    try:
+        return float(await db_setting("season_started_at") or 0)
+    except (TypeError, ValueError):
+        return 0.0
+
+
+async def season_legacy_warm() -> int:
+    """
+    Поднимает итоги последнего закрытого сезона в память при старте.
+
+    Берётся именно последний сезон игрока, а не все подряд: бейдж показывает
+    один результат, и наследие считается тоже по нему.
+    """
+    _SEASON_LEGACY.clear()
+    async with aiosqlite.connect(DB_PATH) as db:
+        db.row_factory = aiosqlite.Row
+        async with db.execute(
+            "SELECT user_id, season, level, rank, total FROM season_archive "
+            "ORDER BY season ASC"
+        ) as c:
+            rows = await c.fetchall()
+    for r in rows:
+        # Строки идут по возрастанию сезона — последняя запись игрока и есть
+        # его последний сезон, перезапись даёт именно её.
+        _SEASON_LEGACY[int(r["user_id"])] = {
+            "season": r["season"], "level": r["level"],
+            "rank": r["rank"], "total": r["total"],
+        }
+    return len(_SEASON_LEGACY)
+
+
+# Что обнуляется при смене сезона. Собрано одним местом, чтобы было видно
+# целиком: боевые характеристики возвращаются к тем же значениям, с которыми
+# заводится новая лягушка в CREATE TABLE frogs.
+SEASON_RESET_SQL = f"""
+    UPDATE frogs SET
+        level = 1, xp = 0, xp_week = 0, xp_month = 0,
+        coins = {SEASON_START_COINS},
+        league = 0, league_prev = 0,
+        b_atk = 1, b_def = 1, b_hp = 10, b_cur_hp = 10,
+        b_atk_exp = 0, b_def_exp = 0, b_hp_exp = 0,
+        battle_str_pts = 0, battle_def_pts = 0, battle_hp_pts = 0,
+        power = 0,
+        alive = 1, health = 100, hunger = 100, happiness = 100,
+        cleanliness = 100, energy = 100, death_reason = ''
+    WHERE is_bot = 0
+"""
+
+
+async def season_standings(limit: int = 0) -> list[dict]:
+    """
+    Итоговая таблица сезона: по уровню, при равенстве — по опыту.
+
+    Тот же порядок, что и в «Общем» топе, который игрок видел весь сезон, —
+    иначе итоги разошлись бы с тем, за чем он следил.
+    """
+    async with aiosqlite.connect(DB_PATH) as db:
+        db.row_factory = aiosqlite.Row
+        sql = ("SELECT user_id, first_name, frog_name, skin, level, xp, coins, power "
+               "FROM frogs WHERE is_bot=0 AND banned=0 "
+               "ORDER BY level DESC, xp DESC")
+        if limit:
+            sql += f" LIMIT {int(limit)}"
+        async with db.execute(sql) as c:
+            return [dict(r) for r in await c.fetchall()]
+
+
+async def season_archive_write(season: int, standings: list[dict]) -> int:
+    """Кладёт итоги сезона в архив и обновляет наследие в памяти."""
+    now = time.time()
+    total = len(standings)
+    rows = [
+        (season, r["user_id"], r.get("level", 1), r.get("xp", 0),
+         r.get("coins", 0), r.get("power", 0) or 0, i + 1, total, now)
+        for i, r in enumerate(standings)
+    ]
+    async with aiosqlite.connect(DB_PATH) as db:
+        await db.executemany(
+            "INSERT OR REPLACE INTO season_archive"
+            "(season,user_id,level,xp,coins,power,rank,total,archived_at) "
+            "VALUES(?,?,?,?,?,?,?,?,?)",
+            rows,
+        )
+        await db.commit()
+    for season_i, uid_i, lvl_i, _xp, _c, _p, rank_i, total_i, _t in rows:
+        _SEASON_LEGACY[int(uid_i)] = {
+            "season": season_i, "level": lvl_i, "rank": rank_i, "total": total_i,
+        }
+    return len(rows)
+
+
+# ══════════════════════════════════════════════════════════════════════════════
 # 🪸  СТАТУС ПО ГИФТУ
 # ══════════════════════════════════════════════════════════════════════════════
 # Бот умеет узнать, что у игрока есть KissedFrog, но до сих пор почти ничего с
@@ -15668,34 +15865,36 @@ async def db_top_monthly(n=10) -> list[dict]:
 
 
 
-async def db_top_league(league_id: int, n: int = 10) -> list[dict]:
-    """Топ игроков внутри конкретной лиги по xp_week."""
+async def db_top_league(league_id: int = 0, n: int = 10) -> list[dict]:
+    """
+    Недельная таблица. Лига одна, поэтому league_id ни на что не влияет и
+    остался только ради вызовов, написанных до объединения лиг.
+    """
     async with aiosqlite.connect(DB_PATH) as db:
         db.row_factory = aiosqlite.Row
         async with db.execute(
             "SELECT user_id,first_name,frog_name,skin,alive,xp_week,level,"
             "subscription_until,subscription_type,league "
-            "FROM frogs WHERE league=? AND xp_week > 0 AND is_bot=0 AND banned=0 "
+            "FROM frogs WHERE xp_week > 0 AND is_bot=0 AND banned=0 "
             "ORDER BY xp_week DESC LIMIT ?",
-            (league_id, n),
+            (n,),
         ) as c:
             rows = await c.fetchall()
     return [dict(r) for r in rows]
 
 
-async def db_get_rank_league(user_id: int, league_id: int) -> tuple[int, int]:
-    """Позиция игрока внутри своей лиги + общее кол-во в лиге."""
+async def db_get_rank_league(user_id: int, league_id: int = 0) -> tuple[int, int]:
+    """Место игрока в недельной таблице и сколько в ней всего участников."""
     async with aiosqlite.connect(DB_PATH) as db:
         async with db.execute(
             "SELECT COUNT(*)+1 FROM frogs "
-            "WHERE league=? AND is_bot=0 AND banned=0 AND xp_week > "
+            "WHERE is_bot=0 AND banned=0 AND xp_week > "
             "(SELECT xp_week FROM frogs WHERE user_id=?)",
-            (league_id, user_id),
+            (user_id,),
         ) as c:
             rank = (await c.fetchone())[0]
         async with db.execute(
-            "SELECT COUNT(*) FROM frogs WHERE league=? AND is_bot=0 AND banned=0",
-            (league_id,),
+            "SELECT COUNT(*) FROM frogs WHERE is_bot=0 AND banned=0 AND xp_week > 0",
         ) as c:
             total = (await c.fetchone())[0]
     return rank, total
@@ -15801,6 +16000,12 @@ def add_xp(f: dict, amount: int):
         mult *= 1.5  # как у мифика
     elif SKINS.get(_active_skin, {}).get("rarity") == "mythic":
         mult *= 1.5
+
+    # Наследие прошлого сезона: ускоряет возврат ветерана и гаснет к 40-му
+    # уровню. Новичка не касается — у него наследия нет.
+    _lg = legacy_of(f.get("user_id", 0))
+    if _lg:
+        mult *= legacy_xp_mult(_lg.get("level", 1), f.get("level", 1))
 
     final = max(1, int(amount * mult))
     f["xp"]       = f.get("xp", 0)       + final
@@ -16947,6 +17152,9 @@ def status_text(f: dict) -> str:
         f"{_E_FROG} <b>{name}</b>{SEP}{display_skin(skin, use_st, user_nft_url=nft_url)}",
         # Гифт игрока — второй строкой, сразу под именем: это его статус
         nft_status_line(f),
+        # Итог прошлого сезона. Уровень обнулился, а строка осталась — она и
+        # есть то, что ветеран показывает вместо потерянных цифр.
+        legacy_badge(f.get("user_id", 0)),
         f"{_E_STAR} {ui_kv('Уровень', f['level'])}\n"
         f"{_E_XP} <code>{bar(xp_pct)}</code> {f['xp']}/{need}",
         stats,
@@ -23622,21 +23830,14 @@ def _build_top_lines(rows: list[dict], mode: str = "all", user_row: dict = None,
     """
     badges = badges or {}
     medals = ["🥇", "🥈", "🥉", "4️⃣", "5️⃣", "6️⃣", "7️⃣", "8️⃣", "9️⃣", "🔟"]
-    if mode == "week":
-        l_id = user_row.get("league", 0) if user_row else 0
-        l_emoji, l_name, *_ = league_info(l_id)
-        title = f"📅 <b>Топ недели — {l_emoji} {l_name}</b>"
+    if mode in ("week", "league"):
+        # «league» остался ради старых сообщений с кнопкой «Моя лига»: таблица
+        # теперь одна на всех, и оба режима показывают её же.
+        title = "📅 <b>Топ недели</b>\n<i>Топ-10 — монеты, №1 — облик</i>"
         xp_key = "xp_week"
     elif mode == "month":
         title = "📆 <b>Топ месяца — по XP</b>"
         xp_key = "xp_month"
-    elif mode == "league":
-        l_id = user_row.get("league", 0) if user_row else 0
-        l_emoji, l_name, l_min, _ = league_info(l_id)
-        next_league = next(((e, n, m) for lid, e, n, m, _ in LEAGUES if lid == l_id + 1), None)
-        next_line = (f"\n<i>До {next_league[0]} {next_league[1]}: {next_league[2]:,} XP/нед</i>" if next_league else "")
-        title = f"{l_emoji} <b>Лига «{l_name}»</b>{next_line}"
-        xp_key = "xp_week"
     else:
         title = "🏆 <b>Таблица лидеров</b>"
         xp_key = None
@@ -23892,7 +24093,7 @@ async def cmd_top(update: Update, ctx: ContextTypes.DEFAULT_TYPE):
             btn(t("btn_top_month", f) if f else "📆 Месяц", callback_data="top_month"),
         ],
         [
-            btn("🏅 Моя лига", callback_data="top_league"),
+            btn("🏅 Сезон", callback_data="season_info"),
         ],
     ])
     msg = await update.message.reply_text(text, parse_mode=ParseMode.HTML, reply_markup=kb)
@@ -23906,9 +24107,8 @@ async def cmd_topw(update: Update, ctx: ContextTypes.DEFAULT_TYPE):
         return
     user = update.effective_user
     f = await db_get(user.id)
-    user_league = f.get("league", 0) if f else 0
-    rows = await db_top_league(user_league, 10)
-    rank, total = await db_get_rank_league(user.id, user_league)
+    rows = await db_top_weekly(10)
+    rank, total = await db_get_rank_league(user.id)
     msg = await update.message.reply_text(
         _build_top_lines(rows, "week", user_row=f, user_rank=rank, user_total=total,
                          badges=await nft_badges(r["user_id"] for r in rows)),
@@ -27667,8 +27867,8 @@ async def cmd_adminplayerlogs(update: Update, ctx: ContextTypes.DEFAULT_TYPE):
 async def cmd_admintops(update: Update, ctx: ContextTypes.DEFAULT_TYPE):
     """
     /admintops — все топы для администратора:
-      • Топ каждой лиги (по xp_week)
-      • Глобальный топ по уровню (без разбивки по лигам)
+      • Недельная таблица (по xp_week)
+      • Глобальный топ по уровню
     """
     user = update.effective_user
     if user.id not in ADMIN_IDS:
@@ -27678,30 +27878,29 @@ async def cmd_admintops(update: Update, ctx: ContextTypes.DEFAULT_TYPE):
 
     sections: list[str] = []
 
-    # ── 1. Топ каждой лиги ──────────────────────────────────────────
-    for lid, emoji, name, min_xp, coin_reward in LEAGUES:
-        rows = await db_top_league(lid, 15)
-        # Считаем сколько всего в лиге
-        async with aiosqlite.connect(DB_PATH) as db:
-            async with db.execute(
-                "SELECT COUNT(*) FROM frogs WHERE league=? AND is_bot=0 AND banned=0", (lid,)
-            ) as c:
-                total_in_league = (await c.fetchone())[0]
+    # ── 1. Недельная таблица ────────────────────────────────────────
+    rows = await db_top_league(0, 15)
+    async with aiosqlite.connect(DB_PATH) as db:
+        async with db.execute(
+            "SELECT COUNT(*) FROM frogs WHERE is_bot=0 AND banned=0 AND xp_week > 0"
+        ) as c:
+            total_in_week = (await c.fetchone())[0]
 
-        if not rows:
-            sections.append(f"{emoji} <b>{name}</b> (0 игроков)\n<i>Пусто</i>")
-            continue
-
-        lines = [f"{emoji} <b>{name}</b> ({total_in_league} игроков, мин. {min_xp:,} XP/нед)"]
+    if not rows:
+        sections.append("📅 <b>Неделя</b> (0 игроков)\n<i>Пусто</i>")
+    else:
+        lines = [f"📅 <b>Неделя</b> ({total_in_week} игроков с XP)"]
         for i, r in enumerate(rows, 1):
             rname = r.get("frog_name") or r.get("first_name") or "—"
             xpw = r.get("xp_week", 0)
             lvl = r.get("level", 1)
             medal = "🥇" if i == 1 else ("🥈" if i == 2 else ("🥉" if i == 3 else f"{i}."))
-            lines.append(f"  {medal} {_html.escape(rname)} Ур.{lvl} {xpw:,} XP")
+            coins_p = week_place_coins(i)
+            reward = f" +{coins_p}🪙" if coins_p else ""
+            lines.append(f"  {medal} {_html.escape(rname)} Ур.{lvl} {xpw:,} XP{reward}")
         sections.append("\n".join(lines))
 
-    # ── 2. Глобальный топ по уровню (без лиг) ───────────────────────
+    # ── 2. Глобальный топ по уровню ─────────────────────────────────
     global_rows = await db_top(20)
     if global_rows:
         lines = ["🌍 <b>Глобальный топ</b> (по уровню, без лиг)"]
@@ -30190,11 +30389,12 @@ async def _award_skin_contest_tickets(uid: int) -> int:
 #    /nft_contest_status           — прогресс (топ по каждой лиге)
 #    /nft_contest_broadcast        — рассылка только игрокам лиг 0-2
 #
-#  Игроки лиг 0/1/2 видят кнопку «🏆 NFT-конкурс» в главном меню.
+#  Кнопку «🏆 NFT-конкурс» в главном меню видят все игроки.
 # ══════════════════════════════════════════════════════════════════════════════
 
-# Лиги, участвующие в конкурсе
-NFT_CONTEST_TARGET_LEAGUES = [0, 1, 2]
+# Лига теперь одна, поэтому конкурс идёт среди всех игроков сразу. Список
+# оставлен списком: запросы ниже строят по нему плейсхолдеры.
+NFT_CONTEST_TARGET_LEAGUES = [0]
 
 # Сколько топ-мест выигрывают приз в каждой лиге
 NFT_CONTEST_WINNERS_PER_LEAGUE = 1
@@ -30282,16 +30482,10 @@ async def _nft_contest_menu_text(uid: int) -> tuple[str, InlineKeyboardMarkup]:
     top_rows = await _nft_contest_top_combined(10)
     rank, total = await _nft_contest_rank_combined(uid)
 
-    # Заголовок — без эмодзи лиг, только названия
-    league_names = " + ".join(
-        league_info(lid)[1] for lid in NFT_CONTEST_TARGET_LEAGUES
-    )
-
     lines = [
         f"{_E_TROPHY} <b>NFT-лига</b>",
         "",
-        "Конкурсная лига:",
-        f"{league_names}",
+        "Участвуют все игроки — зачёт по опыту за неделю.",
         "",
         f"<b>{_E_GIFT} Призы (топ-3 общего зачёта):</b>",
     ]
@@ -34200,6 +34394,7 @@ async def cb_guard(update: Update, ctx: ContextTypes.DEFAULT_TYPE):
         "tip_tavern_",      # чаевые хозяину таверны
         "tip_feed_",        # чаевые после кормления / ухода
         "nft_shop_",        # NFT-магазин — просмотр публичный
+        "season_info",      # правила сезона — просмотр публичный
         "exp_announce_",    # анонс экспедиции в чат
         "exp_invite_",      # приглашение соседей/стаи
         "exp_coins_join_",  # выбор монет при вступлении
@@ -48258,7 +48453,7 @@ async def on_callback(update: Update, ctx: ContextTypes.DEFAULT_TYPE):
                         btn(t("btn_top_week", f), callback_data="top_week"),
                         btn("📆 Месяц",  callback_data="top_month"),
                     ],
-                    [btn("🏅 Моя лига", callback_data="top_league")],
+                    [btn("🏅 Сезон", callback_data="season_info")],
                     [btn("◀️ Назад", callback_data="menu_more")],
                 ]),
             )
@@ -48268,16 +48463,12 @@ async def on_callback(update: Update, ctx: ContextTypes.DEFAULT_TYPE):
 
     if d in ("top_btn", "top_all", "top_week", "top_month", "top_league"):
         await q.answer()
-        if d == "top_week":
-            user_league = f.get("league", 0) if f else 0
-            rows = await db_top_league(user_league, 10)
+        if d in ("top_week", "top_league"):
+            # top_league — из старых сообщений с кнопкой «Моя лига»; таблица
+            # теперь одна, оба ведут в недельную.
+            rows = await db_top_weekly(10)
             mode = "week"
-            rank, total = await db_get_rank_league(uid, user_league)
-        elif d == "top_league":
-            user_league = f.get("league", 0) if f else 0
-            rows = await db_top_league(user_league, 10)
-            mode = "league"
-            rank, total = await db_get_rank_league(uid, user_league)
+            rank, total = await db_get_rank_league(uid)
         elif d == "top_month":
             rows = await db_top_monthly(10)
             mode = "month"
@@ -48298,7 +48489,43 @@ async def on_callback(update: Update, ctx: ContextTypes.DEFAULT_TYPE):
                         btn(t("btn_top_week", f), callback_data="top_week"),
                         btn("📆 Месяц",  callback_data="top_month"),
                     ],
-                    [btn("🏅 Моя лига", callback_data="top_league")],
+                    [btn("🏅 Сезон", callback_data="season_info")],
+                    [btn("◀️ Назад", callback_data="menu_more")],
+                ]),
+            )
+        except (BadRequest, Forbidden, TimedOut):
+            pass
+        return
+
+    # ── СЕЗОН ────────────────────────────────────────────────────────────────
+    if d == "season_info":
+        await q.answer()
+        season = await season_current()
+        started = await season_started_at()
+        text = _season_rules_text(season)
+        if started:
+            text += f"\n\n{_E_CALENDAR} Идёт {int((time.time() - started) / 86400)} дн."
+        lg = legacy_of(uid)
+        if lg:
+            mult = legacy_xp_mult(lg.get("level", 1), (f or {}).get("level", 1))
+            text += (
+                f"\n\n{_E_MEDAL} <b>Твой сезон {lg['season']}</b>\n"
+                f"Уровень {lg['level']}"
+                + (f"{SEP}место #{lg['rank']} из {lg['total']}" if lg.get("rank") else "")
+            )
+            text += (
+                f"\n\n{_E_XP} <b>Наследие: ×{mult:.2f} к опыту</b>\n"
+                f"<i>Тает с ростом уровня.\nИсчезнет на {LEGACY_FADE_LEVEL}-м.</i>"
+                if mult > 1.0 else
+                "\n\n<i>Наследие израсходовано — дальше наравне со всеми.</i>"
+            )
+        try:
+            await q.message.edit_text(
+                text,
+                parse_mode=ParseMode.HTML,
+                reply_markup=InlineKeyboardMarkup([
+                    [btn("🏆 Общий", callback_data="top_all"),
+                     btn(t("btn_top_week", f), callback_data="top_week")],
                     [btn("◀️ Назад", callback_data="menu_more")],
                 ]),
             )
@@ -54984,142 +55211,87 @@ async def job_lottery_draw(ctx: ContextTypes.DEFAULT_TYPE):
 
 
 async def job_league_week(ctx: ContextTypes.DEFAULT_TYPE):
-    """Каждое воскресенье 20:00 UTC: считает лиги, рассылает ЛС, объявляет топ.
-       Каждый понедельник 00:01 UTC (job_reset_xp_week) сбрасывает xp_week."""
-    medals = ["🥇", "🥈", "🥉", "4️⃣", "5️⃣"]
+    """
+    Воскресенье 20:00 UTC: итоги недели по единой таблице.
 
-    # --- 1. Читаем всех игроков с xp_week ---
-    async with aiosqlite.connect(DB_PATH) as db:
-        db.row_factory = aiosqlite.Row
-        async with db.execute(
-            "SELECT user_id, frog_name, first_name, xp_week, league, skin "
-            "FROM frogs WHERE is_bot=0 AND banned=0"
-        ) as c:
-            players = [dict(r) for r in await c.fetchall()]
+    Лига больше не одна из пяти, а общая таблица, поэтому наградой служит
+    место в ней: монеты по WEEK_PLACE_COINS десятке лучших и Toilet Frog
+    первому. Личку получает только тот, кто вошёл в десятку, — рассылать
+    «ты никуда не попал» всей базе смысла нет.
+    Xp_week обнуляет job_reset_xp_week в понедельник 00:01 UTC.
+    """
+    medals = ["🥇", "🥈", "🥉", "4️⃣", "5️⃣", "6️⃣", "7️⃣", "8️⃣", "9️⃣", "🔟"]
+    winners = await db_top_weekly(len(WEEK_PLACE_COINS))
+    if not winners:
+        logger.info("job_league_week: за неделю никто не набрал XP, итогов нет")
+        return
 
-    # --- 2. Считаем новую лигу каждому + пишем в БД ---
-    updates = []
-    for p in players:
-        old_league = p.get("league", 0)
-        new_league = get_league(p.get("xp_week", 0))
-        # Мягкое понижение: не больше чем на 1 лигу за раз
-        if new_league < old_league:
-            new_league = max(new_league, old_league - 1)
-        p["new_league"] = new_league
-        p["old_league"] = old_league
-        updates.append((new_league, old_league, p["user_id"]))
-
-    async with aiosqlite.connect(DB_PATH) as db:
-        await db.executemany(
-            "UPDATE frogs SET league=?, league_prev=? WHERE user_id=?",
-            updates,
-        )
-        await db.commit()
-
-    # --- 3. Рассылаем личные уведомления ---
-    for p in players:
-        uid_p   = p["user_id"]
-        old_l   = p["old_league"]
-        new_l   = p["new_league"]
-        xp_w    = p.get("xp_week", 0)
-        ne, nn, *_ = league_info(new_l)
-        oe, on, *_ = league_info(old_l)
-
-        if new_l > old_l:
-            msg = (
-                f"🎉 <b>Ты повысил лигу!</b>\n\n"
-                f"{oe} {on} → {ne} {nn}\n\n"
-                f"{_E_XP} За неделю: <b>{xp_w:,} XP</b>\n"
-                f"Так держать! Лезь выше 🐸"
-            )
-        elif new_l < old_l:
-            next_up = next(((e, n, m) for lid, e, n, m, _ in LEAGUES if lid == new_l + 1), None)
-            need_str = f"Нужно {next_up[2]:,} XP/нед чтобы вернуться в {next_up[0]} {next_up[1]}." if next_up else ""
-            msg = (
-                f"📉 <b>Лига понижена</b>\n\n"
-                f"{oe} {on} → {ne} {nn}\n\n"
-                f"{_E_XP} За неделю: <b>{xp_w:,} XP</b>\n"
-                f"{need_str}"
-            )
-        else:
-            # Стабильно — шлём только если лига выше Икринки
-            if new_l == 0:
-                continue
-            coins_r = league_info(new_l)[3]
-            msg = (
-                f"{ne} <b>{nn}</b> — удержано!\n\n"
-                f"{_E_XP} За неделю: <b>{xp_w:,} XP</b>"
-                + (f"\n💰 Награда за лигу: <b>+{coins_r}🪙</b>" if coins_r else "")
-            )
-
-        # Начисляем монеты за удержание/повышение (не за понижение)
-        if new_l >= old_l and new_l > 0:
-            coins_r = league_info(new_l)[3]
-            if coins_r:
-                pf = await db_get(uid_p)
-                if pf:
-                    pf["coins"] = pf.get("coins", 0) + coins_r
-                    await db_save(pf)
-                    logger.debug("job_league_week: монеты +%d uid=%s лига=%d", coins_r, uid_p, new_l)
-
+    # --- 1. Монеты за место + личка десятке ---
+    for i, p in enumerate(winners):
+        place  = i + 1
+        uid_p  = p["user_id"]
+        xp_w   = p.get("xp_week", 0)
+        coins_r = week_place_coins(place)
+        if coins_r:
+            pf = await db_get(uid_p)
+            if pf:
+                pf["coins"] = pf.get("coins", 0) + coins_r
+                await db_save(pf)
         try:
-            await ctx.bot.send_message(uid_p, msg, parse_mode=ParseMode.HTML)
+            await ctx.bot.send_message(
+                uid_p,
+                f"{medals[i]} <b>{place}-е место за неделю</b>\n\n"
+                f"{_E_XP} Набрано: <b>{xp_w:,} XP</b>"
+                + (f"\n{_E_COIN} Награда: <b>+{coins_r}</b>" if coins_r else ""),
+                parse_mode=ParseMode.HTML,
+            )
         except Exception as _ls_e:
             logger.debug("job_league_week: ЛС не доставлено uid=%s: %s", uid_p, _ls_e)
         await asyncio.sleep(0.05)  # вне try — throttle всегда
 
-    # --- 4. Анонс топ-3 по каждой лиге (кроме Икринки) в основной чат ---
-    announce_lines = [f"{_E_MEDAL} <b>Итоги недели — лиги</b>\n"]
-    for lid, l_emoji, l_name, l_min, _ in LEAGUES:
-        if lid == 0:
-            continue
-        top_rows = await db_top_league(lid, 3)
-        if not top_rows:
-            continue
-        announce_lines.append(f"\n{l_emoji} <b>{l_name}</b>")
-        for i, r in enumerate(top_rows):
-            pname = r.get("frog_name") or r.get("first_name") or "?"
-            announce_lines.append(
-                f'{["🥇","🥈","🥉"][i]} {he(pname)} — {r["xp_week"]:,} XP {pemoji(r["skin"])}'
-            )
-
-    # Топ-1 Болотный Царь получает Toilet Frog
-    царь_rows = await db_top_league(4, 1)
-    if царь_rows:
-        top1 = царь_rows[0]
-        top1_uid = top1["user_id"]
-        top1_name = top1.get("frog_name") or top1.get("first_name") or "?"
-        # Выдаём облик — логируем ошибку если что-то пошло не так
-        try:
-            await db_add_skin(top1_uid, "Toilet Frog")
-            logger.info("job_league_week: Toilet Frog выдан uid=%s name=%s", top1_uid, top1_name)
-        except Exception as _tf_err:
-            logger.error("job_league_week: Toilet Frog НЕ выдан uid=%s: %s", top1_uid, _tf_err)
+    # --- 2. Анонс пятёрки лучших ---
+    announce_lines = [f"{_E_MEDAL} <b>Итоги недели</b>\n"]
+    for i, r in enumerate(winners[:5]):
+        pname = r.get("frog_name") or r.get("first_name") or "?"
         announce_lines.append(
-            f"\n\n🚽{_E_DOT_RED} <b>{he(top1_name)}</b> — лучший Болотный Царь недели!"
-            " Получает эксклюзивный облик <b>Toilet Frog</b>!"
+            f'{medals[i]} {he(pname)} — {r["xp_week"]:,} XP {pemoji(r["skin"])}'
         )
-        # ЛС победителю — отдельный try чтобы ошибка Telegram не отменила выдачу облика
-        try:
-            await ctx.bot.send_message(
-                top1_uid,
-                f"{_E_CROWN} Ты лучший <b>Болотный Царь</b> недели!\n\n"
-                f"🚽{_E_DOT_RED} Тебе выдан эксклюзивный мифический облик <b>Toilet Frog</b>!\n"
-                "Надень его в меню Ухаживать → Облик.",
-                parse_mode=ParseMode.HTML,
-            )
-        except Exception as _ls_err:
-            logger.warning("job_league_week: Toilet Frog ЛС не доставлено uid=%s: %s", top1_uid, _ls_err)
+
+    # --- 3. Первый за неделю получает Toilet Frog ---
+    top1 = winners[0]
+    top1_uid = top1["user_id"]
+    top1_name = top1.get("frog_name") or top1.get("first_name") or "?"
+    # Выдаём облик — логируем ошибку если что-то пошло не так
+    try:
+        await db_add_skin(top1_uid, "Toilet Frog")
+        logger.info("job_league_week: Toilet Frog выдан uid=%s name=%s", top1_uid, top1_name)
+    except Exception as _tf_err:
+        logger.error("job_league_week: Toilet Frog НЕ выдан uid=%s: %s", top1_uid, _tf_err)
+    announce_lines.append(
+        f"\n🚽{_E_DOT_RED} <b>{he(top1_name)}</b> — первый на неделе."
+        " Получает эксклюзивный облик <b>Toilet Frog</b>."
+    )
+    # ЛС победителю — отдельный try чтобы ошибка Telegram не отменила выдачу облика
+    try:
+        await ctx.bot.send_message(
+            top1_uid,
+            f"{_E_CROWN} Ты первый в таблице недели.\n\n"
+            f"🚽{_E_DOT_RED} Тебе выдан эксклюзивный мифический облик <b>Toilet Frog</b>.\n"
+            "Надень его в меню Ухаживать → Облик.",
+            parse_mode=ParseMode.HTML,
+        )
+    except Exception as _ls_err:
+        logger.warning("job_league_week: Toilet Frog ЛС не доставлено uid=%s: %s", top1_uid, _ls_err)
 
     # Анонс итогов — без delete_after (постоянное сообщение), announce_level="major"
     # чтобы не блокировался фильтром флуда
     await announce(
         ctx.bot,
-        "\n".join(announce_lines) + f"\n\n<i>/top → {_E_MEDAL} Моя лига</i>",
+        "\n".join(announce_lines) + "\n\n<i>/top → Неделя</i>",
         delete_after=0,          # не удалять — итоги недели должны висеть
         announce_level="major",  # пробивает фильтр "all" (флуд-защита не блокирует major)
     )
-    logger.info("job_league_week: лиги обновлены для %d игроков", len(players))
+    logger.info("job_league_week: итоги недели объявлены, в десятке %d", len(winners))
 
 
 async def job_reset_xp_week(ctx: ContextTypes.DEFAULT_TYPE):
@@ -55219,6 +55391,7 @@ async def post_init(app: Application):
     _db_pool.init(size=10)
     await load_nft_skins()  # загружаем NFT-облики в память
     logger.info("🪸 Редкость гифтов в памяти: %d", await nft_attrs_warm())
+    logger.info("🏅 Итоги прошлых сезонов в памяти: %d", await season_legacy_warm())
     asyncio.create_task(nft_attrs_backfill())  # старые холдеры — в фоне
     await _load_peak_online()  # восстанавливаем пиковый онлайн из БД
     # ── Миграция: синхронизируем streak в user_bonds из frogs для старых связей ──
@@ -56680,6 +56853,164 @@ async def cmd_reset_topw(update: Update, ctx: ContextTypes.DEFAULT_TYPE):
     )
 
 
+# ══════════════════════════════════════════════════════════════════════════════
+# 🏆 СЕЗОНЫ — команды
+# ══════════════════════════════════════════════════════════════════════════════
+
+def _season_rules_text(season: int) -> str:
+    """Что сбрасывается и что остаётся — одинаковый текст для всех экранов."""
+    return (
+        f"{_E_TROPHY} <b>Сезон {season}</b>\n\n"
+        "Сезон обнуляет прогресс всем\n"
+        "сразу: вернувшийся ветеран и\n"
+        "новичок начинают с одной точки.\n\n"
+        "<b>Обнулится:</b>\n"
+        f"{_E_LEVEL} уровень и опыт\n"
+        f"{_E_COIN} монеты\n"
+        f"{_E_SWORDS} боевые характеристики\n\n"
+        "<b>Останется:</b>\n"
+        f"{_E_DRESS} облики и коллекция\n"
+        f"{_E_FROG} NFT-жабы и привязки\n"
+        f"{_E_STARS} подписка, звёзды, достижения\n\n"
+        "<i>Купленное не отбирается.</i>"
+    )
+
+
+async def cmd_season(update: Update, ctx: ContextTypes.DEFAULT_TYPE):
+    """/season — какой сейчас сезон, мой результат в прошлом и что он даёт."""
+    user = update.effective_user
+    season = await season_current()
+    started = await season_started_at()
+    text = _season_rules_text(season)
+
+    if started:
+        days = int((time.time() - started) / 86400)
+        text += f"\n\n{_E_CALENDAR} Идёт {days} дн."
+
+    lg = legacy_of(user.id)
+    if lg:
+        mult = legacy_xp_mult(lg.get("level", 1), (await db_get(user.id) or {}).get("level", 1))
+        text += (
+            f"\n\n{_E_MEDAL} <b>Твой сезон {lg['season']}</b>\n"
+            f"Уровень {lg['level']}"
+            + (f"{SEP}место #{lg['rank']} из {lg['total']}" if lg.get("rank") else "")
+        )
+        if mult > 1.0:
+            text += (
+                f"\n\n{_E_XP} <b>Наследие: ×{mult:.2f} к опыту</b>\n"
+                f"<i>Тает с ростом уровня.\nИсчезнет на {LEGACY_FADE_LEVEL}-м.</i>"
+            )
+        else:
+            text += f"\n\n<i>Наследие израсходовано — дальше наравне со всеми.</i>"
+
+    await update.message.reply_text(text, parse_mode=ParseMode.HTML)
+
+
+async def cmd_seasonstart(update: Update, ctx: ContextTypes.DEFAULT_TYPE):
+    """
+    /seasonstart [dry] — закрыть текущий сезон и открыть следующий.
+
+    Без аргумента показывает, что произойдёт, и требует подтверждения словом:
+    команда необратима, а игроки после неё увидят обнулённый профиль.
+      /seasonstart dry      — только отчёт, ничего не меняет
+      /seasonstart ПОЕХАЛИ  — выполнить
+    """
+    user = update.effective_user
+    if user.id not in ADMIN_IDS:
+        await update.message.reply_text("⛔ Только для администраторов.")
+        return
+
+    arg = (ctx.args[0].strip().upper() if ctx.args else "")
+    season = await season_current()
+    standings = await season_standings()
+    if not standings:
+        await update.message.reply_text("Игроков нет — закрывать нечего.")
+        return
+
+    top = standings[:SEASON_TOP_SKIN_PLACES]
+    preview = "\n".join(
+        f"  {i}. {he(r.get('frog_name') or r.get('first_name') or '—')}"
+        f"{SEP}ур.{r.get('level', 1)}"
+        for i, r in enumerate(top, 1)
+    )
+    head = (
+        f"{_E_TROPHY} <b>Закрытие сезона {season}</b>\n\n"
+        f"{_E_USERS} Игроков в зачёте: <b>{len(standings)}</b>\n"
+        f"{_E_DRESS} Облик «Season Champ» получат первые "
+        f"<b>{len(top)}</b>:\n{preview}\n\n"
+        f"{_E_WARN} Обнулится у всех: уровень, опыт, монеты "
+        f"(станет {SEASON_START_COINS}), боевые характеристики. "
+        f"Мёртвые лягушки будут оживлены.\n"
+        f"{_E_CHECK} Останется: облики, NFT, подписка, звёзды, достижения, стая."
+    )
+
+    if arg != "ПОЕХАЛИ":
+        await update.message.reply_text(
+            head + "\n\n<i>Это необратимо. Выполнить: </i>"
+                   "<code>/seasonstart ПОЕХАЛИ</code>",
+            parse_mode=ParseMode.HTML,
+        )
+        return
+
+    msg = await update.message.reply_text("⏳ Закрываю сезон...")
+
+    # 1. Архив итогов — до сброса, иначе писать будет нечего
+    archived = await season_archive_write(season, standings)
+
+    # 2. Облик первым местам
+    given = 0
+    for r in top:
+        try:
+            await db_add_skin(r["user_id"], "Season Champ")
+            given += 1
+        except Exception as e:
+            logger.error("seasonstart: облик не выдан uid=%s: %s", r["user_id"], e)
+
+    # 3. Сброс прогресса
+    async with aiosqlite.connect(DB_PATH) as db:
+        await db.execute(SEASON_RESET_SQL)
+        await db.commit()
+
+    # 4. Новый номер сезона
+    new_season = season + 1
+    await db_setting("season_no", str(new_season))
+    await db_setting("season_started_at", str(time.time()))
+
+    # Кэш игроков держит старые уровни и монеты — после массового UPDATE он
+    # разошёлся с базой целиком, чистим весь.
+    try:
+        _user_cache.clear()
+    except Exception as e:
+        logger.warning("seasonstart: кэш не очищен: %s", e)
+
+    await admin_log(user.id, "seasonstart", details=f"{season}→{new_season}, {archived} игроков")
+
+    winner_names = ", ".join(
+        he(r.get("frog_name") or r.get("first_name") or "—") for r in top[:3]
+    )
+    await announce(
+        ctx.bot,
+        f"{_E_TROPHY} <b>Сезон {season} закрыт. Начался сезон {new_season}.</b>\n\n"
+        f"{_E_MEDAL} Лучшие сезона {season}: {winner_names}\n"
+        f"{_E_DRESS} Первая десятка получила облик <b>Season Champ</b> — "
+        f"больше он не выдаётся.\n\n"
+        f"У всех обнулены уровень, опыт, монеты и боевые характеристики. "
+        f"Облики, NFT, подписки и достижения остались.\n"
+        f"{_E_XP} У тех, кто играл в прошлом сезоне, опыт идёт быстрее — "
+        f"тем сильнее, чем выше был уровень.\n\n"
+        f"<i>Подробности: /season</i>",
+        delete_after=0,
+        announce_level="major",
+    )
+
+    await msg.edit_text(
+        f"{_E_CHECK} <b>Сезон {season} закрыт, идёт сезон {new_season}.</b>\n\n"
+        f"Заархивировано: <b>{archived}</b>\n"
+        f"Обликов выдано: <b>{given}</b>",
+        parse_mode=ParseMode.HTML,
+    )
+
+
 async def cmd_activate_bonus(update: Update, ctx: ContextTypes.DEFAULT_TYPE):
     """/activate_bonus — включить систему бонусов за облики и NFT (только для админов)."""
     user = update.effective_user
@@ -57994,9 +58325,11 @@ async def _show_frog_profile(bot, requester_uid: int, target_uid: int, send_fn):
     zodiac = _get_zodiac(tf.get("born_at", time.time()))
 
     alive_icon = "🐸" if tf.get("alive") else "💀"
+    legacy_line = legacy_badge(target_uid)
     text = (
         f"{alive_icon} <b>{he(name)}</b> ур.{tf.get('level',1)}\n"
-        f"{_E_XP} {tf.get('xp',0)} XP · 🪙 {tf.get('coins',0)}\n"
+        + (f"{legacy_line}\n" if legacy_line else "")
+        + f"{_E_XP} {tf.get('xp',0)} XP · 🪙 {tf.get('coins',0)}\n"
         f"❤️ {tf.get('health',100)}% 🍖 {tf.get('hunger',50)}% 😄 {tf.get('happiness',50)}%\n"
         f"📅 {days} дней на болоте\n"
         f"{zodiac['name']}{pers_line}"
@@ -69481,6 +69814,8 @@ def main():
     app.add_handler(CommandHandler("activate", cmd_activate))
     app.add_handler(CommandHandler("online", cmd_online))
     app.add_handler(CommandHandler("reset_topw", cmd_reset_topw))
+    app.add_handler(CommandHandler("season",      cmd_season))
+    app.add_handler(CommandHandler("seasonstart", cmd_seasonstart))
     app.add_handler(CommandHandler("chatsettings", cmd_chatadmin))  # алиас → /chatadmin
     app.add_handler(CommandHandler("chatadmin",    cmd_chatadmin))
     app.add_handler(CommandHandler("nftadmin",     cmd_nftadmin))
