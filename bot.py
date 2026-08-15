@@ -17629,12 +17629,12 @@ def care_kb(f: dict) -> InlineKeyboardMarkup:
     return InlineKeyboardMarkup(
         [
             [
-                btn(feed_lbl,  callback_data="menu_feed"),
+                btn(feed_lbl,  callback_data="menu_feed", icon_id="5341326049198251117"),
                 btn(play_lbl,  callback_data="menu_play"),
             ],
             [
                 btn(heal_lbl,  callback_data="heal"),
-                btn(wash_lbl,  callback_data="wash"),
+                btn(wash_lbl,  callback_data="wash", icon_id="5341814971095360388"),
             ],
             [
                 btn(sleep_lbl, callback_data="sleep"),
