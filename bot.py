@@ -39404,32 +39404,6 @@ async def cmd_daily(update: Update, ctx: ContextTypes.DEFAULT_TYPE):
     await show_status(update.message, f, header=msg)
 
 
-# ══════════════════════════════════════════════════════════════════════════════
-# 🛠  РОУТЕР АДМИНКИ
-# ══════════════════════════════════════════════════════════════════════════════
-# Вынесен из on_callback. Регистрируется с pattern=, поэтому админские нажатия
-# больше не проходят через сотни чужих условий, а чужие — через админские.
-#
-# Все ветки здесь самодостаточны и заканчиваются return, так что порядок между
-# ними значения не имеет.
-async def admin_router(update: Update, ctx: ContextTypes.DEFAULT_TYPE):
-    q = update.callback_query
-    uid = q.from_user.id
-    d = q.data
-
-    # Права проверяются внутри каждой ветки: часть экранов (cs_, ca_) доступна
-    # администраторам чата, а не только владельцам бота.
-    f = await db_get(uid)
-    if not f:
-        await q.answer("Сначала напиши /start", show_alert=True)
-        return
-    f = decay(f)
-
-
-    # Ни одна ветка не подошла — отдаём нажатие общему обработчику.
-    await on_callback(update, ctx)
-
-
 async def on_callback(update: Update, ctx: ContextTypes.DEFAULT_TYPE):
     _g = await cb_guard(update, ctx)
     if _g is None:
