@@ -56979,7 +56979,7 @@ async def cmd_seasonstart(update: Update, ctx: ContextTypes.DEFAULT_TYPE):
         f"{_E_TROPHY} <b>Сезон {season} закрыт. Начался сезон {new_season}.</b>\n\n"
         f"{_E_MEDAL} Лучшие сезона {season}: {winner_names}\n"
         f"{_E_DRESS} Первая десятка получила облик <b>Season Champ</b> — "
-        f"больше он не выдаётся.\n\n"
+        f"его дают только за топ сезона.\n\n"
         f"У всех обнулены уровень, опыт, монеты и боевые характеристики. "
         f"Облики, NFT, подписки и достижения остались.\n"
         f"{_E_XP} У тех, кто играл в прошлом сезоне, опыт идёт быстрее — "
