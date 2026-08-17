@@ -1,0 +1,17 @@
+[Unit]
+Description=Telegram business watcher bot
+After=network-online.target
+Wants=network-online.target
+
+[Service]
+Type=simple
+User=botuser
+WorkingDirectory=/opt/tg-business-watcher
+ExecStart=/opt/tg-business-watcher/.venv/bin/python run.py
+Restart=always
+RestartSec=5
+# Кэш переписки лежит в data/ — держим его только для сервиса.
+UMask=0077
+
+[Install]
+WantedBy=multi-user.target
