@@ -15160,6 +15160,20 @@ async def season_legacy_warm() -> int:
 # Что обнуляется при смене сезона. Собрано одним местом, чтобы было видно
 # целиком: боевые характеристики возвращаются к тем же значениям, с которыми
 # заводится новая лягушка в CREATE TABLE frogs.
+#
+# last_decay и decay_frac обязательны. Без них выданное здоровье — обман:
+# decay() считает списание от last_decay, и у того, кто месяц не заходил, при
+# первом же входе спишется 700+ часов деградации, то есть лягушка умрёт снова
+# через секунду после «оживления». Так же поступает complete_trial, когда
+# воскрешает лягушку за пройденное испытание.
+#
+# Испытание закрываем: оно существует ради воскрешения, а лягушка уже жива.
+# Иначе игрок доделает квесты и получит награду за спасение живой лягушки.
+#
+# Анабиоз снимаем. Он замораживает деградацию, пока хозяина нет; после сброса
+# все стоят на одной линии, и заморозка на месяц вперёд означала бы, что игрок
+# весь этот срок недосягаем для новичка, ничего не делая. Оставшийся срок
+# возвращать нечем — предупреждаем об этом в отчёте /seasonstart.
 SEASON_RESET_SQL = f"""
     UPDATE frogs SET
         level = 1, xp = 0, xp_week = 0, xp_month = 0,
@@ -15170,7 +15184,11 @@ SEASON_RESET_SQL = f"""
         battle_str_pts = 0, battle_def_pts = 0, battle_hp_pts = 0,
         power = 0,
         alive = 1, health = 100, hunger = 100, happiness = 100,
-        cleanliness = 100, energy = 100, death_reason = ''
+        cleanliness = 100, energy = 100, death_reason = '',
+        last_decay = :now, decay_frac = '', last_warning = 0,
+        hibernation_until = 0,
+        trial_active = 0, trial_quests = '[]', trial_progress = '{{}}',
+        gacha_pity = 0
     WHERE is_bot = 0
 """
 
@@ -56919,14 +56937,33 @@ async def cmd_seasonstart(update: Update, ctx: ContextTypes.DEFAULT_TYPE):
         f"{SEP}ур.{r.get('level', 1)}"
         for i, r in enumerate(top, 1)
     )
+    # Считаем тех, кого сброс заденет не только цифрами: анабиоз снимается, и
+    # оплаченный или выбранный срок заморозки вернуть будет нечем.
+    async with aiosqlite.connect(DB_PATH) as db:
+        async with db.execute(
+            "SELECT COUNT(*) FROM frogs WHERE is_bot=0 AND hibernation_until > ?",
+            (time.time(),),
+        ) as c:
+            hiber_cnt = (await c.fetchone())[0]
+        async with db.execute(
+            "SELECT COUNT(*) FROM frogs WHERE is_bot=0 AND alive=0"
+        ) as c:
+            dead_cnt = (await c.fetchone())[0]
+
+    hiber_line = (
+        f"{_E_SNOW} В анабиозе: <b>{hiber_cnt}</b> — заморозка снимется, "
+        f"остаток срока не вернуть.\n" if hiber_cnt else ""
+    )
     head = (
         f"{_E_TROPHY} <b>Закрытие сезона {season}</b>\n\n"
         f"{_E_USERS} Игроков в зачёте: <b>{len(standings)}</b>\n"
         f"{_E_DRESS} Облик «Season Champ» получат первые "
         f"<b>{len(top)}</b>:\n{preview}\n\n"
         f"{_E_WARN} Обнулится у всех: уровень, опыт, монеты "
-        f"(станет {SEASON_START_COINS}), боевые характеристики. "
-        f"Мёртвые лягушки будут оживлены.\n"
+        f"(станет {SEASON_START_COINS}), боевые характеристики, счётчик гачи.\n"
+        f"{_E_HEART} Оживут мёртвые лягушки: <b>{dead_cnt}</b>. "
+        f"Активные испытания закроются.\n"
+        f"{hiber_line}"
         f"{_E_CHECK} Останется: облики, NFT, подписка, звёзды, достижения, стая."
     )
 
@@ -56954,7 +56991,7 @@ async def cmd_seasonstart(update: Update, ctx: ContextTypes.DEFAULT_TYPE):
 
     # 3. Сброс прогресса
     async with aiosqlite.connect(DB_PATH) as db:
-        await db.execute(SEASON_RESET_SQL)
+        await db.execute(SEASON_RESET_SQL, {"now": time.time()})
         await db.commit()
 
     # 4. Новый номер сезона
