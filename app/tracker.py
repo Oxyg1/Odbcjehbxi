@@ -204,11 +204,25 @@ class Tracker:
         if after.outgoing and not settings.get("include_own"):
             return
 
+        owner_chat_id = int(info["owner_chat_id"])
+        silent = bool(settings.get("silent"))
         await self.send(
-            int(info["owner_chat_id"]),
+            owner_chat_id,
             fmt.edit_report(before, after, self.config.timezone, self.config.preview_limit),
-            silent=bool(settings.get("silent")),
+            silent=silent,
         )
+
+        # Вложение заменили на другое — присылаем прежнее, пока оно ещё доступно.
+        if (
+            before is not None
+            and before.media_type
+            and before.file_unique_id != after.file_unique_id
+        ):
+            caption = (
+                "✏️ Прежнее вложение (его заменили)\n"
+                f"💬 {fmt.chat_label(before.chat_title, before.chat_username)}"
+            )
+            await self.vault.resend(owner_chat_id, before, caption, silent)
 
     async def on_deleted_messages(self, event: BusinessMessagesDeleted) -> None:
         connection_id = event.business_connection_id
