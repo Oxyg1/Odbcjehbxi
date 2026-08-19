@@ -36,10 +36,6 @@ USER_AGENTS = [
     "Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) AppleWebKit/605.1.15 (KHTML, like Gecko) Version/16.5 Safari/605.1.15",
 ]
 
-# t.me action-button labels tied to an actual registered entity (not shown on the
-# free-username landing page, which only has a generic "Telegram" CTA).
-_TAKEN_ACTION_MARKERS = ("send message", "view channel", "join channel", "view group", "join group")
-
 _WORD_TAKEN_RE = re.compile(r"\btaken\b")
 _WORD_SALE_RE = re.compile(r"\bsale\b")
 
@@ -162,30 +158,31 @@ class UsernameChecker:
         status, html = result
         if status == 404:
             return SourceResult(Availability.FREE, "404")
+        if status >= 400:
+            return SourceResult(Availability.UNKNOWN, f"unexpected status {status}")
 
-        # Check the free-username landing page marker *before* looking for profile
-        # elements: t.me renders a ".tgme_page_title" header on that landing page too
-        # (it's just the generic page title, showing the requested handle regardless
-        # of whether it's registered), so treating it as a "taken" signal on its own
-        # flags almost every free username as taken.
-        if "If you have Telegram" in html:
-            return SourceResult(Availability.FREE, "no profile card")
-
+        # Verified against real t.me responses (both a free username and a taken
+        # one): the "If you have <strong>Telegram</strong>, you can contact ... right
+        # away." CTA is NOT a free-only marker -- it's rendered on *every* page,
+        # taken or not, just with the real display name filled in for a taken
+        # profile instead of the bare @username. Likewise the "Send Message"
+        # tgme_action_button_new is present on both. Neither is usable as a signal.
+        #
+        # What's actually different: a taken profile has a real name
+        # (.tgme_page_title with non-empty text), a real photo (.tgme_page_photo --
+        # the free page only ever has a placeholder .tgme_page_icon), and/or a
+        # bio/status wrapper (.tgme_page_extra). The free landing page has none of
+        # these -- just the icon placeholder and the generic CTA text.
         tree = HTMLParser(html)
-        if tree.css_first(".tgme_page_extra_info"):
+        title_node = tree.css_first(".tgme_page_title")
+        has_named_title = bool(title_node and title_node.text(strip=True))
+        has_photo = tree.css_first(".tgme_page_photo") is not None
+        has_extra = tree.css_first(".tgme_page_extra") is not None
+
+        if has_named_title or has_photo or has_extra:
             return SourceResult(Availability.TAKEN, "profile page present")
 
-        # A private user/bot may hide their bio and last-seen status (no
-        # .tgme_page_extra_info), but the page still renders an action button tied
-        # to the actual entity -- "Send Message" for users/bots, "View/Join
-        # Channel"/"View/Join Group" for channels/groups. The free landing page has
-        # no such button (just a generic "Telegram" CTA), so this is still a
-        # reliable taken signal on its own.
-        lowered_html = html.lower()
-        if any(marker in lowered_html for marker in _TAKEN_ACTION_MARKERS):
-            return SourceResult(Availability.TAKEN, "action button present")
-
-        return SourceResult(Availability.UNKNOWN, f"unrecognized response (status {status})")
+        return SourceResult(Availability.FREE, "no profile card")
 
     async def _check_fragment(self, session: aiohttp.ClientSession, username: str) -> SourceResult:
         await self._fragment_limiter.wait()
