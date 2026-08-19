@@ -10,7 +10,7 @@ from aiogram.client.session.aiohttp import AiohttpSession
 from aiogram.filters import Command, CommandObject
 from aiogram.types import BufferedInputFile, CallbackQuery, Message
 
-from checker import CheckResult, checker
+from checker import Availability, CheckResult, checker
 from config import config, validate_config
 from database import db
 from generator import MAX_LENGTH, MIN_LENGTH, VALID_STYLES, generate_usernames, is_valid_telegram_username
@@ -33,10 +33,43 @@ router = Router()
 # In-memory cache of each user's last result set, used for export/favorite buttons.
 _last_results: dict[int, list[CheckResult]] = {}
 
+# Only genuinely free usernames are shown to the user (taken and Fragment-for-sale
+# candidates are discarded), so we generate+check in batches until we have `count`
+# free ones or give up after checking too many candidates -- short usernames are
+# mostly already registered, so a single batch rarely has enough free ones.
+_GENERATE_BATCH_SIZE = 20
+_MAX_CANDIDATES_PER_FREE = 10
+_MAX_CANDIDATES_HARD_CAP = 200
 
-async def _generate_and_check(style: str, count: int, min_length: int, max_length: int) -> list[CheckResult]:
-    usernames = generate_usernames(style, count, min_length, max_length)
-    return await checker.check_many(usernames)
+
+async def _generate_and_check(
+    style: str, count: int, min_length: int, max_length: int, progress: Message | None = None
+) -> list[CheckResult]:
+    free_results: list[CheckResult] = []
+    seen: set[str] = set()
+    max_candidates = min(count * _MAX_CANDIDATES_PER_FREE, _MAX_CANDIDATES_HARD_CAP)
+
+    while len(free_results) < count and len(seen) < max_candidates:
+        batch_count = min(_GENERATE_BATCH_SIZE, max_candidates - len(seen))
+        candidates = [
+            name for name in generate_usernames(style, batch_count, min_length, max_length) if name not in seen
+        ]
+        if not candidates:
+            break
+        seen.update(candidates)
+
+        checked = await checker.check_many(candidates)
+        free_results.extend(r for r in checked if overall_status(r) == Availability.FREE)
+
+        if progress is not None:
+            try:
+                await progress.edit_text(
+                    f"🔄 Проверено {len(seen)} вариантов, найдено {len(free_results)} свободных из {count}..."
+                )
+            except Exception:
+                pass  # message text unchanged or edited too often -- not critical
+
+    return free_results[:count]
 
 
 async def _send_results(
@@ -128,11 +161,11 @@ async def _run_generation(
     message: Message, user_id: int, style: str, min_length: int, max_length: int, count: int
 ) -> None:
     progress = await message.answer(
-        f"🔄 Генерирую {count} username ({min_length}-{max_length} симв.) в стиле "
-        f"{STYLE_LABELS[style]} и проверяю доступность..."
+        f"🔄 Ищу {count} свободных username ({min_length}-{max_length} симв.) в стиле "
+        f"{STYLE_LABELS[style]}... Короткие имена почти все заняты, это может занять время."
     )
     try:
-        results = await _generate_and_check(style, count, min_length, max_length)
+        results = await _generate_and_check(style, count, min_length, max_length, progress)
     except Exception:
         logger.exception(
             "Generation failed for style=%s length=%s-%s count=%s", style, min_length, max_length, count
@@ -141,6 +174,17 @@ async def _run_generation(
         return
 
     await progress.delete()
+
+    if not results:
+        await message.answer(
+            "😔 Не нашлось ни одного свободного username с такими параметрами — похоже, все проверенные "
+            "варианты уже заняты. Попробуй другую длину или стиль."
+        )
+        return
+
+    if len(results) < count:
+        await message.answer(f"⚠️ Нашёл только {len(results)} свободных из {count} запрошенных.")
+
     await _send_results(message, user_id, style, min_length, max_length, results)
 
 

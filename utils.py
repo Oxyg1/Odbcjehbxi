@@ -54,6 +54,12 @@ def format_result_line(index: int, result: CheckResult) -> str:
     status = overall_status(result)
     emoji = STATUS_EMOJI[status]
     text = STATUS_TEXT[status]
+    username = html.escape(result.username)
+
+    if status == Availability.TAKEN:
+        # Once t.me confirms it's registered, Fragment can't sell it -- no point
+        # cluttering the line with a moot "fragment: ..." breakdown or link.
+        return f"{index}. <code>@{username}</code>    {emoji} {text}"
 
     def _source_text(source) -> str:
         base = STATUS_TEXT[source.availability]
@@ -63,14 +69,13 @@ def format_result_line(index: int, result: CheckResult) -> str:
             return f"{base} ({source.detail})"
         return base
 
-    username = html.escape(result.username)
     details = f"t.me: {_source_text(result.telegram)} | fragment: {_source_text(result.fragment)}"
     link = f'<a href="{fragment_url(result.username)}">Открыть на Fragment</a>'
     return f"{index}. <code>@{username}</code>    {emoji} {text}\n    {details} · {link}"
 
 
 def build_results_message(style: str, results: list[CheckResult]) -> str:
-    header = f"✨ Сгенерировано {len(results)} username в стиле {STYLE_LABELS.get(style, style)}:\n"
+    header = f"✨ Найдено {len(results)} свободных username в стиле {STYLE_LABELS.get(style, style)}:\n"
     lines = [format_result_line(i, r) for i, r in enumerate(results, start=1)]
     footer = (
         "\n💡 Нажми на @username чтобы скопировать, на «Открыть на Fragment» — чтобы посмотреть/купить. "

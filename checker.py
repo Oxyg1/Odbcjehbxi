@@ -193,10 +193,13 @@ class UsernameChecker:
         if cached is not None:
             return cached
 
-        telegram_result, fragment_result = await asyncio.gather(
-            self._check_telegram(session, username),
-            self._check_fragment(session, username),
-        )
+        telegram_result = await self._check_telegram(session, username)
+        if telegram_result.availability == Availability.TAKEN:
+            # Already registered directly on Telegram -- Fragment can't sell it, so
+            # there's no point spending a request (and rate-limit budget) on it.
+            fragment_result = SourceResult(Availability.TAKEN, "skipped: t.me already taken")
+        else:
+            fragment_result = await self._check_fragment(session, username)
 
         result = CheckResult(
             username=username,
