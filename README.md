@@ -109,7 +109,8 @@ api.telegram.org.
 ### Вариант 1: Docker (проще всего)
 
 ```bash
-git clone <repo> nftea-bot && cd nftea-bot
+git clone -b claude/bot-length-selection-statuses-azdl13 https://github.com/Oxyg1/Odbcjehbxi.git nftea-bot
+cd nftea-bot
 cp .env.example .env   # заполнить BOT_TOKEN
 docker compose up -d --build
 docker compose logs -f   # посмотреть логи
@@ -126,7 +127,7 @@ docker compose up -d --build
 
 ```bash
 sudo useradd -r -m -d /opt/nftea-bot nftea
-sudo -u nftea git clone <repo> /opt/nftea-bot
+sudo -u nftea git clone -b claude/bot-length-selection-statuses-azdl13 https://github.com/Oxyg1/Odbcjehbxi.git /opt/nftea-bot
 cd /opt/nftea-bot
 sudo -u nftea python3 -m venv .venv
 sudo -u nftea .venv/bin/pip install -r requirements.txt
