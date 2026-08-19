@@ -155,12 +155,19 @@ class UsernameChecker:
         if status == 404:
             return SourceResult(Availability.FREE, "404")
 
-        tree = HTMLParser(html)
-        if tree.css_first(".tgme_page_extra_info") or tree.css_first(".tgme_page_title"):
-            return SourceResult(Availability.TAKEN, "profile page present")
-
+        # Check the free-username landing page marker *before* looking for profile
+        # elements: t.me renders a ".tgme_page_title" header on that landing page too
+        # (it's just the generic page title, showing the requested handle regardless
+        # of whether it's registered), so treating it as a "taken" signal on its own
+        # flags almost every free username as taken. ".tgme_page_extra_info" (bio /
+        # subscriber count / online status) is specific to an actual profile page and
+        # is a reliable taken signal on its own.
         if "If you have Telegram" in html:
             return SourceResult(Availability.FREE, "no profile card")
+
+        tree = HTMLParser(html)
+        if tree.css_first(".tgme_page_extra_info"):
+            return SourceResult(Availability.TAKEN, "profile page present")
 
         return SourceResult(Availability.UNKNOWN, f"unrecognized response (status {status})")
 

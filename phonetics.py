@@ -14,21 +14,44 @@ VOWELS = ["a", "e", "i", "o", "u"]
 ALLOWED_ONSET_CLUSTERS = ["bl", "br", "cl", "cr", "dr", "fl", "fr", "gl", "gr", "pl", "pr", "tr", "st", "sn", "sk"]
 
 # Style-specific syllable/root banks used to color the generated names.
+# Kept fairly large (~3x the original set) so the root x suffix combinatorial space
+# doesn't run dry quickly, especially at short requested lengths where most
+# combinations get filtered out and only a handful of unique candidates remain.
 STYLE_ROOTS: dict[str, list[str]] = {
-    "elegant": ["lum", "vio", "nex", "sil", "aur", "cel", "ely", "ori", "vel", "sen"],
-    "brand": ["pix", "zen", "aur", "nov", "vex", "lux", "qub", "dyn", "syn", "rok"],
-    "mythic": ["zeph", "thal", "nyx", "orin", "sylv", "drak", "elun", "morg", "vael", "thys"],
-    "tech": ["neu", "bit", "lux", "quant", "cyb", "vec", "byte", "sys", "log", "cor"],
-    "vibes": ["blis", "sol", "lum", "joy", "vel", "har", "mira", "kai", "lira", "wave"],
+    "elegant": [
+        "lum", "vio", "nex", "sil", "aur", "cel", "ely", "ori", "vel", "sen",
+        "lyr", "opa", "ser", "nov", "iri", "lun", "ari", "ver", "nor", "cyr",
+        "amel", "brio", "cato", "desi", "ilva", "juno", "kira", "livi", "myra", "tera",
+    ],
+    "brand": [
+        "pix", "zen", "aur", "nov", "vex", "lux", "qub", "dyn", "syn", "rok",
+        "flux", "apex", "onyx", "echo", "axis", "kade", "nira", "zyra", "vira", "coro",
+        "brix", "kalo", "moxa", "plux", "quix", "ravo", "solex", "trex", "unix", "voxa",
+    ],
+    "mythic": [
+        "zeph", "thal", "nyx", "orin", "sylv", "drak", "elun", "morg", "vael", "thys",
+        "wyrm", "fenr", "loki", "odin", "thor", "frey", "hela", "tyra", "gorn", "ymir",
+        "azra", "bael", "corv", "dusk", "ekho", "grim", "ishtar", "krag", "luna", "sear",
+    ],
+    "tech": [
+        "neu", "bit", "lux", "quant", "cyb", "vec", "byte", "sys", "log", "cor",
+        "data", "pixl", "nano", "grid", "code", "node", "chip", "wire", "volt", "sig",
+        "apex", "boot", "core", "flux", "kern", "link", "mesh", "proc", "stak", "vect",
+    ],
+    "vibes": [
+        "blis", "sol", "lum", "joy", "vel", "har", "mira", "kai", "lira", "wave",
+        "glow", "aura", "echo", "luma", "nova", "sere", "calm", "peac", "free", "brez",
+        "cozy", "driz", "fizz", "hush", "loop", "mist", "puls", "rime", "tide", "zephy",
+    ],
 }
 
 # Style-specific suffixes to close out the name.
 STYLE_SUFFIXES: dict[str, list[str]] = {
-    "elegant": ["a", "o", "en", "is", "ora"],
-    "brand": ["ora", "ix", "trix", "on", "ify"],
-    "mythic": ["ra", "ion", "yra", "ael", "oth"],
-    "tech": ["on", "ix", "lux", "core", "byte"],
-    "vibes": ["o", "a", "x", "ly", "ova"],
+    "elegant": ["a", "o", "en", "is", "ora", "elle", "ique", "ara", "ine", "yth"],
+    "brand": ["ora", "ix", "trix", "on", "ify", "ity", "exa", "yze", "ara", "eo"],
+    "mythic": ["ra", "ion", "yra", "ael", "oth", "wyn", "dor", "mir", "lok", "fen"],
+    "tech": ["on", "ix", "lux", "core", "byte", "flow", "sync", "hub", "net", "dev"],
+    "vibes": ["o", "a", "x", "ly", "ova", "ia", "ee", "oh", "ish", "y"],
 }
 
 
