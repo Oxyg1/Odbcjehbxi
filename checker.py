@@ -11,6 +11,7 @@ import asyncio
 import itertools
 import logging
 import random
+import re
 import time
 from dataclasses import dataclass
 from enum import Enum
@@ -34,6 +35,13 @@ USER_AGENTS = [
     "Mozilla/5.0 (X11; Ubuntu; Linux x86_64; rv:127.0) Gecko/20100101 Firefox/127.0",
     "Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) AppleWebKit/605.1.15 (KHTML, like Gecko) Version/16.5 Safari/605.1.15",
 ]
+
+# t.me action-button labels tied to an actual registered entity (not shown on the
+# free-username landing page, which only has a generic "Telegram" CTA).
+_TAKEN_ACTION_MARKERS = ("send message", "view channel", "join channel", "view group", "join group")
+
+_WORD_TAKEN_RE = re.compile(r"\btaken\b")
+_WORD_SALE_RE = re.compile(r"\bsale\b")
 
 
 class Availability(str, Enum):
@@ -159,15 +167,23 @@ class UsernameChecker:
         # elements: t.me renders a ".tgme_page_title" header on that landing page too
         # (it's just the generic page title, showing the requested handle regardless
         # of whether it's registered), so treating it as a "taken" signal on its own
-        # flags almost every free username as taken. ".tgme_page_extra_info" (bio /
-        # subscriber count / online status) is specific to an actual profile page and
-        # is a reliable taken signal on its own.
+        # flags almost every free username as taken.
         if "If you have Telegram" in html:
             return SourceResult(Availability.FREE, "no profile card")
 
         tree = HTMLParser(html)
         if tree.css_first(".tgme_page_extra_info"):
             return SourceResult(Availability.TAKEN, "profile page present")
+
+        # A private user/bot may hide their bio and last-seen status (no
+        # .tgme_page_extra_info), but the page still renders an action button tied
+        # to the actual entity -- "Send Message" for users/bots, "View/Join
+        # Channel"/"View/Join Group" for channels/groups. The free landing page has
+        # no such button (just a generic "Telegram" CTA), so this is still a
+        # reliable taken signal on its own.
+        lowered_html = html.lower()
+        if any(marker in lowered_html for marker in _TAKEN_ACTION_MARKERS):
+            return SourceResult(Availability.TAKEN, "action button present")
 
         return SourceResult(Availability.UNKNOWN, f"unrecognized response (status {status})")
 
@@ -185,13 +201,20 @@ class UsernameChecker:
         if "Username not found" in html or status == 404:
             return SourceResult(Availability.FREE, "not found on fragment")
 
-        if "already taken" in html.lower() or "is unavailable" in html.lower():
-            return SourceResult(Availability.TAKEN, "already taken")
-
+        lowered_html = html.lower()
         tree = HTMLParser(html)
         price_node = tree.css_first(".tm-value") or tree.css_first("[class*='price']")
         if price_node and price_node.text(strip=True):
             return SourceResult(Availability.FRAGMENT_FOR_SALE, price_node.text(strip=True))
+
+        # Fragment's own wording has changed over time and doesn't always match the
+        # exact phrases below verbatim, so match "taken"/"sale"/"auction" as
+        # standalone words rather than requiring the specific longer phrases.
+        if _WORD_TAKEN_RE.search(lowered_html) or "is unavailable" in lowered_html:
+            return SourceResult(Availability.TAKEN, "already taken")
+
+        if _WORD_SALE_RE.search(lowered_html) or "auction" in lowered_html:
+            return SourceResult(Availability.FRAGMENT_FOR_SALE, "")
 
         return SourceResult(Availability.UNKNOWN, f"unrecognized response (status {status})")
 
