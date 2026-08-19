@@ -100,6 +100,55 @@ config.py       — конфигурация из .env
 Всё это можно добавлять инкрементально поверх текущей структуры без
 переписывания ядра.
 
+## Деплой на сервер
+
+Бот работает через polling (не webhook), поэтому не нужен домен/SSL/входящий
+порт — достаточно, чтобы процесс постоянно был запущен и мог достучаться до
+api.telegram.org.
+
+### Вариант 1: Docker (проще всего)
+
+```bash
+git clone <repo> nftea-bot && cd nftea-bot
+cp .env.example .env   # заполнить BOT_TOKEN
+docker compose up -d --build
+docker compose logs -f   # посмотреть логи
+```
+
+`data/` (SQLite база и лог) монтируется как volume — переживает пересборки
+и рестарты контейнера. Обновление после `git pull`:
+
+```bash
+docker compose up -d --build
+```
+
+### Вариант 2: systemd на голом VPS (без Docker)
+
+```bash
+sudo useradd -r -m -d /opt/nftea-bot nftea
+sudo -u nftea git clone <repo> /opt/nftea-bot
+cd /opt/nftea-bot
+sudo -u nftea python3 -m venv .venv
+sudo -u nftea .venv/bin/pip install -r requirements.txt
+sudo -u nftea cp .env.example .env   # заполнить BOT_TOKEN
+sudo cp deploy/nftea-bot.service /etc/systemd/system/
+sudo systemctl daemon-reload
+sudo systemctl enable --now nftea-bot
+sudo systemctl status nftea-bot
+journalctl -u nftea-bot -f   # логи
+```
+
+Обновление:
+
+```bash
+cd /opt/nftea-bot
+sudo -u nftea git pull
+sudo -u nftea .venv/bin/pip install -r requirements.txt
+sudo systemctl restart nftea-bot
+```
+
+В обоих случаях `.env` с токеном не должен попадать в git (уже в `.gitignore`).
+
 ## Примечание об использовании
 
 Проверка доступности username через публичные страницы t.me и fragment.com —
