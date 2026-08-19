@@ -35,11 +35,13 @@ _last_results: dict[int, list[CheckResult]] = {}
 
 # Only genuinely free usernames are shown to the user (taken and Fragment-for-sale
 # candidates are discarded), so we generate+check in batches until we have `count`
-# free ones or give up after checking too many candidates -- short usernames are
-# mostly already registered, so a single batch rarely has enough free ones.
+# free ones. There's no cap tied to the requested count -- it keeps going as long as
+# the generator can still produce new, not-yet-checked candidates for this style and
+# length. _MAX_CANDIDATES_HARD_CAP is only a sanity backstop against a pathological
+# run (e.g. a style/length pool that's effectively unbounded and never yields a free
+# hit); it's high enough that no realistic request should ever reach it.
 _GENERATE_BATCH_SIZE = 20
-_MAX_CANDIDATES_PER_FREE = 10
-_MAX_CANDIDATES_HARD_CAP = 200
+_MAX_CANDIDATES_HARD_CAP = 5000
 
 
 async def _generate_and_check(
@@ -47,14 +49,15 @@ async def _generate_and_check(
 ) -> list[CheckResult]:
     free_results: list[CheckResult] = []
     seen: set[str] = set()
-    max_candidates = min(count * _MAX_CANDIDATES_PER_FREE, _MAX_CANDIDATES_HARD_CAP)
 
-    while len(free_results) < count and len(seen) < max_candidates:
-        batch_count = min(_GENERATE_BATCH_SIZE, max_candidates - len(seen))
+    while len(free_results) < count and len(seen) < _MAX_CANDIDATES_HARD_CAP:
+        batch_count = min(_GENERATE_BATCH_SIZE, _MAX_CANDIDATES_HARD_CAP - len(seen))
         candidates = [
             name for name in generate_usernames(style, batch_count, min_length, max_length) if name not in seen
         ]
         if not candidates:
+            # The generator can't produce anything new for this style/length -- the
+            # whole pool of possible usernames has been exhausted and checked.
             break
         seen.update(candidates)
 
@@ -175,15 +178,18 @@ async def _run_generation(
 
     await progress.delete()
 
-    if not results:
-        await message.answer(
-            "😔 Не нашлось ни одного свободного username с такими параметрами — похоже, все проверенные "
-            "варианты уже заняты. Попробуй другую длину или стиль."
-        )
-        return
-
     if len(results) < count:
-        await message.answer(f"⚠️ Нашёл только {len(results)} свободных из {count} запрошенных.")
+        note = (
+            "😔 Не нашлось ни одного свободного username с такими параметрами."
+            if not results
+            else f"⚠️ Нашёл только {len(results)} свободных из {count} запрошенных."
+        )
+        await message.answer(
+            f"{note} Перебрал все варианты, которые может выдать этот стиль для длины "
+            f"{min_length}-{max_length} — они закончились. Попробуй другую длину или стиль."
+        )
+        if not results:
+            return
 
     await _send_results(message, user_id, style, min_length, max_length, results)
 
