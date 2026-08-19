@@ -48,7 +48,9 @@ async def _send_results(
         [(r.username, style, overall_status(r).value) for r in results],
     )
     text = build_results_message(style, results)
-    await message.answer(text, reply_markup=result_actions_keyboard(style, min_length, max_length))
+    await message.answer(
+        text, reply_markup=result_actions_keyboard(style, min_length, max_length), parse_mode="HTML"
+    )
 
 
 @router.message(Command("start"))
@@ -67,7 +69,8 @@ async def cmd_help(message: Message) -> None:
         "📖 <b>Команды</b>\n"
         "/start — приветствие и выбор стиля\n"
         "/generate [стиль] [длина] [количество] — генерация username, например: "
-        "<code>/generate mythic 9-12 10</code>\n"
+        "<code>/generate mythic 9-12 10</code> (диапазон) или "
+        "<code>/generate mythic 5 20</code> (ровно 5 символов, 20 штук)\n"
         "/check @username — проверить конкретный username\n"
         "/favorites — сохранённые username (добавить: <code>/favorites add username</code>, "
         "удалить: <code>/favorites remove username</code>)\n"
@@ -79,7 +82,7 @@ async def cmd_help(message: Message) -> None:
     )
 
 
-_LENGTH_RANGE_RE = re.compile(r"^(\d+)-(\d+)$")
+_LENGTH_SPEC_RE = re.compile(r"^(\d+)(?:-(\d+))?$")
 
 
 @router.message(Command("generate"))
@@ -90,10 +93,15 @@ async def cmd_generate(message: Message, command: CommandObject) -> None:
     min_length, max_length = MIN_LENGTH, MAX_LENGTH
 
     rest = args[1:]
-    length_match = _LENGTH_RANGE_RE.match(rest[0]) if rest else None
-    if length_match:
-        min_length, max_length = int(length_match.group(1)), int(length_match.group(2))
-        rest = rest[1:]
+    # A length spec is only recognized when a count follows it too, so that the old
+    # two-arg form "/generate style count" keeps meaning length=default, count=N.
+    if len(rest) >= 2:
+        length_match = _LENGTH_SPEC_RE.match(rest[0])
+        if length_match:
+            lo = int(length_match.group(1))
+            hi = int(length_match.group(2)) if length_match.group(2) else lo
+            min_length, max_length = lo, hi
+            rest = rest[1:]
 
     if rest and rest[0].isdigit():
         count = int(rest[0])
@@ -200,7 +208,7 @@ async def cmd_check(message: Message, command: CommandObject) -> None:
     result = results[0]
 
     await db.add_history(message.from_user.id, raw, "manual", overall_status(result).value)
-    await progress.edit_text(format_result_line(1, result))
+    await progress.edit_text(format_result_line(1, result), parse_mode="HTML")
 
 
 @router.message(Command("favorites"))

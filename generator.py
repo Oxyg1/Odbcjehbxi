@@ -92,15 +92,22 @@ def generate_usernames(
         results.append(name)
 
     # If phonetic generation couldn't produce enough unique names, pad with numeric variants.
+    # Digits replace trailing characters instead of always being appended, so this still
+    # fits within max_length even when a base is already at the length ceiling (e.g. an
+    # exact-length request like min_length == max_length leaves no room to append).
     base_index = 0
+    pad_attempts = 0
+    max_pad_attempts = count * 50
     bases = list(results) or [generate_username(style, rng, min_length, max_length)]
-    while len(results) < count:
+    while len(results) < count and pad_attempts < max_pad_attempts:
+        pad_attempts += 1
         base = bases[base_index % len(bases)]
-        variant = f"{base}{rng.randint(1, 99)}"
-        if variant not in seen and len(variant) <= max_length:
+        base_index += 1
+        digit = str(rng.randint(0, 9))
+        variant = base + digit if len(base) < max_length else base[: max_length - 1] + digit
+        if min_length <= len(variant) <= max_length and variant not in seen:
             seen.add(variant)
             results.append(variant)
-        base_index += 1
 
     return results
 

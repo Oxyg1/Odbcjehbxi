@@ -1,6 +1,7 @@
 """Formatting helpers, keyboards, and export utilities for the bot layer."""
 
 import csv
+import html
 import io
 import json
 
@@ -62,14 +63,19 @@ def format_result_line(index: int, result: CheckResult) -> str:
             return f"{base} ({source.detail})"
         return base
 
+    username = html.escape(result.username)
     details = f"t.me: {_source_text(result.telegram)} | fragment: {_source_text(result.fragment)}"
-    return f"{index}. @{result.username}    {emoji} {text}\n    {details}"
+    link = f'<a href="{fragment_url(result.username)}">Открыть на Fragment</a>'
+    return f"{index}. <code>@{username}</code>    {emoji} {text}\n    {details} · {link}"
 
 
 def build_results_message(style: str, results: list[CheckResult]) -> str:
     header = f"✨ Сгенерировано {len(results)} username в стиле {STYLE_LABELS.get(style, style)}:\n"
     lines = [format_result_line(i, r) for i, r in enumerate(results, start=1)]
-    footer = "\n💡 Нажми на @username чтобы скопировать. Используй /check @username для повторной проверки."
+    footer = (
+        "\n💡 Нажми на @username чтобы скопировать, на «Открыть на Fragment» — чтобы посмотреть/купить. "
+        "Используй /check @username для повторной проверки."
+    )
     return header + "\n" + "\n".join(lines) + footer
 
 
@@ -106,12 +112,18 @@ def result_actions_keyboard(style: str, min_length: int, max_length: int) -> Inl
     return builder.as_markup()
 
 
+def fragment_url(username: str) -> str:
+    return f"https://fragment.com/username/{username}"
+
+
 def export_to_csv(results: list[CheckResult]) -> io.BytesIO:
     buf = io.StringIO()
     writer = csv.writer(buf)
-    writer.writerow(["username", "status", "telegram_detail", "fragment_detail"])
+    writer.writerow(["username", "status", "telegram_detail", "fragment_detail", "fragment_url"])
     for r in results:
-        writer.writerow([r.username, overall_status(r).value, r.telegram.detail, r.fragment.detail])
+        writer.writerow(
+            [r.username, overall_status(r).value, r.telegram.detail, r.fragment.detail, fragment_url(r.username)]
+        )
     data = io.BytesIO(buf.getvalue().encode("utf-8"))
     data.name = "usernames.csv"
     return data
@@ -124,6 +136,7 @@ def export_to_json(results: list[CheckResult]) -> io.BytesIO:
             "status": overall_status(r).value,
             "telegram": {"status": r.telegram.availability.value, "detail": r.telegram.detail},
             "fragment": {"status": r.fragment.availability.value, "detail": r.fragment.detail},
+            "fragment_url": fragment_url(r.username),
             "checked_at": r.checked_at,
         }
         for r in results
