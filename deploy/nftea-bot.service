@@ -1,0 +1,16 @@
+[Unit]
+Description=NFTea username generator Telegram bot
+After=network-online.target
+Wants=network-online.target
+
+[Service]
+Type=simple
+User=nftea
+WorkingDirectory=/opt/nftea-bot
+EnvironmentFile=/opt/nftea-bot/.env
+ExecStart=/opt/nftea-bot/.venv/bin/python bot.py
+Restart=on-failure
+RestartSec=5
+
+[Install]
+WantedBy=multi-user.target
