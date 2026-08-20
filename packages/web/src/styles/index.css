@@ -1,0 +1,292 @@
+@import 'tailwindcss';
+
+/*
+ * Design system.
+ *
+ * Tokens mirror packages/shared/src/design.ts, which was derived from the
+ * reference Portals Mini App builds: near-black canvas, a six-step elevation
+ * ramp, "liquid glass" inner shadows, 16px squircle radii, SF Pro Text.
+ */
+
+@theme {
+  --color-background: #141414;
+  --color-surface-1: #191919;
+  --color-surface-2: #1c1c1c;
+  --color-surface-3: #212020;
+  --color-surface-4: #282727;
+  --color-surface-5: #363636;
+  --color-surface-6: #3a3a3a;
+  --color-border: #454545;
+
+  --color-foreground: #ffffff;
+  --color-muted: #6d6d71;
+
+  --color-primary: #1689ff;
+  --color-accent: #49df64;
+  --color-gold: #f1aa05;
+  --color-purple: #6d51de;
+  --color-destructive: #df494d;
+  --color-tifany: #68fbdd;
+
+  --radius-squircle-sm: 12px;
+  --radius-squircle: 16px;
+  --radius-squircle-lg: 20px;
+  --radius-squircle-xl: 24px;
+  --radius-squircle-2xl: 26px;
+  --radius-squircle-3xl: 28px;
+  --radius-squircle-4xl: 32px;
+
+  --font-sans: 'SFProText', -apple-system, BlinkMacSystemFont, 'Helvetica Neue', sans-serif;
+
+  --text-alpha-1: #ffffffb3;
+  --text-alpha-2: #ffffff66;
+  --text-alpha-3: #ffffff3d;
+}
+
+:root {
+  /* Telegram overwrites these at runtime; the fallbacks keep the layout sane
+     when the app is opened outside Telegram (local dev, previews). */
+  --tg-viewport-safe-area-inset-top: 0px;
+  --tg-viewport-safe-area-inset-bottom: 0px;
+  --tg-viewport-stable-height: 100dvh;
+
+  --c-light: #fff;
+  --c-dark: #000;
+  --glass-reflex-light: 0.3;
+  --glass-reflex-dark: 2;
+
+  /* The Portals liquid-glass recipe: a stack of inset highlights and shadows
+     that reads as a bevelled pane of glass rather than a flat card. */
+  --glass-shadow: inset 0 0 0 1px rgba(255, 255, 255, 0.03),
+    inset 1.8px 3px 0px -2px rgba(255, 255, 255, 0.27),
+    inset -2px -2px 0px -2px rgba(255, 255, 255, 0.24),
+    inset -3px -8px 1px -6px rgba(255, 255, 255, 0.18),
+    inset -0.3px -1px 4px 0px rgba(0, 0, 0, 0.24),
+    inset -1.5px 2.5px 0px -2px rgba(0, 0, 0, 0.4),
+    inset 0px 3px 4px -2px rgba(0, 0, 0, 0.4),
+    inset 2px -6.5px 1px -4px rgba(0, 0, 0, 0.2), 0px 1px 5px 0px rgba(0, 0, 0, 0.2),
+    0px 6px 16px 0px rgba(0, 0, 0, 0.16);
+
+  --tab-bar-height: 62px;
+}
+
+/* Engines that ship color-mix get the tintable variant, which re-derives the
+   highlight strength from the two reflex variables instead of hard-coding it. */
+@supports (color: color-mix(in srgb, white 10%, transparent)) {
+  :root {
+    --glass-shadow: inset 0 0 0 1px
+        color-mix(in srgb, var(--c-light) calc(var(--glass-reflex-light) * 10%), transparent),
+      inset 1.8px 3px 0px -2px
+        color-mix(in srgb, var(--c-light) calc(var(--glass-reflex-light) * 90%), transparent),
+      inset -2px -2px 0px -2px
+        color-mix(in srgb, var(--c-light) calc(var(--glass-reflex-light) * 80%), transparent),
+      inset -3px -8px 1px -6px
+        color-mix(in srgb, var(--c-light) calc(var(--glass-reflex-light) * 60%), transparent),
+      inset -0.3px -1px 4px 0px
+        color-mix(in srgb, var(--c-dark) calc(var(--glass-reflex-dark) * 12%), transparent),
+      inset -1.5px 2.5px 0px -2px
+        color-mix(in srgb, var(--c-dark) calc(var(--glass-reflex-dark) * 20%), transparent),
+      inset 0px 3px 4px -2px
+        color-mix(in srgb, var(--c-dark) calc(var(--glass-reflex-dark) * 20%), transparent),
+      inset 2px -6.5px 1px -4px
+        color-mix(in srgb, var(--c-dark) calc(var(--glass-reflex-dark) * 10%), transparent),
+      0px 1px 5px 0px color-mix(in srgb, var(--c-dark) calc(var(--glass-reflex-dark) * 10%), transparent),
+      0px 6px 16px 0px color-mix(in srgb, var(--c-dark) calc(var(--glass-reflex-dark) * 8%), transparent);
+  }
+}
+
+* {
+  -webkit-tap-highlight-color: transparent;
+}
+
+html,
+body {
+  height: 100%;
+  overscroll-behavior: none;
+}
+
+body {
+  margin: 0;
+  background: var(--color-background);
+  color: var(--color-foreground);
+  font-family: var(--font-sans);
+  font-feature-settings: 'tnum' on;
+  letter-spacing: -0.2px;
+  -webkit-font-smoothing: antialiased;
+}
+
+#root {
+  min-height: 100dvh;
+  isolation: isolate;
+}
+
+/* --------------------------------- utilities ---------------------------- */
+
+@utility glass-shadow {
+  box-shadow: var(--glass-shadow);
+}
+
+@utility glass {
+  -webkit-backdrop-filter: blur(8px) saturate(140%);
+  backdrop-filter: blur(8px) saturate(140%);
+}
+
+/* iOS-style continuous corners where the engine supports them, with a plain
+   radius everywhere else. The two radii differ on purpose: a squircle needs a
+   larger nominal radius to read at the same visual weight. */
+@utility squircle {
+  border-radius: var(--radius-squircle);
+}
+@utility squircle-lg {
+  border-radius: var(--radius-squircle-lg);
+}
+@utility squircle-xl {
+  border-radius: var(--radius-squircle-xl);
+}
+@utility squircle-2xl {
+  border-radius: var(--radius-squircle-2xl);
+}
+@utility squircle-3xl {
+  border-radius: var(--radius-squircle-3xl);
+}
+@utility squircle-4xl {
+  border-radius: var(--radius-squircle-4xl);
+}
+
+@supports (corner-shape: squircle) {
+  .squircle {
+    corner-shape: squircle;
+    border-radius: 30px;
+  }
+  .squircle-lg {
+    corner-shape: squircle;
+    border-radius: 38px;
+  }
+  .squircle-xl {
+    corner-shape: squircle;
+    border-radius: 46px;
+  }
+  .squircle-2xl {
+    corner-shape: squircle;
+    border-radius: 50px;
+  }
+  .squircle-3xl {
+    corner-shape: squircle;
+    border-radius: 60px;
+  }
+  .squircle-4xl {
+    corner-shape: squircle;
+    border-radius: 70px;
+  }
+}
+
+@utility safe-top {
+  padding-top: calc(var(--tg-viewport-safe-area-inset-top) + 12px);
+}
+@utility safe-bottom {
+  padding-bottom: calc(var(--tg-viewport-safe-area-inset-bottom) + var(--tab-bar-height) + 16px);
+}
+
+@utility no-scrollbar {
+  scrollbar-width: none;
+  -ms-overflow-style: none;
+  &::-webkit-scrollbar {
+    display: none;
+  }
+}
+
+@utility text-alpha-1 {
+  color: var(--text-alpha-1);
+}
+@utility text-alpha-2 {
+  color: var(--text-alpha-2);
+}
+@utility text-alpha-3 {
+  color: var(--text-alpha-3);
+}
+
+/* ---------------------------------- motion ------------------------------ */
+
+@keyframes shake {
+  0%, 100% { transform: translate3d(0, 0, 0); }
+  20% { transform: translate3d(-6px, 2px, 0) rotate(-0.6deg); }
+  40% { transform: translate3d(5px, -3px, 0) rotate(0.5deg); }
+  60% { transform: translate3d(-4px, 1px, 0) rotate(-0.4deg); }
+  80% { transform: translate3d(3px, -1px, 0) rotate(0.3deg); }
+}
+
+@utility animate-shake {
+  animation: shake 0.55s cubic-bezier(0.36, 0.07, 0.19, 0.97);
+}
+
+@keyframes marquee {
+  from { transform: translateX(0); }
+  to { transform: translateX(-50%); }
+}
+
+@utility animate-marquee {
+  animation: marquee 12s linear infinite;
+}
+
+@keyframes shimmer {
+  from { background-position: -200% 0; }
+  to { background-position: 200% 0; }
+}
+
+@utility animate-shimmer {
+  background-size: 200% 100%;
+  animation: shimmer 2.4s linear infinite;
+}
+
+@keyframes pulse-ring {
+  0% { box-shadow: 0 0 0 0 var(--pulse-color, rgba(73, 223, 100, 0.5)); }
+  70% { box-shadow: 0 0 0 14px rgba(0, 0, 0, 0); }
+  100% { box-shadow: 0 0 0 0 rgba(0, 0, 0, 0); }
+}
+
+@utility animate-pulse-ring {
+  animation: pulse-ring 1.8s cubic-bezier(0.66, 0, 0, 1) infinite;
+}
+
+/* Theme decorations. Each is a purely decorative overlay drawn behind content,
+   so it never interferes with hit-testing. */
+@utility fx-scanlines {
+  position: relative;
+  &::after {
+    content: '';
+    position: absolute;
+    inset: 0;
+    pointer-events: none;
+    background: repeating-linear-gradient(
+      to bottom,
+      rgba(0, 0, 0, 0) 0px,
+      rgba(0, 0, 0, 0) 2px,
+      rgba(0, 0, 0, 0.22) 3px
+    );
+    mix-blend-mode: multiply;
+  }
+}
+
+@utility fx-grid {
+  position: relative;
+  &::after {
+    content: '';
+    position: absolute;
+    inset: 0;
+    pointer-events: none;
+    background-image: linear-gradient(rgba(255, 255, 255, 0.07) 1px, transparent 1px),
+      linear-gradient(90deg, rgba(255, 255, 255, 0.07) 1px, transparent 1px);
+    background-size: 22px 22px;
+    mask-image: linear-gradient(to bottom, black, transparent 75%);
+  }
+}
+
+@media (prefers-reduced-motion: reduce) {
+  *,
+  *::before,
+  *::after {
+    animation-duration: 0.01ms !important;
+    animation-iteration-count: 1 !important;
+    transition-duration: 0.01ms !important;
+  }
+}

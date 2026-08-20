@@ -1,0 +1,429 @@
+// TgDonate — data model.
+//
+// Design notes:
+//  * Telegram ids are BigInt (they exceed 2^32 for modern accounts).
+//  * Every monetary amount in Stars is an Int — Stars are indivisible.
+//  * TON amounts are stored as nanoton in a Decimal(38,0) to stay exact.
+//  * Money-moving rows are append-only; balances are derived, never patched
+//    in place outside a transaction.
+
+generator client {
+  provider = "prisma-client-js"
+}
+
+datasource db {
+  provider = "postgresql"
+  url      = env("DATABASE_URL")
+}
+
+/* ------------------------------- enums ---------------------------------- */
+
+enum ListingKind {
+  DONATION_TIER
+  SERVICE_OFFER
+  NFT_GIFT_SALE
+}
+
+enum ListingStatus {
+  ACTIVE
+  RESERVED
+  SOLD
+  HIDDEN
+  EXPIRED
+}
+
+enum PaymentMethod {
+  TELEGRAM_STARS
+  TON
+  NFT_GIFT
+}
+
+enum TransactionStatus {
+  PENDING
+  AWAITING_PAYMENT
+  PAID
+  SETTLED
+  REFUNDED
+  FAILED
+  EXPIRED
+}
+
+enum DonationTier {
+  MICRO
+  MAJOR
+  WHALE
+}
+
+enum GiftRarity {
+  COMMON
+  RARE
+  EPIC
+  LEGENDARY
+}
+
+enum ThemeRarity {
+  FREE
+  PREMIUM
+  LEGENDARY
+}
+
+enum ThemeEffect {
+  NONE
+  LOW_POLY
+  CYBERPUNK_GRID
+  GOLD_ROYALTY
+  CRT_SCANLINES
+  AURORA
+}
+
+enum BannerStyle {
+  SOLID
+  GRADIENT
+  HOLOGRAM
+  MARQUEE
+  PIXEL
+}
+
+enum LeaderboardScope {
+  DAILY
+  WEEKLY
+  ALL_TIME
+}
+
+enum GiftTransferState {
+  HELD_BY_OWNER
+  IN_ESCROW
+  TRANSFERRED
+  RECLAIMED
+}
+
+/* -------------------------------- models -------------------------------- */
+
+model User {
+  id            String   @id @default(cuid())
+  /// Telegram numeric user id. Authoritative identity key.
+  telegramId    BigInt   @unique
+  username      String?
+  displayName   String
+  photoUrl      String?
+  languageCode  String?  @db.VarChar(8)
+  isPremium     Boolean  @default(false)
+  isBanned      Boolean  @default(false)
+
+  /// Connected TON wallet, stored raw (`0:<hex>`) for chain comparisons and
+  /// rendered as user-friendly bounceable at the edge.
+  tonWalletRaw  String?  @unique
+  /// TON Connect proof timestamp; a stale proof forces re-verification.
+  tonProofAt    DateTime?
+
+  /// Denormalised lifetime counters. Maintained inside the settlement
+  /// transaction so they never drift from DonationTransaction.
+  starsDonated   Int @default(0)
+  starsReceived  Int @default(0)
+  giftsDonated   Int @default(0)
+  giftsReceived  Int @default(0)
+
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+  lastSeenAt DateTime @default(now())
+
+  stand           Stand?
+  ownedThemes     UserTheme[]
+  sentDonations   DonationTransaction[] @relation("DonationDonor")
+  receivedDonations DonationTransaction[] @relation("DonationReceiver")
+  sessions        RoomSession[]
+  gifts           Gift[]                @relation("GiftOwner")
+  leaderboardEntries LeaderboardEntry[]
+
+  @@index([tonWalletRaw])
+  @@index([starsDonated(sort: Desc)])
+  @@index([lastSeenAt])
+  @@map("users")
+}
+
+model Room {
+  id          String  @id @default(cuid())
+  slug        String  @unique
+  name        String
+  description String  @default("")
+  emoji       String  @default("🏛")
+  accent      String  @default("#49df64")
+  capacity    Int     @default(50)
+  /// Hidden rooms are reachable by deep link but absent from the switcher.
+  isHidden    Boolean @default(false)
+  sortOrder   Int     @default(0)
+
+  createdAt DateTime @default(now())
+
+  stands   Stand[]
+  sessions RoomSession[]
+  donations DonationTransaction[]
+
+  @@index([isHidden, sortOrder])
+  @@map("rooms")
+}
+
+model StandTheme {
+  id          String      @id @default(cuid())
+  slug        String      @unique
+  name        String
+  description String      @default("")
+  rarity      ThemeRarity @default(FREE)
+  /// Price in Telegram Stars; 0 for the default free themes.
+  priceStars  Int         @default(0)
+  effect      ThemeEffect @default(NONE)
+  isActive    Boolean     @default(true)
+
+  /// Palette consumed by the stand renderer:
+  /// { surface, accent, accentSoft, banner, foreground }
+  palette Json
+
+  createdAt DateTime @default(now())
+
+  stands Stand[]
+  owners UserTheme[]
+
+  @@index([isActive, rarity])
+  @@map("stand_themes")
+}
+
+/// Join table: which premium themes a user has unlocked.
+model UserTheme {
+  id      String @id @default(cuid())
+  userId  String
+  themeId String
+
+  /// Transaction that unlocked it, when purchased with Stars.
+  transactionId String? @unique
+  unlockedAt    DateTime @default(now())
+
+  user  User       @relation(fields: [userId], references: [id], onDelete: Cascade)
+  theme StandTheme @relation(fields: [themeId], references: [id], onDelete: Cascade)
+
+  @@unique([userId, themeId])
+  @@index([userId])
+  @@map("user_themes")
+}
+
+model Stand {
+  id      String  @id @default(cuid())
+  ownerId String  @unique
+  roomId  String?
+
+  title           String      @default("My Stand")
+  goal            String?
+  goalTargetStars Int?
+  themeId         String
+  bannerStyle     BannerStyle @default(GRADIENT)
+
+  /// Denormalised aggregates, updated inside the settlement transaction.
+  totalStarsReceived Int @default(0)
+  totalGiftsReceived Int @default(0)
+  supporterCount     Int @default(0)
+
+  isPublished Boolean @default(true)
+  /// Optimistic-concurrency token bumped on every mutation; the gateway
+  /// discards STAND_UPDATE broadcasts that carry a stale version.
+  version     Int     @default(0)
+
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+
+  owner     User       @relation(fields: [ownerId], references: [id], onDelete: Cascade)
+  room      Room?      @relation(fields: [roomId], references: [id], onDelete: SetNull)
+  theme     StandTheme @relation(fields: [themeId], references: [id])
+  listings  Listing[]
+  donations DonationTransaction[]
+
+  @@index([roomId, isPublished])
+  @@index([totalStarsReceived(sort: Desc)])
+  @@index([updatedAt(sort: Desc)])
+  @@map("stands")
+}
+
+model Listing {
+  id      String @id @default(cuid())
+  standId String
+
+  kind        ListingKind
+  status      ListingStatus @default(ACTIVE)
+  title       String
+  description String?
+
+  /// Stars price. Null for TON-only or gift-swap listings.
+  priceStars   Int?
+  /// TON price in nanoton. Null for Stars-only listings.
+  priceNanoton Decimal? @db.Decimal(38, 0)
+
+  position  Int  @default(0)
+  soldCount Int  @default(0)
+  /// Null = unlimited supply.
+  supply    Int?
+
+  /// Populated for NFT_GIFT_SALE listings.
+  giftId String? @unique
+
+  expiresAt DateTime?
+  createdAt DateTime  @default(now())
+  updatedAt DateTime  @updatedAt
+
+  stand        Stand                 @relation(fields: [standId], references: [id], onDelete: Cascade)
+  gift         Gift?                 @relation(fields: [giftId], references: [id], onDelete: SetNull)
+  transactions DonationTransaction[]
+
+  @@index([standId, status, position])
+  @@index([status, kind])
+  @@map("listings")
+}
+
+/// A Telegram NFT Gift held by a user, optionally escrowed for a sale.
+model Gift {
+  id             String     @id @default(cuid())
+  /// Telegram's unique gift id (`owned_gift_id` / collectible id).
+  telegramGiftId String     @unique
+  slug           String
+  title          String
+  rarity         GiftRarity @default(COMMON)
+  previewUrl     String?
+
+  /// [{ type, name, rarityPermille }]
+  attributes Json @default("[]")
+
+  ownerId String
+  state   GiftTransferState @default(HELD_BY_OWNER)
+
+  /// Set while the gift is locked for a pending sale.
+  escrowedForTxId String?   @unique
+  escrowedAt      DateTime?
+
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+
+  owner   User     @relation("GiftOwner", fields: [ownerId], references: [id], onDelete: Cascade)
+  listing Listing?
+  donations DonationTransaction[]
+
+  @@index([ownerId, state])
+  @@index([rarity])
+  @@map("gifts")
+}
+
+model DonationTransaction {
+  id String @id @default(cuid())
+
+  /// Null when the donor is an unregistered/anonymous payer.
+  donorId    String?
+  receiverId String
+  standId    String
+  roomId     String?
+  listingId  String?
+  giftId     String?
+
+  method PaymentMethod
+  status TransactionStatus @default(PENDING)
+  tier   DonationTier      @default(MICRO)
+
+  /// Gross Stars charged to the donor. 0 for pure TON / gift transfers.
+  amountStars Int @default(0)
+  /// Platform cut in Stars.
+  feeStars    Int @default(0)
+  /// Credited to the receiver: amountStars - feeStars.
+  netStars    Int @default(0)
+  feeBps      Int @default(500)
+
+  /// TON leg, in nanoton.
+  amountNanoton Decimal? @db.Decimal(38, 0)
+  feeNanoton    Decimal? @db.Decimal(38, 0)
+
+  /// Star-equivalent used for VFX tiering; always > 0.
+  valuationStars Int @default(0)
+
+  isAnonymous Boolean @default(false)
+  message     String? @db.VarChar(280)
+
+  /// Opaque payload embedded in the Stars invoice; also the idempotency key
+  /// for `successful_payment`.
+  invoicePayload String? @unique
+  /// Telegram's charge id, used for refunds.
+  telegramChargeId String? @unique
+  /// TON transaction hash (base64), used to de-duplicate chain events.
+  tonTxHash        String? @unique
+
+  createdAt  DateTime  @default(now())
+  updatedAt  DateTime  @updatedAt
+  settledAt  DateTime?
+  refundedAt DateTime?
+
+  donor    User?    @relation("DonationDonor", fields: [donorId], references: [id], onDelete: SetNull)
+  receiver User     @relation("DonationReceiver", fields: [receiverId], references: [id], onDelete: Cascade)
+  stand    Stand    @relation(fields: [standId], references: [id], onDelete: Cascade)
+  room     Room?    @relation(fields: [roomId], references: [id], onDelete: SetNull)
+  listing  Listing? @relation(fields: [listingId], references: [id], onDelete: SetNull)
+  gift     Gift?    @relation(fields: [giftId], references: [id], onDelete: SetNull)
+
+  @@index([receiverId, status, createdAt(sort: Desc)])
+  @@index([donorId, status, createdAt(sort: Desc)])
+  @@index([standId, createdAt(sort: Desc)])
+  @@index([roomId, createdAt(sort: Desc)])
+  @@index([status, createdAt])
+  @@index([tier, createdAt(sort: Desc)])
+  @@map("donation_transactions")
+}
+
+/// One row per (user, room) presence window. Closed by the presence sweeper.
+model RoomSession {
+  id     String @id @default(cuid())
+  userId String
+  roomId String
+
+  /// Gateway node that owns the socket, for targeted disconnects.
+  nodeId   String
+  socketId String @unique
+
+  joinedAt      DateTime  @default(now())
+  lastHeartbeat DateTime  @default(now())
+  leftAt        DateTime?
+
+  user User @relation(fields: [userId], references: [id], onDelete: Cascade)
+  room Room @relation(fields: [roomId], references: [id], onDelete: Cascade)
+
+  @@index([roomId, leftAt])
+  @@index([userId, leftAt])
+  @@index([lastHeartbeat])
+  @@map("room_sessions")
+}
+
+/// Materialised leaderboard rows. Redis holds the hot sorted-set; this table
+/// is the durable snapshot that survives a cache flush.
+model LeaderboardEntry {
+  id     String           @id @default(cuid())
+  scope  LeaderboardScope
+  /// `2026-08-20` (daily), `2026-W34` (weekly), `all` (all-time).
+  bucket String
+  userId String
+
+  starsDonated Int @default(0)
+  giftsDonated Int @default(0)
+  rank         Int @default(0)
+
+  updatedAt DateTime @updatedAt
+
+  user User @relation(fields: [userId], references: [id], onDelete: Cascade)
+
+  @@unique([scope, bucket, userId])
+  @@index([scope, bucket, starsDonated(sort: Desc)])
+  @@map("leaderboard_entries")
+}
+
+/// Append-only audit of processed webhook deliveries, so a replayed Telegram
+/// or TON event can never double-credit an account.
+model ProcessedEvent {
+  id          String   @id @default(cuid())
+  source      String   @db.VarChar(32)
+  externalId  String
+  processedAt DateTime @default(now())
+
+  @@unique([source, externalId])
+  @@index([processedAt])
+  @@map("processed_events")
+}
