@@ -28,8 +28,7 @@
   --olive:       #4A5D3A;
   --olive-deep:  #333F27;
   --olive-light: #6B7D4F;
-  --gold:        #A8853E;
-  --gold-bright: #C9A227;
+  --gold:        #8A6B28;   /* 4,6:1 на кремовом — прежний #A8853E давал 3,3:1 */
   --gold-soft:   #E3CE9A;
   --lemon:       #E8C84A;
   --cream:       #FDFBF3;
@@ -38,6 +37,10 @@
   --ink-soft:    #5E574A;
   --line:        rgba(46, 42, 34, .13);
   --white:       #fff;
+
+  /* Оливковая веточка-разделитель, мотив из фирменного меню */
+  --sprig:       url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 82 12'%3E%3Cpath d='M0 6h26M56 6h26' stroke='%238A6B28' stroke-width='1' fill='none'/%3E%3Cg fill='%238A6B28'%3E%3Cellipse cx='33' cy='6' rx='5' ry='2.3' transform='rotate(-22 33 6)'/%3E%3Cellipse cx='49' cy='6' rx='5' ry='2.3' transform='rotate(22 49 6)'/%3E%3Ccircle cx='41' cy='6' r='2.1'/%3E%3C/g%3E%3C/svg%3E");
+  --sprig-light: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 82 12'%3E%3Cpath d='M0 6h26M56 6h26' stroke='%23E3CE9A' stroke-width='1' fill='none'/%3E%3Cg fill='%23E3CE9A'%3E%3Cellipse cx='33' cy='6' rx='5' ry='2.3' transform='rotate(-22 33 6)'/%3E%3Cellipse cx='49' cy='6' rx='5' ry='2.3' transform='rotate(22 49 6)'/%3E%3Ccircle cx='41' cy='6' r='2.1'/%3E%3C/g%3E%3C/svg%3E");
 
   --font-display: "Playfair Display", Georgia, "Times New Roman", serif;
   --font-text:    "Inter", -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, Arial, sans-serif;
@@ -66,7 +69,6 @@ body {
   font-size: 17px;
   font-weight: 400;
   line-height: 1.65;
-  overflow-x: hidden;
 }
 
 body.is-locked { overflow: hidden; }
@@ -79,8 +81,11 @@ button { font: inherit; color: inherit; }
 
 /* Фокус для клавиатурной навигации */
 :focus-visible {
-  outline: 3px solid var(--gold);
-  outline-offset: 3px;
+  /* Двойное кольцо: тёмное внутри, светлое снаружи — читается
+     на кремовом, на бордовом, на зелёном WhatsApp и на жёлтом Яндекса */
+  outline: 3px solid var(--ink);
+  outline-offset: 2px;
+  box-shadow: 0 0 0 6px var(--cream);
   border-radius: 4px;
 }
 
@@ -95,6 +100,20 @@ button { font: inherit; color: inherit; }
   border-radius: 0 0 var(--radius) 0;
 }
 .skip-link:focus { left: 0; color: var(--white); }
+
+/* Текст только для скринридеров — например пометка «откроется в новой вкладке» */
+.visually-hidden {
+  position: absolute;
+  width: 1px;
+  height: 1px;
+  margin: -1px;
+  padding: 0;
+  overflow: hidden;
+  clip: rect(0 0 0 0);
+  clip-path: inset(50%);
+  white-space: nowrap;
+  border: 0;
+}
 
 /* ---------- 2. Типографика и утилиты ---------- */
 .container {
@@ -146,7 +165,7 @@ h1, h2, h3 {
   transform: translateX(-50%);
   width: 82px;
   height: 12px;
-  background: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 82 12'%3E%3Cpath d='M0 6h26M56 6h26' stroke='%23A8853E' stroke-width='1' fill='none'/%3E%3Cg fill='%23A8853E'%3E%3Cellipse cx='33' cy='6' rx='5' ry='2.3' transform='rotate(-22 33 6)'/%3E%3Cellipse cx='49' cy='6' rx='5' ry='2.3' transform='rotate(22 49 6)'/%3E%3Ccircle cx='41' cy='6' r='2.1'/%3E%3C/g%3E%3C/svg%3E") center / contain no-repeat;
+  background: var(--sprig) center / contain no-repeat;
 }
 .section__head .section__eyebrow { display: block; }
 .section__eyebrow--light { color: var(--gold-soft); }
@@ -214,6 +233,7 @@ h1, h2, h3 {
 .btn--eda { --btn-bg: #FCE000; color: #21201F; font-weight: 600; }
 .btn--eda:hover { --btn-bg: #FFEB3D; color: #21201F; }
 .btn__logo { height: 20px; width: auto; flex: none; }
+.btn--eda span { white-space: nowrap; }
 .btn--wa { --btn-bg: #25D366; color: #06331a; font-weight: 600; }
 .btn--wa:hover { --btn-bg: #1fbb59; color: #06331a; }
 .btn--tg { --btn-bg: #2AABEE; color: #042a3d; font-weight: 600; }
@@ -268,11 +288,11 @@ h1, h2, h3 {
   letter-spacing: .005em;
 }
 .logo__sub {
-  font-size: 9.5px;
+  font-size: 10.5px;
   font-weight: 500;
-  letter-spacing: .42em;
+  letter-spacing: .34em;
   text-transform: uppercase;
-  color: var(--gold);
+  color: var(--ink-soft);
   line-height: 1;
 }
 .logo__img { display: block; height: 46px; width: auto; }
@@ -387,7 +407,7 @@ h1, h2, h3 {
   bottom: 0;
   width: 82px;
   height: 12px;
-  background: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 82 12'%3E%3Cpath d='M0 6h26M56 6h26' stroke='%23A8853E' stroke-width='1' fill='none'/%3E%3Cg fill='%23A8853E'%3E%3Cellipse cx='33' cy='6' rx='5' ry='2.3' transform='rotate(-22 33 6)'/%3E%3Cellipse cx='49' cy='6' rx='5' ry='2.3' transform='rotate(22 49 6)'/%3E%3Ccircle cx='41' cy='6' r='2.1'/%3E%3C/g%3E%3C/svg%3E") center / contain no-repeat;
+  background: var(--sprig) center / contain no-repeat;
 }
 
 .hero__title {
@@ -541,7 +561,7 @@ h1, h2, h3 {
   display: flex;
   flex-direction: column;
   flex: 1;
-  padding: 20px 20px 22px;
+  padding: 22px 22px 24px;
 }
 .card__title { font-size: 20px; margin: 0 0 8px; }
 .card__desc {
@@ -677,9 +697,9 @@ h1, h2, h3 {
   align-items: center;
   justify-content: center;
   gap: 14px 32px;
-  max-width: 900px;
+  max-width: 720px;
   margin: 0 auto clamp(32px, 4vw, 48px);
-  padding: 24px 30px;
+  padding: 26px 26px;
   background: var(--white);
   border: 1px solid var(--line);
   border-radius: var(--radius-lg);
@@ -707,11 +727,11 @@ h1, h2, h3 {
   display: flex;
   flex-direction: column;
   margin: 0;
-  padding: 26px 24px;
+  padding: 26px 26px;
   background: var(--white);
   border: 1px solid var(--line);
   border-left: 3px solid var(--wine);
-  border-radius: var(--radius);
+  border-radius: var(--radius-lg);
   box-shadow: var(--shadow);
 }
 .review__stars { color: var(--gold); letter-spacing: 3px; font-size: 15px; margin-bottom: 12px; }
@@ -732,12 +752,24 @@ h1, h2, h3 {
 }
 .review figcaption span { font-weight: 400; color: var(--ink-soft); font-size: 13.5px; }
 
+.review--more {
+  display: flex;
+  flex-direction: column;
+  align-items: flex-start;
+  justify-content: center;
+  gap: 18px;
+  border-left-color: var(--olive-light);
+  background: var(--cream-deep);
+}
+.review__more-text { margin: 0; font-size: 15.5px; color: var(--ink-soft); }
+.review__more-text strong { color: var(--ink); }
+
 /* ---------- 10. Бронирование ---------- */
 .booking__inner {
   display: grid;
   grid-template-columns: .85fr 1.15fr;
   gap: clamp(32px, 5vw, 64px);
-  align-items: start;
+  align-items: center;
 }
 .booking__lead { margin: 0 0 24px; color: var(--ink-soft); }
 .booking__points { margin: 0; padding: 0; list-style: none; }
@@ -783,7 +815,7 @@ h1, h2, h3 {
 .field textarea {
   width: 100%;
   padding: 13px 15px;
-  border: 1px solid var(--line);
+  border: 1px solid rgba(46, 42, 34, .28);   /* 1,28:1 не проходило порог 3:1 */
   border-radius: var(--radius);
   background: var(--cream);
   color: var(--ink);
@@ -793,16 +825,17 @@ h1, h2, h3 {
 }
 .field textarea { resize: vertical; min-height: 90px; }
 .field input::placeholder,
-.field textarea::placeholder { color: #A79E92; }
+.field textarea::placeholder { color: #7A7266; }
 .field input:focus,
 .field select:focus,
 .field textarea:focus {
   outline: none;
   background: var(--white);
-  border-color: var(--wine-light);
-  box-shadow: 0 0 0 3px rgba(166, 58, 58, .13);
+  border-color: var(--wine);
+  box-shadow: 0 0 0 3px rgba(139, 46, 46, .45);
 }
 .field select {
+  -webkit-appearance: none;
   appearance: none;
   background-image: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' width='14' height='9' viewBox='0 0 14 9'%3E%3Cpath d='M1 1l6 6 6-6' fill='none' stroke='%235C554C' stroke-width='1.8' stroke-linecap='round'/%3E%3C/svg%3E");
   background-repeat: no-repeat;
@@ -866,12 +899,12 @@ h1, h2, h3 {
   display: grid;
   grid-template-columns: 1.15fr .85fr;
   gap: clamp(28px, 4vw, 60px);
-  align-items: center;
+  align-items: start;
 }
 .delivery__text p { margin: 0 0 14px; color: rgba(250, 246, 240, .86); }
 /* На тёмном блоке веточка светлая */
 .section--dark .section__eyebrow::after {
-  background: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 82 12'%3E%3Cpath d='M0 6h26M56 6h26' stroke='%23E3CE9A' stroke-width='1' fill='none'/%3E%3Cg fill='%23E3CE9A'%3E%3Cellipse cx='33' cy='6' rx='5' ry='2.3' transform='rotate(-22 33 6)'/%3E%3Cellipse cx='49' cy='6' rx='5' ry='2.3' transform='rotate(22 49 6)'/%3E%3Ccircle cx='41' cy='6' r='2.1'/%3E%3C/g%3E%3C/svg%3E") center / contain no-repeat;
+  background: var(--sprig-light) center / contain no-repeat;
 }
 .delivery__aggregators { font-size: 15px; color: rgba(250, 246, 240, .7); }
 .delivery__aggregators strong { color: var(--cream); }
@@ -894,6 +927,7 @@ h1, h2, h3 {
   border-bottom: 1px solid var(--line);
 }
 .contacts__list > div:first-child { padding-top: 0; }
+.contacts__list > div:last-child { border-bottom: 0; }
 .contacts__list dt {
   font-size: 12.5px;
   letter-spacing: .14em;
@@ -920,7 +954,7 @@ h1, h2, h3 {
   justify-content: space-between;
   gap: 16px;
   padding: 3px 0;
-  max-width: 320px;
+  max-width: 420px;
 }
 .hours li span:first-child { color: var(--ink-soft); }
 .hours li span:last-child { font-variant-numeric: tabular-nums; }
@@ -957,8 +991,8 @@ h1, h2, h3 {
   display: inline-flex;
   align-items: center;
   justify-content: center;
-  width: 42px;
-  height: 42px;
+  width: 44px;
+  height: 44px;
   border: 1px solid var(--line);
   border-radius: 50%;
   color: var(--wine);
@@ -1017,7 +1051,8 @@ h1, h2, h3 {
 }
 .footer a { color: rgba(250, 246, 240, .78); }
 .footer a:hover { color: var(--gold-soft); }
-.footer p { margin: 0 0 8px; }
+.footer p { margin: 0 0 2px; }
+.footer__col p a { display: inline-block; padding: 6px 0; }
 .footer h3 {
   font-size: 16px;
   color: var(--cream);
@@ -1038,6 +1073,7 @@ h1, h2, h3 {
   color: rgba(250, 246, 240, .55);
 }
 .footer__bottom p { margin: 0; }
+.footer__top { opacity: .75; font-weight: 500; }
 .footer__legal {
   display: flex;
   flex-wrap: wrap;
@@ -1048,6 +1084,8 @@ h1, h2, h3 {
 /* ---------- 13a. Правовые страницы (политика ПДн) ---------- */
 .legal-page { background: var(--cream-deep); }
 .legal-header { position: sticky; }
+/* Шапка здесь в потоке и уже занимает свою высоту — второй раз её не добавляем */
+.legal-page .legal { padding-top: clamp(36px, 6vw, 64px); }
 
 .legal {
   padding: calc(var(--header-h) + clamp(36px, 6vw, 64px)) 0 clamp(56px, 7vw, 90px);
@@ -1061,7 +1099,7 @@ h1, h2, h3 {
   border-radius: var(--radius-lg);
   box-shadow: var(--shadow);
 }
-.legal .section__eyebrow { display: block; }
+.legal .section__eyebrow { display: inline-block; }
 
 .legal__title {
   font-size: clamp(27px, 4.4vw, 40px);
@@ -1078,7 +1116,7 @@ h1, h2, h3 {
   padding: 16px 20px;
   border-left: 3px solid var(--gold);
   border-radius: 0 var(--radius) var(--radius) 0;
-  background: rgba(201, 162, 39, .09);
+  background: rgba(168, 133, 62, .1);
   font-size: 14.5px;
   line-height: 1.55;
 }
@@ -1172,6 +1210,7 @@ h1, h2, h3 {
               background-color .25s var(--ease), color .25s var(--ease);
 }
 .skip-menu[hidden] { display: none; }
+.skip-menu:not(.is-visible) { pointer-events: none; visibility: hidden; }
 .skip-menu.is-visible { opacity: 1; transform: none; }
 .skip-menu:hover { background: var(--wine); border-color: var(--wine); color: var(--white); }
 
@@ -1240,20 +1279,26 @@ h1, h2, h3 {
 .resume__close:hover { background: rgba(46, 42, 34, .08); color: var(--ink); }
 
 @media (max-width: 560px) {
-  .resume { gap: 10px; padding: 10px 8px 10px 16px; }
-  .resume__text { font-size: 13.5px; }
-  .resume__go { padding: 9px 14px; font-size: 13.5px; }
-  .skip-menu { padding: 11px 16px; font-size: 13.5px; }
+  .resume { gap: 8px; padding: 10px 8px 10px 14px; }
+  .resume__text { font-size: 13px; }
+  .resume__go { padding: 9px 13px; font-size: 13px; }
+  .skip-menu { padding: 11px 15px; font-size: 13px; }
+  /* Пока висит подсказка возврата, поднимаем кнопку «пропустить» над ней */
+  .resume.is-visible ~ .skip-menu { bottom: 96px; }
 }
 
 /* ---------- 14. Анимации появления ---------- */
 .reveal {
+  transition: opacity .7s var(--ease), transform .7s var(--ease);
+}
+/* Класс .js ставится инлайн-скриптом в <head>. Без JS (или если script.js
+   не загрузился) контент виден сразу — иначе ниже первого экрана пусто */
+.js .reveal {
   opacity: 0;
   transform: translateY(26px);
-  transition: opacity .7s var(--ease), transform .7s var(--ease);
   will-change: opacity, transform;
 }
-.reveal.is-visible { opacity: 1; transform: none; }
+.js .reveal.is-visible { opacity: 1; transform: none; }
 
 @media (prefers-reduced-motion: reduce) {
   html { scroll-behavior: auto; }
@@ -1262,16 +1307,21 @@ h1, h2, h3 {
     animation-iteration-count: 1 !important;
     transition-duration: .001ms !important;
   }
-  .reveal { opacity: 1; transform: none; }
+  .js .reveal { opacity: 1; transform: none; }
 }
 
 /* ---------- 15. Адаптив ---------- */
+@media (max-width: 1000px) {
+  .btn--phone span { display: none; }
+  .btn--phone      { padding: 10px 13px; }
+}
+
 @media (max-width: 1200px) {
   .menu__grid    { grid-template-columns: repeat(3, 1fr); }
+  /* Четыре авторских блюда в три колонки давали 3+1 и пустой ряд */
+  .menu__group--second + .menu__grid { grid-template-columns: repeat(2, 1fr); }
   .reviews__grid { grid-template-columns: repeat(2, 1fr); }
   .nav__list     { gap: 20px; }
-  .btn--phone span { display: none; }
-  .btn--phone    { padding: 10px 13px; }
 }
 
 @media (max-width: 992px) {
@@ -1294,7 +1344,7 @@ h1, h2, h3 {
   .contacts__map,
   .contacts__map iframe { min-height: 340px; }
   .delivery__actions { flex-direction: row; flex-wrap: wrap; }
-  .delivery__actions .btn { flex: 1 1 200px; }
+  .delivery__actions .btn { flex: 1 1 calc(50% - 6px); }
 }
 
 /* Мобильное меню */
@@ -1335,9 +1385,12 @@ h1, h2, h3 {
   .gallery__item--wide { grid-column: auto; }
   .form__row, .form__row--three { grid-template-columns: 1fr; gap: 0; }
   .footer__inner { grid-template-columns: 1fr 1fr; gap: 26px; }
-  .lightbox__nav { width: 44px; height: 44px; margin-top: -22px; }
-  .lightbox__nav--prev { left: 10px; }
-  .lightbox__nav--next { right: 10px; }
+  /* На узком экране стрелки уводим под фото — поверх снимка они мешали */
+  .lightbox { flex-direction: column; justify-content: center; gap: 18px; }
+  .lightbox__nav { position: static; margin: 0; width: 52px; height: 52px; }
+  .lightbox__figure { order: -1; }
+  .lightbox__nav--prev { order: 1; }
+  .lightbox__nav--next { order: 2; }
   .lightbox__close { top: 14px; right: 14px; width: 44px; height: 44px; }
 }
 

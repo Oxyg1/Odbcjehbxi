@@ -15,6 +15,16 @@
 (function () {
   'use strict';
 
+  /* Куда отправлять заявки на бронь. Пока пусто — форма честно говорит,
+     что онлайн-заявки не подключены, и предлагает позвонить.
+     Подставьте адрес обработчика, и форма заработает без других правок:
+       Formspree:      'https://formspree.io/f/ВАШ_ID'
+       свой бэкенд:    '/api/booking'
+       PHP-обработчик: '/booking.php'
+     Токен Telegram-бота в коде сайта публиковать нельзя — только через
+     свой сервер-посредник. */
+  var BOOKING_ENDPOINT = '';
+
   var reduceMotion = window.matchMedia('(prefers-reduced-motion: reduce)').matches;
 
   /* ---------- 1. Хедер: фон при скролле ---------- */
@@ -37,7 +47,7 @@
     nav.classList.remove('is-open');
     burger.setAttribute('aria-expanded', 'false');
     burger.setAttribute('aria-label', 'Открыть меню');
-    document.body.classList.remove('is-locked');
+    if (!lightbox || lightbox.hidden) document.body.classList.remove('is-locked');
   }
 
   function toggleNav() {
@@ -59,6 +69,13 @@
   }
   window.addEventListener('resize', function () {
     if (window.innerWidth > 860) closeNav();
+  });
+
+  // Клик по затемнённой области под панелью закрывает меню
+  document.addEventListener('click', function (e) {
+    if (!nav || !nav.classList.contains('is-open')) return;
+    if (nav.contains(e.target) || (burger && burger.contains(e.target))) return;
+    closeNav();
   });
 
   /* ---------- 3. Подсветка активного пункта меню ---------- */
@@ -94,12 +111,25 @@
     Array.prototype.forEach.call(revealItems, function (el) { el.classList.add('is-visible'); });
   } else {
     var revealObserver = new IntersectionObserver(function (entries, observer) {
-      entries.forEach(function (entry, i) {
+      entries.forEach(function (entry) {
         if (!entry.isIntersecting) return;
-        // Лёгкая «лесенка» для карточек, попавших в кадр одновременно
-        entry.target.style.transitionDelay = Math.min(i * 70, 280) + 'ms';
-        entry.target.classList.add('is-visible');
-        observer.unobserve(entry.target);
+        var el = entry.target;
+
+        // Задержку берём от позиции карточки в своей сетке, иначе при
+        // медленной прокрутке все получают 0 мс и «лесенки» не видно
+        var siblings = el.parentNode ? el.parentNode.children : [el];
+        var index = Array.prototype.indexOf.call(siblings, el);
+        el.style.transitionDelay = Math.min(index * 70, 280) + 'ms';
+        el.classList.add('is-visible');
+
+        // Снимаем промотирование слоя и задержку, иначе они висят вечно
+        el.addEventListener('transitionend', function once() {
+          el.style.willChange = 'auto';
+          el.style.transitionDelay = '';
+          el.removeEventListener('transitionend', once);
+        });
+
+        observer.unobserve(el);
       });
     }, { rootMargin: '0px 0px -10% 0px', threshold: 0.08 });
 
@@ -128,16 +158,20 @@
   }
 
   function openLightbox(index) {
-    lastFocused = document.activeElement;
+    lastFocused = galleryItems[index] || document.activeElement;
     showImage(index);
     lightbox.hidden = false;
     document.body.classList.add('is-locked');
+    var main = document.getElementById('main');
+    if (main) main.setAttribute('aria-hidden', 'true');
     lightboxClose.focus();
   }
 
   function closeLightbox() {
     lightbox.hidden = true;
-    lightboxImg.src = '';
+    lightboxImg.removeAttribute('src');
+    var mainEl = document.getElementById('main');
+    if (mainEl) mainEl.removeAttribute('aria-hidden');
     document.body.classList.remove('is-locked');
     if (lastFocused && typeof lastFocused.focus === 'function') lastFocused.focus();
   }
@@ -224,7 +258,23 @@
 
     if (phoneInput) {
       phoneInput.addEventListener('input', function () {
+        // Считаем цифры слева от каретки и возвращаем её на то же место
+        // после переформатирования — иначе опечатку в середине не исправить
+        var caret = phoneInput.selectionStart;
+        var digitsBefore = phoneInput.value.slice(0, caret).replace(/\D/g, '').length;
+
         phoneInput.value = formatPhone(phoneInput.value);
+
+        var seen = 0;
+        var pos = phoneInput.value.length;
+        for (var i = 0; i < phoneInput.value.length; i++) {
+          if (/\d/.test(phoneInput.value[i])) {
+            seen++;
+            // первая цифра — это «7» из префикса, её не считаем
+            if (seen > digitsBefore) { pos = i; break; }
+          }
+        }
+        phoneInput.setSelectionRange(pos, pos);
       });
       phoneInput.addEventListener('focus', function () {
         if (!phoneInput.value) phoneInput.value = '+7 (';
@@ -245,7 +295,12 @@
       var wrapper = field.closest('.field') || field.closest('.checkbox');
       var errorEl = document.getElementById(field.id + '-error');
       if (wrapper) wrapper.classList.toggle('has-error', Boolean(message));
-      if (errorEl) errorEl.textContent = message || '';
+      if (errorEl) {
+        errorEl.textContent = message || '';
+        // Без describedby скринридер скажет «недопустимое значение» без причины
+        if (message) field.setAttribute('aria-describedby', errorEl.id);
+        else field.removeAttribute('aria-describedby');
+      }
       field.setAttribute('aria-invalid', message ? 'true' : 'false');
       return !message;
     }
@@ -272,10 +327,19 @@
       },
       time: function (v) {
         if (!v) return 'Выберите время';
-        return '';
-      },
-      guests: function (v) {
-        if (!v) return 'Укажите количество гостей';
+
+        var dateValue = dateInput && dateInput.value;
+        if (!dateValue) return '';
+
+        var day = new Date(dateValue + 'T00:00:00').getDay();
+        var hours = SCHEDULE[day];
+        var minutes = parseInt(v.slice(0, 2), 10) * 60 + parseInt(v.slice(3), 10);
+
+        // Бронь позже чем за час до закрытия смысла не имеет
+        if (minutes < hours.open || minutes > hours.close - 60) {
+          return 'В этот день мы работаем с ' + formatTime(hours.open) +
+                 ' до ' + formatTime(hours.close);
+        }
         return '';
       },
       consent: function (v, field) {
@@ -340,43 +404,39 @@
       submitBtn.disabled = true;
       submitBtn.textContent = 'Отправляем…';
 
-      /* -----------------------------------------------------------------
-         ЗДЕСЬ ПОДКЛЮЧАЕТСЯ РЕАЛЬНАЯ ОТПРАВКА ЗАЯВКИ.
-         Сейчас работает демо-режим: заявка никуда не уходит.
-
-         Вариант 1 — Formspree / Getform (без своего бэкенда):
-           fetch('https://formspree.io/f/ВАШ_ID', {
-             method: 'POST',
-             headers: { 'Content-Type': 'application/json', Accept: 'application/json' },
-             body: JSON.stringify(data)
-           }).then(handleSuccess).catch(handleError);
-
-         Вариант 2 — Telegram-бот (токен держите на своём сервере-прокси,
-         в открытом коде сайта его публиковать нельзя):
-           fetch('/api/booking', {
-             method: 'POST',
-             headers: { 'Content-Type': 'application/json' },
-             body: JSON.stringify(data)
-           }).then(handleSuccess).catch(handleError);
-
-         Вариант 3 — обычный PHP-обработчик на хостинге: POST на /booking.php
-         ----------------------------------------------------------------- */
-
-      window.setTimeout(function () {
-        console.info('Заявка на бронь (демо-режим, отправка не настроена):', data);
-
+      function finish(ok, message) {
         submitBtn.disabled = false;
         submitBtn.textContent = 'Отправить заявку';
-
-        showStatus(
-          'Спасибо, ' + data.name + '! Заявка принята — мы перезвоним на ' + data.phone +
-          ', чтобы подтвердить столик ' + formatDateRu(data.date) + ' в ' + data.time + '.'
-        );
-
-        form.reset();
-        if (dateInput) dateInput.value = dateInput.min;
+        showStatus(message, !ok);
         statusEl.scrollIntoView({ behavior: reduceMotion ? 'auto' : 'smooth', block: 'center' });
-      }, 600);
+      }
+
+      if (!BOOKING_ENDPOINT) {
+        // Приём заявок ещё не подключён. Честно говорим об этом и даём
+        // рабочий способ связи — обещать «мы перезвоним» нельзя.
+        window.setTimeout(function () {
+          finish(false,
+            'Онлайн-заявки пока не подключены. Позвоните нам: +7 (910) 600-22-21 ' +
+            '— или напишите в WhatsApp, забронируем сразу.');
+        }, 300);
+        return;
+      }
+
+      fetch(BOOKING_ENDPOINT, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json', Accept: 'application/json' },
+        body: JSON.stringify(data)
+      })
+        .then(function (res) {
+          if (!res.ok) throw new Error('HTTP ' + res.status);
+          finish(true,
+            'Спасибо, ' + data.name + '! Заявка принята — перезвоним на ' + data.phone +
+            ', чтобы подтвердить столик ' + formatDateRu(data.date) + ' в ' + data.time + '.');
+        })
+        .catch(function () {
+          finish(false,
+            'Не удалось отправить заявку. Позвоните нам: +7 (910) 600-22-21 — забронируем сразу.');
+        });
     });
 
     function formatDateRu(value) {
@@ -465,7 +525,7 @@
   var menuSection = document.getElementById('menu');
 
   if (skipMenu && menuSection && 'IntersectionObserver' in window) {
-    skipMenu.hidden = false;
+    skipMenu.hidden = false;   // видимостью дальше управляет .is-visible
 
     var skipObserver = new IntersectionObserver(function (entries) {
       entries.forEach(function (entry) {
@@ -483,9 +543,8 @@
   var MAX_AGE = 30 * 60 * 1000;  // предложение живёт полчаса
   var MIN_OFFSET = 700;          // ниже этого возвращать некуда
 
-  if ('scrollRestoration' in history) history.scrollRestoration = 'manual';
-
   var resumeBar = document.getElementById('resumeBar');
+  if (resumeBar && 'scrollRestoration' in history) history.scrollRestoration = 'manual';
   var resumeGo = document.getElementById('resumeGo');
   var resumeClose = document.getElementById('resumeClose');
   var resumeSection = document.getElementById('resumeSection');
@@ -529,8 +588,8 @@
   if (resumeBar) {
     // Позицию запоминаем только на главной: со страницы политики
     // возвращать некуда, а чужое смещение сбило бы подсказку
+    // Только pagehide: beforeunload отключает bfcache и ломает кнопку «Назад»
     window.addEventListener('pagehide', savePosition);
-    window.addEventListener('beforeunload', savePosition);
 
     var saved = null;
     try {
@@ -541,8 +600,7 @@
     window.scrollTo(0, 0);
 
     if (saved && saved.y > MIN_OFFSET && Date.now() - saved.at < MAX_AGE) {
-      if (saved.section) resumeSection.textContent = saved.section;
-      else resumeSection.parentNode.textContent = 'Вы уже листали страницу';
+      resumeSection.textContent = saved.section;
 
       resumeBar.hidden = false;
       window.setTimeout(function () { resumeBar.classList.add('is-visible'); }, 700);

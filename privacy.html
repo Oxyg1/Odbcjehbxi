@@ -3,15 +3,19 @@
 <head>
   <meta charset="UTF-8">
   <meta name="viewport" content="width=device-width, initial-scale=1">
-  <title>Политика обработки персональных данных — траттория «Pro Italia», Калуга</title>
-  <meta name="description" content="Политика обработки персональных данных траттории «Pro Italia» (Калуга, ул. Ленина, 86): какие данные собираются при бронировании столика, зачем, сколько хранятся и как отозвать согласие.">
+  <title>Политика обработки персональных данных — траттория «Про Италия», Калуга</title>
+  <meta name="description" content="Политика обработки персональных данных траттории «Про Италия» (Калуга, ул. Ленина, 86): какие данные собираются при бронировании столика, зачем, сколько хранятся и как отозвать согласие.">
   <meta name="robots" content="noindex, follow">
+  <meta name="theme-color" content="#8B2E2E">
 
   <link rel="icon" href="data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 32 32'%3E%3Crect width='32' height='32' rx='7' fill='%238B2E2E'/%3E%3Ctext x='16' y='23' font-size='19' font-family='Georgia,serif' fill='%23F5EFE6' text-anchor='middle'%3EP%3C/text%3E%3C/svg%3E">
 
   <link rel="preconnect" href="https://fonts.googleapis.com">
   <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
   <link href="https://fonts.googleapis.com/css2?family=Playfair+Display:ital,wght@0,500;0,600;0,700;1,500&family=Inter:wght@300;400;500;600&display=swap" rel="stylesheet">
+  <!-- Ставим класс до отрисовки: анимации появления включаются только
+       при работающем JS, иначе контент скрыт и не показан обратно -->
+  <script>document.documentElement.classList.add('js');</script>
   <link rel="stylesheet" href="styles.css">
 </head>
 <body class="legal-page">
@@ -47,6 +51,7 @@
 
     <p class="section__eyebrow">Правовая информация</p>
     <h1 class="legal__title">Политика обработки<br>персональных данных</h1>
+    <!-- Не забудьте обновить дату при правке текста политики -->
     <p class="legal__meta">Редакция от 5 августа 2026 года</p>
 
     <!--
@@ -65,7 +70,7 @@
       <h2>1. Общие положения</h2>
       <p>
         Настоящая Политика определяет порядок обработки и защиты персональных данных
-        посетителей сайта траттории «Pro Italia» (далее — Сайт) и составлена в соответствии
+        посетителей сайта траттории «Про Италия» (далее — Сайт) и составлена в соответствии
         с Федеральным законом от 27.07.2006 № 152-ФЗ «О персональных данных».
       </p>
       <p>
@@ -194,8 +199,10 @@
           законодательством Российской Федерации.</li>
       </ul>
       <p>
-        Персональные данные обрабатываются и хранятся на территории Российской Федерации.
-        Трансграничная передача данных не осуществляется.
+        Персональные данные, полученные через форму бронирования, обрабатываются
+        и хранятся на территории Российской Федерации. Оператор не передаёт их
+        за рубеж. Об обезличенных технических данных, которые могут попадать
+        к внешним сервисам оформления сайта, — см. раздел 9.
       </p>
     </section>
 
@@ -224,8 +231,11 @@
         и собирать обезличенные данные о посещениях:
       </p>
       <ul class="legal__list">
-        <li><strong>Яндекс Карты</strong> — встроенная карта проезда в разделе «Контакты»;</li>
-        <li><strong>Google Fonts</strong> — загрузка шрифтов оформления сайта.</li>
+        <li><strong>Яндекс Карты</strong> — встроенная карта проезда в разделе «Контакты».
+          Сервис может сохранять свои файлы cookie и получать ваш IP-адрес;</li>
+        <li><strong>Google Fonts</strong> — загрузка шрифтов оформления. Сервис не
+          устанавливает файлы cookie, но получает ваш IP-адрес, а его серверы расположены
+          за пределами Российской Федерации.</li>
       </ul>
       <p>
         Вы можете запретить сохранение файлов cookie в настройках вашего браузера —
@@ -266,11 +276,11 @@
 
 <footer class="footer">
   <div class="container footer__bottom">
-    <p>© <span id="year">2026</span> Траттория «Pro Italia», Калуга. Все права защищены.</p>
+    <p>© <span id="year">2026</span> Траттория «Про Италия», Калуга. Все права защищены.</p>
     <a class="footer__top" href="index.html">На главную</a>
   </div>
 </footer>
 
-<script src="script.js" defer></script>
+<script>document.getElementById('year').textContent = new Date().getFullYear();</script>
 </body>
 </html>
