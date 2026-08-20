@@ -1333,8 +1333,17 @@ h1, h2, h3 {
   .hero__content {
     padding-block: clamp(32px, 5vw, 52px) clamp(40px, 6vw, 64px);
     padding-inline: max(24px, calc((100vw - 1200px) / 2));
+    align-items: center;   /* без этого блок с текстом лип к левому краю */
   }
-  .hero__inner { max-width: 640px; }
+  /* На стопке (фото сверху, текст снизу) центрируем как в остальных секциях —
+     слева текст был обоснован только рядом с фото, в одну колонку это лишнее */
+  .hero__inner {
+    max-width: 640px;
+    margin-inline: auto;
+    text-align: center;
+  }
+  .hero__actions { justify-content: center; }
+  .hero__badges { justify-content: center; }
 
   .about__grid,
   .booking__inner,
@@ -1385,10 +1394,13 @@ h1, h2, h3 {
   .gallery__item--wide { grid-column: auto; }
   .form__row, .form__row--three { grid-template-columns: 1fr; gap: 0; }
   .footer__inner { grid-template-columns: 1fr 1fr; gap: 26px; }
-  /* На узком экране стрелки уводим под фото — поверх снимка они мешали */
-  .lightbox { flex-direction: column; justify-content: center; gap: 18px; }
+  /* На узком экране стрелки уводим под фото — поверх снимка они мешали.
+     Фото само по себе занимает всю ширину строки (flex-basis: 100%)
+     и переносится на отдельную линию, а стрелки остаются на следующей
+     линии рядом друг с другом — а не одна под другой */
+  .lightbox { flex-wrap: wrap; align-content: center; justify-content: center; gap: 18px; }
   .lightbox__nav { position: static; margin: 0; width: 52px; height: 52px; }
-  .lightbox__figure { order: -1; }
+  .lightbox__figure { order: -1; flex-basis: 100%; }
   .lightbox__nav--prev { order: 1; }
   .lightbox__nav--next { order: 2; }
   .lightbox__close { top: 14px; right: 14px; width: 44px; height: 44px; }
@@ -1409,7 +1421,7 @@ h1, h2, h3 {
   .hero__actions .btn { flex: 1 1 100%; }
 
   /* Бейджи выстраиваем в колонку, чтобы не было рваного правого края */
-  .hero__badges { flex-direction: column; gap: 10px; font-size: 14px; }
+  .hero__badges { flex-direction: column; align-items: center; gap: 10px; font-size: 14px; }
   .rating { flex-direction: column; padding: 22px; }
   .footer__inner { grid-template-columns: 1fr; }
   .contacts__cta .btn { flex: 1 1 100%; }
