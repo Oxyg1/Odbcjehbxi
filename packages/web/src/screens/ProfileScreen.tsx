@@ -4,7 +4,9 @@ import { formatCompact } from '@tgdonate/shared';
 import { api, ApiError, type MeResponse, type OwnedGift } from '../lib/api.js';
 import { haptics } from '../lib/telegram.js';
 import { useAppStore } from '../store/app.store.js';
-import { Avatar, Button, Card, Pill, Skeleton } from '../components/ui/primitives.js';
+import {
+  Avatar, Button, Card, LoadFailed, Pill, Skeleton,
+} from '../components/ui/primitives.js';
 
 /** Profile: identity, lifetime totals, wallet connection, gift inventory. */
 export function ProfileScreen() {
@@ -12,6 +14,8 @@ export function ProfileScreen() {
   const setMe = useAppStore((state) => state.setMe);
 
   const [profile, setProfile] = useState<MeResponse | null>(null);
+  const [loadFailed, setLoadFailed] = useState(false);
+  const [reloadKey, setReloadKey] = useState(0);
   const [gifts, setGifts] = useState<OwnedGift[]>([]);
   const [syncing, setSyncing] = useState(false);
   const [error, setError] = useState<string | null>(null);
@@ -34,16 +38,20 @@ export function ProfileScreen() {
         setMe(meResponse.user, meResponse.unlockedThemeIds);
         setGifts(giftResponse.gifts);
       } catch (caught) {
-        if (!cancelled) {
-          setError(caught instanceof ApiError ? caught.message : 'Could not load your profile');
-        }
+        if (cancelled) return;
+        setLoadFailed(true);
+        setError(
+          caught instanceof ApiError
+            ? `${caught.message} (${caught.code}, HTTP ${caught.status})`
+            : 'Could not reach the server',
+        );
       }
     })();
 
     return () => {
       cancelled = true;
     };
-  }, [setMe]);
+  }, [setMe, reloadKey]);
 
   /**
    * Bind the wallet only after the backend verifies `ton_proof`. A connected
@@ -98,6 +106,22 @@ export function ProfileScreen() {
       setSyncing(false);
     }
   };
+
+  // A failed load must render the reason, not the skeleton — otherwise the
+  // screen waits forever on a request that already gave up.
+  if (loadFailed) {
+    return (
+      <LoadFailed
+        title="Could not load your profile"
+        message={error}
+        onRetry={() => {
+          setLoadFailed(false);
+          setError(null);
+          setReloadKey((key) => key + 1);
+        }}
+      />
+    );
+  }
 
   if (!profile) {
     return (

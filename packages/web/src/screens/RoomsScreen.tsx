@@ -1,11 +1,11 @@
 import { useEffect, useState } from 'react';
 import { motion } from 'framer-motion';
 import { formatCompact, type DonationEventPayload, type Room } from '@tgdonate/shared';
-import { api } from '../lib/api.js';
+import { api, ApiError } from '../lib/api.js';
 import { cn } from '../lib/cn.js';
 import { haptics } from '../lib/telegram.js';
 import { useAppStore } from '../store/app.store.js';
-import { Avatar, Card, Pill, Skeleton } from '../components/ui/primitives.js';
+import { Avatar, Card, LoadFailed, Pill, Skeleton } from '../components/ui/primitives.js';
 
 /** Room picker + live global activity ticker. The app's landing surface. */
 export function RoomsScreen() {
@@ -17,6 +17,8 @@ export function RoomsScreen() {
 
   const [activity, setActivity] = useState<DonationEventPayload[]>([]);
   const [loading, setLoading] = useState(true);
+  const [loadError, setLoadError] = useState<string | null>(null);
+  const [reloadKey, setReloadKey] = useState(0);
 
   useEffect(() => {
     let cancelled = false;
@@ -30,8 +32,15 @@ export function RoomsScreen() {
         if (cancelled) return;
         setRooms(roomsResponse.rooms);
         setActivity(activityResponse.donations);
-      } catch {
-        // A cold start with no backend should still render the shell.
+      } catch (caught) {
+        // Report it rather than rendering an empty list that looks like a room
+        // list with nothing in it.
+        if (cancelled) return;
+        setLoadError(
+          caught instanceof ApiError
+            ? `${caught.message} (${caught.code}, HTTP ${caught.status})`
+            : 'Could not reach the server',
+        );
       } finally {
         if (!cancelled) setLoading(false);
       }
@@ -40,7 +49,7 @@ export function RoomsScreen() {
     return () => {
       cancelled = true;
     };
-  }, [setRooms]);
+  }, [setRooms, reloadKey]);
 
   const enterRoom = (room: Room) => {
     haptics.impact('medium');
@@ -49,6 +58,20 @@ export function RoomsScreen() {
     setRoomState(room, [], []);
     setScreen('room');
   };
+
+  if (loadError && rooms.length === 0) {
+    return (
+      <LoadFailed
+        title="Could not load the plazas"
+        message={loadError}
+        onRetry={() => {
+          setLoadError(null);
+          setLoading(true);
+          setReloadKey((key) => key + 1);
+        }}
+      />
+    );
+  }
 
   return (
     <div className="safe-top safe-bottom flex flex-col gap-4 px-4">

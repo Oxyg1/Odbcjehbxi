@@ -89,6 +89,11 @@
     0px 6px 16px 0px rgba(0, 0, 0, 0.16);
 
   --tab-bar-height: 62px;
+  /* Backdrop tint and saturation the reference applies to floating glass. */
+  --bg-glass: #000;
+  --saturation: 140%;
+  /* The pill's travel curve: fast out, long settle. */
+  --switcher-transition: 0.25s cubic-bezier(1, 0, 0.4, 1);
   /* Clearance under scrollable content so the floating tab bar never covers
      the last row. Matches the reference build's pb-[calc(safe-bottom+84px)]. */
   --tab-bar-clearance: 84px;
@@ -358,4 +363,145 @@ body {
     animation-iteration-count: 1 !important;
     transition-duration: 0.01ms !important;
   }
+}
+
+/* -------------------------------- tab bar -------------------------------- */
+
+/*
+ * The reference tab bar is a grid whose selection pill is a single ::after on
+ * the container rather than a per-tab element. It slides by whole columns
+ * (`translate: N00% 0`) so the travel is a compositor-only transform, and it
+ * sits at z-index -1 under the labels with `isolation: isolate` keeping that
+ * stacking context local.
+ *
+ * The pill is *darker* than the bar, not lighter: it reads as a well pressed
+ * into the glass. Its bevel is a tighter, brighter stack than the shared
+ * --glass-shadow, so it is spelled out here rather than reused.
+ */
+@utility tab-switcher {
+  --tab-count: 4;
+  position: relative;
+  display: grid;
+  grid-template-columns: repeat(var(--tab-count), 1fr);
+  align-items: center;
+  gap: 0;
+  width: 100%;
+  height: var(--tab-bar-height);
+  padding: 4px;
+  box-sizing: border-box;
+  border: none;
+  border-radius: 99em;
+  background-color: color-mix(in srgb, var(--bg-glass) 12%, transparent);
+  -webkit-backdrop-filter: blur(8px) saturate(var(--saturation));
+  backdrop-filter: blur(8px) saturate(var(--saturation));
+  box-shadow: var(--glass-shadow);
+  isolation: isolate;
+
+  &::after {
+    content: '';
+    position: absolute;
+    left: 4px;
+    top: 4px;
+    display: block;
+    width: calc((100% - 8px) / var(--tab-count));
+    height: calc(var(--tab-bar-height) - 8px);
+    border-radius: 99em;
+    background-color: #0000004d;
+    z-index: -1;
+    box-shadow:
+      inset 0 0 0 1px #ffffff08,
+      inset 2px 1px 0 -1px #ffffff45,
+      inset -1.5px -1px 0 -1px #ffffff3d,
+      inset -2px -6px 1px -5px #ffffff2e,
+      inset -1px 2px 3px -1px #0006,
+      inset 0 -4px 1px -2px #0003,
+      0 3px 6px #00000029;
+    transition:
+      background-color var(--switcher-transition),
+      box-shadow var(--switcher-transition),
+      translate var(--switcher-transition);
+  }
+
+  /* The pill squashes as it launches. Anchoring the origin to the side it is
+     leaving from makes the stretch read as momentum rather than a wobble. */
+  &[data-active='0']::after {
+    translate: 0 0;
+    transform-origin: right;
+    animation: pill-squash-edge 0.44s ease;
+  }
+  &[data-active='1']::after {
+    translate: 100% 0;
+    animation: pill-squash-mid 0.44s ease;
+  }
+  &[data-active='2']::after {
+    translate: 200% 0;
+    animation: pill-squash-mid 0.44s ease;
+  }
+  &[data-active='3']::after {
+    translate: 300% 0;
+    transform-origin: left;
+    animation: pill-squash-edge 0.44s ease;
+  }
+  &[data-active='-1']::after {
+    display: none;
+  }
+}
+
+@keyframes pill-squash-edge {
+  0% { scale: 1 1; }
+  50% { scale: 1.05 1.1; }
+  100% { scale: 1 1; }
+}
+
+@keyframes pill-squash-mid {
+  0% { scale: 1 1; }
+  50% { scale: 1.1 1.1; }
+  100% { scale: 1 1; }
+}
+
+@utility tab-option {
+  display: flex;
+  flex-direction: column;
+  justify-content: center;
+  align-items: center;
+  gap: 4px;
+  padding: 0 12px;
+  width: 100%;
+  height: 100%;
+  box-sizing: border-box;
+  border: none;
+  border-radius: 99em;
+  background: transparent;
+  cursor: pointer;
+  opacity: 0.4;
+  color: var(--color-foreground);
+  transition: all 0.16s;
+  position: relative;
+  z-index: 1;
+  flex-shrink: 0;
+
+  &[data-active='true'] {
+    opacity: 1;
+    cursor: auto;
+    color: var(--tab-accent, var(--color-primary));
+  }
+}
+
+@utility tab-icon {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  transition: scale 0.2s cubic-bezier(0.5, 0, 0, 1);
+  color: currentColor;
+  font-size: 20px;
+  line-height: 1;
+}
+
+@utility tab-title {
+  font-weight: 500;
+  font-size: 10px;
+  text-align: center;
+  line-height: 1.2;
+  color: currentColor;
+  letter-spacing: -0.4px;
 }

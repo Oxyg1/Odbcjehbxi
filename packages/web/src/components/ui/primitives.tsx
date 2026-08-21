@@ -480,6 +480,44 @@ export function EmptyState({
   );
 }
 
+/* ------------------------------- LoadFailed ------------------------------- */
+
+/**
+ * Terminal state for a screen whose initial fetch failed.
+ *
+ * Screens guard their render on the loaded object, so an error stored in state
+ * alongside a still-null object is unreachable — the guard returns the skeleton
+ * first and the user waits forever on a screen that has already given up. This
+ * component is what that guard must return instead: the actual reason, plus a
+ * way out.
+ */
+export function LoadFailed({
+  title = 'Could not load this screen',
+  message,
+  onRetry,
+}: {
+  title?: string;
+  message?: string | null;
+  onRetry?: () => void;
+}) {
+  return (
+    <div className="safe-top flex flex-col gap-3 px-4">
+      <Card className="flex flex-col items-center gap-2 px-5 py-7 text-center">
+        <span className="text-[30px] leading-none">😕</span>
+        <p className="text-[16px] leading-[20px] font-bold">{title}</p>
+        {message ? (
+          <p className="text-[13px] leading-[17px] text-alpha-2">{message}</p>
+        ) : null}
+        {onRetry ? (
+          <Button variant="accent" size="sm" glow className="mt-2" onClick={onRetry}>
+            Try again
+          </Button>
+        ) : null}
+      </Card>
+    </div>
+  );
+}
+
 /* ------------------------------- Motion card ------------------------------ */
 
 export const MotionCard = motion.create(Card);

@@ -1,4 +1,3 @@
-import { cn } from '../lib/cn.js';
 import { haptics } from '../lib/telegram.js';
 import { useAppStore, type Screen } from '../store/app.store.js';
 
@@ -10,13 +9,12 @@ const TABS: Array<{ id: Screen; label: string; icon: string; accent: string }> =
 ];
 
 /**
- * Fixed bottom navigation, 62px tall on a blurred glass pane.
+ * Bottom navigation, transcribed from the reference switcher.
  *
- * The reference build separates active from inactive with opacity and hue
- * rather than a moving highlight: inactive sits at 0.4 and inherits the
- * foreground colour, active goes to full opacity, takes the tab's accent, and
- * its icon scales up slightly. Cheaper than a layout animation and it reads
- * more clearly at this size.
+ * The selection pill is a single `::after` on the grid container (see
+ * `tab-switcher` in the stylesheet), positioned by `data-active` holding the
+ * active column index. Driving it from one data attribute keeps the travel a
+ * pure compositor transform and means the DOM carries no extra element per tab.
  */
 export function TabBar() {
   const screen = useAppStore((state) => state.screen);
@@ -27,37 +25,42 @@ export function TabBar() {
   const activeTab: Screen =
     screen === 'room' || screen === 'stand' ? 'rooms' : screen === 'market' ? 'editor' : screen;
 
+  const activeIndex = TABS.findIndex((tab) => tab.id === activeTab);
+  const accent = TABS[activeIndex]?.accent ?? '#1689ff';
+
   return (
     <nav
-      className="app-shell fixed inset-x-0 bottom-0 z-40"
-      style={{ paddingBottom: 'var(--tg-safe-bottom)' }}
+      className="app-shell fixed inset-x-0 bottom-0 z-40 px-3"
+      style={{ paddingBottom: `calc(var(--tg-safe-bottom) + 8px)` }}
     >
-      <div className="glass-shadow glass mx-3 mb-2 flex h-[var(--tab-bar-height)] items-stretch rounded-full bg-surface-3/85 px-1.5">
+      <div
+        className="tab-switcher"
+        data-active={activeIndex}
+        style={{
+          ['--tab-count' as string]: TABS.length,
+          ['--tab-accent' as string]: accent,
+        }}
+      >
         {TABS.map((tab) => {
           const active = activeTab === tab.id;
           return (
             <button
               key={tab.id}
               type="button"
+              data-active={active}
+              aria-current={active ? 'page' : undefined}
               onClick={() => {
                 if (active) return;
                 haptics.select();
                 setScreen(tab.id);
               }}
-              className={cn(
-                'flex flex-1 flex-col items-center justify-center gap-1 rounded-full',
-                'transition-[opacity,color] duration-150',
-                active ? 'opacity-100' : 'opacity-40',
-              )}
-              style={active ? { color: tab.accent } : undefined}
+              className="tab-option"
+              // Each tab tints the pill and its own label with its own hue, so
+              // the bar reads as four destinations rather than one control.
+              style={active ? { ['--tab-accent' as string]: tab.accent } : undefined}
             >
-              <span
-                className="text-[19px] leading-none transition-transform duration-150"
-                style={{ transform: active ? 'scale(1.1)' : 'scale(1)' }}
-              >
-                {tab.icon}
-              </span>
-              <span className="text-[10px] leading-[1.2] font-medium">{tab.label}</span>
+              <span className="tab-icon">{tab.icon}</span>
+              <span className="tab-title">{tab.label}</span>
             </button>
           );
         })}

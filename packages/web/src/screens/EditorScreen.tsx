@@ -15,7 +15,9 @@ import { haptics, openInvoice } from '../lib/telegram.js';
 import { useBackButton } from '../hooks/useTelegramUI.js';
 import { useAppStore } from '../store/app.store.js';
 import { StandCard } from '../components/StandCard.js';
-import { Button, Card, Pill, Sheet, Skeleton } from '../components/ui/primitives.js';
+import {
+  Button, Card, LoadFailed, Pill, Sheet, Skeleton,
+} from '../components/ui/primitives.js';
 
 const BANNER_STYLES: BannerStyle[] = ['SOLID', 'GRADIENT', 'HOLOGRAM', 'MARQUEE', 'PIXEL'];
 
@@ -34,6 +36,8 @@ export function EditorScreen() {
   const rooms = useAppStore((state) => state.rooms);
 
   const [draft, setDraft] = useState<Stand | null>(myStand);
+  const [loadFailed, setLoadFailed] = useState(false);
+  const [reloadKey, setReloadKey] = useState(0);
   const [themes, setThemes] = useState<StandTheme[]>([]);
   const [gifts, setGifts] = useState<OwnedGift[]>([]);
   const [saving, setSaving] = useState(false);
@@ -58,16 +62,20 @@ export function EditorScreen() {
         setThemes(themeResponse.themes);
         setGifts(giftResponse.gifts);
       } catch (caught) {
-        if (!cancelled) {
-          setError(caught instanceof ApiError ? caught.message : 'Could not load your stand');
-        }
+        if (cancelled) return;
+        setLoadFailed(true);
+        setError(
+          caught instanceof ApiError
+            ? `${caught.message} (${caught.code}, HTTP ${caught.status})`
+            : 'Could not reach the server',
+        );
       }
     })();
 
     return () => {
       cancelled = true;
     };
-  }, [setMyStand]);
+  }, [setMyStand, reloadKey]);
 
   const patch = async (body: Parameters<typeof api.updateStand>[0]) => {
     if (saving) return;
@@ -105,6 +113,20 @@ export function EditorScreen() {
       setError(caught instanceof ApiError ? caught.message : 'Could not open the theme invoice');
     }
   };
+
+  if (loadFailed) {
+    return (
+      <LoadFailed
+        title="Could not load your stand"
+        message={error}
+        onRetry={() => {
+          setLoadFailed(false);
+          setError(null);
+          setReloadKey((key) => key + 1);
+        }}
+      />
+    );
+  }
 
   if (!draft) {
     return (
