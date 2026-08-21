@@ -1,3 +1,7 @@
+// Must run before any other import: config/env.ts reads process.env at module
+// load time, and process managers like pm2 do not source .env files on their
+// own the way `npm run` / the Prisma CLI do.
+import 'dotenv/config';
 import { env } from './config/env.js';
 import { buildApp } from './app.js';
 import { logger } from './lib/logger.js';

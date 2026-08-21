@@ -18,6 +18,8 @@
     "typecheck": "npm run typecheck --workspaces --if-present",
     "prisma:generate": "npm run prisma:generate -w @tgdonate/server",
     "prisma:migrate": "npm run prisma:migrate -w @tgdonate/server",
+    "prisma:deploy": "npm run prisma:deploy -w @tgdonate/server",
+    "start:server": "node packages/server/dist/main.js",
     "db:seed": "npm run db:seed -w @tgdonate/server"
   },
   "devDependencies": {
