@@ -7,7 +7,7 @@ import { useRoomSubscription } from '../hooks/useRealtime.js';
 import { useBackButton } from '../hooks/useTelegramUI.js';
 import { useAppStore } from '../store/app.store.js';
 import { StandCard } from '../components/StandCard.js';
-import { Avatar, Card, Pill, Skeleton } from '../components/ui/primitives.js';
+import { Avatar, EmptyState, Pill, Skeleton } from '../components/ui/primitives.js';
 
 const REACTIONS = ['🔥', '💎', '⭐', '👑', '🫡'] as const;
 
@@ -87,15 +87,14 @@ export function RoomScreen() {
       ) : null}
 
       {sorted.length === 0 ? (
-        <Card className="flex flex-col items-center gap-2 p-6 text-center">
-          <span className="text-[28px]">🏗</span>
-          <p className="text-[15px] font-bold">This room is empty</p>
-          <p className="text-[13px] text-alpha-2">
-            Publish your stand here and be the first booth on the floor.
-          </p>
-        </Card>
+        <EmptyState
+          icon="🏗"
+          title="This room is empty"
+          body="Publish your stand here and be the first booth on the floor."
+          action={{ label: 'Build my stand', onClick: () => setScreen('editor') }}
+        />
       ) : (
-        <motion.div layout className="grid grid-cols-2 gap-2.5">
+        <motion.div layout className="grid grid-cols-2 gap-2">
           {sorted.map((stand) => (
             <StandCard key={stand.id} stand={stand} onOpen={openStand} />
           ))}

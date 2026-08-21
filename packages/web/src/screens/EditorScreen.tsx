@@ -329,9 +329,11 @@ export function EditorScreen() {
 
       {/* Publish toggle */}
       <Button
-        variant={draft.isPublished ? 'secondary' : 'accent'}
+        variant={draft.isPublished ? 'tinted' : 'accent'}
         size="lg"
+        shape="soft"
         fullWidth
+        glow={!draft.isPublished}
         onClick={() => void patch({ isPublished: !draft.isPublished })}
       >
         {draft.isPublished ? 'Unpublish stand' : 'Publish stand'}
@@ -547,7 +549,9 @@ function ListingSheet({
         <Button
           variant="accent"
           size="lg"
+          shape="soft"
           fullWidth
+          glow
           disabled={busy || (kind === 'NFT_GIFT_SALE' && !giftId)}
           onClick={() => void submit()}
         >

@@ -229,7 +229,10 @@ export function StandScreen() {
           <Button
             variant="accent"
             size="lg"
+            shape="soft"
             fullWidth
+            glow
+            tint={palette.accent}
             haptic="medium"
             onClick={() => openDonateSheet(null)}
             style={{ backgroundColor: palette.accent }}
@@ -237,7 +240,14 @@ export function StandScreen() {
             Send Stars ⭐
           </Button>
         ) : (
-          <Button variant="secondary" size="lg" fullWidth onClick={() => setScreen('editor')}>
+          <Button
+            variant="tinted"
+            size="lg"
+            shape="soft"
+            fullWidth
+            tint={palette.accent}
+            onClick={() => setScreen('editor')}
+          >
             Edit my stand
           </Button>
         )}
@@ -391,7 +401,10 @@ export function StandScreen() {
               <Button
                 variant="accent"
                 size="lg"
+                shape="soft"
                 fullWidth
+                glow
+                tint={palette.accent}
                 disabled={paying}
                 onClick={() => void pay()}
                 style={{ backgroundColor: palette.accent }}

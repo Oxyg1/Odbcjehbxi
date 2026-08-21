@@ -3,8 +3,7 @@ import { motion } from 'framer-motion';
 import { formatCompact, type Leaderboard, type LeaderboardScope } from '@tgdonate/shared';
 import { api } from '../lib/api.js';
 import { cn } from '../lib/cn.js';
-import { haptics } from '../lib/telegram.js';
-import { Avatar, Card, Skeleton } from '../components/ui/primitives.js';
+import { Avatar, Card, EmptyState, Skeleton, TextTabs } from '../components/ui/primitives.js';
 
 const SCOPES: Array<{ id: LeaderboardScope; label: string }> = [
   { id: 'DAILY', label: 'Today' },
@@ -40,29 +39,12 @@ export function LeaderboardScreen() {
 
   return (
     <div className="safe-top safe-bottom flex flex-col gap-3 px-4">
-      <header>
-        <h1 className="text-[24px] leading-[28px] font-black tracking-[-0.6px]">Whale Ranks</h1>
+      {/* The active tab doubles as the page heading, so there is no separate
+          title above it — switching scope reads as changing page. */}
+      <header className="flex flex-col gap-1">
+        <TextTabs tabs={SCOPES} value={scope} onChange={setScope} />
         <p className="text-[13px] text-alpha-2">Top donors. Updated as the Stars land.</p>
       </header>
-
-      <div className="glass-shadow flex gap-1 rounded-full bg-surface-2 p-1">
-        {SCOPES.map((option) => (
-          <button
-            key={option.id}
-            type="button"
-            onClick={() => {
-              haptics.select();
-              setScope(option.id);
-            }}
-            className={cn(
-              'flex-1 rounded-full py-2 text-[13px] font-bold transition-colors',
-              scope === option.id ? 'bg-accent text-[#0b0b0b]' : 'text-alpha-2',
-            )}
-          >
-            {option.label}
-          </button>
-        ))}
-      </div>
 
       {loading ? (
         <div className="flex flex-col gap-2">
@@ -71,11 +53,11 @@ export function LeaderboardScreen() {
           ))}
         </div>
       ) : !board || board.rows.length === 0 ? (
-        <Card className="flex flex-col items-center gap-2 p-6 text-center">
-          <span className="text-[28px]">🐋</span>
-          <p className="text-[15px] font-bold">Nobody has donated yet</p>
-          <p className="text-[13px] text-alpha-2">First one on the board takes the crown.</p>
-        </Card>
+        <EmptyState
+          icon="🐋"
+          title="Nobody has donated yet"
+          body="First one on the board takes the crown."
+        />
       ) : (
         <div className="flex flex-col gap-1.5">
           {board.rows.map((row, index) => (

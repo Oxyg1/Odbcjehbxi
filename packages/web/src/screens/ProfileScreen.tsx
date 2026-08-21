@@ -142,7 +142,14 @@ export function ProfileScreen() {
         <StatCard label="Gifts got" value={profile.user.giftsReceived.toString()} accent="#f1aa05" />
       </div>
 
-      <Button variant="secondary" size="lg" fullWidth onClick={() => setScreen('editor')}>
+      <Button
+        variant="accent"
+        size="lg"
+        shape="soft"
+        fullWidth
+        glow
+        onClick={() => setScreen('editor')}
+      >
         🎪 Manage my stand
       </Button>
 
@@ -170,7 +177,7 @@ export function ProfileScreen() {
             Disconnect
           </Button>
         ) : (
-          <Button variant="primary" fullWidth onClick={() => void connectWallet()}>
+          <Button variant="tinted" shape="soft" fullWidth onClick={() => void connectWallet()}>
             Connect wallet
           </Button>
         )}

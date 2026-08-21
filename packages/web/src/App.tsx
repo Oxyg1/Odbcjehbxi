@@ -79,7 +79,7 @@ function Shell() {
   }, [setMe, setRooms, setRoomState, setScreen, focusStand]);
 
   return (
-    <div className="relative min-h-dvh">
+    <div className="app-shell relative min-h-dvh">
       {!isInsideTelegram() ? (
         <div className="bg-gold/15 px-4 py-2 text-center text-[12px] font-semibold text-gold">
           Running outside Telegram — payments and haptics are unavailable.

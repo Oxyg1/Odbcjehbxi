@@ -96,21 +96,22 @@ export const StandCard = memo(function StandCard({
             size={32}
             ring={stand.owner.badge ? badgeColor(stand.owner.badge.rank) : null}
           />
-          <div className="min-w-0 flex-1">
-            <div className="flex items-center gap-1">
-              <p className="truncate text-[14px] leading-[18px] font-bold">{stand.title}</p>
-              {stand.isOwnerOnline ? (
-                <span
-                  className="animate-pulse-ring h-1.5 w-1.5 shrink-0 rounded-full bg-accent"
-                  style={{ ['--pulse-color' as string]: 'rgba(73,223,100,0.5)' }}
-                />
-              ) : null}
-            </div>
-            <p className="truncate text-[12px] leading-[14px] text-alpha-2">
-              @{stand.owner.username ?? stand.owner.displayName}
-            </p>
-          </div>
+          <p className="min-w-0 flex-1 truncate text-[12px] leading-[14px] font-semibold text-muted">
+            @{stand.owner.username ?? stand.owner.displayName}
+          </p>
+          {stand.isOwnerOnline ? (
+            <span
+              className="animate-pulse-ring h-1.5 w-1.5 shrink-0 rounded-full bg-accent"
+              style={{ ['--pulse-color' as string]: 'rgba(73,223,100,0.5)' }}
+            />
+          ) : null}
         </div>
+
+        {/* Title gets the full card width so it wraps to a second line rather
+            than truncating — a half-width card cannot hold a name on one. */}
+        <p className="relative z-2 line-clamp-2 text-[17px] leading-[21px] font-semibold">
+          {stand.title}
+        </p>
 
         {/* Goal */}
         {stand.goal ? (

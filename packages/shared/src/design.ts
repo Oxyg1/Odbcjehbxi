@@ -113,8 +113,27 @@ export const typography = {
 /** Fixed chrome dimensions, matching the reference tab bar. */
 export const layout = {
   tabBarHeight: '62px',
+  /** Scroll clearance under the floating tab bar. */
+  tabBarClearance: '84px',
   sheetRadius: '24px',
   headerRadius: '32px',
+  /** The Mini App column is capped and centred on wide clients. */
+  maxWidth: '512px',
+} as const;
+
+/**
+ * Press physics. The reference transitions transform and filter together and
+ * keeps the scale shallow, so a tap reads as mechanical rather than rubbery.
+ */
+export const interaction = {
+  duration: '150ms',
+  easing: 'ease-out',
+  activeScale: 0.985,
+  activeBrightness: 0.95,
+  hoverBrightness: 1.05,
+  /** Alpha of a primary CTA's coloured lift. */
+  ctaGlowAlpha: 0.38,
+  ctaGlowOffset: '0 10px 30px',
 } as const;
 
 /** Per-tier presentation of a donation event. */

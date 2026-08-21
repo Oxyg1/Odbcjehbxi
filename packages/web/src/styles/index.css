@@ -38,9 +38,13 @@
 
   --font-sans: 'SFProText', -apple-system, BlinkMacSystemFont, 'Helvetica Neue', sans-serif;
 
-  --text-alpha-1: #ffffffb3;
-  --text-alpha-2: #ffffff66;
-  --text-alpha-3: #ffffff3d;
+  /* Foreground opacity ramp. These live in the --color-* namespace, not
+     --text-*: Tailwind reads --text-* as font sizes, which would generate a
+     bogus `font-size` utility under the same class name and clobber whatever
+     real size sits alongside it. */
+  --color-alpha-1: #ffffffb3;
+  --color-alpha-2: #ffffff66;
+  --color-alpha-3: #ffffff3d;
 }
 
 :root {
@@ -48,6 +52,23 @@
      when the app is opened outside Telegram (local dev, previews). */
   --tg-viewport-safe-area-inset-top: 0px;
   --tg-viewport-safe-area-inset-bottom: 0px;
+  --tg-viewport-content-safe-area-inset-top: 0px;
+  --tg-viewport-content-safe-area-inset-bottom: 0px;
+
+  /* Telegram exposes two independent inset pairs: the device safe area and the
+     content area under its own header. Layout needs their sum, and the top gets
+     16px back because the app header already carries that much breathing room. */
+  --tg-safe-top: max(
+    calc(
+      var(--tg-viewport-safe-area-inset-top, 0px) +
+        var(--tg-viewport-content-safe-area-inset-top, 0px)
+    ) - 16px,
+    0px
+  );
+  --tg-safe-bottom: calc(
+    var(--tg-viewport-safe-area-inset-bottom, 0px) +
+      var(--tg-viewport-content-safe-area-inset-bottom, 0px)
+  );
   --tg-viewport-stable-height: 100dvh;
 
   --c-light: #fff;
@@ -68,6 +89,12 @@
     0px 6px 16px 0px rgba(0, 0, 0, 0.16);
 
   --tab-bar-height: 62px;
+  /* Clearance under scrollable content so the floating tab bar never covers
+     the last row. Matches the reference build's pb-[calc(safe-bottom+84px)]. */
+  --tab-bar-clearance: 84px;
+  /* The Mini App is phone-shaped; on a tablet or desktop Telegram client the
+     column is capped and centred rather than stretched. */
+  --app-max-width: 512px;
 }
 
 /* Engines that ship color-mix get the tintable variant, which re-derives the
@@ -181,10 +208,17 @@ body {
 }
 
 @utility safe-top {
-  padding-top: calc(var(--tg-viewport-safe-area-inset-top) + 12px);
+  padding-top: calc(var(--tg-safe-top) + 12px);
 }
 @utility safe-bottom {
-  padding-bottom: calc(var(--tg-viewport-safe-area-inset-bottom) + var(--tab-bar-height) + 16px);
+  padding-bottom: calc(var(--tg-safe-bottom) + var(--tab-bar-clearance));
+}
+
+/* The centred, width-capped column every screen lives inside. */
+@utility app-shell {
+  width: 100%;
+  max-width: var(--app-max-width);
+  margin-inline: auto;
 }
 
 @utility no-scrollbar {
@@ -195,17 +229,52 @@ body {
   }
 }
 
-@utility text-alpha-1 {
-  color: var(--text-alpha-1);
-}
-@utility text-alpha-2 {
-  color: var(--text-alpha-2);
-}
-@utility text-alpha-3 {
-  color: var(--text-alpha-3);
+/* ---------------------------------- motion ------------------------------ */
+
+/* ------------------------------ interaction ------------------------------ */
+
+/*
+ * The reference build animates transform and filter together rather than
+ * `transition-all`: a press dips brightness and scale at once, and nothing else
+ * on the element is dragged into the transition. The scale is deliberately
+ * shallow (0.985) — enough to feel mechanical, not enough to look rubbery.
+ */
+@utility pressable {
+  transition:
+    transform 150ms ease-out,
+    filter 150ms ease-out;
+  &:hover {
+    filter: brightness(1.05);
+  }
+  &:active {
+    transform: scale(0.985);
+    filter: brightness(0.95);
+  }
 }
 
-/* ---------------------------------- motion ------------------------------ */
+/*
+ * Coloured lift under a primary CTA. The glow is the button's own hue at low
+ * alpha, thrown well below the element, which is what separates a Portals CTA
+ * from a flat filled rectangle. Set --glow to the button's tint.
+ */
+@utility cta-glow {
+  box-shadow: var(--glass-shadow), 0 10px 30px var(--glow, rgba(73, 223, 100, 0.38));
+}
+
+/*
+ * Tinted secondary surface: a steep 145° gradient between two near-opaque
+ * shades of the tint, a translucent border in the same hue, and text pulled
+ * from the light end of that hue rather than plain white.
+ */
+@utility tinted-surface {
+  background: linear-gradient(
+    145deg,
+    color-mix(in srgb, var(--tint, #1689ff) 22%, #0d1623 96%),
+    color-mix(in srgb, var(--tint, #1689ff) 6%, #0d1623 98%)
+  );
+  border: 1px solid color-mix(in srgb, var(--tint, #1689ff) 31%, transparent);
+  color: color-mix(in srgb, var(--tint, #1689ff) 45%, #ffffff);
+}
 
 @keyframes shake {
   0%, 100% { transform: translate3d(0, 0, 0); }
