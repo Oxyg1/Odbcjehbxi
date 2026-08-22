@@ -95,6 +95,7 @@ Point @BotFather's Mini App URL at your tunnelled `:5173`, then open the bot.
 
 ```bash
 npm run typecheck          # all three packages
+npm run test               # initData verification, against independent fixtures
 npm run build
 ```
 

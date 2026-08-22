@@ -21,7 +21,8 @@
     "prisma:deploy": "npm run prisma:deploy -w @tgdonate/server",
     "start:server": "node packages/server/dist/main.js",
     "db:seed": "npm run db:seed -w @tgdonate/server",
-    "doctor": "npm run doctor -w @tgdonate/server"
+    "doctor": "npm run doctor -w @tgdonate/server",
+    "test": "npm run test:initdata -w @tgdonate/server"
   },
   "devDependencies": {
     "typescript": "^5.7.3"

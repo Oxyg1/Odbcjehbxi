@@ -7,9 +7,15 @@ import { z } from 'zod';
  * Telegram signs the launch payload with
  *   secret = HMAC_SHA256(key = "WebAppData", data = bot_token)
  *   hash   = HMAC_SHA256(key = secret, data = data_check_string)
- * where data_check_string is every field except `hash` (and except
- * `signature`, which belongs to the separate Ed25519 third-party scheme),
- * sorted by key and joined with "\n" as `key=value`.
+ * where data_check_string is every field except `hash`, sorted by key and
+ * joined with "\n" as `key=value`, with values URL-decoded.
+ *
+ * `hash` is the ONLY excluded field. `signature` — the Ed25519 payload added
+ * for third-party validation in Bot API 7.10 — participates in this HMAC like
+ * any other field. Excluding it (an easy assumption, since it is a signature
+ * of its own) makes every real launch fail while tests that sign payloads
+ * without a `signature` field still pass, because the exclusion is a no-op
+ * there. Cross-checked against @telegram-apps/init-data-node.
  *
  * Reference: https://core.telegram.org/bots/webapps#validating-data-received-via-the-mini-app
  */
@@ -112,9 +118,7 @@ export function verifyInitData(initData: string, options: VerifyOptions): Verifi
 
   const pairs: string[] = [];
   for (const [key, value] of params.entries()) {
-    // `signature` is part of Telegram's Ed25519 third-party validation scheme
-    // and is explicitly excluded from the HMAC data-check-string.
-    if (key === 'hash' || key === 'signature') continue;
+    if (key === 'hash') continue;
     pairs.push(`${key}=${value}`);
   }
   pairs.sort();
