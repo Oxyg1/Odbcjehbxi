@@ -1,7 +1,7 @@
 import { useEffect, useState } from 'react';
 import { motion } from 'framer-motion';
 import { formatCompact, type DonationEventPayload, type Room } from '@tgdonate/shared';
-import { api, ApiError } from '../lib/api.js';
+import { api, ApiError, apiOrigin } from '../lib/api.js';
 import { cn } from '../lib/cn.js';
 import { haptics } from '../lib/telegram.js';
 import { useAppStore } from '../store/app.store.js';
@@ -64,6 +64,7 @@ export function RoomsScreen() {
       <LoadFailed
         title="Could not load the plazas"
         message={loadError}
+        endpoint={apiOrigin}
         onRetry={() => {
           setLoadError(null);
           setLoading(true);

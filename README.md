@@ -100,6 +100,22 @@ npm run build
 
 ---
 
+## Deployment note: the client's API address
+
+For the standard single-host deployment — nginx serving the Mini App and
+proxying `/api` and `/ws` to the backend — leave `VITE_API_URL` and
+`VITE_WS_URL` **empty**. The client then uses its own origin, deriving `wss://`
+from an `https://` page automatically.
+
+These variables are inlined at build time, so setting them to `localhost`
+produces a bundle that asks the *viewer's device* for the API. That build is
+also blocked as mixed content on an https page. The client detects a loopback
+value on a non-loopback page, logs the mismatch, and falls back to same-origin
+rather than failing every request.
+
+Set them only for a genuinely split deployment, to public `https://` / `wss://`
+URLs.
+
 ## Security notes
 
 **Every request is authenticated by `initData`.** The Mini App has no other

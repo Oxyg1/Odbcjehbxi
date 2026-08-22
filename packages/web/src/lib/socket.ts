@@ -1,4 +1,5 @@
 import { PRESENCE_HEARTBEAT_MS, type ClientFrame, type ServerFrame } from '@tgdonate/shared';
+import { isLoopback } from './api.js';
 import { getInitData } from './telegram.js';
 
 type FrameListener = (frame: ServerFrame) => void;
@@ -6,7 +7,31 @@ type StatusListener = (status: SocketStatus) => void;
 
 export type SocketStatus = 'connecting' | 'open' | 'closed' | 'reconnecting';
 
-const WS_BASE = (import.meta.env.VITE_WS_URL ?? 'ws://localhost:3000').replace(/\/$/, '');
+/**
+ * Where the realtime gateway lives.
+ *
+ * Derived from the page's own origin by default — https pages get wss, so the
+ * socket is never blocked as insecure content — matching the same-origin
+ * default the REST client uses. VITE_WS_URL only matters for split deployments.
+ */
+function resolveWsBase(): string {
+  const configured = import.meta.env.VITE_WS_URL?.trim();
+
+  if (configured) {
+    const base = configured.replace(/\/$/, '');
+    if (!isLoopback(base) || (typeof window !== 'undefined' && isLoopback(window.location.origin))) {
+      return base;
+    }
+    console.error(
+      `[tgdonate] VITE_WS_URL is "${base}" but the app is served from ` +
+        `"${window.location.origin}". Falling back to same-origin.`,
+    );
+  }
+
+  if (typeof window === 'undefined') return '';
+  const protocol = window.location.protocol === 'https:' ? 'wss:' : 'ws:';
+  return `${protocol}//${window.location.host}`;
+}
 
 /** Exponential backoff with a ceiling, so a long outage does not hot-loop. */
 const RECONNECT_DELAYS_MS = [500, 1_000, 2_000, 4_000, 8_000, 15_000];
@@ -40,7 +65,7 @@ class SocketClient {
     const initData = getInitData();
     // Browsers cannot set headers on a handshake, so the credential rides in
     // the query string; the connection is wss:// in production.
-    const url = `${WS_BASE}/ws?initData=${encodeURIComponent(initData)}`;
+    const url = `${resolveWsBase()}/ws?initData=${encodeURIComponent(initData)}`;
 
     let socket: WebSocket;
     try {

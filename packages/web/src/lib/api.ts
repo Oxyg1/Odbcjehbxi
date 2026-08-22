@@ -11,7 +11,52 @@ import type {
 } from '@tgdonate/shared';
 import { getInitData } from './telegram.js';
 
-const API_BASE = (import.meta.env.VITE_API_URL ?? 'http://localhost:3000').replace(/\/$/, '');
+/**
+ * Where the API lives.
+ *
+ * Default to same-origin (an empty base, so paths stay relative). The Mini App
+ * is served by the same nginx that proxies /api and /ws to the backend, so no
+ * configuration is needed for the normal deployment — and a same-origin request
+ * can never be blocked as mixed content.
+ *
+ * VITE_API_URL is only for split deployments where the API sits on another
+ * host. It is baked in at build time, so pointing it at localhost ships a
+ * bundle that asks the *viewer's own device* for the API — which is what a
+ * phone opening the Mini App would do.
+ */
+const API_BASE = resolveApiBase();
+
+function resolveApiBase(): string {
+  const configured = import.meta.env.VITE_API_URL?.trim();
+  if (!configured) return '';
+
+  const base = configured.replace(/\/$/, '');
+  if (typeof window !== 'undefined' && isLoopback(base) && !isLoopback(window.location.origin)) {
+    // Refusing to use it is better than a wall of failed requests: this build
+    // cannot reach its API from anywhere except the machine that built it.
+    console.error(
+      `[tgdonate] VITE_API_URL is "${base}" but the app is served from ` +
+        `"${window.location.origin}". A loopback address cannot be reached from ` +
+        'a user device. Falling back to same-origin; set VITE_API_URL to your ' +
+        'public URL (or leave it empty) and rebuild.',
+    );
+    return '';
+  }
+  return base;
+}
+
+export function isLoopback(url: string): boolean {
+  try {
+    const host = new URL(url).hostname;
+    return host === 'localhost' || host === '127.0.0.1' || host === '::1' || host === '[::1]';
+  } catch {
+    return false;
+  }
+}
+
+/** The resolved API origin, or "same origin" when requests are relative. */
+export const apiOrigin =
+  API_BASE || (typeof window !== 'undefined' ? `${window.location.origin} (same origin)` : '');
 
 export class ApiError extends Error {
   readonly status: number;

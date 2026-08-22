@@ -8,7 +8,7 @@ import {
   type Stand,
   type StandTheme,
 } from '@tgdonate/shared';
-import { api, ApiError, type OwnedGift } from '../lib/api.js';
+import { api, ApiError, apiOrigin, type OwnedGift } from '../lib/api.js';
 import { cn } from '../lib/cn.js';
 import { socket } from '../lib/socket.js';
 import { haptics, openInvoice } from '../lib/telegram.js';
@@ -119,6 +119,7 @@ export function EditorScreen() {
       <LoadFailed
         title="Could not load your stand"
         message={error}
+        endpoint={apiOrigin}
         onRetry={() => {
           setLoadFailed(false);
           setError(null);

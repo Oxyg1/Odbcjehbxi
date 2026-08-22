@@ -1,7 +1,7 @@
 import { useEffect, useState } from 'react';
 import { useTonAddress, useTonConnectUI, useTonWallet } from '@tonconnect/ui-react';
 import { formatCompact } from '@tgdonate/shared';
-import { api, ApiError, type MeResponse, type OwnedGift } from '../lib/api.js';
+import { api, ApiError, apiOrigin, type MeResponse, type OwnedGift } from '../lib/api.js';
 import { haptics } from '../lib/telegram.js';
 import { useAppStore } from '../store/app.store.js';
 import {
@@ -114,6 +114,7 @@ export function ProfileScreen() {
       <LoadFailed
         title="Could not load your profile"
         message={error}
+        endpoint={apiOrigin}
         onRetry={() => {
           setLoadFailed(false);
           setError(null);

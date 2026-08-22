@@ -494,10 +494,13 @@ export function EmptyState({
 export function LoadFailed({
   title = 'Could not load this screen',
   message,
+  endpoint,
   onRetry,
 }: {
   title?: string;
   message?: string | null;
+  /** Which host the request went to — the fastest way to spot misconfiguration. */
+  endpoint?: string | null;
   onRetry?: () => void;
 }) {
   return (
@@ -507,6 +510,9 @@ export function LoadFailed({
         <p className="text-[16px] leading-[20px] font-bold">{title}</p>
         {message ? (
           <p className="text-[13px] leading-[17px] text-alpha-2">{message}</p>
+        ) : null}
+        {endpoint ? (
+          <p className="mt-1 font-mono text-[11px] break-all text-alpha-3">{endpoint}</p>
         ) : null}
         {onRetry ? (
           <Button variant="accent" size="sm" glow className="mt-2" onClick={onRetry}>
