@@ -5277,6 +5277,10 @@ _E_BOOK       = _pe("5226512880362332956", "📖")   # каталог, днев�
 _E_LIST       = _pe("5197269100878907942", "✍️")   # список, заявка
 _E_PLATE      = _pe("5359678839591018693", "🍽")   # еда в магазине
 _E_DRESS      = _pe("5391025379228003908", "👗")   # облики
+# Премиум для 🪸 уже был куплен и лежал только в BUTTON_ICONS: на кнопках
+# значок подставлялся сам, а в тексте сообщений оставался голым юникодом —
+# отсюда разнобой в разделах NFT.
+_E_CORAL      = _pe("5269416360949064906", "🪸")   # NFT KissedFrog
 _E_NFT        = _pe("5269416360949064906", "🖼")   # KissedFrog NFT
 _E_MASK       = _pe("5359441070201513074", "🎭")   # характер
 _E_LINK       = _pe("5375129357373165375", "🔗")   # рефералы
@@ -15435,7 +15439,7 @@ async def nft_grant_skin(nft: dict, ctx) -> str:
         await ctx.bot.send_message(
             uid,
             f"{_E_CHECK} <b>Гифт подтверждён</b>\n\n"
-            f'🪸 <a href="{nft_url}">KissedFrog #{number}</a>\n'
+            f'{_E_CORAL} <a href="{nft_url}">KissedFrog #{number}</a>\n'
             f"{status}"
             f"Облик: <b>{he(skin_to_give)}</b>\n"
             f"{tail}",
@@ -15455,7 +15459,7 @@ async def nft_grant_skin(nft: dict, ctx) -> str:
             )
             await ctx.bot.send_message(
                 uid,
-                f"🪸 <b>Клуб холдеров KissedFrog</b>\n\n"
+                f"{_E_CORAL} <b>Клуб холдеров KissedFrog</b>\n\n"
                 f"{invite.invite_link}\n\n"
                 f"<i>Ссылка одноразовая, не передавай её другим.</i>",
                 parse_mode=ParseMode.HTML,
@@ -15558,7 +15562,7 @@ def nft_status_line(f: dict) -> str:
     dot, name = nft_tier(attrs)
     head = f'<a href="{url}">KissedFrog #{number}</a>' if number else "KissedFrog"
     if not dot:
-        return f"🪸 {head}"
+        return f"{_E_CORAL} {head}"
     rare = min(v for v in (attrs.get("model_r"), attrs.get("pattern_r"), attrs.get("backdrop_r"))
                if isinstance(v, (int, float)) and v > 0)
     # Процент прижат к названию статуса, без второго разделителя: с шестизначным
@@ -16798,7 +16802,15 @@ def skin_btn(label: str, skin: str, callback_data: str) -> InlineKeyboardButton:
 
 
 def nft_link(nft_url: str, number: str) -> str:
-    return f"[🪸 KissedFrog #{number}]({nft_url})"
+    """
+    Значок — за пределами ссылки.
+
+    Внутри ссылки премиум-эмодзи перестаёт быть премиумом: Telegram
+    показывает подложку обычным символом, потому что весь диапазон занят
+    разметкой ссылки. Поэтому значок ставится перед ней, а кликабельным
+    остаётся только название.
+    """
+    return f"🪸 [KissedFrog #{number}]({nft_url})"
 
 
 def roll(rarity_filter=None, boost_mult: dict | None = None) -> str:
@@ -25823,7 +25835,7 @@ async def cmd_nft(update: Update, ctx: ContextTypes.DEFAULT_TYPE):
             try:
                 await msg.edit_text(
                     f"{_E_CHECK} <b>Владелец подтверждён через See.tg API!</b>\n\n"
-                    f"🪸 KissedFrog #{number}\n"
+                    f"{_E_CORAL} KissedFrog #{number}\n"
                     f"🎨 Облик: <b>{model_name}</b> {pemoji(model_name)} разблокирован!\n\n"
                     f"Надень через 👗 Облики → /frog",
                     parse_mode=ParseMode.HTML,
@@ -25852,7 +25864,7 @@ async def cmd_nft(update: Update, ctx: ContextTypes.DEFAULT_TYPE):
             try:
                 await msg.edit_text(
                     f"{_E_CHECK} <b>Владелец подтверждён автоматически!</b>\n\n"
-                    f"🪸 KissedFrog #{number}\n"
+                    f"{_E_CORAL} KissedFrog #{number}\n"
                     f"🎨 Облик: <b>{model_name}</b> {pemoji(model_name)} разблокирован!\n\n"
                     f"Надень через 👗 Облики → /frog",
                     parse_mode=ParseMode.HTML,
@@ -25898,7 +25910,7 @@ async def cmd_nft(update: Update, ctx: ContextTypes.DEFAULT_TYPE):
         try:
             await msg.edit_text(
                 f"⏳ <b>Заявка отправлена на ручную проверку</b>\n\n"
-                f"🪸 KissedFrog #{number}\n{model_info}\n\n"
+                f"{_E_CORAL} KissedFrog #{number}\n{model_info}\n\n"
                 f"<i>Администратор проверит и добавит облик вручную.\n{reason}</i>",
                 parse_mode=ParseMode.HTML,
             )
@@ -26103,7 +26115,7 @@ async def show_nft_list(update_or_query, context, page=0, edit=False):
         kb = None
     else:
         total_pages = ceil(total / per_page)
-        text = f"🪸 <b>Заявки на NFT (стр. {page+1}/{total_pages})</b>\n\n"
+        text = f"{_E_CORAL} <b>Заявки на NFT (стр. {page+1}/{total_pages})</b>\n\n"
         kb_rows = []
 
         for row in rows:
@@ -32020,7 +32032,7 @@ async def admin_router(update: Update, ctx: ContextTypes.DEFAULT_TYPE):
             f"<b>🔗 Прочее</b>\n"
             f"Рефералов: <b>{refs_total}</b> (за 24ч: {refs_24h})\n"
             f"{_E_GIFT} Переводов за 24ч: <b>{gifts_24h}</b> ({gifts_vol_24h:,}🪙)\n"
-            f"🪸 NFT: подтверждено {nft_ok}, на проверке {nft_pending}\n\n"
+            f"{_E_CORAL} NFT: подтверждено {nft_ok}, на проверке {nft_pending}\n\n"
             f"<b>💀 Застрявшие на воскрешении</b>\n"
             f"Всего мёртвых: <b>{total_dead_for_stuck}</b>\n"
             f"  ├ Ждут выбора (без испытания): <b>{stuck_dead_notrial}</b>\n"
@@ -37990,14 +38002,19 @@ async def shop_router(update: Update, ctx: ContextTypes.DEFAULT_TYPE):
         if active_ss:
             until_ss = datetime.fromtimestamp(sub_until_ss, tz=timezone.utc).strftime("%d.%m.%Y")
             icon_ss  = "🧑‍🍼 Болотная Няня" if sub_type_ss == 1 else "🏪 Трудяга"
-            auto_ss  = "✅ Авто-продление включено" if sub_auto_ss else "⏸ Авто-продление выключено"
+            # Флаг называется subscription_auto, но продлением он не управляет:
+            # автосписания в боте нет, по истечении приходит оффер купить снова.
+            # Единственное, на что он влияет, — идёт ли автоуход. Раньше здесь
+            # было написано «авто-продление», и игрок, выключавший его ради
+            # экономии, молча лишался оплаченного ухода — лягушка умирала.
+            auto_ss  = "✅ Автоуход включён" if sub_auto_ss else "⏸ Автоуход на паузе"
             status_ss = f"✅ <b>{icon_ss}</b> до <b>{until_ss}</b>"
         else:
             status_ss = "❌ Подписка не активна"
 
         rows_ss = []
         if active_ss:
-            toggle_ss = "⏸ Выключить авто-продление" if sub_auto_ss else "▶️ Включить авто-продление"
+            toggle_ss = "⏸ Поставить автоуход на паузу" if sub_auto_ss else "▶️ Включить автоуход"
             rows_ss.append([btn(toggle_ss, callback_data="sub_toggle_auto")])
             if sub_type_ss == 1:
                 rows_ss.append([btn(f"🔼 Улучшить до Трудяги — {SUB_WORKER_STARS}⭐", callback_data="sub_buy_worker")])
@@ -40453,6 +40470,8 @@ async def on_callback(update: Update, ctx: ContextTypes.DEFAULT_TYPE):
         f["skin"] = skin
         f["equipped_nft_url"] = nft_url_for_skin
         await db_save(f)
+        # Всплывашка HTML не разбирает — здесь только юникод, иначе игрок
+        # увидит сырой тег <tg-emoji>.
         nft_tag = " 🪸 NFT" if nft_url_for_skin else ""
         await q.answer(f"✅ Надет {skin}{nft_tag}")
         await show_status(q, f, edit=True)
@@ -40597,7 +40616,7 @@ async def on_callback(update: Update, ctx: ContextTypes.DEFAULT_TYPE):
                 is_equipped = (skin_key == current_skin and equipped_nft_url == nft_url)
                 cur_tag = " ◀ <b>надет (NFT)</b>" if is_equipped else ""
                 lines.append(
-                    f"🪸 {R_DOT[sv['rarity']]} {display_skin(skin_key, use_st, user_nft_url=nft_url)}{cur_tag}"
+                    f"{_E_CORAL} {R_DOT[sv['rarity']]} {display_skin(skin_key, use_st, user_nft_url=nft_url)}{cur_tag}"
                 )
                 if not is_equipped:
                     equip_rows.append(
@@ -40608,7 +40627,7 @@ async def on_callback(update: Update, ctx: ContextTypes.DEFAULT_TYPE):
                     )
 
             if nft_items:
-                lines.append("\n🪸 = NFT облик")
+                lines.append(f"\n{_E_CORAL} = NFT облик")
 
             text = "\n".join(lines)
             nav = []
@@ -43626,7 +43645,7 @@ async def on_callback(update: Update, ctx: ContextTypes.DEFAULT_TYPE):
         text = (
             f"✨ <b>Твой множитель наград</b>\n\n"
             f"👑 Облик ({rarity_label}): +{int(skin_bonus * 100)}%\n"
-            f"🪸 NFT ({nft_count} шт): +{int(nft_bonus * 100)}%\n"
+            f"{_E_CORAL} NFT ({nft_count} шт): +{int(nft_bonus * 100)}%\n"
             f"{freeze_note}"
             "\n"
             f"📈 <b>Итого: ×{mult:.2f}</b> к монетам и опыту за уход!\n\n"
@@ -55381,6 +55400,63 @@ async def load_nft_skins():
         print(f"⚠️ load_nft_skins error: {e}")
 
 
+# ── Простой бота не должен стоить игроку лягушки ─────────────────────────────
+# decay() списывает показатели за всё время с last_decay, без потолка. Пока бот
+# лежит — деплой, падение, перезагрузка сервера — время идёт, а ухаживать
+# физически нельзя: ни игрок кнопку нажать не может, ни автоуход по подписке не
+# тикает. При старте всё это списывается разом, и лягушка умирает за чужую
+# ошибку. Особенно обидно подписчику: он заплатил именно за то, чтобы за
+# лягушкой следили без него.
+#
+# Поэтому при старте сдвигаем last_decay вперёд на длительность простоя: часы,
+# когда бот не работал, просто не считаются. Отсечка в 5 минут отделяет простой
+# от обычного перезапуска, а верхний предел не даёт «подарить» месяц тому, у
+# кого бот не поднимали неделями.
+HEARTBEAT_KEY = "last_heartbeat"
+HEARTBEAT_MIN_GAP = 5 * 60          # меньше — это обычный рестарт, не простой
+HEARTBEAT_MAX_CREDIT = 7 * 86400    # больше недели не прощаем
+
+
+async def job_heartbeat(ctx: ContextTypes.DEFAULT_TYPE):
+    """Отметка «бот жив» — по ней при старте вычисляется длительность простоя."""
+    await db_setting(HEARTBEAT_KEY, str(time.time()))
+
+
+async def compensate_downtime() -> float:
+    """
+    Сдвигает last_decay всем живым лягушкам на время простоя бота.
+
+    Возвращает число прощённых секунд (0 — простоя не было).
+    """
+    now = time.time()
+    try:
+        last_hb = float(await db_setting(HEARTBEAT_KEY) or 0)
+    except (TypeError, ValueError):
+        last_hb = 0.0
+    if not last_hb:
+        await db_setting(HEARTBEAT_KEY, str(now))
+        return 0.0
+
+    downtime = now - last_hb
+    if downtime < HEARTBEAT_MIN_GAP:
+        return 0.0
+    downtime = min(downtime, HEARTBEAT_MAX_CREDIT)
+
+    async with aiosqlite.connect(DB_PATH) as db:
+        # MIN(...) — чтобы отметка не уехала в будущее: тогда следующий decay
+        # получил бы отрицательные часы и молча ничего не списал.
+        await db.execute(
+            "UPDATE frogs SET last_decay = MIN(last_decay + ?, ?) "
+            "WHERE last_decay > 0 AND alive = 1",
+            (downtime, now),
+        )
+        await db.commit()
+    await db_setting(HEARTBEAT_KEY, str(now))
+    _user_cache.clear()
+    logger.info("⏸ Простой %.1f ч не засчитан игрокам", downtime / 3600)
+    return downtime
+
+
 async def post_init(app: Application):
     # Порядок важен: init_db() создаёт freeze_state только если таблицы фриза
     # уже есть, а миграция добавляет колонки только в уже созданные таблицы.
@@ -55398,6 +55474,7 @@ async def post_init(app: Application):
     logger.info("🏅 Итоги прошлых сезонов в памяти: %d", await season_legacy_warm())
     asyncio.create_task(nft_attrs_backfill())  # старые холдеры — в фоне
     await _load_peak_online()  # восстанавливаем пиковый онлайн из БД
+    await compensate_downtime()
     # ── Миграция: синхронизируем streak в user_bonds из frogs для старых связей ──
     try:
         async with aiosqlite.connect(DB_PATH) as _mdb:
@@ -55441,6 +55518,30 @@ async def post_init(app: Application):
         logger.info("Bond streak migration: fixed %d rows in user_bonds", fixed)
     except Exception as _be:
         logger.error("Bond streak migration failed: %s", _be)
+
+    # ── Возврат автоухода тем, кто «выключил авто-продление» ─────────────────
+    # Кнопка называлась «выключить авто-продление», а выключала оплаченный
+    # автоуход: списаний в боте нет вообще, по истечении подписки приходит
+    # оффер купить снова. Игрок жал её, чтобы с него не сняли денег, и вместо
+    # этого лягушка оставалась без ухода и умирала. Подпись исправлена, а этот
+    # разовый проход возвращает уход тем, кто выключил его по ложной подписи:
+    # решение принималось не о том, о чём человек думал. Кому пауза нужна
+    # по-настоящему — поставят её заново, теперь кнопка говорит правду.
+    try:
+        if await db_setting("mig_subauto_relabel") != "1":
+            async with aiosqlite.connect(DB_PATH) as _adb:
+                _res = await _adb.execute(
+                    "UPDATE frogs SET subscription_auto=1 "
+                    "WHERE subscription_auto=0 AND subscription_type > 0 "
+                    "AND subscription_until > ?",
+                    (time.time(),),
+                )
+                await _adb.commit()
+                _restored = _res.rowcount
+            await db_setting("mig_subauto_relabel", "1")
+            logger.info("Автоуход возвращён подписчикам: %d", _restored)
+    except Exception as _ae:
+        logger.error("Миграция автоухода не прошла: %s", _ae)
 
     # ── Принудительное завершение зависших ЭКСПЕДИЦИЙ (> 8 часов) ─────────────
     try:
@@ -55736,6 +55837,8 @@ async def post_init(app: Application):
     # Это гарантирует деградацию даже если игрок не открывал профиль целую неделю
     app.job_queue.run_repeating(job_background_decay, interval=3 * 3600, first=600)
     # 🧑‍🍼 Болотная Няня — автоуход каждые 15 минут
+    # Отметка «бот жив» — по ней при следующем старте вычисляется простой
+    app.job_queue.run_repeating(job_heartbeat, interval=120, first=60)
     app.job_queue.run_repeating(job_auto_care, interval=15 * 60, first=120)
     # 🏪 Трудяга — ежедневный отчёт с рынка (раз в час, но сам job проверяет 24ч кулдаун)
     app.job_queue.run_repeating(job_auto_farm, interval=3600, first=30)
@@ -57044,7 +57147,7 @@ async def cmd_activate_bonus(update: Update, ctx: ContextTypes.DEFAULT_TYPE):
         f"{_E_CHECK} <b>Система бонусов активирована!</b>\n\n"
         "Теперь легендарные/мифические облики и NFT дают множитель наград:\n"
         "👑 Легендарный: +25% · Мифический: +50%\n"
-        "🪸 1 NFT: +50% · 2 NFT: +75% · 3+ NFT: +100%\n"
+        f"{_E_CORAL} 1 NFT: +50% · 2 NFT: +75% · 3+ NFT: +100%\n"
         "Максимум: ×2.5",
         parse_mode=ParseMode.HTML,
     )
@@ -57085,7 +57188,7 @@ async def cmd_bonus(update: Update, ctx: ContextTypes.DEFAULT_TYPE):
     text = (
         f"✨ <b>Твой множитель наград</b>\n\n"
         f"👑 Облик ({rarity_label}): +{int(skin_bonus * 100)}%\n"
-        f"🪸 NFT ({nft_count} шт): +{int(nft_bonus * 100)}%\n"
+        f"{_E_CORAL} NFT ({nft_count} шт): +{int(nft_bonus * 100)}%\n"
         f"{freeze_note}"
         "\n"
         f"📈 <b>Итого: ×{mult:.2f}</b> к монетам и опыту за уход!\n\n"
