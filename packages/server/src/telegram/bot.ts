@@ -43,6 +43,13 @@ export async function startBot(): Promise<void> {
   await bot.init();
   started = true;
 
+  // Confirms, from Telegram's own answer, which bot this token belongs to.
+  // Compare it against the bot whose Mini App button you are opening.
+  logger.info(
+    { username: bot.botInfo.username, botId: bot.botInfo.id },
+    'bot identity confirmed — open the Mini App from THIS bot',
+  );
+
   if (env.BOT_MODE === 'webhook') {
     const url = `${env.PUBLIC_API_URL.replace(/\/$/, '')}/telegram/webhook/${env.TELEGRAM_WEBHOOK_SECRET}`;
     await bot.api.setWebhook(url, {

@@ -2,7 +2,7 @@
 // load time, and process managers like pm2 do not source .env files on their
 // own the way `npm run` / the Prisma CLI do.
 import 'dotenv/config';
-import { env } from './config/env.js';
+import { botId, botTokenWasCleaned, env } from './config/env.js';
 import { buildApp } from './app.js';
 import { logger } from './lib/logger.js';
 import { disconnectPrisma, prisma } from './lib/prisma.js';
@@ -33,6 +33,19 @@ async function main(): Promise<void> {
   const gateway = new RealtimeGateway(app.server);
   setGateway(gateway);
   await gateway.start();
+
+  if (botTokenWasCleaned) {
+    logger.warn(
+      'TELEGRAM_BOT_TOKEN had surrounding whitespace or quotes and was cleaned. ' +
+        'Left as-is it would have failed every initData check with BAD_SIGNATURE ' +
+        'while the bot itself kept working — worth fixing in .env.',
+    );
+  }
+
+  // The bot id the Mini App must be launched from. A BAD_SIGNATURE on every
+  // request means the launching bot is not this one, and there is no way to see
+  // that without printing which bot this process is actually holding.
+  logger.info({ botId }, 'initData will be verified against this bot id');
 
   await startBot();
   await tonWatcher.start();

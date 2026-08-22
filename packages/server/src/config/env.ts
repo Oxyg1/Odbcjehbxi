@@ -5,6 +5,11 @@ import { z } from 'zod';
  * Environment contract. Parsed once at boot — a missing or malformed variable
  * is a startup failure, never a runtime surprise mid-payment.
  */
+/** Strip whitespace and any wrapping quotes from a secret read out of .env. */
+function cleanSecret(value: string): string {
+  return value.trim().replace(/^["']|["']$/g, '');
+}
+
 const EnvSchema = z.object({
   NODE_ENV: z.enum(['development', 'test', 'production']).default('development'),
   PORT: z.coerce.number().int().min(1).max(65_535).default(3000),
@@ -13,10 +18,18 @@ const EnvSchema = z.object({
   DATABASE_URL: z.string().url(),
   REDIS_URL: z.string().url(),
 
-  /** Bot token — also the HMAC seed for initData verification. */
-  TELEGRAM_BOT_TOKEN: z.string().min(20),
+  /*
+   * Bot token — also the HMAC seed for initData verification.
+   *
+   * Trimmed deliberately: the token is hashed byte-for-byte, so a stray space
+   * or a CR from a CRLF-saved .env changes the derived secret and every launch
+   * fails BAD_SIGNATURE — while the bot itself keeps working, because the
+   * Telegram API tolerates the same whitespace in a URL. Surrounding quotes are
+   * stripped for the same reason; people copy tokens with them.
+   */
+  TELEGRAM_BOT_TOKEN: z.string().transform(cleanSecret).pipe(z.string().min(20)),
   /** Secret path segment for the Telegram webhook route. */
-  TELEGRAM_WEBHOOK_SECRET: z.string().min(16),
+  TELEGRAM_WEBHOOK_SECRET: z.string().transform(cleanSecret).pipe(z.string().min(16)),
   /** Public https base of this API, used to register the webhook. */
   PUBLIC_API_URL: z.string().url(),
   /** Public https base of the Mini App, used for deep links. */
@@ -82,5 +95,15 @@ function load(): Env {
 }
 
 export const env: Env = load();
+
+/**
+ * True when the raw token carried characters that would have broken the
+ * initData HMAC. Reported at boot so a silently-mistyped .env is visible.
+ */
+export const botTokenWasCleaned =
+  (process.env.TELEGRAM_BOT_TOKEN ?? '') !== env.TELEGRAM_BOT_TOKEN;
+
+/** Bot id — the part of the token before the colon. Not a secret. */
+export const botId = env.TELEGRAM_BOT_TOKEN.split(':')[0] ?? 'unknown';
 
 export const isProduction = env.NODE_ENV === 'production';
