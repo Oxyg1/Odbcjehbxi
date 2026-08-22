@@ -98,6 +98,23 @@ npm run typecheck          # all three packages
 npm run build
 ```
 
+### Diagnosing a deployment
+
+```bash
+npm run doctor
+```
+
+Checks the whole chain a Mini App request travels — environment variables,
+PostgreSQL, schema, seed, Redis, and the bot's identity as Telegram reports it —
+and names the fix for each fault it finds. It is read-only.
+
+The bot identity line matters most: `initData` is signed with the bot token, so
+opening the Mini App from any bot other than the one the server holds fails with
+`BAD_SIGNATURE` no matter how correct everything else is.
+
+Set `TELEGRAM_API_BASE` if outbound traffic to `api.telegram.org` goes through a
+proxy.
+
 ---
 
 ## Deployment note: the client's API address

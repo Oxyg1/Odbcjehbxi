@@ -2,7 +2,7 @@
   "name": "tgdonate",
   "version": "1.0.0",
   "private": true,
-  "description": "TgDonate — viral Web3 donation & micro-marketplace platform for Telegram + TON (PLS DONATE mechanics)",
+  "description": "TgDonate \u2014 viral Web3 donation & micro-marketplace platform for Telegram + TON (PLS DONATE mechanics)",
   "workspaces": [
     "packages/shared",
     "packages/server",
@@ -20,7 +20,8 @@
     "prisma:migrate": "npm run prisma:migrate -w @tgdonate/server",
     "prisma:deploy": "npm run prisma:deploy -w @tgdonate/server",
     "start:server": "node packages/server/dist/main.js",
-    "db:seed": "npm run db:seed -w @tgdonate/server"
+    "db:seed": "npm run db:seed -w @tgdonate/server",
+    "doctor": "npm run doctor -w @tgdonate/server"
   },
   "devDependencies": {
     "typescript": "^5.7.3"
