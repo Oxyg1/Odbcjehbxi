@@ -2,9 +2,9 @@ import { haptics } from '../lib/telegram.js';
 import { useAppStore, type Screen } from '../store/app.store.js';
 
 const TABS: Array<{ id: Screen; label: string; icon: string; accent: string }> = [
-  { id: 'rooms', label: 'Plazas', icon: '🏛', accent: '#49df64' },
+  { id: 'floor', label: 'Floor', icon: '🎪', accent: '#49df64' },
   { id: 'leaderboard', label: 'Ranks', icon: '🐋', accent: '#68fbdd' },
-  { id: 'editor', label: 'My Stand', icon: '🎪', accent: '#f1aa05' },
+  { id: 'editor', label: 'My Stand', icon: '🛠', accent: '#ffc107' },
   { id: 'profile', label: 'Profile', icon: '👤', accent: '#1689ff' },
 ];
 
@@ -23,7 +23,7 @@ export function TabBar() {
   // `room` and `stand` are pushed on top of the Plazas tab, so that tab stays
   // highlighted while the user is deeper in the stack.
   const activeTab: Screen =
-    screen === 'room' || screen === 'stand' ? 'rooms' : screen === 'market' ? 'editor' : screen;
+    screen === 'stand' ? 'floor' : screen === 'market' ? 'editor' : screen;
 
   const activeIndex = TABS.findIndex((tab) => tab.id === activeTab);
   const accent = TABS[activeIndex]?.accent ?? '#1689ff';

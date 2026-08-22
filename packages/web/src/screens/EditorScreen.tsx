@@ -44,7 +44,7 @@ export function EditorScreen() {
   const [error, setError] = useState<string | null>(null);
   const [listingSheetOpen, setListingSheetOpen] = useState(false);
 
-  useBackButton(true, () => setScreen('rooms'));
+  useBackButton(true, () => setScreen('floor'));
 
   useEffect(() => {
     let cancelled = false;

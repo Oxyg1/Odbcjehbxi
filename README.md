@@ -17,7 +17,9 @@ Visual language is lifted from the reference Portals Mini App builds — near-bl
 | --- | --- |
 | **Digital booths** | One stand per user: title, goal, target, theme, banner style, up to 8 listings. |
 | **Listings** | Donation tiers (fixed Stars), service offers (Stars or TON), and NFT Gift sales through escrow. |
-| **Live rooms** | Up to 50 stand cards per room, synced over WebSockets. Counters move because a frame moved them — nothing polls. |
+| **Live rooms** | Up to 50 stand cards per room, synced over WebSockets. Counters move because a frame moved them — nothing polls. Rooms are chips on the floor itself, not a separate screen. |
+| **One-tap donate** | Every card carries its own Stars tiers. A tap opens Telegram's payment sheet directly — no picker, no confirm step. |
+| **Booth themes** | Each theme redraws the stall's canopy, not just its accent: striped fairground awning, blocky low-poly hem, neon tube sign, CRT phosphor bar, gold bullion fringe. |
 | **Tiered VFX** | 1–50 ⭐ → confetti on the card. 51–1000 ⭐ → room banner + card shake + haptics. >1000 ⭐ or a legendary gift → **full-screen global broadcast to every online user**. |
 | **Whale ranks** | Daily / weekly / all-time leaderboards on Redis sorted sets, mirrored to Postgres, with glowing rank badges on avatars. |
 | **Theme market** | Premium stand themes (PS1 Low-Poly, Cyberpunk, CRT, Aurora, Gold Royalty) bought with Telegram Stars. |
@@ -57,8 +59,8 @@ src/
 ├── lib/          Telegram bridge, API client, socket client, cn()
 ├── hooks/        useRealtime, useMainButton, useBackButton
 ├── store/        Zustand app store (rooms, stands, VFX queue)
-├── components/   StandCard, MegaphoneOverlay, Confetti, TabBar, ui/primitives
-└── screens/      Rooms, Room, Stand, Editor, Leaderboard, Profile
+├── components/   StandCard, StandAwning, DonationTicker, MegaphoneOverlay, TabBar
+└── screens/      Floor, Stand, Editor, Leaderboard, Profile
 ```
 
 ---

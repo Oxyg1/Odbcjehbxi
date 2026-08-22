@@ -10,6 +10,7 @@ import {
 import { api, ApiError } from '../lib/api.js';
 import { cn } from '../lib/cn.js';
 import { haptics, openInvoice, shareStand } from '../lib/telegram.js';
+import { useQuickDonate } from '../hooks/useQuickDonate.js';
 import { useStandSubscription } from '../hooks/useRealtime.js';
 import { useBackButton } from '../hooks/useTelegramUI.js';
 import { useAppStore } from '../store/app.store.js';
@@ -41,8 +42,14 @@ export function StandScreen() {
   const [paying, setPaying] = useState(false);
   const [error, setError] = useState<string | null>(null);
 
+  const {
+    donate: quickDonate,
+    pendingStandId: quickPending,
+    error: quickError,
+  } = useQuickDonate();
+
   useStandSubscription(standId);
-  useBackButton(true, () => setScreen('room'));
+  useBackButton(true, () => setScreen('floor'));
 
   // Prefer the live copy from the room grid: it is patched by every WS frame,
   // so counters stay correct without another fetch.
@@ -200,6 +207,44 @@ export function StandScreen() {
           </Card>
         ) : null}
 
+        {/* Quick donate. This is the first thing under the goal on purpose:
+            the tap that moves money should never be below the fold, and it
+            should never be behind a picker. */}
+        {!isOwnStand ? (
+          <section className="flex flex-col gap-2">
+            <div className="grid grid-cols-4 gap-1.5">
+              {QUICK_AMOUNTS.slice(0, 3).map((value) => (
+                <button
+                  key={value}
+                  type="button"
+                  disabled={quickPending !== null}
+                  onClick={() => void quickDonate(stand.id, value)}
+                  className="stars-button pressable flex h-[52px] flex-col items-center justify-center rounded-2xl disabled:opacity-50"
+                >
+                  <span className="text-[17px] leading-none font-black">{value}</span>
+                  <span className="text-[10px] leading-none opacity-70">STARS</span>
+                </button>
+              ))}
+              <button
+                type="button"
+                onClick={() => {
+                  haptics.impact('medium');
+                  openDonateSheet(null);
+                }}
+                className="pressable glass-shadow flex h-[52px] flex-col items-center justify-center rounded-2xl bg-purple/25 text-[#c9bcff]"
+              >
+                <span className="text-[17px] leading-none">🎁</span>
+                <span className="mt-0.5 text-[10px] leading-none font-bold">MORE</span>
+              </button>
+            </div>
+            {quickError ? (
+              <p className="squircle bg-destructive/15 px-3 py-2 text-[12px] text-destructive">
+                {quickError}
+              </p>
+            ) : null}
+          </section>
+        ) : null}
+
         <div className="grid grid-cols-3 gap-2">
           <StatTile label="Raised" value={`${formatCompact(stand.totalStarsReceived)} ⭐`} accent={palette.accent} />
           <StatTile label="Gifts" value={stand.totalGiftsReceived.toString()} accent="#6d51de" />
@@ -226,19 +271,16 @@ export function StandScreen() {
 
         {/* Free-amount donation */}
         {!isOwnStand ? (
-          <Button
-            variant="accent"
-            size="lg"
-            shape="soft"
-            fullWidth
-            glow
-            tint={palette.accent}
-            haptic="medium"
-            onClick={() => openDonateSheet(null)}
-            style={{ backgroundColor: palette.accent }}
+          <button
+            type="button"
+            onClick={() => {
+              haptics.impact('medium');
+              openDonateSheet(null);
+            }}
+            className="stars-button pressable h-[54px] w-full rounded-3xl text-[16px] font-black"
           >
-            Send Stars ⭐
-          </Button>
+            Send a custom amount ⭐
+          </button>
         ) : (
           <Button
             variant="tinted"

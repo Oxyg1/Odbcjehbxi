@@ -10,8 +10,7 @@ import { TabBar } from './components/TabBar.js';
 import { EditorScreen } from './screens/EditorScreen.js';
 import { LeaderboardScreen } from './screens/LeaderboardScreen.js';
 import { ProfileScreen } from './screens/ProfileScreen.js';
-import { RoomScreen } from './screens/RoomScreen.js';
-import { RoomsScreen } from './screens/RoomsScreen.js';
+import { FloorScreen } from './screens/FloorScreen.js';
 import { StandScreen } from './screens/StandScreen.js';
 
 const MANIFEST_URL =
@@ -66,7 +65,7 @@ function Shell() {
           const room = roomsResponse.rooms.find((candidate) => candidate.slug === slug);
           if (room) {
             setRoomState(room, [], []);
-            setScreen('room');
+            setScreen('floor');
           }
         } else if (startParam === 'leaderboard') {
           setScreen('leaderboard');
@@ -94,8 +93,7 @@ function Shell() {
           exit={{ opacity: 0, y: -8 }}
           transition={{ duration: 0.18 }}
         >
-          {screen === 'rooms' ? <RoomsScreen /> : null}
-          {screen === 'room' ? <RoomScreen /> : null}
+          {screen === 'floor' ? <FloorScreen /> : null}
           {screen === 'stand' ? <StandScreen /> : null}
           {screen === 'editor' ? <EditorScreen /> : null}
           {screen === 'leaderboard' ? <LeaderboardScreen /> : null}

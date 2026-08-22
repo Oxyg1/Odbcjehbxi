@@ -9,7 +9,11 @@ import {
 } from '@tgdonate/shared';
 import type { SocketStatus } from '../lib/socket.js';
 
-export type Screen = 'rooms' | 'room' | 'stand' | 'editor' | 'leaderboard' | 'market' | 'profile';
+/**
+ * `floor` replaces the old rooms-list + room pair: rooms are chips on the floor
+ * itself, so there is no separate chooser screen to navigate through.
+ */
+export type Screen = 'floor' | 'stand' | 'editor' | 'leaderboard' | 'market' | 'profile';
 
 /** A donation currently playing its VFX on a specific stand card. */
 export interface ActiveEffect {
@@ -90,7 +94,7 @@ function nextId(prefix: string): string {
 }
 
 export const useAppStore = create<AppState>((set, get) => ({
-  screen: 'rooms',
+  screen: 'floor',
   socketStatus: 'closed',
   onlineCount: 0,
 

@@ -24,6 +24,13 @@
   --color-primary: #1689ff;
   --color-accent: #49df64;
   --color-gold: #f1aa05;
+
+  /* Telegram Stars. The donate path is the product's whole point, so it gets
+     its own ramp rather than borrowing the muted marketplace gold: bright
+     amber that reads as treasure, not as a warning. */
+  --color-stars: #ffc107;
+  --color-stars-bright: #ffe066;
+  --color-stars-deep: #f59e0b;
   --color-purple: #6d51de;
   --color-destructive: #df494d;
   --color-tifany: #68fbdd;
@@ -100,6 +107,10 @@
   /* The Mini App is phone-shaped; on a tablet or desktop Telegram client the
      column is capped and centred rather than stretched. */
   --app-max-width: 512px;
+
+  /* Stars glow, used on every donate affordance. */
+  --stars-glow: rgba(255, 193, 7, 0.55);
+  --stars-gradient: linear-gradient(135deg, #ffe066 0%, #ffc107 45%, #f59e0b 100%);
 }
 
 /* Engines that ship color-mix get the tintable variant, which re-derives the
@@ -504,4 +515,93 @@ body {
   line-height: 1.2;
   color: currentColor;
   letter-spacing: -0.4px;
+}
+
+/* ------------------------------- game layer ------------------------------- */
+
+/*
+ * The donate button. This is the one control the whole product exists to get
+ * pressed, so it is the loudest thing on screen: metallic amber fill, a warm
+ * glow beneath, and a specular sweep across the top edge that sells it as an
+ * object rather than a rectangle.
+ */
+@utility stars-button {
+  position: relative;
+  overflow: hidden;
+  background: var(--stars-gradient);
+  color: #3a2500;
+  box-shadow:
+    inset 0 1px 0 0 rgba(255, 255, 255, 0.55),
+    inset 0 -2px 4px -1px rgba(150, 90, 0, 0.45),
+    0 4px 14px -2px var(--stars-glow),
+    0 10px 30px -6px var(--stars-glow);
+
+  &::after {
+    content: '';
+    position: absolute;
+    inset: 0;
+    pointer-events: none;
+    background: linear-gradient(
+      100deg,
+      transparent 30%,
+      rgba(255, 255, 255, 0.55) 48%,
+      transparent 62%
+    );
+    transform: translateX(-120%);
+    animation: stars-sheen 3.6s ease-in-out infinite;
+  }
+}
+
+@keyframes stars-sheen {
+  0%, 62% { transform: translateX(-120%); }
+  100% { transform: translateX(120%); }
+}
+
+/* A tinted neon halo. --neon carries the hue. */
+@utility neon-ring {
+  box-shadow:
+    var(--glass-shadow),
+    0 0 0 1.5px var(--neon, #49df64),
+    0 0 18px -4px var(--neon, #49df64),
+    0 0 42px -12px var(--neon, #49df64);
+}
+
+/* Text that glows in its own colour — room names, counters, whale numbers. */
+@utility neon-text {
+  color: var(--neon, #49df64);
+  text-shadow:
+    0 0 6px color-mix(in srgb, var(--neon, #49df64) 60%, transparent),
+    0 0 18px color-mix(in srgb, var(--neon, #49df64) 35%, transparent);
+}
+
+/* Marquee rail for the live donation ticker. */
+@utility ticker-track {
+  display: flex;
+  width: max-content;
+  animation: ticker 26s linear infinite;
+}
+
+@keyframes ticker {
+  from { transform: translateX(0); }
+  to { transform: translateX(-50%); }
+}
+
+/* Slow drift for room-background ambience. */
+@keyframes drift {
+  0%, 100% { transform: translate3d(0, 0, 0); }
+  50% { transform: translate3d(0, -8px, 0); }
+}
+
+@utility animate-drift {
+  animation: drift 6s ease-in-out infinite;
+}
+
+@keyframes coin-pop {
+  0% { transform: scale(0.4) translateY(6px); opacity: 0; }
+  45% { transform: scale(1.15) translateY(-10px); opacity: 1; }
+  100% { transform: scale(1) translateY(-26px); opacity: 0; }
+}
+
+@utility animate-coin-pop {
+  animation: coin-pop 0.9s cubic-bezier(0.2, 0.8, 0.3, 1) forwards;
 }
