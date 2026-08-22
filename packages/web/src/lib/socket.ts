@@ -55,14 +55,9 @@ class SocketClient {
       this.reconnectAttempt = 0;
       this.setStatus('open');
       this.startHeartbeat();
-
-      // Restore the session's subscriptions after a reconnect.
-      if (this.currentRoomId) {
-        this.send({ t: 'JOIN_ROOM', roomId: this.currentRoomId });
-      }
-      for (const standId of this.watchedStands) {
-        this.send({ t: 'SUBSCRIBE_STAND', standId });
-      }
+      // Subscriptions are replayed on HELLO, not here: the socket is open
+      // before the server has finished authenticating it, and a frame sent in
+      // that window can be dropped.
     };
 
     socket.onmessage = (event) => {
@@ -72,6 +67,12 @@ class SocketClient {
       } catch {
         return;
       }
+
+      // HELLO is the server's readiness signal — it is only sent once the
+      // connection is authenticated and its message handler is attached. That
+      // is the earliest point at which a frame is guaranteed to be received.
+      if (frame.t === 'HELLO') this.replaySubscriptions();
+
       for (const listener of this.frameListeners) listener(frame);
     };
 
@@ -101,6 +102,16 @@ class SocketClient {
     this.socket?.close();
     this.socket = null;
     this.setStatus('closed');
+  }
+
+  /** Restore the room and stand subscriptions this session had before. */
+  private replaySubscriptions(): void {
+    if (this.currentRoomId) {
+      this.send({ t: 'JOIN_ROOM', roomId: this.currentRoomId });
+    }
+    for (const standId of this.watchedStands) {
+      this.send({ t: 'SUBSCRIBE_STAND', standId });
+    }
   }
 
   send(frame: ClientFrame): void {

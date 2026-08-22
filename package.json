@@ -13,8 +13,8 @@
   },
   "scripts": {
     "build": "npm run build -w @tgdonate/shared && npm run build -w @tgdonate/server && npm run build -w @tgdonate/web",
-    "dev:server": "npm run dev -w @tgdonate/server",
-    "dev:web": "npm run dev -w @tgdonate/web",
+    "dev:server": "npm run build -w @tgdonate/shared && npm run dev -w @tgdonate/server",
+    "dev:web": "npm run build -w @tgdonate/shared && npm run dev -w @tgdonate/web",
     "typecheck": "npm run typecheck --workspaces --if-present",
     "prisma:generate": "npm run prisma:generate -w @tgdonate/server",
     "prisma:migrate": "npm run prisma:migrate -w @tgdonate/server",

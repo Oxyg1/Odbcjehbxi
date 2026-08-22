@@ -100,6 +100,24 @@ export class RealtimeGateway {
       return;
     }
 
+    /*
+     * The handshake completes — and the client's `open` fires — before the
+     * authentication below finishes, because resolving the user hits the
+     * database. `ws` drops any frame that arrives while no 'message' listener
+     * is attached, so a client that sends immediately on open (which is exactly
+     * what our own reconnect path does when it replays JOIN_ROOM) loses that
+     * frame silently and never gets its room back.
+     *
+     * Buffer from the first tick, then replay once the real handler is wired.
+     */
+    const pending: RawData[] = [];
+    const bufferEarlyFrames = (data: RawData): void => {
+      // Bound the buffer: an unauthenticated peer must not be able to make us
+      // hold arbitrary memory before we know who they are.
+      if (pending.length < 16) pending.push(data);
+    };
+    socket.on('message', bufferEarlyFrames);
+
     let telegramUserId: number;
     try {
       const verified = verifyInitData(initData, {
@@ -109,6 +127,7 @@ export class RealtimeGateway {
       telegramUserId = verified.user.id;
       const user = await userService.upsertFromTelegram(verified.user);
       if (user.isBanned) {
+        socket.off('message', bufferEarlyFrames);
         closeWithError(socket, 'UNAUTHORIZED', 'Account suspended');
         return;
       }
@@ -123,9 +142,18 @@ export class RealtimeGateway {
         isAlive: true,
         connectedAt: Date.now(),
       };
+      socket.off('message', bufferEarlyFrames);
       this.registerConnection(connection);
       await this.onConnectionReady(connection);
+
+      // HELLO has been sent; anything the client fired before we were ready is
+      // now safe to process in arrival order.
+      for (const data of pending) {
+        void this.handleMessage(connection, data);
+      }
+      pending.length = 0;
     } catch (error) {
+      socket.off('message', bufferEarlyFrames);
       const reason = error instanceof InitDataError ? error.reason : 'INTERNAL';
       logger.warn({ reason }, 'websocket auth failed');
       closeWithError(socket, 'UNAUTHORIZED', 'Invalid initData');
