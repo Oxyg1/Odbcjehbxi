@@ -18,7 +18,14 @@ async function main(): Promise<void> {
   // payments it cannot record is worse than a node that never starts.
   await prisma.$queryRaw`SELECT 1`;
   await redis.ping();
-  logger.info('database and redis reachable');
+
+  // `SELECT 1` succeeds against an empty database, so it does not prove the
+  // schema is there. Without this check an unmigrated deployment boots happily
+  // and then returns 500 from every data route, which is far harder to diagnose
+  // than a refusal to start.
+  await assertSchemaReady();
+
+  logger.info('database and redis reachable, schema ready');
 
   const app = await buildApp();
   await app.listen({ port: env.PORT, host: env.HOST });
@@ -59,6 +66,40 @@ async function main(): Promise<void> {
     logger.fatal({ err: error }, 'uncaught exception, exiting');
     process.exit(1);
   });
+}
+
+/**
+ * Verify the database has been migrated and seeded before serving traffic.
+ *
+ * Two distinct failures get two distinct messages, because the fixes differ:
+ * missing tables means migrations were never applied, while empty tables mean
+ * the seed never ran. A stand cannot be created without a free theme, so an
+ * unseeded database breaks the app's very first screen.
+ */
+async function assertSchemaReady(): Promise<void> {
+  let themeCount: number;
+  try {
+    themeCount = await prisma.standTheme.count();
+  } catch (error) {
+    const code = (error as { code?: string }).code;
+    if (code === 'P2021' || code === 'P2022') {
+      throw new Error(
+        'Database schema is missing. Run `npm run prisma:deploy` (then `npm run db:seed`) before starting the server.',
+      );
+    }
+    throw error;
+  }
+
+  if (themeCount === 0) {
+    throw new Error(
+      'Database has no stand themes. Run `npm run db:seed` — stands cannot be created without a free theme.',
+    );
+  }
+
+  const roomCount = await prisma.room.count();
+  if (roomCount === 0) {
+    logger.warn('no rooms are seeded; the room picker will be empty until `npm run db:seed` runs');
+  }
 }
 
 main().catch((error) => {

@@ -65,6 +65,11 @@ src/
 
 ## Getting started
 
+> The server refuses to boot against a database that has not been migrated and
+> seeded, and says which of the two is missing. `SELECT 1` succeeds on an empty
+> database, so without that check an unmigrated deployment starts fine and then
+> returns 500 from every data route.
+
 ```bash
 # 1. Dependencies
 npm install
@@ -76,7 +81,7 @@ cp .env.example packages/web/.env
 
 # 3. Database
 npm run prisma:generate
-npm run prisma:migrate     # creates the schema
+npm run prisma:deploy      # applies prisma/migrations — creates the schema
 npm run db:seed            # 5 rooms + 7 stand themes
 
 # 4. Run
