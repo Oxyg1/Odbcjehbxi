@@ -61,12 +61,20 @@ export const apiOrigin =
 export class ApiError extends Error {
   readonly status: number;
   readonly code: string;
+  /**
+   * Sub-reason the server attached, when it has one. For a 401 this is the
+   * initData failure mode (BAD_SIGNATURE, EXPIRED, NO_HASH, ...), which is the
+   * only thing that distinguishes a wrong bot token from a stale launch — so it
+   * must reach the screen, not just the server log.
+   */
+  readonly reason: string | null;
 
-  constructor(status: number, code: string, message: string) {
+  constructor(status: number, code: string, message: string, reason: string | null = null) {
     super(message);
     this.name = 'ApiError';
     this.status = status;
     this.code = code;
+    this.reason = reason;
   }
 }
 
@@ -94,7 +102,8 @@ async function request<T>(
     const code = (payload as { error?: string } | null)?.error ?? 'UNKNOWN';
     const message =
       (payload as { message?: string } | null)?.message ?? `Request failed (${response.status})`;
-    throw new ApiError(response.status, code, message);
+    const reason = (payload as { reason?: string } | null)?.reason ?? null;
+    throw new ApiError(response.status, code, message, reason);
   }
   return payload as T;
 }

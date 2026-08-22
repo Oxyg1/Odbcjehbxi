@@ -63,7 +63,25 @@ export async function requireTelegramAuth(
     });
   } catch (error) {
     const reason = error instanceof InitDataError ? error.reason : 'MALFORMED';
-    logger.warn({ reason, ip: request.ip }, 'initData verification failed');
+
+    /*
+     * A BAD_SIGNATURE is almost always the server holding a different bot's
+     * token than the bot the user launched the Mini App from, and there is no
+     * way to tell that apart from the reason code alone. Log the bot id — the
+     * part of the token before the colon, which is not a secret — so it can be
+     * compared against the launching bot. The initData itself is never logged:
+     * it carries the user's profile and the signature.
+     */
+    logger.warn(
+      {
+        reason,
+        ip: request.ip,
+        expectedBotId: env.TELEGRAM_BOT_TOKEN.split(':')[0] ?? 'unknown',
+        initDataLength: raw.length,
+        initDataKeys: describeInitDataKeys(raw),
+      },
+      'initData verification failed',
+    );
     await reply.code(401).send({
       error: 'UNAUTHORIZED',
       message: 'Invalid Telegram initData',
@@ -92,6 +110,18 @@ export async function requireTelegramAuth(
   }
 
   request.auth = { user, initData: verified };
+}
+
+/**
+ * Field names present in an initData payload, for diagnostics. Names only —
+ * never values, which include the user profile and the signature.
+ */
+function describeInitDataKeys(raw: string): string {
+  try {
+    return [...new URLSearchParams(raw).keys()].sort().join(',');
+  } catch {
+    return 'unparseable';
+  }
 }
 
 /** Narrowing helper for handlers that ran behind `requireTelegramAuth`. */

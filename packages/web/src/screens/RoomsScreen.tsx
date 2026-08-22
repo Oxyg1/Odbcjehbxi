@@ -38,7 +38,7 @@ export function RoomsScreen() {
         if (cancelled) return;
         setLoadError(
           caught instanceof ApiError
-            ? `${caught.message} (${caught.code}, HTTP ${caught.status})`
+            ? `${caught.message} (${[caught.code, caught.reason].filter(Boolean).join(' / ')}, HTTP ${caught.status})`
             : 'Could not reach the server',
         );
       } finally {

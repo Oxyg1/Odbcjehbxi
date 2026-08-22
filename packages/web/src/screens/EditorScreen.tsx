@@ -66,7 +66,7 @@ export function EditorScreen() {
         setLoadFailed(true);
         setError(
           caught instanceof ApiError
-            ? `${caught.message} (${caught.code}, HTTP ${caught.status})`
+            ? `${caught.message} (${[caught.code, caught.reason].filter(Boolean).join(' / ')}, HTTP ${caught.status})`
             : 'Could not reach the server',
         );
       }
