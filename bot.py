@@ -5394,6 +5394,29 @@ def ui_line(*items: str) -> str:
     return SEP.join(i for i in items if i)
 
 
+def ui_quote(*lines: str, expandable: bool = False) -> str:
+    """
+    Второстепенный блок данных под заголовком: список, сводка, детали
+    результата — то, что поясняет заголовок, а не продолжает его.
+
+    Не для всего подряд: это НЕ замена ui_card()/hint(), и не украшение
+    вместо убранных в своё время линеек ━. Место блок-квоту — только там,
+    где под заголовком реально идёт отдельный смысловой блок (кто не
+    успел, сводка боя, список выигравших), а не очередная строка того же
+    текста. Одна из двух: либо это, либо просто отдельный аргумент
+    ui_card(), выбирает автор экрана по смыслу.
+
+    expandable=True — для списков, которые могут быть длинными (много
+    имён, лог событий): Telegram сворачивает такой блок с «Показать
+    полностью», а не переносит и не режет по 21W, как обычный текст.
+    """
+    body = "\n".join(l for l in lines if l)
+    if not body:
+        return ""
+    attr = " expandable" if expandable else ""
+    return f"<blockquote{attr}>{body}</blockquote>"
+
+
 def ui_kv(label: str, value) -> str:
     """Пара «подпись — значение» с жирным значением."""
     return f"{label} <b>{value}</b>"
@@ -21555,16 +21578,19 @@ async def cmd_adminsales(update: Update, ctx: ContextTypes.DEFAULT_TYPE):
 
     total_stars = sum(r[3] for r in rows)
     total_buys = sum(r[2] for r in rows)
-    lines = [
-        ui_title(_E_CHART, f"Продажи за {days} дн."),
-        ui_line(f"{total_buys} покупок", f"{total_stars}{_E_STARS}"),
-        "",
-    ]
+    sku_lines = []
     for sku, shown, bought, stars in rows:
         # Показы считаются не у всех позиций — конверсию пишем только там, где есть
         conv = f" · {bought * 100 // shown}%" if shown else ""
-        lines.append(f"<code>{sku}</code>\n  {bought} × {stars}{_E_STARS}{conv}")
-    await update.message.reply_text("\n".join(lines), parse_mode=ParseMode.HTML)
+        sku_lines.append(f"<code>{sku}</code>\n  {bought} × {stars}{_E_STARS}{conv}")
+    text = ui_card(
+        ui_title(_E_CHART, f"Продажи за {days} дн."),
+        ui_line(f"{total_buys} покупок", f"{total_stars}{_E_STARS}"),
+        # Позиций может набраться много — expandable сворачивает список
+        # вместо переноса каждой строки по границе экрана.
+        ui_quote(*sku_lines, expandable=True),
+    )
+    await update.message.reply_text(text, parse_mode=ParseMode.HTML)
 
 
 async def cmd_adminfunnel(update: Update, ctx: ContextTypes.DEFAULT_TYPE):
@@ -55183,22 +55209,22 @@ async def job_lottery_draw(ctx: ContextTypes.DEFAULT_TYPE):
         await db.execute("DELETE FROM lottery_tickets WHERE draw_date=?", (draw_date,))
         await db.commit()
 
-    # Строим сообщение с результатами (используем имена из игры)
+    # Заголовок и сводка — обычные строки; список победителей — блок-квот:
+    # это отдельный смысловой блок под заголовком, а не продолжение той же
+    # мысли, и при большом числе призовых мест Telegram сам его свернёт.
     place_icons = ["🥇", "🥈", "🥉"]
-    result_lines = [
+    winners_block = ui_quote(*(
+        f"{place_icons[i]} {participant_names.get(w_uid, f'ID:{w_uid}')} — "
+        f"<b>{w_amount}{coin_emoji()}</b>"
+        for i, (w_uid, w_amount) in enumerate(winners)
+    ))
+    result_msg = ui_card(
         f"{_E_TROPHY} <b>Розыгрыш лотереи завершён!</b>",
-        f"🎫 Участвовало билетов: <b>{len(tickets)}</b>",
+        f"🎫 Участвовало билетов: <b>{len(tickets)}</b>\n"
         f"💰 Общий банк: <b>{total_pool}{coin_emoji()}</b>",
-        "",
-    ]
-    for i, (w_uid, w_amount) in enumerate(winners):
-        w_name = participant_names.get(w_uid, f"ID:{w_uid}")
-        result_lines.append(
-            f"{place_icons[i]} {w_name} — <b>{w_amount}{coin_emoji()}</b>"
-        )
-    result_lines.append("")
-    result_lines.append("🎉 Поздравляем победителей!")
-    result_msg = "\n".join(result_lines)
+        winners_block,
+        "🎉 Поздравляем победителей!",
+    )
 
     # Объявляем в общем чате
     await announce(ctx.bot, result_msg)
