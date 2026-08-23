@@ -25,8 +25,12 @@
   <meta name="twitter:description" content="Пицца из сицилийской дровяной печи, паста собственного производства, завтраки и летняя терраса в центре Калуги.">
   <meta name="twitter:image" content="https://proitalia.duckdns.org/images/og-preview.jpg">
 
-  <!-- Иконка сайта: замените на реальный favicon.ico / favicon.svg ресторана -->
-  <link rel="icon" href="data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 32 32'%3E%3Crect width='32' height='32' rx='7' fill='%238B2E2E'/%3E%3Ctext x='16' y='23' font-size='19' font-family='Georgia,serif' fill='%23F5EFE6' text-anchor='middle'%3EP%3C/text%3E%3C/svg%3E">
+  <!-- Реальная иконка заведения (обрезанный квадратный вариант логотипа).
+       При 16-32px текст внутри бейджа не читается — это нормально для
+       любого логотипа с текстом на такой площади, важны цвет и форма. -->
+  <link rel="icon" href="images/logo-badge.svg" type="image/svg+xml">
+  <link rel="icon" href="images/favicon-32.png" sizes="32x32" type="image/png">
+  <link rel="apple-touch-icon" href="images/favicon-180.png">
 
   <link rel="preconnect" href="https://fonts.googleapis.com">
   <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
@@ -37,7 +41,7 @@
   <!-- ?v= меняется при каждом деплое — иначе браузер держит styles.css/script.js
        в кеше сутками и после git pull на сервере показывает старую версию.
        Обновляйте дату при каждой правке CSS/JS (см. README, раздел «Деплой») -->
-  <link rel="stylesheet" href="styles.css?v=20260824">
+  <link rel="stylesheet" href="styles.css?v=20260825">
 </head>
 <body>
 
@@ -806,6 +810,6 @@
 }
 </script>
 
-<script src="script.js?v=20260824" defer></script>
+<script src="script.js?v=20260825" defer></script>
 </body>
 </html>
