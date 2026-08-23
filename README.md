@@ -107,5 +107,5 @@ sed -i 's/v=20260820/v=20260821/g' index.html privacy.html
 
 - Адрес: г. Калуга, ул. Ленина, 86
 - Телефон: [+7 (910) 600-22-21](tel:+79106002221)
-- [WhatsApp](https://wa.me/79106002221) · [Telegram](https://t.me/79106002221) · [ВКонтакте](https://vk.ru/proitalia_trattoria)
+- [WhatsApp](https://wa.me/79106002221) · [Telegram](https://t.me/trattoria_proitalia) · [ВКонтакте](https://vk.ru/proitalia_trattoria)
 - [Яндекс.Карты](https://yandex.ru/maps/org/pro_italiya/74968518353/) — 5.0, 1725 оценок, «Хорошее место 2026»
