@@ -37,7 +37,7 @@
   <!-- ?v= меняется при каждом деплое — иначе браузер держит styles.css/script.js
        в кеше сутками и после git pull на сервере показывает старую версию.
        Обновляйте дату при каждой правке CSS/JS (см. README, раздел «Деплой») -->
-  <link rel="stylesheet" href="styles.css?v=20260823">
+  <link rel="stylesheet" href="styles.css?v=20260824">
 </head>
 <body>
 
@@ -46,10 +46,10 @@
 <!-- ==================== HEADER ==================== -->
 <header class="header" id="header">
   <div class="container header__inner">
-    <!-- Фирменный знак — горизонтальный лок, залит одним тёмно-коричневым
-         цветом (#5b421d), не currentColor. На кремовом фоне шапки читается
-         отлично; на тёмном подвале был бы низкоконтрастным «тёмное на
-         тёмном», поэтому там оставлен текстовый лок сайта. -->
+    <!-- Фирменный знак залит одним тёмно-коричневым цветом (#5b421d),
+         не currentColor — рассчитан на светлый фон. В подвале (тёмный
+         фон) используется images/logo-footer.svg — та же геометрия,
+         перекрашена в золото. -->
     <a class="logo" href="#hero" aria-label="Про Италия — на главную">
       <img class="logo__img" src="images/logo.svg" alt="Про Италия — траттория" width="214" height="44">
     </a>
@@ -679,10 +679,7 @@
 <footer class="footer">
   <div class="container footer__inner">
     <div class="footer__brand">
-      <span class="logo__text logo__text--footer">
-        <span class="logo__name">Про Италия</span>
-        <span class="logo__sub">траттория</span>
-      </span>
+      <img class="logo__img logo__img--footer" src="images/logo-footer.svg" alt="Про Италия — траттория" width="214" height="44">
       <p>Итальянская кухня и домашнее тепло в центре Калуги.</p>
       <p class="footer__muted">Гастропроект сети «ПРО»</p>
     </div>
@@ -809,6 +806,6 @@
 }
 </script>
 
-<script src="script.js?v=20260823" defer></script>
+<script src="script.js?v=20260824" defer></script>
 </body>
 </html>

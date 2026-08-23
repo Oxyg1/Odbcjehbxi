@@ -275,26 +275,6 @@ h1, h2, h3 {
   gap: 11px;
   color: var(--ink);
 }
-.logo__mark { display: flex; color: var(--olive-light); }
-
-/* Текстовый лок повторяет фирменный: название засечками, под ним
-   разрядкой «траттория». Меняется на фирменный SVG одной строкой. */
-.logo__text { display: flex; flex-direction: column; gap: 3px; }
-.logo__name {
-  font-family: var(--font-display);
-  font-size: 24px;
-  font-weight: 600;
-  line-height: 1;
-  letter-spacing: .005em;
-}
-.logo__sub {
-  font-size: 10.5px;
-  font-weight: 500;
-  letter-spacing: .34em;
-  text-transform: uppercase;
-  color: var(--ink-soft);
-  line-height: 1;
-}
 /* Горизонтальный лок ~4.87:1 — родитель .logo уже центрирует его по вертикали
    вместе с пунктами меню (align-items: center у .header__inner) */
 .logo__img { display: block; height: 44px; width: auto; }
@@ -1060,9 +1040,7 @@ h1, h2, h3 {
   color: var(--cream);
   margin-bottom: 14px;
 }
-.logo__text--footer { color: var(--cream); margin-bottom: 14px; }
-.logo__text--footer .logo__name { font-size: 27px; }
-.logo__text--footer .logo__sub { color: var(--gold-soft); }
+.logo__img--footer { height: 46px; margin-bottom: 16px; }
 .footer__muted { color: rgba(250, 246, 240, .5); font-size: 13.5px; }
 .footer__bottom {
   display: flex;
@@ -1432,8 +1410,7 @@ h1, h2, h3 {
 }
 
 @media (max-width: 380px) {
-  .logo__name { font-size: 20px; }
-  .logo__sub { letter-spacing: .3em; }
+  .logo__img { height: 36px; }
   .btn--lg { padding: 14px 24px; font-size: 15px; }
 }
 
