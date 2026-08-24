@@ -198,6 +198,16 @@ server {
 
 Сохраните: `Ctrl+O`, `Enter`, затем `Ctrl+X`.
 
+> ⚠️ **Не пропускайте эту вставку.** Следующий шаг создаёт на файл выше
+> символическую ссылку — если файла ещё нет, ссылка получится «битой»
+> (указывает в никуда), и `nginx -t` откажется стартовать с ошибкой
+> `open() "/etc/nginx/sites-enabled/kondyrev" failed (2: No such file or
+> directory)`. Проверить, что файл действительно сохранился:
+> ```bash
+> cat /etc/nginx/sites-available/kondyrev
+> ```
+> Если команда ничего не вывела или выдала ошибку — повторите вставку конфига.
+
 Включите сайт и отключите заглушку nginx:
 
 ```bash
@@ -414,6 +424,25 @@ Yandex Cloud, Hetzner) есть свой сетевой фильтр, где 80 
 Let's Encrypt не смог достучаться до сервера по 80 порту. Причины: домен
 указывает на другой IP (перепроверьте шаг 1), закрыт 80 порт, либо nginx не
 запущен (`systemctl status nginx`).
+
+**`nginx -t` пишет `open() "/etc/nginx/sites-enabled/kondyrev" failed (2: No
+such file or directory)`**
+
+Symlink на шаге 6 создали раньше, чем сохранили сам конфиг — ссылка указывает
+в никуда. Чинится так:
+
+```bash
+rm -f /etc/nginx/sites-enabled/kondyrev
+nano /etc/nginx/sites-available/kondyrev
+```
+
+Вставьте конфиг из шага 6, сохраните (`Ctrl+O`, `Enter`, `Ctrl+X`), затем:
+
+```bash
+cat /etc/nginx/sites-available/kondyrev   # убедитесь, что файл не пустой
+ln -s /etc/nginx/sites-available/kondyrev /etc/nginx/sites-enabled/
+nginx -t
+```
 
 **`nginx -t` пишет `Address family not supported by protocol`**
 
