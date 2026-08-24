@@ -815,11 +815,17 @@ button { cursor: pointer; }
 
 .gallery__note { margin-top: 1.5rem; color: var(--text-muted); font-size: var(--fs-sm); }
 
-/* Крупные плитки для первых кадров на широких экранах */
+/* Первое фото — широкий баннер на всю строку на широких экранах.
+   Раньше плитка была квадратной и спанилась на 2 строки (grid-row: span 2) —
+   это растягивало высоту всей строки под неё, а соседние плитки со своей
+   пропорцией 3:2 оставались ниже этой высоты: снизу них появлялась пустая
+   полоса цвета фона с ровным прямым краем. Баннер на всю ширину строки
+   не делит строку ни с кем, поэтому высота строки всегда равна высоте
+   самой плитки и гэп невозможен в принципе — а не просто визуально скрыт. */
 @media (min-width: 700px) {
   .gallery { grid-template-columns: repeat(3, 1fr); }
-  .gallery__item:nth-child(1) { grid-column: span 2; grid-row: span 2; }
-  .gallery__item:nth-child(1) img { aspect-ratio: 1 / 1; height: 100%; }
+  .gallery__item:nth-child(1) { grid-column: 1 / -1; }
+  .gallery__item:nth-child(1) img { aspect-ratio: 12 / 5; }
 }
 @media (min-width: 1000px) {
   .gallery { grid-template-columns: repeat(4, 1fr); }
