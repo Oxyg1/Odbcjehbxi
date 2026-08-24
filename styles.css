@@ -357,9 +357,15 @@ h1, h2, h3 {
   flex-direction: column;
   justify-content: center;
   padding-block: calc(var(--header-h) + 40px) clamp(44px, 6vw, 76px);
-  padding-inline: max(24px, calc((100vw - 1200px) / 2)) clamp(28px, 4vw, 64px);
+  /* Отступ слева повторяет край контейнера 1200px, чтобы текст стоял
+     ровно под логотипом шапки. Но выше ~1600px этот расчёт разгоняется
+     (на 2000px давал 400px пустоты слева при 64px справа — блок липнул
+     к фото), поэтому ограничиваем его потолком. */
+  padding-inline: clamp(24px, calc((100vw - 1200px) / 2), 200px) clamp(28px, 4vw, 64px);
 }
-.hero__inner { max-width: 580px; }
+/* Текст держим в колонке по центру: на сверхшироких экранах остаток
+   колонки распределяется поровну, а не сваливается в правый край */
+.hero__inner { max-width: 580px; margin-inline: auto; }
 
 .hero__media { position: relative; overflow: hidden; }
 .hero__media img { width: 100%; height: 100%; object-fit: cover; }
