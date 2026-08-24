@@ -368,7 +368,17 @@ h1, h2, h3 {
 .hero__inner { max-width: 580px; margin-inline: auto; }
 
 .hero__media { position: relative; overflow: hidden; }
-.hero__media img { width: 100%; height: 100%; object-fit: cover; }
+/* Снимок абсолютным слоем: иначе он вытягивает строку грида по своим
+   пропорциям и min-height секции перестаёт работать — на 1920px hero
+   раздувался до 1318px вместо 940, из-за чего под текстом слева
+   оставалось полтысячи пикселей пустоты */
+.hero__media img {
+  position: absolute;
+  inset: 0;
+  width: 100%;
+  height: 100%;
+  object-fit: cover;
+}
 /* Тёплая виньетка по левому краю снимка — мягкий стык с кремовым фоном */
 .hero__media::after {
   content: "";
