@@ -497,14 +497,29 @@
      между «большим» viewport и настоящим видимым и подвигаем панель ровно
      на эту разницу через CSS-переменную --toolbar-gap (используется в
      .mobile-bar, см. css/style.css). Там, где браузер и так всё считает
-     верно, разница равна 0, и правило ни на что не влияет. */
+     верно, разница равна 0, и правило ни на что не влияет.
+
+     ВАЖНО: на iPhone с вырезом/жест-баром эта же разница innerHeight и
+     visualViewport естественным образом включает высоту зоны безопасной
+     области (env(safe-area-inset-bottom), обычно ≈34px) — это НЕ ошибка
+     браузера, это место уже корректно зарезервировано под жест-бар через
+     padding-bottom ниже. Если не вычесть её отсюда, скрипт примет законный
+     отступ за «зазор» и уведёт панель вверх, обнажив бежевый фон страницы
+     под ней — это баг, а не safe-area, был замечен и исправлен здесь. */
   (function fixMobileBarViewportGap() {
     if (!window.visualViewport) return;          // старые браузеры — не трогаем, было и так нормально
     var vv = window.visualViewport;
     var root = document.documentElement;
 
+    // JS не умеет читать env() напрямую — измеряем через невидимый пробник
+    var probe = document.createElement('div');
+    probe.style.cssText = 'position:fixed;bottom:0;height:0;padding-bottom:env(safe-area-inset-bottom);visibility:hidden;pointer-events:none;';
+    document.body.appendChild(probe);
+
     var sync = function () {
-      var gap = window.innerHeight - (vv.height + vv.offsetTop);
+      var safeArea = parseFloat(getComputedStyle(probe).paddingBottom) || 0;
+      var raw = window.innerHeight - (vv.height + vv.offsetTop);
+      var gap = raw - safeArea;
       root.style.setProperty('--toolbar-gap', (gap > 0 ? gap : 0) + 'px');
     };
 
