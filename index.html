@@ -1,0 +1,939 @@
+<!DOCTYPE html>
+<html lang="ru">
+<head>
+  <meta charset="UTF-8">
+  <!-- viewport-fit=cover: без него env(safe-area-inset-*) ниже всегда равен 0
+       и панель действий садится впритык к вырезу/жест-бару на iPhone -->
+  <meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
+  <meta name="theme-color" content="#6E1B2B">
+
+  <!-- ═══════════════════════════════════════════════════════════════════
+       SEO: title и description — под запросы «банкетный зал Кондрово»,
+       «свадьба под ключ Кондрово», «аренда зала для юбилея Калужская область».
+       TODO: после покупки домена замените example.com на реальный адрес
+       в canonical и во всех og:*-тегах ниже.
+       ═══════════════════════════════════════════════════════════════════ -->
+  <title>Банкетный зал «Кондырев» в Кондрово — свадьбы, юбилеи и корпоративы под ключ</title>
+  <meta name="description" content="Банкетный зал «Кондырев» в Кондрово, ул. Интернациональная, 25. Свадьбы под ключ, юбилеи, корпоративы и выпускные до 140 гостей. Панорамные окна, банкетное меню, обслуживание. Работаем круглосуточно. Тел. +7 (920) 876-02-22.">
+  <meta name="keywords" content="банкетный зал Кондрово, свадьба под ключ Кондрово, аренда зала для юбилея Калужская область, банкетный зал Кондырев, корпоратив Кондрово, зал на 140 человек">
+  <link rel="canonical" href="https://example.com/"><!-- TODO: заменить на реальный домен -->
+  <meta name="robots" content="index, follow">
+  <meta name="geo.region" content="RU-KLU">
+  <meta name="geo.placename" content="Кондрово">
+
+  <!-- Open Graph — превью при отправке ссылки в WhatsApp, Telegram, ВКонтакте -->
+  <meta property="og:type" content="business.business">
+  <meta property="og:locale" content="ru_RU">
+  <meta property="og:site_name" content="Банкетный зал «Кондырев»">
+  <meta property="og:title" content="Банкетный зал «Кондырев» в Кондрово — праздник без забот">
+  <meta property="og:description" content="Свадьбы под ключ, юбилеи и корпоративы до 140 гостей. Панорамный зал в Кондрово, банкетное меню и обслуживание. Круглосуточно.">
+  <meta property="og:image" content="https://example.com/assets/og-image.jpg"><!-- TODO: заменить домен -->
+  <meta property="og:image:width" content="1200">
+  <meta property="og:image:height" content="630">
+  <meta property="og:image:alt" content="Банкетный зал «Кондырев» в Кондрово">
+  <meta property="og:url" content="https://example.com/"><!-- TODO: заменить домен -->
+  <meta name="twitter:card" content="summary_large_image">
+
+  <!-- Favicon -->
+  <link rel="icon" href="assets/favicon.ico" sizes="any">
+  <link rel="apple-touch-icon" href="assets/apple-touch-icon.png">
+
+  <!-- Шрифты: Cormorant Garamond (заголовки, serif) + Manrope (текст, sans) -->
+  <link rel="preconnect" href="https://fonts.googleapis.com">
+  <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+  <link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Cormorant+Garamond:wght@500;600;700&family=Manrope:wght@400;500;600;700&display=swap">
+
+  <!-- Hero-фон грузим приоритетно: это самый крупный элемент первого экрана (LCP) -->
+  <link rel="preload" as="image" href="assets/hero/hall-sunset.jpg" fetchpriority="high">
+
+  <link rel="stylesheet" href="css/style.css">
+
+  <!-- Помечаем, что JS доступен: без этого класса блоки .reveal не прячутся,
+       и сайт остаётся читаемым при отключённом JavaScript. Скрипт стоит здесь,
+       а не в script.js, чтобы контент не мигал при загрузке. -->
+  <script>document.documentElement.classList.add('js');</script>
+
+  <!-- ═══════════════════════════════════════════════════════════════════
+       Микроразметка Schema.org: EventVenue + LocalBusiness.
+       Даёт расширенный сниппет в поиске (адрес, часы, рейтинг, телефон).
+       TODO: после публикации проверьте на https://validator.schema.org/
+       ═══════════════════════════════════════════════════════════════════ -->
+  <script type="application/ld+json">
+  {
+    "@context": "https://schema.org",
+    "@type": ["EventVenue", "LocalBusiness"],
+    "name": "Банкетный зал «Кондырев»",
+    "description": "Банкетный зал в Кондрово для свадеб под ключ, юбилеев, корпоративов и выпускных. Вместимость до 140 гостей, банкетное меню, обслуживание и помощь в организации мероприятия.",
+    "url": "https://example.com/",
+    "image": "https://example.com/assets/og-image.jpg",
+    "telephone": "+7-920-876-02-22",
+    "priceRange": "$$",
+    "maximumAttendeeCapacity": 140,
+    "currenciesAccepted": "RUB",
+    "paymentAccepted": "Наличные, банковская карта, безналичный расчёт",
+    "address": {
+      "@type": "PostalAddress",
+      "streetAddress": "ул. Интернациональная, 25",
+      "addressLocality": "Кондрово",
+      "addressRegion": "Калужская область",
+      "addressCountry": "RU"
+    },
+    "openingHoursSpecification": [{
+      "@type": "OpeningHoursSpecification",
+      "dayOfWeek": ["Monday","Tuesday","Wednesday","Thursday","Friday","Saturday","Sunday"],
+      "opens": "00:00",
+      "closes": "23:59"
+    }],
+    "sameAs": ["https://vk.ru/kondyrev_zal"],
+    "aggregateRating": {
+      "@type": "AggregateRating",
+      "ratingValue": "4.5",
+      "bestRating": "5",
+      "ratingCount": "11",
+      "reviewCount": "10"
+    },
+    "amenityFeature": [
+      { "@type": "LocationFeatureSpecification", "name": "Панорамные окна", "value": true },
+      { "@type": "LocationFeatureSpecification", "name": "Банкетное меню", "value": true },
+      { "@type": "LocationFeatureSpecification", "name": "Обслуживание официантами", "value": true },
+      { "@type": "LocationFeatureSpecification", "name": "Аренда мебели", "value": true },
+      { "@type": "LocationFeatureSpecification", "name": "Туалет", "value": true },
+      { "@type": "LocationFeatureSpecification", "name": "Частично доступно для маломобильных гостей", "value": true },
+      { "@type": "LocationFeatureSpecification", "name": "Подарочный сертификат", "value": true }
+    ],
+    "makesOffer": [
+      { "@type": "Offer", "itemOffered": { "@type": "Service", "name": "Свадьба под ключ" } },
+      { "@type": "Offer", "itemOffered": { "@type": "Service", "name": "Юбилей и день рождения" } },
+      { "@type": "Offer", "itemOffered": { "@type": "Service", "name": "Корпоратив" } },
+      { "@type": "Offer", "itemOffered": { "@type": "Service", "name": "Выпускной" } },
+      { "@type": "Offer", "itemOffered": { "@type": "Service", "name": "Семейный праздник" } }
+    ]
+  }
+  </script>
+</head>
+<body>
+
+<!-- Ссылка для навигации с клавиатуры и скринридеров -->
+<a class="skip-link" href="#main">Перейти к содержимому</a>
+
+<!-- ═══════════════════════════════════════════════════════════════════════
+     SVG-спрайт с иконками. Скрыт, иконки подключаются через <use href="#id">.
+     ═══════════════════════════════════════════════════════════════════════ -->
+<svg class="sprite" aria-hidden="true" focusable="false" xmlns="http://www.w3.org/2000/svg">
+  <symbol id="i-rings" viewBox="0 0 24 24"><g fill="none" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round"><circle cx="9" cy="15" r="5.5"/><circle cx="15" cy="15" r="5.5"/><path d="m12 3.2 2.6 2.4L12 8 9.4 5.6 12 3.2Z"/></g></symbol>
+  <symbol id="i-cake" viewBox="0 0 24 24"><g fill="none" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round"><path d="M3.5 20.5h17M5 20.5v-6a2 2 0 0 1 2-2h10a2 2 0 0 1 2 2v6"/><path d="M5 16.5c1.4 0 1.4 1.4 2.8 1.4s1.4-1.4 2.8-1.4 1.4 1.4 2.8 1.4 1.4-1.4 2.8-1.4 1.4 1.4 2.8 1.4"/><path d="M12 12.5V9m0-2.6V5"/></g></symbol>
+  <symbol id="i-corporate" viewBox="0 0 24 24"><g fill="none" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round"><rect x="2.8" y="7.2" width="18.4" height="13" rx="2.2"/><path d="M8.8 7.2V5.6a2 2 0 0 1 2-2h2.4a2 2 0 0 1 2 2v1.6M2.8 13h18.4"/></g></symbol>
+  <symbol id="i-graduate" viewBox="0 0 24 24"><g fill="none" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round"><path d="M2.5 9 12 4.4 21.5 9 12 13.6 2.5 9Z"/><path d="M6.6 11v4.8c0 1.6 2.4 2.9 5.4 2.9s5.4-1.3 5.4-2.9V11M21.5 9v6.2"/></g></symbol>
+  <symbol id="i-family" viewBox="0 0 24 24"><g fill="none" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round"><path d="M12 20.4s-7.6-4.7-7.6-9.7a4.4 4.4 0 0 1 7.6-3 4.4 4.4 0 0 1 7.6 3c0 5-7.6 9.7-7.6 9.7Z"/></g></symbol>
+  <symbol id="i-hall" viewBox="0 0 24 24"><g fill="none" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round"><path d="M2.6 9.2 12 3.6l9.4 5.6M3.5 20.4h17M5.6 20.4V9.8m4.3 10.6V9.8m4.2 10.6V9.8m4.3 10.6V9.8"/></g></symbol>
+  <symbol id="i-menu-book" viewBox="0 0 24 24"><g fill="none" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round"><path d="M12 6.6S10 4.9 6.6 4.9 3.2 6 3.2 6v12.2s.6-1 3.4-1 5.4 1.7 5.4 1.7 2.6-1.7 5.4-1.7 3.4 1 3.4 1V6s-.5-1.1-3.4-1.1S12 6.6 12 6.6Zm0 0v12.3"/></g></symbol>
+  <symbol id="i-serving" viewBox="0 0 24 24"><g fill="none" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round"><path d="M2.6 18.4h18.8M4.6 18.4a7.4 7.4 0 0 1 14.8 0M12 6.6V4.8m-1.6-.2h3.2"/></g></symbol>
+  <symbol id="i-waiter" viewBox="0 0 24 24"><g fill="none" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round"><circle cx="12" cy="6.2" r="3.1"/><path d="M4.8 20.8a7.2 7.2 0 0 1 14.4 0"/></g></symbol>
+  <symbol id="i-decor" viewBox="0 0 24 24"><g fill="none" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round"><path d="m10 2.8 1.8 4.6 4.6 1.8-4.6 1.8L10 15.6 8.2 11 3.6 9.2l4.6-1.8L10 2.8Z"/><path d="m17.8 14.4.9 2.3 2.3.9-2.3.9-.9 2.3-.9-2.3-2.3-.9 2.3-.9.9-2.3Z"/></g></symbol>
+  <symbol id="i-mic" viewBox="0 0 24 24"><g fill="none" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round"><rect x="9" y="2.8" width="6" height="11" rx="3"/><path d="M5.4 11.4a6.6 6.6 0 0 0 13.2 0M12 17.8v3.4m-3 0h6"/></g></symbol>
+  <symbol id="i-camera" viewBox="0 0 24 24"><g fill="none" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round"><path d="M2.8 8.8A2.6 2.6 0 0 1 5.4 6.2H8L9.4 4h5.2l1.4 2.2h2.6a2.6 2.6 0 0 1 2.6 2.6v8.6a2.6 2.6 0 0 1-2.6 2.6H5.4a2.6 2.6 0 0 1-2.6-2.6V8.8Z"/><circle cx="12" cy="13" r="3.6"/></g></symbol>
+  <symbol id="i-furniture" viewBox="0 0 24 24"><g fill="none" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round"><path d="M5.4 11.4V6.8a2.4 2.4 0 0 1 2.4-2.4h8.4a2.4 2.4 0 0 1 2.4 2.4v4.6"/><path d="M3.4 11.4a2 2 0 0 1 2 2v3.2h13.2v-3.2a2 2 0 0 1 2-2M6.4 16.6v3m11.2-3v3"/></g></symbol>
+  <symbol id="i-program" viewBox="0 0 24 24"><g fill="none" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round"><rect x="3.2" y="5" width="17.6" height="16" rx="2.4"/><path d="M3.2 10h17.6M8 3v4m8-4v4M7.6 14.2h3.2m-3.2 3.4h6.4"/></g></symbol>
+  <symbol id="i-clock" viewBox="0 0 24 24"><g fill="none" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round"><circle cx="12" cy="12" r="9"/><path d="M12 6.8V12l3.4 2.2"/></g></symbol>
+  <symbol id="i-pin" viewBox="0 0 24 24"><g fill="none" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round"><path d="M12 21.4s7-6.1 7-11a7 7 0 1 0-14 0c0 4.9 7 11 7 11Z"/><circle cx="12" cy="10.2" r="2.8"/></g></symbol>
+  <symbol id="i-phone" viewBox="0 0 24 24"><g fill="none" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round"><path d="M6.2 3.4h3l1.6 4-2 1.4a12 12 0 0 0 6.4 6.4l1.4-2 4 1.6v3a2 2 0 0 1-2.2 2A17.4 17.4 0 0 1 4.2 5.6a2 2 0 0 1 2-2.2Z"/></g></symbol>
+  <symbol id="i-vk" viewBox="0 0 24 24"><path fill="currentColor" d="M12.9 16.9c-5.2 0-8.4-3.6-8.5-9.5h2.6c.1 4.4 2.1 6.3 3.6 6.7V7.4h2.5v3.8c1.5-.2 3-1.9 3.6-3.8h2.4a7.2 7.2 0 0 1-3.3 4.7 7.5 7.5 0 0 1 3.9 4.8h-2.7a4.7 4.7 0 0 0-3.9-3.4v3.4h-.2Z"/></symbol>
+  <symbol id="i-guests" viewBox="0 0 24 24"><g fill="none" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round"><circle cx="9" cy="7.4" r="3.2"/><path d="M2.8 20a6.2 6.2 0 0 1 12.4 0"/><path d="M16.4 4.6a3.2 3.2 0 0 1 0 6.2m1.4 3a6.2 6.2 0 0 1 3.4 5.6"/></g></symbol>
+  <symbol id="i-window" viewBox="0 0 24 24"><g fill="none" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round"><rect x="3.4" y="3.4" width="17.2" height="17.2" rx="2.4"/><path d="M12 3.4v17.2M3.4 12h17.2"/></g></symbol>
+  <symbol id="i-star" viewBox="0 0 24 24"><path fill="currentColor" d="m12 2.9 2.8 5.7 6.3.9-4.6 4.4 1.1 6.3-5.6-3-5.6 3 1.1-6.3L3 9.5l6.3-.9L12 2.9Z"/></symbol>
+  <symbol id="i-star-half" viewBox="0 0 24 24"><defs><linearGradient id="halfGrad"><stop offset="50%" stop-color="currentColor"/><stop offset="50%" stop-color="currentColor" stop-opacity=".25"/></linearGradient></defs><path fill="url(#halfGrad)" d="m12 2.9 2.8 5.7 6.3.9-4.6 4.4 1.1 6.3-5.6-3-5.6 3 1.1-6.3L3 9.5l6.3-.9L12 2.9Z"/></symbol>
+  <symbol id="i-quote" viewBox="0 0 24 24"><path fill="currentColor" d="M9.4 5.6c-3.3 1.4-5.4 4.2-5.4 7.6 0 3.2 1.8 5.2 4.2 5.2 2 0 3.6-1.5 3.6-3.5 0-1.9-1.4-3.3-3.2-3.3-.4 0-.8.1-1 .2.3-1.7 1.7-3.3 3.5-4.2l-1.7-2Zm9.4 0c-3.3 1.4-5.4 4.2-5.4 7.6 0 3.2 1.8 5.2 4.2 5.2 2 0 3.6-1.5 3.6-3.5 0-1.9-1.4-3.3-3.2-3.3-.4 0-.8.1-1 .2.3-1.7 1.7-3.3 3.5-4.2l-1.7-2Z"/></symbol>
+  <symbol id="i-check" viewBox="0 0 24 24"><g fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="m4.5 12.6 4.8 4.8L19.5 7.2"/></g></symbol>
+  <symbol id="i-arrow-up" viewBox="0 0 24 24"><g fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"><path d="M12 19V5m0 0-6.2 6.2M12 5l6.2 6.2"/></g></symbol>
+  <symbol id="i-close" viewBox="0 0 24 24"><g fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round"><path d="M5.5 5.5 18.5 18.5M18.5 5.5 5.5 18.5"/></g></symbol>
+  <symbol id="i-chevron" viewBox="0 0 24 24"><g fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"><path d="m14.5 5.5-7 6.5 7 6.5"/></g></symbol>
+  <symbol id="i-card" viewBox="0 0 24 24"><g fill="none" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round"><rect x="2.8" y="5.4" width="18.4" height="13.2" rx="2.4"/><path d="M2.8 10h18.4M6.4 14.6h3.4"/></g></symbol>
+  <symbol id="i-gift" viewBox="0 0 24 24"><g fill="none" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round"><path d="M3.6 11.4h16.8v8.4a1.6 1.6 0 0 1-1.6 1.6H5.2a1.6 1.6 0 0 1-1.6-1.6v-8.4Z"/><rect x="2.6" y="7.4" width="18.8" height="4" rx="1.4"/><path d="M12 7.4v14M12 7.4S10.6 3 8.4 3a2.2 2.2 0 0 0 0 4.4M12 7.4S13.4 3 15.6 3a2.2 2.2 0 0 1 0 4.4"/></g></symbol>
+  <symbol id="i-accessible" viewBox="0 0 24 24"><g fill="none" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round"><circle cx="12.4" cy="4.4" r="1.8"/><path d="M8 8.4h8.8M12.4 8.4v6.2h4.2l2.4 5M12.4 14.6a4.8 4.8 0 1 0 3.6 6"/></g></symbol>
+</svg>
+
+<!-- ═══════════════════════════════════════════════════════════════════════
+     1. ШАПКА — прилипает к верху, телефон и CTA всегда на виду
+     ═══════════════════════════════════════════════════════════════════════ -->
+<header class="header" id="header">
+  <div class="container header__inner">
+
+    <!-- Логотип. TODO: если появится графический логотип — положите его в
+         assets/logo.svg и замените блок ниже на <img src="assets/logo.svg" ...> -->
+    <a class="logo" href="#hero" aria-label="Банкетный зал «Кондырев» — на главную">
+      <span class="logo__mark" aria-hidden="true">К</span>
+      <span class="logo__text">
+        <span class="logo__name">Кондырев</span>
+        <span class="logo__sub">банкетный зал · Кондрово</span>
+      </span>
+    </a>
+
+    <!-- Навигация. На мобильном раскрывается кнопкой-бургером -->
+    <nav class="nav" id="nav" aria-label="Основная навигация">
+      <ul class="nav__list">
+        <li><a class="nav__link" href="#hero">Главная</a></li>
+        <li><a class="nav__link" href="#about">Зал</a></li>
+        <li><a class="nav__link" href="#services">Услуги</a></li>
+        <li><a class="nav__link" href="#menu">Меню</a></li>
+        <li><a class="nav__link" href="#gallery">Галерея</a></li>
+        <li><a class="nav__link" href="#reviews">Отзывы</a></li>
+        <li><a class="nav__link" href="#contacts">Контакты</a></li>
+      </ul>
+      <!-- Дубли контактов внутри мобильного меню -->
+      <div class="nav__mobile-actions">
+        <a class="btn btn--ghost btn--block" href="tel:+79208760222">
+          <svg class="icon" aria-hidden="true"><use href="#i-phone"/></svg>
+          +7 (920) 876-02-22
+        </a>
+        <a class="btn btn--primary btn--block" href="#booking">Забронировать дату</a>
+      </div>
+    </nav>
+
+    <div class="header__actions">
+      <a class="header__phone" href="tel:+79208760222">
+        <svg class="icon" aria-hidden="true"><use href="#i-phone"/></svg>
+        <span class="header__phone-num">+7 (920) 876-02-22</span>
+      </a>
+      <a class="btn btn--primary btn--sm header__cta" href="#booking">Оставить заявку</a>
+
+      <!-- Кнопка-бургер: aria-expanded переключается скриптом -->
+      <button class="burger" id="burger" type="button"
+              aria-label="Открыть меню" aria-expanded="false" aria-controls="nav">
+        <span class="burger__line"></span>
+        <span class="burger__line"></span>
+        <span class="burger__line"></span>
+      </button>
+    </div>
+  </div>
+</header>
+
+<!-- Затемнение под открытым мобильным меню -->
+<div class="nav-overlay" id="navOverlay" hidden></div>
+
+<main id="main">
+
+  <!-- ═════════════════════════════════════════════════════════════════════
+       2. HERO — фон-фото зала, заголовок, ключевые факты и CTA
+       Фон подключён в CSS (.hero__bg). Замена фото: assets/hero/hall-sunset.jpg
+       ═════════════════════════════════════════════════════════════════════ -->
+  <section class="hero" id="hero">
+    <!-- data-parallax: скрипт слегка сдвигает фон при скролле -->
+    <div class="hero__bg" data-parallax aria-hidden="true"></div>
+    <div class="hero__veil" aria-hidden="true"></div>
+
+    <div class="container hero__inner">
+      <p class="hero__eyebrow reveal">Кондрово · ул. Интернациональная, 25</p>
+      <h1 class="hero__title reveal">
+        Банкетный зал «Кондырев» —<br>
+        <em>праздник без забот</em>
+      </h1>
+      <p class="hero__lead reveal">
+        Просторный светлый зал с панорамными окнами до 140 гостей.
+        Свадьбы, юбилеи и корпоративы под ключ: зал, меню, обслуживание
+        и организация — на нас. Работаем круглосуточно.
+      </p>
+
+      <div class="hero__actions reveal">
+        <a class="btn btn--primary btn--lg" href="#booking">Забронировать дату</a>
+        <a class="btn btn--outline btn--lg" href="tel:+79208760222">
+          <svg class="icon" aria-hidden="true"><use href="#i-phone"/></svg>
+          Позвонить
+        </a>
+      </div>
+
+      <!-- Ключевые факты первым экраном -->
+      <ul class="hero__facts reveal">
+        <li class="hero__fact">
+          <svg class="icon" aria-hidden="true"><use href="#i-guests"/></svg>
+          <b>до 140</b><span>гостей в зале</span>
+        </li>
+        <li class="hero__fact">
+          <svg class="icon" aria-hidden="true"><use href="#i-clock"/></svg>
+          <b>24/7</b><span>круглосуточно</span>
+        </li>
+        <li class="hero__fact">
+          <svg class="icon" aria-hidden="true"><use href="#i-star"/></svg>
+          <b>4.5</b><span>на Яндекс.Картах</span>
+        </li>
+      </ul>
+    </div>
+
+    <a class="hero__scroll" href="#about" aria-label="Листать вниз"><span></span></a>
+  </section>
+
+  <!-- ═════════════════════════════════════════════════════════════════════
+       3. О ЗАЛЕ
+       ═════════════════════════════════════════════════════════════════════ -->
+  <section class="section section--cream" id="about">
+    <div class="container about__grid">
+
+      <div class="about__text reveal">
+        <p class="section__eyebrow">О зале</p>
+        <h2 class="section__title">Свет, воздух и настроение<br>с первой минуты</h2>
+
+        <p>
+          «Кондырев» — просторный банкетный зал в центре Кондрово. Большие
+          панорамные окна дают много естественного света днём, а ближе к вечеру
+          зал наполняется тёплым закатным светом — гости неизменно отмечают это
+          в отзывах и на фотографиях.
+        </p>
+        <p>
+          Зал вмещает до 140 гостей, поэтому одинаково хорошо подходит и для
+          камерного семейного торжества, и для большой свадьбы или корпоратива.
+          Рассадку, схему столов и формат вечера подбираем под ваш повод и бюджет.
+        </p>
+        <p>
+          Мы работаем круглосуточно: праздник не придётся заканчивать по часам,
+          а обсудить детали можно в удобное вам время.
+        </p>
+
+        <a class="link-arrow" href="#services">Посмотреть услуги и форматы</a>
+      </div>
+
+      <!-- Плитка фактов -->
+      <ul class="about__facts reveal">
+        <li class="fact-card">
+          <svg class="icon icon--lg" aria-hidden="true"><use href="#i-guests"/></svg>
+          <b class="fact-card__value">140</b>
+          <span class="fact-card__label">гостей — максимальная вместимость</span>
+        </li>
+        <li class="fact-card">
+          <svg class="icon icon--lg" aria-hidden="true"><use href="#i-window"/></svg>
+          <b class="fact-card__value">Панорамные</b>
+          <span class="fact-card__label">окна и эффектный закатный свет</span>
+        </li>
+        <li class="fact-card">
+          <svg class="icon icon--lg" aria-hidden="true"><use href="#i-clock"/></svg>
+          <b class="fact-card__value">24/7</b>
+          <span class="fact-card__label">круглосуточный режим работы</span>
+        </li>
+        <li class="fact-card">
+          <svg class="icon icon--lg" aria-hidden="true"><use href="#i-serving"/></svg>
+          <b class="fact-card__value">Под ключ</b>
+          <span class="fact-card__label">зал, меню, сервировка и обслуживание</span>
+        </li>
+      </ul>
+    </div>
+  </section>
+
+  <!-- ═════════════════════════════════════════════════════════════════════
+       4. УСЛУГИ
+       TODO: замените «Цена — по запросу» на реальные цены, например
+       «от 2 500 ₽ / гость» или «от 30 000 ₽ / аренда зала».
+       ═════════════════════════════════════════════════════════════════════ -->
+  <section class="section" id="services">
+    <div class="container">
+      <header class="section__head reveal">
+        <p class="section__eyebrow">Услуги</p>
+        <h2 class="section__title">Форматы мероприятий</h2>
+        <p class="section__lead">
+          Берём на себя всю организацию: от подбора меню до программы вечера.
+          Вам остаётся только прийти и праздновать.
+        </p>
+      </header>
+
+      <ul class="cards cards--services">
+        <li class="service-card reveal">
+          <span class="service-card__icon"><svg class="icon icon--lg" aria-hidden="true"><use href="#i-rings"/></svg></span>
+          <h3 class="service-card__title">Свадьбы под ключ</h3>
+          <p class="service-card__text">
+            Оформление зала, банкетное меню, тайминг вечера, ведущий и фотограф.
+            Панорамные окна и закатный свет дают красивые кадры без студийного света.
+          </p>
+          <p class="service-card__price">Цена — по запросу<!-- TODO: заменить, напр. «от 2 500 ₽ / гость» --></p>
+          <a class="link-arrow" href="#booking" data-event="Свадьба">Обсудить свадьбу</a>
+        </li>
+
+        <li class="service-card reveal">
+          <span class="service-card__icon"><svg class="icon icon--lg" aria-hidden="true"><use href="#i-cake"/></svg></span>
+          <h3 class="service-card__title">Юбилеи и дни рождения</h3>
+          <p class="service-card__text">
+            От камерного ужина на 20 человек до большого юбилея. Подберём меню и
+            рассадку под возраст гостей и формат вечера, поможем с тортом и декором.
+          </p>
+          <p class="service-card__price">Цена — по запросу<!-- TODO: заменить --></p>
+          <a class="link-arrow" href="#booking" data-event="Юбилей / день рождения">Обсудить юбилей</a>
+        </li>
+
+        <li class="service-card reveal">
+          <span class="service-card__icon"><svg class="icon icon--lg" aria-hidden="true"><use href="#i-corporate"/></svg></span>
+          <h3 class="service-card__title">Корпоративы</h3>
+          <p class="service-card__text">
+            Новый год, день компании, летний банкет. Работаем по безналичному
+            расчёту, предоставляем документы для бухгалтерии, согласуем смету заранее.
+          </p>
+          <p class="service-card__price">Цена — по запросу<!-- TODO: заменить --></p>
+          <a class="link-arrow" href="#booking" data-event="Корпоратив">Обсудить корпоратив</a>
+        </li>
+
+        <li class="service-card reveal">
+          <span class="service-card__icon"><svg class="icon icon--lg" aria-hidden="true"><use href="#i-graduate"/></svg></span>
+          <h3 class="service-card__title">Выпускные</h3>
+          <p class="service-card__text">
+            Школьные и студенческие выпускные: отдельное меню для ребят, зона для
+            танцев и фотозона. Согласуем программу с родительским комитетом.
+          </p>
+          <p class="service-card__price">Цена — по запросу<!-- TODO: заменить --></p>
+          <a class="link-arrow" href="#booking" data-event="Выпускной">Обсудить выпускной</a>
+        </li>
+
+        <li class="service-card reveal">
+          <span class="service-card__icon"><svg class="icon icon--lg" aria-hidden="true"><use href="#i-family"/></svg></span>
+          <h3 class="service-card__title">Семейные праздники</h3>
+          <p class="service-card__text">
+            Крестины, годовщины, встречи большой семьёй и поминальные обеды.
+            Спокойная атмосфера, внимательное обслуживание, меню под любой бюджет.
+          </p>
+          <p class="service-card__price">Цена — по запросу<!-- TODO: заменить --></p>
+          <a class="link-arrow" href="#booking" data-event="Семейный праздник">Обсудить праздник</a>
+        </li>
+
+        <!-- Карточка-призыв в конце сетки -->
+        <li class="service-card service-card--cta reveal">
+          <h3 class="service-card__title">Не нашли свой формат?</h3>
+          <p class="service-card__text">
+            Расскажите о поводе, количестве гостей и бюджете — предложим
+            подходящий вариант и рассчитаем стоимость.
+          </p>
+          <a class="btn btn--primary" href="#booking">Оставить заявку</a>
+          <a class="link-arrow link-arrow--muted" href="tel:+79208760222">или позвонить: +7 (920) 876-02-22</a>
+        </li>
+      </ul>
+    </div>
+  </section>
+
+  <!-- ═════════════════════════════════════════════════════════════════════
+       5. ЧТО ВХОДИТ В ОРГАНИЗАЦИЮ
+       ═════════════════════════════════════════════════════════════════════ -->
+  <section class="section section--dark" id="included">
+    <div class="container">
+      <header class="section__head reveal">
+        <p class="section__eyebrow">Под ключ</p>
+        <h2 class="section__title">Что входит в организацию</h2>
+        <p class="section__lead">
+          Полный набор или отдельные пункты — состав услуги собираем под ваш
+          бюджет. Что не делаем сами, берём на себя по организации.
+        </p>
+      </header>
+
+      <ul class="included">
+        <li class="included__item reveal"><svg class="icon" aria-hidden="true"><use href="#i-hall"/></svg><b>Аренда зала</b><span>до 140 гостей, панорамные окна</span></li>
+        <li class="included__item reveal"><svg class="icon" aria-hidden="true"><use href="#i-menu-book"/></svg><b>Банкетное меню</b><span>горячее, закуски, нарезки, десерты</span></li>
+        <li class="included__item reveal"><svg class="icon" aria-hidden="true"><use href="#i-serving"/></svg><b>Сервировка</b><span>текстиль, посуда, оформление столов</span></li>
+        <li class="included__item reveal"><svg class="icon" aria-hidden="true"><use href="#i-waiter"/></svg><b>Обслуживание официантами</b><span>подача блюд и напитков весь вечер</span></li>
+        <li class="included__item reveal"><svg class="icon" aria-hidden="true"><use href="#i-decor"/></svg><b>Помощь с декором</b><span>оформление зала и президиума</span></li>
+        <li class="included__item reveal"><svg class="icon" aria-hidden="true"><use href="#i-mic"/></svg><b>Ведущий</b><span>подберём под формат и возраст гостей</span></li>
+        <li class="included__item reveal"><svg class="icon" aria-hidden="true"><use href="#i-camera"/></svg><b>Фотограф</b><span>съёмка банкета и репортаж вечера</span></li>
+        <li class="included__item reveal"><svg class="icon" aria-hidden="true"><use href="#i-furniture"/></svg><b>Аренда мебели</b><span>столы, стулья, дополнительные зоны</span></li>
+        <li class="included__item reveal"><svg class="icon" aria-hidden="true"><use href="#i-program"/></svg><b>Программа праздника</b><span>тайминг, конкурсы, музыка</span></li>
+      </ul>
+
+      <p class="included__note reveal">
+        Состав и стоимость согласуем заранее — без сюрпризов в день праздника.
+        <a class="link-arrow link-arrow--light" href="#booking">Рассчитать мой праздник</a>
+      </p>
+    </div>
+  </section>
+
+  <!-- ═════════════════════════════════════════════════════════════════════
+       6. МЕНЮ / КУХНЯ
+       Фото блюд: assets/menu/dish-01…04.jpg (замените своими, 4:3, ~900×700)
+       TODO: точные цены не указаны намеренно — уточняйте у менеджера.
+       ═════════════════════════════════════════════════════════════════════ -->
+  <section class="section section--cream" id="menu">
+    <div class="container">
+      <header class="section__head reveal">
+        <p class="section__eyebrow">Кухня</p>
+        <h2 class="section__title">Банкетное меню</h2>
+        <p class="section__lead">
+          Готовим сами, под ваш банкет. Ниже — блюда, которые чаще всего
+          выбирают наши гости. Полное меню и стоимость пришлём по запросу.
+        </p>
+      </header>
+
+      <ul class="cards cards--menu">
+        <li class="dish reveal">
+          <img class="dish__img" src="assets/menu/dish-01.jpg" width="900" height="700" loading="lazy" decoding="async"
+               alt="Лосось в сливочном соусе — горячее блюдо банкетного меню зала «Кондырев»">
+          <div class="dish__body">
+            <h3 class="dish__title">Лосось в сливочном соусе</h3>
+            <p class="dish__text">Горячее, которое чаще всего вспоминают в отзывах. Подаём порционно.</p>
+            <p class="dish__price">Уточняйте у менеджера</p>
+          </div>
+        </li>
+        <li class="dish reveal">
+          <img class="dish__img" src="assets/menu/dish-02.jpg" width="900" height="700" loading="lazy" decoding="async"
+               alt="Рыбная нарезка на банкетном столе в зале «Кондырев»">
+          <div class="dish__body">
+            <h3 class="dish__title">Рыбная нарезка</h3>
+            <p class="dish__text">Холодная закуска для банкетного стола — красиво выложена и щедро подана.</p>
+            <p class="dish__price">Уточняйте у менеджера</p>
+          </div>
+        </li>
+        <li class="dish reveal">
+          <img class="dish__img" src="assets/menu/dish-03.jpg" width="900" height="700" loading="lazy" decoding="async"
+               alt="Язык с драниками на гриле — фирменное блюдо банкетного зала «Кондырев»">
+          <div class="dish__body">
+            <h3 class="dish__title">Язык с драниками на гриле</h3>
+            <p class="dish__text">Фирменная позиция: сытно, по-домашнему и всегда уходит первым.</p>
+            <p class="dish__price">Уточняйте у менеджера</p>
+          </div>
+        </li>
+        <li class="dish reveal">
+          <img class="dish__img" src="assets/menu/dish-04.jpg" width="900" height="700" loading="lazy" decoding="async"
+               alt="Банкетные закуски и холодный стол в зале «Кондырев» в Кондрово">
+          <div class="dish__body">
+            <h3 class="dish__title">Банкетные закуски</h3>
+            <p class="dish__text">Салаты, нарезки и канапе — собираем набор под количество гостей.</p>
+            <p class="dish__price">Уточняйте у менеджера</p>
+          </div>
+        </li>
+      </ul>
+
+      <div class="menu__cta reveal">
+        <p>Пришлём актуальное меню с ценами и поможем собрать стол под ваш бюджет.</p>
+        <a class="btn btn--primary" href="#booking">Запросить меню</a>
+      </div>
+    </div>
+  </section>
+
+  <!-- ═════════════════════════════════════════════════════════════════════
+       7. ГАЛЕРЕЯ
+       ┌─ КУДА КЛАСТЬ ФОТО ────────────────────────────────────────────────┐
+       │ Файлы: assets/gallery/gallery-01.jpg … gallery-08.jpg             │
+       │ Формат: JPG/WebP, ~1600×1067 px (3:2), вес до 300 КБ.             │
+       │ Чтобы добавить фото — скопируйте любой <li class="gallery__item">,│
+       │ поменяйте src, alt и подпись. Порядок в лайтбоксе = порядок в HTML.│
+       │ loading="lazy" оставьте — фото грузятся по мере прокрутки.        │
+       └───────────────────────────────────────────────────────────────────┘
+       Без JS ссылка просто открывает фото — галерея остаётся рабочей.
+       ═════════════════════════════════════════════════════════════════════ -->
+  <section class="section" id="gallery">
+    <div class="container">
+      <header class="section__head reveal">
+        <p class="section__eyebrow">Галерея</p>
+        <h2 class="section__title">Как выглядит зал</h2>
+        <p class="section__lead">Нажмите на фото, чтобы открыть его крупно и пролистать.</p>
+      </header>
+
+      <ul class="gallery" id="gallery-grid">
+        <li class="gallery__item reveal">
+          <a class="gallery__link" href="assets/gallery/gallery-01.jpg" data-caption="Общий вид зала на 140 гостей">
+            <img src="assets/gallery/gallery-01.jpg" width="1200" height="800" loading="lazy" decoding="async"
+                 alt="Общий вид банкетного зала «Кондырев» на 140 гостей: столы, люстры, зеркальные колонны">
+          </a>
+        </li>
+        <li class="gallery__item reveal">
+          <a class="gallery__link" href="assets/gallery/gallery-02.jpg" data-caption="Сервировка банкетного стола">
+            <img src="assets/gallery/gallery-02.jpg" width="1200" height="800" loading="lazy" decoding="async"
+                 alt="Сервировка банкетного стола в зале «Кондырев»">
+          </a>
+        </li>
+        <li class="gallery__item reveal">
+          <a class="gallery__link" href="assets/gallery/gallery-03.jpg" data-caption="Вход в банкетный зал">
+            <img src="assets/gallery/gallery-03.jpg" width="1200" height="800" loading="lazy" decoding="async"
+                 alt="Вход в банкетный зал «Кондырев» с красной дорожкой">
+          </a>
+        </li>
+        <li class="gallery__item reveal">
+          <a class="gallery__link" href="assets/gallery/gallery-04.jpg" data-caption="Свадебное оформление зала">
+            <img src="assets/gallery/gallery-04.jpg" width="1200" height="800" loading="lazy" decoding="async"
+                 alt="Свадебное оформление банкетного зала в Кондрово">
+          </a>
+        </li>
+        <li class="gallery__item reveal">
+          <a class="gallery__link" href="assets/gallery/gallery-05.jpg" data-caption="Закатный свет в зале">
+            <img src="assets/gallery/gallery-05.jpg" width="1200" height="800" loading="lazy" decoding="async"
+                 alt="Закатный свет через панорамные окна банкетного зала «Кондырев»">
+          </a>
+        </li>
+        <li class="gallery__item reveal">
+          <a class="gallery__link" href="assets/gallery/gallery-06.jpg" data-caption="Президиум для молодожёнов">
+            <img src="assets/gallery/gallery-06.jpg" width="1200" height="800" loading="lazy" decoding="async"
+                 alt="Президиум для молодожёнов в банкетном зале «Кондырев»">
+          </a>
+        </li>
+        <li class="gallery__item reveal">
+          <a class="gallery__link" href="assets/gallery/gallery-07.jpg" data-caption="Танцевальная зона">
+            <img src="assets/gallery/gallery-07.jpg" width="1200" height="800" loading="lazy" decoding="async"
+                 alt="Танцевальная зона банкетного зала «Кондырев» в Кондрово">
+          </a>
+        </li>
+        <li class="gallery__item reveal">
+          <a class="gallery__link" href="assets/gallery/gallery-08.jpg" data-caption="Детали оформления и текстиль">
+            <img src="assets/gallery/gallery-08.jpg" width="1200" height="800" loading="lazy" decoding="async"
+                 alt="Детали оформления и текстиль в банкетном зале «Кондырев»">
+          </a>
+        </li>
+        <!-- TODO: добавьте сюда остальные фото зала по образцу выше -->
+      </ul>
+
+      <p class="gallery__note reveal">
+        Больше фотографий — в
+        <a href="https://vk.ru/kondyrev_zal" target="_blank" rel="noopener">нашей группе ВКонтакте</a>.
+      </p>
+    </div>
+  </section>
+
+  <!-- ═════════════════════════════════════════════════════════════════════
+       8. ОТЗЫВЫ
+       TODO: тексты ниже — обобщённый пересказ отзывов гостей, не дословные
+       цитаты. Замените на реальные отзывы с согласия авторов, имена уточните.
+       Рейтинг 4.5 — по данным Яндекс.Карт (11 оценок, 10 отзывов).
+       ═════════════════════════════════════════════════════════════════════ -->
+  <section class="section section--cream" id="reviews">
+    <div class="container">
+      <header class="section__head reveal">
+        <p class="section__eyebrow">Отзывы</p>
+        <h2 class="section__title">Что говорят гости</h2>
+      </header>
+
+      <div class="rating reveal">
+        <div class="rating__score">
+          <b class="rating__value">4.5</b>
+          <div class="rating__stars" role="img" aria-label="Рейтинг 4.5 из 5">
+            <svg class="icon" aria-hidden="true"><use href="#i-star"/></svg>
+            <svg class="icon" aria-hidden="true"><use href="#i-star"/></svg>
+            <svg class="icon" aria-hidden="true"><use href="#i-star"/></svg>
+            <svg class="icon" aria-hidden="true"><use href="#i-star"/></svg>
+            <svg class="icon" aria-hidden="true"><use href="#i-star-half"/></svg>
+          </div>
+        </div>
+        <p class="rating__meta">
+          Оценка на Яндекс.Картах<br>
+          <span>11 оценок · 10 отзывов</span>
+        </p>
+      </div>
+
+      <ul class="cards cards--reviews">
+        <li class="review reveal">
+          <svg class="review__quote icon" aria-hidden="true"><use href="#i-quote"/></svg>
+          <p class="review__text">
+            Отмечали свадьбу — зал светлый и очень просторный, гости всё время
+            фотографировались у окон. Ближе к вечеру солнце заходит, и получаются
+            невероятно тёплые кадры. Организацию взяли на себя, мы почти ни во что
+            не вмешивались.
+          </p>
+          <p class="review__author">Анна<!-- TODO: заменить на реальное имя --> <span>свадьба</span></p>
+        </li>
+        <li class="review reveal">
+          <svg class="review__quote icon" aria-hidden="true"><use href="#i-quote"/></svg>
+          <p class="review__text">
+            Праздновали юбилей мамы. Отдельно хочу отметить кухню: лосось в
+            сливочном соусе и рыбная нарезка разошлись первыми, порции щедрые.
+            Персонал внимательный, реагируют на просьбы моментально.
+          </p>
+          <p class="review__author">Сергей<!-- TODO: заменить --> <span>юбилей</span></p>
+        </li>
+        <li class="review reveal">
+          <svg class="review__quote icon" aria-hidden="true"><use href="#i-quote"/></svg>
+          <p class="review__text">
+            Проводили корпоратив на большую компанию. Всё согласовали заранее,
+            по смете вопросов не возникло, документы для бухгалтерии оформили без
+            задержек. Вечер прошёл ровно по таймингу.
+          </p>
+          <p class="review__author">Ирина<!-- TODO: заменить --> <span>корпоратив</span></p>
+        </li>
+        <li class="review reveal">
+          <svg class="review__quote icon" aria-hidden="true"><use href="#i-quote"/></svg>
+          <p class="review__text">
+            Собирались семьёй, человек сорок. Атмосфера уютная, несмотря на размер
+            зала — не чувствуешь себя как в пустом ангаре. Язык с драниками на гриле
+            советую попробовать обязательно.
+          </p>
+          <p class="review__author">Дмитрий<!-- TODO: заменить --> <span>семейный праздник</span></p>
+        </li>
+      </ul>
+
+      <p class="reviews__note reveal">
+        <!-- TODO: замените ссылку на прямой адрес карточки организации в Яндекс.Картах -->
+        <a class="link-arrow" href="https://yandex.ru/maps/?text=Кондрово%2C%20Интернациональная%2C%2025%20банкетный%20зал"
+           target="_blank" rel="noopener">Читать отзывы на Яндекс.Картах</a>
+      </p>
+    </div>
+  </section>
+
+  <!-- ═════════════════════════════════════════════════════════════════════
+       9. КАК ДОБРАТЬСЯ / КОНТАКТЫ
+       ═════════════════════════════════════════════════════════════════════ -->
+  <section class="section" id="contacts">
+    <div class="container">
+      <header class="section__head reveal">
+        <p class="section__eyebrow">Контакты</p>
+        <h2 class="section__title">Как нас найти</h2>
+      </header>
+
+      <div class="contacts__grid">
+
+        <ul class="contacts__list reveal">
+          <li class="contact">
+            <svg class="icon icon--lg" aria-hidden="true"><use href="#i-pin"/></svg>
+            <div>
+              <b>Адрес</b>
+              <address>
+                Калужская область, г. Кондрово,<br>
+                ул. Интернациональная, 25
+              </address>
+              <a class="link-arrow" href="https://yandex.ru/maps/?text=Кондрово%2C%20улица%20Интернациональная%2C%2025"
+                 target="_blank" rel="noopener">Построить маршрут</a>
+            </div>
+          </li>
+
+          <li class="contact">
+            <svg class="icon icon--lg" aria-hidden="true"><use href="#i-phone"/></svg>
+            <div>
+              <b>Телефон</b>
+              <!-- click-to-call: на мобильных открывает набор номера -->
+              <a class="contact__phone" href="tel:+79208760222">+7 (920) 876-02-22</a>
+              <span class="contact__hint">Звоните в любое время — работаем круглосуточно</span>
+            </div>
+          </li>
+
+          <li class="contact">
+            <svg class="icon icon--lg" aria-hidden="true"><use href="#i-clock"/></svg>
+            <div>
+              <b>Режим работы</b>
+              <span class="contact__value">Круглосуточно, без выходных</span>
+              <span class="contact__hint">Бронирование даты — по предварительной записи</span>
+            </div>
+          </li>
+
+          <li class="contact">
+            <svg class="icon icon--lg" aria-hidden="true"><use href="#i-vk"/></svg>
+            <div>
+              <b>ВКонтакте</b>
+              <a class="contact__value" href="https://vk.ru/kondyrev_zal" target="_blank" rel="noopener">vk.ru/kondyrev_zal</a>
+              <span class="contact__hint">Свежие фото залов и мероприятий</span>
+            </div>
+          </li>
+
+          <li class="contact">
+            <svg class="icon icon--lg" aria-hidden="true"><use href="#i-card"/></svg>
+            <div>
+              <b>Оплата</b>
+              <span class="contact__value">Наличные, банковская карта, безналичный расчёт</span>
+            </div>
+          </li>
+
+          <li class="contact">
+            <svg class="icon icon--lg" aria-hidden="true"><use href="#i-accessible"/></svg>
+            <div>
+              <b>Удобства</b>
+              <span class="contact__value">Туалет, аренда мебели, помощь с декором, подарочный сертификат</span>
+              <span class="contact__hint">Частично доступно для маломобильных гостей</span>
+            </div>
+          </li>
+        </ul>
+
+        <!-- Карта. TODO: для точной метки соберите свой код на
+             https://yandex.ru/map-constructor/ и вставьте его src сюда.
+             loading="lazy" — карта грузится только когда пользователь до неё дошёл. -->
+        <div class="map reveal">
+          <iframe class="map__frame"
+                  src="https://yandex.ru/map-widget/v1/?text=%D0%9A%D0%BE%D0%BD%D0%B4%D1%80%D0%BE%D0%B2%D0%BE%2C%20%D1%83%D0%BB%D0%B8%D1%86%D0%B0%20%D0%98%D0%BD%D1%82%D0%B5%D1%80%D0%BD%D0%B0%D1%86%D0%B8%D0%BE%D0%BD%D0%B0%D0%BB%D1%8C%D0%BD%D0%B0%D1%8F%2C%2025&amp;z=17"
+                  title="Банкетный зал «Кондырев» на карте: Кондрово, ул. Интернациональная, 25"
+                  loading="lazy" allowfullscreen></iframe>
+        </div>
+      </div>
+    </div>
+  </section>
+
+  <!-- ═════════════════════════════════════════════════════════════════════
+       10. ФОРМА ЗАЯВКИ
+       ┌─ КУДА ПРИХОДЯТ ЗАЯВКИ ────────────────────────────────────────────┐
+       │ Сейчас: форма собирает письмо и открывает почтовый клиент         │
+       │ (mailto-фоллбэк) — работает без сервера, но требует действия      │
+       │ пользователя. Адрес меняется в js/script.js → CONFIG.email.       │
+       │ Как подключить нормальную отправку — см. js/script.js, блок       │
+       │ «ПОДКЛЮЧЕНИЕ БЭКЕНДА» (Telegram-бот, Formspree, своя CRM).        │
+       └───────────────────────────────────────────────────────────────────┘
+       ═════════════════════════════════════════════════════════════════════ -->
+  <section class="section section--dark" id="booking">
+    <div class="container booking__grid">
+
+      <div class="booking__intro reveal">
+        <p class="section__eyebrow">Заявка</p>
+        <h2 class="section__title">Забронировать дату</h2>
+        <p class="section__lead">
+          Оставьте заявку — перезвоним, расскажем, свободна ли дата,
+          и рассчитаем стоимость под ваш формат и бюджет.
+        </p>
+        <ul class="booking__benefits">
+          <li><svg class="icon" aria-hidden="true"><use href="#i-check"/></svg>Ответим в течение рабочего дня</li>
+          <li><svg class="icon" aria-hidden="true"><use href="#i-check"/></svg>Смету согласуем заранее, без скрытых доплат</li>
+          <li><svg class="icon" aria-hidden="true"><use href="#i-check"/></svg>Подберём меню и программу под бюджет</li>
+          <li><svg class="icon" aria-hidden="true"><use href="#i-gift"/></svg>Есть подарочный сертификат</li>
+        </ul>
+        <p class="booking__phone-alt">
+          Удобнее голосом? <a href="tel:+79208760222">+7 (920) 876-02-22</a>
+        </p>
+      </div>
+
+      <!-- novalidate: отключаем стандартные подсказки браузера, показываем свои -->
+      <form class="form reveal" id="bookingForm" novalidate>
+        <div class="form__row">
+          <label class="field">
+            <span class="field__label">Ваше имя <i aria-hidden="true">*</i></span>
+            <input class="field__input" type="text" name="name" id="f-name"
+                   autocomplete="name" placeholder="Как к вам обращаться"
+                   required minlength="2" maxlength="60">
+            <span class="field__error" data-error-for="f-name" role="alert"></span>
+          </label>
+
+          <label class="field">
+            <span class="field__label">Телефон <i aria-hidden="true">*</i></span>
+            <input class="field__input" type="tel" name="phone" id="f-phone"
+                   autocomplete="tel" inputmode="tel" placeholder="+7 (___) ___-__-__" required>
+            <span class="field__error" data-error-for="f-phone" role="alert"></span>
+          </label>
+        </div>
+
+        <div class="form__row">
+          <label class="field">
+            <span class="field__label">Дата мероприятия</span>
+            <!-- min подставляется скриптом: нельзя выбрать прошедший день -->
+            <input class="field__input" type="date" name="date" id="f-date">
+            <span class="field__error" data-error-for="f-date" role="alert"></span>
+          </label>
+
+          <label class="field">
+            <span class="field__label">Тип мероприятия</span>
+            <select class="field__input field__input--select" name="event" id="f-event">
+              <option value="">Выберите формат</option>
+              <option>Свадьба</option>
+              <option>Юбилей / день рождения</option>
+              <option>Корпоратив</option>
+              <option>Выпускной</option>
+              <option>Семейный праздник</option>
+              <option>Другое</option>
+            </select>
+            <span class="field__error" data-error-for="f-event" role="alert"></span>
+          </label>
+        </div>
+
+        <label class="field">
+          <span class="field__label">Комментарий</span>
+          <textarea class="field__input field__input--area" name="comment" id="f-comment" rows="4"
+                    maxlength="1000" placeholder="Количество гостей, пожелания по меню и программе"></textarea>
+          <span class="field__error" data-error-for="f-comment" role="alert"></span>
+        </label>
+
+        <label class="checkbox">
+          <input type="checkbox" name="agree" id="f-agree" required>
+          <span>Согласен на обработку персональных данных <i aria-hidden="true">*</i></span>
+        </label>
+        <span class="field__error" data-error-for="f-agree" role="alert"></span>
+
+        <button class="btn btn--primary btn--lg btn--block" type="submit">Отправить заявку</button>
+
+        <!-- Сообщение об успехе / ошибке, заполняется скриптом -->
+        <p class="form__status" id="formStatus" role="status" aria-live="polite"></p>
+
+        <noscript>
+          <p class="form__status form__status--error">
+            Для отправки формы нужен JavaScript. Позвоните нам:
+            <a href="tel:+79208760222">+7 (920) 876-02-22</a>.
+          </p>
+        </noscript>
+      </form>
+    </div>
+  </section>
+
+</main>
+
+<!-- ═══════════════════════════════════════════════════════════════════════
+     11. ФУТЕР
+     ═══════════════════════════════════════════════════════════════════════ -->
+<footer class="footer">
+  <div class="container footer__grid">
+
+    <div class="footer__brand">
+      <a class="logo logo--footer" href="#hero">
+        <span class="logo__mark" aria-hidden="true">К</span>
+        <span class="logo__text">
+          <span class="logo__name">Кондырев</span>
+          <span class="logo__sub">банкетный зал</span>
+        </span>
+      </a>
+      <p class="footer__tagline">
+        Свадьбы, юбилеи и корпоративы под ключ в Кондрово.<br>
+        До 140 гостей. Круглосуточно.
+      </p>
+    </div>
+
+    <nav class="footer__nav" aria-label="Навигация в подвале">
+      <b>Разделы</b>
+      <ul>
+        <li><a href="#about">О зале</a></li>
+        <li><a href="#services">Услуги</a></li>
+        <li><a href="#menu">Меню</a></li>
+        <li><a href="#gallery">Галерея</a></li>
+        <li><a href="#reviews">Отзывы</a></li>
+        <li><a href="#booking">Заявка</a></li>
+      </ul>
+    </nav>
+
+    <div class="footer__contacts">
+      <b>Контакты</b>
+      <address>
+        г. Кондрово, Калужская область,<br>ул. Интернациональная, 25
+      </address>
+      <a class="footer__phone" href="tel:+79208760222">+7 (920) 876-02-22</a>
+      <a class="footer__vk" href="https://vk.ru/kondyrev_zal" target="_blank" rel="noopener">
+        <svg class="icon" aria-hidden="true"><use href="#i-vk"/></svg> vk.ru/kondyrev_zal
+      </a>
+      <span class="footer__hours">Работаем круглосуточно</span>
+    </div>
+  </div>
+
+  <div class="container footer__bottom">
+    <!-- Год подставляется скриптом, чтобы копирайт не устаревал -->
+    <p>© <span id="year">2026</span> Банкетный зал «Кондырев», г. Кондрово. Все права защищены.</p>
+    <p class="footer__legal">
+      Информация на сайте не является публичной офертой.
+      <!-- TODO: при подключении реальной отправки формы добавьте страницу
+           политики обработки персональных данных и ссылку на неё здесь. -->
+    </p>
+  </div>
+</footer>
+
+<!-- Кнопка «Наверх» — появляется после прокрутки -->
+<button class="to-top" id="toTop" type="button" aria-label="Наверх" hidden>
+  <svg class="icon" aria-hidden="true"><use href="#i-arrow-up"/></svg>
+</button>
+
+<!-- Липкая панель действий на мобильных: звонок всегда под большим пальцем -->
+<div class="mobile-bar" aria-label="Быстрые действия">
+  <a class="mobile-bar__btn mobile-bar__btn--call" href="tel:+79208760222">
+    <svg class="icon" aria-hidden="true"><use href="#i-phone"/></svg> Позвонить
+  </a>
+  <a class="mobile-bar__btn mobile-bar__btn--book" href="#booking">Заявка</a>
+</div>
+
+<!-- ═══════════════════════════════════════════════════════════════════════
+     Лайтбокс галереи. Разметка пустая — содержимое подставляет скрипт.
+     ═══════════════════════════════════════════════════════════════════════ -->
+<div class="lightbox" id="lightbox" role="dialog" aria-modal="true" aria-label="Просмотр фотографии" hidden>
+  <button class="lightbox__btn lightbox__close" type="button" aria-label="Закрыть (Esc)">
+    <svg class="icon" aria-hidden="true"><use href="#i-close"/></svg>
+  </button>
+  <button class="lightbox__btn lightbox__prev" type="button" aria-label="Предыдущее фото">
+    <svg class="icon" aria-hidden="true"><use href="#i-chevron"/></svg>
+  </button>
+  <button class="lightbox__btn lightbox__next" type="button" aria-label="Следующее фото">
+    <svg class="icon" aria-hidden="true"><use href="#i-chevron"/></svg>
+  </button>
+  <figure class="lightbox__figure">
+    <!-- src и alt подставляет скрипт при открытии; пустой src здесь
+           заставил бы браузер повторно запросить саму страницу -->
+      <img class="lightbox__img" id="lightboxImg" alt="">
+    <figcaption class="lightbox__caption">
+      <span id="lightboxCaption"></span>
+      <span class="lightbox__counter" id="lightboxCounter"></span>
+    </figcaption>
+  </figure>
+</div>
+
+<script src="js/script.js" defer></script>
+</body>
+</html>
