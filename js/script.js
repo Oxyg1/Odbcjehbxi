@@ -485,6 +485,35 @@
   })();
 
 
+  /* ═══ 8.1. ФИКС НИЖНЕЙ ПАНЕЛИ НА МОБИЛЬНЫХ ═══════════════════════════════
+     В части Chromium-браузеров на Android со своей нижней панелью адреса
+     (характерно для Yandex Browser) `position: fixed; bottom: 0` считается
+     не от реально видимой области экрана, а от «большого» viewport — между
+     нашей нижней панелью и краем экрана остаётся зазор цвета фона страницы.
+     В Safari и обычном Chrome для Android этой проблемы нет.
+
+     window.visualViewport — это API как раз для такого случая: он всегда
+     знает, сколько экрана видно по-настоящему прямо сейчас. Меряем разницу
+     между «большим» viewport и настоящим видимым и подвигаем панель ровно
+     на эту разницу через CSS-переменную --toolbar-gap (используется в
+     .mobile-bar, см. css/style.css). Там, где браузер и так всё считает
+     верно, разница равна 0, и правило ни на что не влияет. */
+  (function fixMobileBarViewportGap() {
+    if (!window.visualViewport) return;          // старые браузеры — не трогаем, было и так нормально
+    var vv = window.visualViewport;
+    var root = document.documentElement;
+
+    var sync = function () {
+      var gap = window.innerHeight - (vv.height + vv.offsetTop);
+      root.style.setProperty('--toolbar-gap', (gap > 0 ? gap : 0) + 'px');
+    };
+
+    vv.addEventListener('resize', sync);
+    vv.addEventListener('scroll', sync);
+    sync();
+  })();
+
+
   /* ═══ 9. МЕЛОЧИ ══════════════════════════════════════════════════════════ */
 
   // Год в копирайте — чтобы подвал не устаревал

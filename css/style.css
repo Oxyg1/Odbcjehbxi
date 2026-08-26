@@ -1175,7 +1175,14 @@ button { cursor: pointer; }
 .to-top.is-visible { opacity: 1; transform: translateY(0); }
 .to-top:hover { background: var(--gold); color: var(--graphite); }
 
-/* Липкая панель действий — только на мобильных */
+/* Липкая панель действий — только на мобильных.
+   --toolbar-gap задаёт js/script.js (см. «фикс нижней панели на мобильных»):
+   в браузерах с собственной нижней панелью адреса (Yandex Browser и часть
+   Chromium на Android) position:fixed; bottom:0 иногда считается от «большого»
+   viewport, а не от реально видимой области — между нашей панелью и низом
+   экрана остаётся зазор цвета фона страницы. По умолчанию --toolbar-gap: 0px,
+   поэтому там, где браузер сам всё корректно (Safari, обычный Chrome), сдвига
+   нет вообще — правило работает только там, где действительно есть рассинхрон. */
 .mobile-bar {
   position: fixed;
   left: 0; right: 0; bottom: 0;
@@ -1186,6 +1193,7 @@ button { cursor: pointer; }
   background: var(--line);
   box-shadow: 0 -6px 22px rgba(35, 31, 32, .16);
   padding-bottom: env(safe-area-inset-bottom); /* вырез/жест-бар на iPhone */
+  transform: translateY(calc(-1 * var(--toolbar-gap, 0px)));
 }
 .mobile-bar__btn {
   display: flex;
