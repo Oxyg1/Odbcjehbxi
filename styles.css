@@ -1322,7 +1322,9 @@ h1, h2, h3 {
 
 @media (max-width: 992px) {
   .hero { grid-template-columns: 1fr; min-height: 0; }
-  .hero__media { order: -1; height: clamp(240px, 38vh, 380px); }
+  /* Фото становится первым блоком на стопке, а хедер fixed и лежит поверх
+     контента — без отступа сверху верхние ~76px кадра прятались под ним */
+  .hero__media { order: -1; height: clamp(240px, 38vh, 380px); margin-top: var(--header-h); }
   .hero__media::after {
     background: linear-gradient(0deg, rgba(253, 251, 243, .5) 0%, rgba(253, 251, 243, 0) 26%);
   }
