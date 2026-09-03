@@ -1,0 +1,316 @@
+@import "tailwindcss";
+
+@theme {
+  --color-coal: #14100b;
+  --color-soot: #1b1610;
+  --color-char: #241d13;
+  --color-ash: #3a2f1f;
+  --color-paper: #f3ead8;
+  --color-parch: #c9bca1;
+  --color-dim: #8f8268;
+  --color-flame: #ff5c26;
+  --color-flamedark: #b8390f;
+  --color-ember: #ffb02e;
+  --color-leaf: #a3b56c;
+
+  --font-display: "Unbounded", system-ui, sans-serif;
+  --font-body: "Golos Text", system-ui, sans-serif;
+  --font-mono: "JetBrains Mono", ui-monospace, monospace;
+
+  --font-weight-300: 300;
+  --font-weight-400: 400;
+  --font-weight-500: 500;
+  --font-weight-600: 600;
+  --font-weight-700: 700;
+  --font-weight-800: 800;
+  --font-weight-900: 900;
+}
+
+html {
+  scroll-behavior: smooth;
+}
+
+body {
+  background-color: var(--color-coal);
+  color: var(--color-paper);
+  font-family: var(--font-body);
+  overflow-x: hidden;
+}
+
+::selection {
+  background: var(--color-flame);
+  color: var(--color-coal);
+}
+
+/*
+  Видимый фокус. До этого по сайту нельзя было пройти с клавиатуры:
+  собственная обводка нигде не задавалась, а браузерная терялась на угле.
+  :focus-visible — только для клавиатуры, мышь колец не увидит.
+*/
+:focus-visible {
+  outline: 2px solid var(--color-ember);
+  outline-offset: 3px;
+  border-radius: 2px;
+  /*
+    Кольцо должно появляться мгновенно. У кнопок стоял transition-all,
+    который анимировал и саму обводку: при быстром переходе по Tab фокус
+    был не виден. Списки анимируемых свойств у кнопок теперь перечислены
+    явно, а здесь — страховка на случай новых `transition-all`.
+  */
+  transition-property: color, background-color, border-color, box-shadow, transform, opacity;
+}
+
+/* На светлых карточках (чек, галерея) янтарное кольцо не читается */
+.on-paper :focus-visible {
+  outline-color: var(--color-flamedark);
+}
+
+/* Ссылка «к содержимому» для клавиатуры и скринридеров */
+.skip-link {
+  position: fixed;
+  top: 0;
+  left: 50%;
+  transform: translate(-50%, -120%);
+  z-index: 100;
+  background: var(--color-flame);
+  color: var(--color-coal);
+  font-family: var(--font-display);
+  font-weight: 700;
+  font-size: 13px;
+  text-transform: uppercase;
+  letter-spacing: 0.06em;
+  padding: 12px 22px;
+  border-radius: 0 0 4px 4px;
+  transition: transform 0.2s cubic-bezier(0.22, 1, 0.36, 1);
+}
+.skip-link:focus-visible {
+  transform: translate(-50%, 0);
+  outline-offset: -4px;
+}
+
+/* Текст только для скринридеров */
+.sr-only {
+  position: absolute;
+  width: 1px;
+  height: 1px;
+  padding: 0;
+  margin: -1px;
+  overflow: hidden;
+  clip: rect(0, 0, 0, 0);
+  white-space: nowrap;
+  border: 0;
+}
+
+::-webkit-scrollbar {
+  width: 10px;
+}
+::-webkit-scrollbar-track {
+  background: var(--color-coal);
+}
+::-webkit-scrollbar-thumb {
+  background: var(--color-ash);
+  border-radius: 6px;
+  border: 2px solid var(--color-coal);
+}
+::-webkit-scrollbar-thumb:hover {
+  background: var(--color-flamedark);
+}
+
+/* ---------- keyframes ---------- */
+
+@keyframes drift-a {
+  0% { transform: translate3d(-6%, -2%, 0) scale(1); opacity: 0.55; }
+  50% { transform: translate3d(5%, 4%, 0) scale(1.18); opacity: 0.75; }
+  100% { transform: translate3d(-6%, -2%, 0) scale(1); opacity: 0.55; }
+}
+@keyframes drift-b {
+  0% { transform: translate3d(4%, 3%, 0) scale(1.1) rotate(0deg); opacity: 0.5; }
+  50% { transform: translate3d(-5%, -4%, 0) scale(0.95) rotate(8deg); opacity: 0.7; }
+  100% { transform: translate3d(4%, 3%, 0) scale(1.1) rotate(0deg); opacity: 0.5; }
+}
+@keyframes drift-c {
+  0% { transform: translate3d(0, 6%, 0) scale(1); opacity: 0.4; }
+  50% { transform: translate3d(-4%, -6%, 0) scale(1.25); opacity: 0.6; }
+  100% { transform: translate3d(0, 6%, 0) scale(1); opacity: 0.4; }
+}
+@keyframes marquee {
+  to { transform: translateX(-50%); }
+}
+@keyframes marquee-rev {
+  from { transform: translateX(-50%); }
+  to { transform: translateX(0); }
+}
+@keyframes kenburns {
+  0% { transform: scale(1.02) translate(0, 0); }
+  50% { transform: scale(1.12) translate(-1.5%, -2%); }
+  100% { transform: scale(1.02) translate(0, 0); }
+}
+@keyframes ember-rise {
+  0% { transform: translateY(0) translateX(0); opacity: 0; }
+  12% { opacity: 0.9; }
+  100% { transform: translateY(-46vh) translateX(3vw); opacity: 0; }
+}
+@keyframes pulse-dot {
+  0%, 100% { box-shadow: 0 0 0 0 rgba(163, 181, 108, 0.55); }
+  60% { box-shadow: 0 0 0 7px rgba(163, 181, 108, 0); }
+}
+@keyframes pulse-dot-red {
+  0%, 100% { box-shadow: 0 0 0 0 rgba(255, 92, 38, 0.55); }
+  60% { box-shadow: 0 0 0 7px rgba(255, 92, 38, 0); }
+}
+@keyframes flicker {
+  0%, 100% { opacity: 1; transform: scaleY(1); }
+  30% { opacity: 0.85; transform: scaleY(0.96); }
+  60% { opacity: 0.95; transform: scaleY(1.03); }
+  80% { opacity: 0.88; transform: scaleY(0.98); }
+}
+@keyframes spin-slow {
+  to { transform: rotate(360deg); }
+}
+@keyframes bump {
+  0% { transform: scale(1); }
+  38% { transform: scale(1.22); }
+  100% { transform: scale(1); }
+}
+@keyframes dash-flow {
+  to { stroke-dashoffset: -26; }
+}
+@keyframes rise-in {
+  from { opacity: 0; transform: translateY(18px); }
+  to { opacity: 1; transform: none; }
+}
+@keyframes ping-map {
+  0% { transform: scale(0.55); opacity: 0.7; }
+  100% { transform: scale(2.1); opacity: 0; }
+}
+.rise-in {
+  animation: rise-in 0.55s cubic-bezier(0.22, 1, 0.36, 1) both;
+}
+.ping-map {
+  transform-box: fill-box;
+  transform-origin: center;
+  animation: ping-map 2.2s cubic-bezier(0, 0, 0.2, 1) infinite;
+}
+
+/* ---------- utilities ---------- */
+
+.smoke-a { animation: drift-a 26s ease-in-out infinite; }
+.smoke-b { animation: drift-b 32s ease-in-out infinite; }
+.smoke-c { animation: drift-c 38s ease-in-out infinite; }
+.kenburns { animation: kenburns 22s ease-in-out infinite; }
+.flicker { animation: flicker 2.4s ease-in-out infinite; transform-origin: bottom center; }
+.spin-slow { animation: spin-slow 26s linear infinite; }
+.bump { animation: bump 0.42s cubic-bezier(0.22, 1, 0.36, 1); }
+.dash-flow { animation: dash-flow 1.6s linear infinite; }
+
+.marquee-track {
+  display: flex;
+  width: max-content;
+  animation: marquee 30s linear infinite;
+}
+.marquee-track.rev {
+  animation: marquee-rev 30s linear infinite;
+}
+/*
+  Пауза не только по наведению: с клавиатуры и на телефоне hover недоступен,
+  а бегущая строка — движение, которое пользователь должен уметь остановить.
+*/
+.marquee-paused:hover .marquee-track,
+.marquee-paused:focus-within .marquee-track {
+  animation-play-state: paused;
+}
+
+.text-outline {
+  -webkit-text-stroke: 1.5px var(--color-paper);
+  color: transparent;
+}
+.text-outline-dim {
+  -webkit-text-stroke: 1px rgba(201, 188, 161, 0.34);
+  color: transparent;
+}
+.text-outline-flame {
+  -webkit-text-stroke: 1.5px var(--color-flame);
+  color: transparent;
+}
+
+.reveal {
+  opacity: 0;
+  transform: translateY(28px);
+  transition:
+    opacity 0.9s cubic-bezier(0.22, 1, 0.36, 1),
+    transform 0.9s cubic-bezier(0.22, 1, 0.36, 1);
+}
+.reveal.in {
+  opacity: 1;
+  transform: none;
+}
+.reveal-left {
+  opacity: 0;
+  transform: translateX(-34px);
+  transition:
+    opacity 0.9s cubic-bezier(0.22, 1, 0.36, 1),
+    transform 0.9s cubic-bezier(0.22, 1, 0.36, 1);
+}
+.reveal-left.in {
+  opacity: 1;
+  transform: none;
+}
+.reveal-tilt {
+  opacity: 0;
+  transform: translateY(36px) rotate(var(--tilt, 0deg)) scale(0.96);
+  transition:
+    opacity 0.9s cubic-bezier(0.22, 1, 0.36, 1),
+    transform 0.9s cubic-bezier(0.22, 1, 0.36, 1);
+}
+.reveal-tilt.in {
+  opacity: 1;
+  transform: translateY(0) rotate(var(--tilt, 0deg)) scale(1);
+}
+
+/*
+  Подложка для карточки без фотографии и для картинки, которая не загрузилась.
+  Раньше сорванный запрос к CDN оставлял на месте снимка пустую дыру.
+*/
+.char-plate {
+  background-color: var(--color-char);
+  background-image:
+    radial-gradient(120% 90% at 50% 0%, rgba(255, 92, 38, 0.16) 0%, rgba(20, 16, 11, 0) 62%),
+    url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' width='180' height='180'%3E%3Cfilter id='n'%3E%3CfeTurbulence type='fractalNoise' baseFrequency='0.82' numOctaves='2' stitchTiles='stitch'/%3E%3C/filter%3E%3Crect width='180' height='180' filter='url(%23n)' opacity='0.55'/%3E%3C/svg%3E");
+  background-blend-mode: normal, soft-light;
+}
+
+.noise {
+  background-image: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' width='180' height='180'%3E%3Cfilter id='n'%3E%3CfeTurbulence type='fractalNoise' baseFrequency='0.82' numOctaves='2' stitchTiles='stitch'/%3E%3C/filter%3E%3Crect width='180' height='180' filter='url(%23n)' opacity='0.55'/%3E%3C/svg%3E");
+}
+
+.dotted-leader {
+  background-image: radial-gradient(circle, rgba(143, 130, 104, 0.5) 1px, transparent 1.4px);
+  background-size: 8px 2px;
+  background-repeat: repeat-x;
+  background-position: 0 62%;
+}
+
+/* ---------- reduced motion ---------- */
+
+@media (prefers-reduced-motion: reduce) {
+  html {
+    scroll-behavior: auto;
+  }
+  *,
+  *::before,
+  *::after {
+    animation-duration: 0.001s !important;
+    animation-iteration-count: 1 !important;
+    transition-duration: 0.001s !important;
+  }
+  .reveal,
+  .reveal-left,
+  .reveal-tilt {
+    opacity: 1 !important;
+    transform: none !important;
+  }
+  .marquee-track {
+    animation: none !important;
+    flex-wrap: wrap;
+  }
+}
