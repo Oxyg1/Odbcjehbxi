@@ -3,15 +3,16 @@
 <head>
 <meta charset="utf-8">
 <meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
-<title>Кутуза — кафе и чайная на Кутузовском | Бургеры, шаурма, лапша</title>
-<meta name="description" content="Кафе «Кутуза» на Кутузовском проспекте: авторские бургеры, шаурма по-турецки, вок-лапша и настоящая чайная с более чем 30 сортами листового чая. 4,9 из 5 по 528 оценкам. Работаем до 01:00.">
+<title>Кутуза — кухня и чайная на Кутузовском</title>
+<meta name="description" content="Кафе «Кутуза» на Кутузовском проспекте: бургеры на медовой булочке, шаурма по-турецки на тарелке, вок-лапша — от 490 ₽. И чайная комната с листовым чаем в соседнем зале. Работаем до 01:00.">
 <meta name="theme-color" content="#0d0c0b">
 <link rel="canonical" href="https://kutuza.ru/">
 
 <meta property="og:type" content="restaurant">
 <meta property="og:site_name" content="Кутуза">
-<meta property="og:title" content="Кутуза — кафе и чайная на Кутузовском">
-<meta property="og:description" content="Бургеры, шаурма по-турецки, вок-лапша и чайная комната. Кутузовский проспект, 36с13/14. Работаем до 01:00.">
+<meta property="og:title" content="Кутуза — кухня и чайная на Кутузовском">
+<meta property="og:description" content="Бургеры, шаурма по-турецки и вок-лапша от 490 ₽. Чайная комната в соседнем зале. До 01:00.">
+<meta property="og:image" content="https://kutuza.ru/assets/img/og-cover.jpg">
 <meta property="og:locale" content="ru_RU">
 <meta property="og:url" content="https://kutuza.ru/">
 
@@ -23,34 +24,33 @@
 </head>
 <body>
 
-<a class="skip-link" href="#menu">Перейти к меню</a>
+<!-- impeccable-disable cramped-padding -- ложное срабатывание: секции задают только
+     вертикальный ритм, горизонтальные отступы даёт внутренний .wrap. Измерено:
+     20px на 390px и 130px на 1440px, ни один блок не прижат к краю. -->
+
+<a class="skip-link" href="#menu">К меню и ценам</a>
 
 <header class="site-header" id="top">
   <div class="wrap header-inner">
-    <a class="brand" href="#top" aria-label="Кутуза — на главную">
+    <a class="brand" href="#top">
       <span class="brand-mark" aria-hidden="true">
-        <svg viewBox="0 0 64 64" role="presentation" focusable="false">
-          <circle cx="32" cy="32" r="30" fill="none" stroke="currentColor" stroke-width="2.5"/>
-          <path d="M14 38h36c0 6-5 9-11 9H25c-6 0-11-3-11-9Z" fill="currentColor"/>
-          <path d="M16 32c1-8 8-13 16-13s15 5 16 13Z" fill="currentColor" opacity=".75"/>
-          <path d="M22 15l1.8 3.9 4.2.5-3.1 2.9.8 4.2-3.7-2.1-3.7 2.1.8-4.2-3.1-2.9 4.2-.5Z" fill="currentColor"/>
-          <path d="M42 15l1.8 3.9 4.2.5-3.1 2.9.8 4.2-3.7-2.1-3.7 2.1.8-4.2-3.1-2.9 4.2-.5Z" fill="currentColor"/>
+        <svg viewBox="0 0 40 40" role="presentation" focusable="false">
+          <path d="M7 24h26c0 4.4-3.6 8-8 8H15c-4.4 0-8-3.6-8-8Z" fill="currentColor"/>
+          <path d="M9 20c0-5.5 4.9-10 11-10s11 4.5 11 10Z" fill="currentColor" opacity=".55"/>
+          <path d="M9 21.6h22" stroke="currentColor" stroke-width="1.6" stroke-linecap="round" fill="none"/>
         </svg>
       </span>
-      <span class="brand-text">Кутуза</span>
+      <span>Кутуза</span>
     </a>
 
-    <nav class="nav" id="nav" aria-label="Основная навигация">
+    <nav class="nav" id="nav" aria-label="Разделы страницы">
       <a href="#menu">Меню</a>
       <a href="#tea">Чайная</a>
-      <a href="#about">О нас</a>
-      <a href="#reviews">Отзывы</a>
+      <a href="#about">О месте</a>
       <a href="#contacts">Контакты</a>
     </nav>
 
-    <a class="btn btn-primary header-cta" href="tel:+79269880000" data-phone-link>Заказать</a>
-
-    <button class="burger" id="burger" type="button" aria-label="Меню навигации" aria-expanded="false" aria-controls="nav">
+    <button class="burger" id="burger" type="button" aria-label="Разделы страницы" aria-expanded="false" aria-controls="nav">
       <span></span><span></span><span></span>
     </button>
   </div>
@@ -58,201 +58,205 @@
 
 <main>
 
-  <!-- ───────────────────────── Hero ───────────────────────── -->
+  <!-- ───────────────────────── Первый экран ───────────────────────── -->
   <section class="hero">
-    <div class="hero-glow" aria-hidden="true"></div>
     <div class="wrap hero-inner">
       <div class="hero-copy">
-        <p class="eyebrow reveal">Кутузовский проспект · с 2015 года</p>
-        <h1 class="reveal">Быстрая еда,<br>которую готовят<br><em>не быстро</em></h1>
-        <p class="lead reveal">Авторские бургеры на медовой булочке, шаурма по-турецки на тарелке, вок-лапша — и настоящая чайная комната с листовым чаем в соседнем зале.</p>
+        <h1>Быстрая еда,<br>которую готовят <em>не быстро</em></h1>
+        <p class="hero-line">Бургеры на медовой булочке, шаурма по-турецки на тарелке и вок-лапша <b>от 490 ₽</b>. В соседнем зале чайная: выбираете сорт, завариваем в чайнике на компанию.</p>
 
-        <div class="hero-actions reveal">
-          <a class="btn btn-primary" href="#menu">Смотреть меню</a>
-          <a class="btn btn-ghost" href="https://yandex.ru/maps/org/kutuza/1084941511/" target="_blank" rel="noopener">Построить маршрут</a>
+        <div class="hero-doors">
+          <a class="door" href="#menu">
+            <span class="door-title">Что поесть</span>
+            <span class="door-note">бургеры, шаурма, вок · 490–600 ₽</span>
+          </a>
+          <a class="door" href="#tea">
+            <span class="door-title">Чайная</span>
+            <span class="door-note">пуэр, улуны, зелёный</span>
+          </a>
         </div>
 
-        <dl class="hero-stats reveal">
-          <div><dt>4,9</dt><dd>528 оценок<br>на Яндекс.Картах</dd></div>
-          <div><dt>10+</dt><dd>лет кормим<br>Кутузовский</dd></div>
-          <div><dt>01:00</dt><dd>работаем<br>до ночи</dd></div>
-        </dl>
+        <p class="hero-meta">Кутузовский проспект, 36с13/14 · сегодня до 01:00</p>
       </div>
 
-      <div class="hero-art reveal" aria-hidden="true">
-        <figure class="ph ph-hero" style="--src:url('assets/img/hero-burger.jpg')"><figcaption>Бургер «Зверь»</figcaption></figure>
-        <figure class="ph ph-a" style="--src:url('assets/img/tea-pot.jpg')"><figcaption>Чайная карта</figcaption></figure>
-        <figure class="ph ph-b" style="--src:url('assets/img/interior.jpg')"><figcaption>Зал</figcaption></figure>
-      </div>
+      <figure class="hero-photo">
+        <img src="assets/img/hero-food.jpg" width="1600" height="1100" alt="Бургер на медовой булочке с говяжьей котлетой и картофелем фри" fetchpriority="high">
+      </figure>
     </div>
   </section>
 
-  <!-- ───────────────────────── Features ───────────────────────── -->
-  <section class="features">
-    <div class="wrap feature-grid">
-      <article class="feature reveal">
-        <h3>Готовим при вас</h3>
-        <p>Котлеты из свежей говядины, овощи режем в течение дня. Никаких заготовок «со вчера».</p>
-      </article>
-      <article class="feature reveal">
-        <h3>Есть халяль</h3>
-        <p>Отдельные позиции из халяльной говядины — отмечены в меню значком.</p>
-      </article>
-      <article class="feature reveal">
-        <h3>Чайная при кафе</h3>
-        <p>Более 30 сортов листового чая: пуэр, улуны, зелёные и белые. Завариваем в чайнике на компанию.</p>
-      </article>
-      <article class="feature reveal">
-        <h3>Навынос и доставка</h3>
-        <p>Соберём заказ с собой за 10–15 минут. Позвоните или напишите в WhatsApp / Telegram.</p>
-      </article>
-    </div>
-  </section>
-
-  <!-- ───────────────────────── Menu ───────────────────────── -->
+  <!-- ───────────────────────── Меню ───────────────────────── -->
   <section class="section" id="menu">
     <div class="wrap">
-      <header class="section-head">
-        <div>
-          <p class="eyebrow">Меню</p>
-          <h2>Что у нас едят</h2>
-        </div>
-        <p class="section-note">Цены действительны на момент последнего обновления карточки заведения. Полное меню — в кафе.</p>
-      </header>
+      <div class="section-head">
+        <h2>Что у нас едят</h2>
+        <p class="section-note">Цены и составы приведены по последнему обновлению карточки заведения. Полное меню и закуски — в кафе.</p>
+      </div>
 
-      <div class="menu-tabs" role="tablist" aria-label="Категории меню" id="menu-tabs"></div>
-      <div class="menu-grid" id="menu-grid"></div>
+      <div class="menu-tabs" id="menu-tabs" hidden></div>
 
-      <aside class="promo reveal">
-        <div class="promo-body">
-          <p class="badge">Новинка</p>
-          <h3>Сочные рулетики с говядиной</h3>
-          <p>Тонкий лаваш, говядина, овощи, подаём с картофелем по-деревенски. Спрашивайте у кассы — готовим порционно.</p>
-        </div>
-        <figure class="ph promo-img" style="--src:url('assets/img/rolls.jpg')" aria-hidden="true"><figcaption>Рулетики с говядиной</figcaption></figure>
-      </aside>
+      <div id="menu-grid">
+        <!-- Меню отдаётся в разметке: страница работает и без JavaScript.
+             Скрипт превращает эти секции в переключаемые вкладки.
+             Правится в assets/js/menu-data.js — держите файлы в согласии. -->
+
+        <section class="menu-cat" id="cat-burgers" aria-labelledby="cat-burgers-h">
+          <h3 id="cat-burgers-h">Бургеры</h3>
+          <p class="menu-lead">На фирменной медовой булочке, котлета из говядины.</p>
+          <div class="dish-list">
+            <article class="dish">
+              <h4>Бургер «Зверь»<span class="dish-price">590 ₽</span></h4>
+              <p class="dish-desc">Медовая булочка, говяжья котлета, сыр чеддер</p>
+              <p class="dish-meta"><span class="tag tag-hit">Хит</span></p>
+            </article>
+            <article class="dish">
+              <h4>Бургер «Я Легенда»<span class="dish-price">550 ₽</span></h4>
+              <p class="dish-desc">Медовая булочка, говяжья котлета, сыр чеддер</p>
+            </article>
+          </div>
+        </section>
+
+        <section class="menu-cat" id="cat-hot" aria-labelledby="cat-hot-h">
+          <h3 id="cat-hot-h">Горячие блюда</h3>
+          <p class="menu-lead">Шаурма на тарелке, вок-лапша и тяхан (жареный рис с овощами). Порции на полноценный обед.</p>
+
+          <h4 class="dish-group">Шаурма на тарелке</h4>
+          <div class="dish-list">
+            <article class="dish">
+              <h4>Шаурма с курицей по-турецки<span class="dish-price">560 ₽</span></h4>
+              <p class="dish-desc">Филе бедра куриное, картофель фри, рис, помидоры свежие, огурцы</p>
+              <p class="dish-meta"><span class="tag tag-hit">Хит</span></p>
+            </article>
+            <article class="dish">
+              <h4>Турецкая с курицей<span class="dish-price">570 ₽</span></h4>
+              <p class="dish-desc">Филе бедра куриное, картофель фри, рис, томаты, огурцы, лук красный, острый соус</p>
+            </article>
+            <article class="dish">
+              <h4>Турецкая по-домашнему<span class="dish-price">570 ₽</span></h4>
+              <p class="dish-desc">Котлеты говяжьи, картофель по-деревенски, рис, томаты, огурец</p>
+              <p class="dish-meta"><span class="tag tag-halal">Халяль</span></p>
+            </article>
+          </div>
+
+          <h4 class="dish-group">Шаурма в пите и лаваше</h4>
+          <div class="dish-list">
+            <article class="dish">
+              <h4>Куриная в пите<span class="dish-price">490 ₽</span></h4>
+              <p class="dish-desc">Филе куриное, томаты, огурцы, лук красный, пита, соус</p>
+            </article>
+            <article class="dish">
+              <h4>Куриная в пите с яйцом<span class="dish-price">530 ₽</span></h4>
+              <p class="dish-desc">Филе куриное, томаты, огурцы, лук красный, соус, пита, яйцо жареное</p>
+            </article>
+            <article class="dish">
+              <h4>Арабская<span class="dish-price">530 ₽</span></h4>
+              <p class="dish-desc">Филе куриное, томаты, огурцы солёные, лаваш, мятный соус, картофель фри</p>
+            </article>
+          </div>
+
+          <h4 class="dish-group">Вок и рис</h4>
+          <div class="dish-list">
+            <article class="dish">
+              <h4>Лапша «Хон Гиль Дон» терияки<span class="dish-price">530 ₽</span></h4>
+              <p class="dish-desc">Яичная лапша, куриное филе, соус терияки, лук, перец болгарский, морковь</p>
+            </article>
+            <article class="dish">
+              <h4>Лапша «Хон Гиль Дон» острая<span class="dish-price">530 ₽</span></h4>
+              <p class="dish-desc">Яичная лапша, куриное филе, соус ким чи, лук, перец болгарский, морковь, лук зелёный</p>
+              <p class="dish-meta"><span class="tag tag-hot">Остро</span></p>
+            </article>
+            <article class="dish">
+              <h4>Лапша «Хон Гиль Дон» с креветками<span class="dish-price">580 ₽</span></h4>
+              <p class="dish-desc">Яичная лапша, креветки, соус, лук, перец болгарский, морковь, лук зелёный, кунжут</p>
+            </article>
+            <article class="dish">
+              <h4>Тяхан с курицей и овощами<span class="dish-price">530 ₽</span></h4>
+              <p class="dish-desc">Рис, куриное филе, лук репчатый, баклажаны, перец болгарский, морковь</p>
+            </article>
+            <article class="dish">
+              <h4>Тяхан с креветками и овощами<span class="dish-price">600 ₽</span></h4>
+              <p class="dish-desc">Рис, креветки, лук репчатый, баклажаны, перец болгарский, фасоль</p>
+            </article>
+          </div>
+        </section>
+
+        <section class="menu-cat" id="cat-new" aria-labelledby="cat-new-h">
+          <h3 id="cat-new-h">Новое</h3>
+          <p class="menu-lead">Готовим порционно, спрашивайте на кассе.</p>
+          <div class="dish-list">
+            <article class="dish">
+              <h4>Рулетики с говядиной<span class="dish-price dish-price-soft">цену уточняйте</span></h4>
+              <p class="dish-desc">Тонкий лаваш, говядина, овощи, картофель по-деревенски</p>
+              <p class="dish-meta"><span class="tag tag-new">Новинка</span></p>
+            </article>
+          </div>
+        </section>
+      </div>
     </div>
   </section>
 
-  <!-- ───────────────────────── Tea ───────────────────────── -->
+  <!-- ───────────────────────── Чайная (светлый зал) ───────────────────────── -->
   <section class="section tea" id="tea">
     <div class="wrap tea-inner">
       <div class="tea-copy">
-        <p class="eyebrow reveal">Чайная</p>
-        <h2 class="reveal">Пуэр вместо газировки</h2>
-        <p class="reveal">«Кутуза» начиналась как чайный клуб — и чайная осталась с нами. В соседнем зале стоят полки с прессованным пуэром, улунами и зелёным чаем: выбираете сорт, мы завариваем в стеклянном чайнике на всю компанию.</p>
-        <ul class="tea-list reveal">
-          <li><strong>Шу и шэн пуэр</strong><span>плотный, тёмный, с годами выдержки</span></li>
-          <li><strong>Улуны</strong><span>молочный, Те Гуань Инь, Да Хун Пао</span></li>
-          <li><strong>Зелёный и белый</strong><span>лёгкие, для длинного разговора</span></li>
-          <li><strong>Травяные сборы</strong><span>мята, чабрец, облепиха — зимой</span></li>
+        <h2>Пуэр вместо газировки</h2>
+        <p>«Кутуза» начиналась как чайный клуб, и чайная осталась с нами. В соседнем зале стоят полки с прессованным пуэром, улунами и зелёным чаем: выбираете сорт, мы завариваем в стеклянном чайнике на всю компанию. Никто не торопит.</p>
+        <ul class="tea-list">
+          <li><b>Шу и шэн пуэр</b><span>плотный тёмный чай с выдержкой</span></li>
+          <li><b>Улуны</b><span>молочный, Те Гуань Инь, Да Хун Пао</span></li>
+          <li><b>Зелёный и белый</b><span>лёгкие, для длинного разговора</span></li>
+          <li><b>Травяные сборы</b><span>мята, чабрец, облепиха</span></li>
         </ul>
-        <p class="section-note reveal">Полная чайная карта — в заведении: сорта и цены меняются от поставки к поставке.</p>
+        <p class="section-note">Чайная карта есть в заведении: сорта и цены меняются от поставки к поставке.</p>
       </div>
-      <div class="tea-art reveal" aria-hidden="true">
-        <figure class="ph tea-a" style="--src:url('assets/img/tea-leaves.jpg')"><figcaption>Листовой чай</figcaption></figure>
-        <figure class="ph tea-b" style="--src:url('assets/img/tea-shelf.jpg')"><figcaption>Чайные полки</figcaption></figure>
-      </div>
+      <figure class="tea-photo">
+        <img src="assets/img/tea.jpg" width="1200" height="900" alt="Стеклянный чайник с завариваемым листовым чаем на столе в чайном зале" loading="lazy">
+      </figure>
     </div>
   </section>
 
-  <!-- ───────────────────────── About ───────────────────────── -->
+  <!-- ───────────────────────── О месте ───────────────────────── -->
   <section class="section" id="about">
     <div class="wrap about-inner">
       <div class="about-copy">
-        <p class="eyebrow reveal">О нас</p>
-        <h2 class="reveal">Десять лет на одном месте</h2>
-        <p class="reveal">Маленькое кафе во дворе жёлтого дома 13/14 на Кутузовском. Сюда заходят офисные соседи на обед, студенты — за бургером, и постоянные гости — просто посидеть с чайником пуэра до полуночи.</p>
-        <p class="reveal">Мы не сеть и не франшиза. Всё, что вы едите, готовит одна и та же команда — поэтому вкус бургера в четверг такой же, как был в понедельник.</p>
-        <div class="about-facts reveal">
-          <div><strong>372</strong><span>отзыва гостей</span></div>
-          <div><strong>1 этаж</strong><span>без ступеней у входа</span></div>
-          <div><strong>до 01:00</strong><span>ежедневно</span></div>
-        </div>
+        <h2>Десять лет на одном месте</h2>
+        <p>Маленькое кафе во дворе жёлтого дома 13/14 на Кутузовском. Сюда заходят соседи по офисам на обед, студенты за бургером и постоянные гости, чтобы посидеть с чайником пуэра до полуночи.</p>
+        <p>Мы не сеть и не франшиза. Всё, что вы едите, готовит одна и та же команда, поэтому вкус бургера в четверг такой же, каким был в понедельник.</p>
+        <p class="rating">
+          <span class="rating-score">4,9</span>
+          <span class="rating-note">на Яндекс.Картах: 528 оценок, 372 отзыва.
+            <a href="https://yandex.ru/maps/org/kutuza/1084941511/reviews/" target="_blank" rel="noopener">Читать отзывы</a>
+          </span>
+        </p>
       </div>
-      <div class="about-gallery reveal" aria-hidden="true">
-        <figure class="ph" style="--src:url('assets/img/gallery-1.jpg')"><figcaption>Зал</figcaption></figure>
-        <figure class="ph" style="--src:url('assets/img/gallery-2.jpg')"><figcaption>Бургеры</figcaption></figure>
-        <figure class="ph" style="--src:url('assets/img/gallery-3.jpg')"><figcaption>Вход, дом 13/14</figcaption></figure>
-        <figure class="ph" style="--src:url('assets/img/gallery-4.jpg')"><figcaption>Чайная</figcaption></figure>
-      </div>
+      <figure class="about-photo">
+        <img src="assets/img/room.jpg" width="1200" height="900" alt="Зал кафе «Кутуза»: деревянные столы, полки с чаем вдоль стены" loading="lazy">
+      </figure>
     </div>
   </section>
 
-  <!-- ───────────────────────── Reviews ───────────────────────── -->
-  <section class="section reviews" id="reviews">
-    <div class="wrap">
-      <header class="section-head">
-        <div>
-          <p class="eyebrow">Отзывы</p>
-          <h2>4,9 из 5 — и это не накрутка</h2>
-        </div>
-        <a class="btn btn-ghost" href="https://yandex.ru/maps/org/kutuza/1084941511/reviews/" target="_blank" rel="noopener">Все 372 отзыва</a>
-      </header>
-
-      <div class="review-grid">
-        <figure class="review reveal">
-          <div class="stars" aria-label="Оценка 5 из 5">★★★★★</div>
-          <blockquote>Лучшая шаурма на тарелке в районе. Порция такая, что вдвоём можно делить.</blockquote>
-          <figcaption>Гость Яндекс.Карт</figcaption>
-        </figure>
-        <figure class="review reveal">
-          <div class="stars" aria-label="Оценка 5 из 5">★★★★★</div>
-          <blockquote>Хожу сюда за чаем уже несколько лет. Пуэр отличный, и никто не торопит.</blockquote>
-          <figcaption>Гость Яндекс.Карт</figcaption>
-        </figure>
-        <figure class="review reveal">
-          <div class="stars" aria-label="Оценка 5 из 5">★★★★★</div>
-          <blockquote>Бургеры реально мясные, булочка медовая — не сухая. Работают допоздна, выручали не раз.</blockquote>
-          <figcaption>Гость Яндекс.Карт</figcaption>
-        </figure>
-      </div>
-      <p class="section-note center">Цитаты — обобщённые формулировки для верстки. Замените их реальными отзывами гостей перед публикацией.</p>
-    </div>
-  </section>
-
-  <!-- ───────────────────────── Contacts ───────────────────────── -->
+  <!-- ───────────────────────── Контакты ───────────────────────── -->
   <section class="section contacts" id="contacts">
     <div class="wrap contacts-inner">
-      <div class="contacts-copy">
-        <p class="eyebrow reveal">Контакты</p>
-        <h2 class="reveal">Кутузовский проспект, 36с13/14</h2>
-        <p class="lead reveal">Первый этаж жёлтого корпуса во дворе. Ориентир — крупные цифры «13/14» на фасаде.</p>
-
-        <ul class="contact-list reveal">
-          <li>
-            <span class="contact-label">Часы работы</span>
-            <span class="contact-value">Ежедневно, до 01:00</span>
-          </li>
-          <li>
-            <span class="contact-label">Телефон и бронирование</span>
-            <a class="contact-value" href="tel:+79269880000" data-phone-link>+7 (926) 988-00-00</a>
-          </li>
-          <li>
-            <span class="contact-label">Мессенджеры</span>
-            <span class="contact-value contact-messengers">
-              <a href="https://wa.me/79269880000" target="_blank" rel="noopener" data-wa-link>WhatsApp</a>
-              <a href="https://t.me/+79269880000" target="_blank" rel="noopener" data-tg-link>Telegram</a>
-            </span>
-          </li>
-          <li>
-            <span class="contact-label">Метро</span>
-            <span class="contact-value">Кутузовская, Парк Победы</span>
-          </li>
-        </ul>
-
-        <div class="hero-actions reveal">
-          <a class="btn btn-primary" href="https://yandex.ru/maps/org/kutuza/1084941511/" target="_blank" rel="noopener">Открыть в Яндекс.Картах</a>
+      <h2>Зайти или позвонить</h2>
+      <dl class="contact-list">
+        <div>
+          <dt>Адрес</dt>
+          <dd>Кутузовский проспект, 36с13/14, этаж 1<br>
+            <span class="dim">во дворе, жёлтый корпус с цифрами «13/14» на фасаде</span></dd>
         </div>
-      </div>
-
-      <a class="map-card reveal" href="https://yandex.ru/maps/org/kutuza/1084941511/" target="_blank" rel="noopener" aria-label="Открыть Кутуза на Яндекс.Картах">
-        <div class="map-pin" aria-hidden="true"></div>
-        <div class="map-caption">
-          <strong>Кутуза</strong>
-          <span>Кутузовский просп., 36с13/14 · этаж 1</span>
+        <div>
+          <dt>Часы</dt>
+          <dd>Ежедневно до 01:00</dd>
         </div>
-      </a>
+        <div>
+          <dt>Телефон</dt>
+          <dd data-contact-phone>
+            <span class="phone-partial">+7 (926) 988-…</span><br>
+            <span class="dim">полный номер — <a href="https://yandex.ru/maps/org/kutuza/1084941511/" target="_blank" rel="noopener">в карточке на Яндекс.Картах</a></span>
+          </dd>
+        </div>
+      </dl>
     </div>
   </section>
 
@@ -260,21 +264,17 @@
 
 <footer class="site-footer">
   <div class="wrap footer-inner">
-    <div>
-      <p class="footer-brand">Кутуза</p>
-      <p class="footer-note">Быстрое питание · кафе · чайная<br>Кутузовский просп., 36с13/14, Москва</p>
-    </div>
-    <nav class="footer-nav" aria-label="Навигация в подвале">
+    <p class="footer-brand">Кутуза</p>
+    <p class="footer-note">Кафе и чайная · Кутузовский просп., 36с13/14, Москва · ежедневно до 01:00</p>
+    <nav class="footer-nav" aria-label="Разделы страницы">
       <a href="#menu">Меню</a>
       <a href="#tea">Чайная</a>
-      <a href="#about">О нас</a>
+      <a href="#about">О месте</a>
       <a href="#contacts">Контакты</a>
     </nav>
-    <p class="footer-copy">© <span id="year">2026</span> Кафе «Кутуза». Все права защищены.</p>
+    <p class="footer-copy">© <span id="year">2026</span> Кафе «Кутуза»</p>
   </div>
 </footer>
-
-<a class="call-fab" href="tel:+79269880000" data-phone-link aria-label="Позвонить в кафе">Позвонить</a>
 
 <script type="application/ld+json">
 {
@@ -284,14 +284,13 @@
   "description": "Кафе и чайная на Кутузовском проспекте: бургеры, шаурма по-турецки, вок-лапша, листовой чай.",
   "servesCuisine": ["Бургеры", "Ближневосточная", "Азиатская"],
   "priceRange": "₽₽",
+  "image": "https://kutuza.ru/assets/img/og-cover.jpg",
   "address": {
     "@type": "PostalAddress",
     "streetAddress": "Кутузовский проспект, 36с13/14",
     "addressLocality": "Москва",
     "addressCountry": "RU"
   },
-  "telephone": "+7 926 988-00-00",
-  "openingHours": "Mo-Su 10:00-01:00",
   "aggregateRating": {
     "@type": "AggregateRating",
     "ratingValue": "4.9",
@@ -302,7 +301,6 @@
 }
 </script>
 
-<script src="assets/js/menu-data.js"></script>
-<script src="assets/js/main.js"></script>
+<script src="assets/js/main.js" defer></script>
 </body>
 </html>

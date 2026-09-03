@@ -1,160 +1,131 @@
-/* Кутуза — логика сайта: контакты, меню, навигация, анимации появления. */
+/* Кутуза — прогрессивное улучшение.
+   Страница полностью работает без этого файла: меню, контакты и все разделы
+   отдаются в разметке. Скрипт добавляет вкладки меню, мобильную навигацию,
+   подсветку текущего раздела и подставляет телефон, когда он заполнен. */
 (function () {
   'use strict';
 
   /**
    * Контакты заведения.
-   * ВАЖНО: на карточке Яндекс.Карт номер показан частично — «+7 (926) 988-…».
-   * Подставьте полный номер здесь, и он обновится во всех ссылках сразу
-   * (шапка, блок контактов, кнопка звонка, WhatsApp, Telegram).
+   *
+   * На карточке Яндекс.Карт номер показан частично («+7 (926) 988-…»),
+   * поэтому здесь ПУСТО: выдуманных цифр на сайте быть не должно.
+   * Впишите настоящий номер — и он появится в блоке контактов и в нижней
+   * кнопке звонка на мобильных. Пока поле пустое, кнопка честно ведёт
+   * на карточку Яндекса, где номер есть.
+   *
+   *   phone    — как показывать: '+7 (926) 988-12-34'
+   *   phoneRaw — только цифры для tel: и WhatsApp: '79269881234'
+   *   whatsapp — true, если по этому номеру отвечают в WhatsApp
    */
   var CONTACT = {
-    phone: '+7 (926) 988-00-00',   // TODO: полный номер
-    phoneRaw: '79269880000',       // TODO: тот же номер, только цифры
-    telegram: 'https://t.me/'      // TODO: ссылка на канал/аккаунт в Telegram
+    phone: '',
+    phoneRaw: '',
+    whatsapp: false,
+    yandex: 'https://yandex.ru/maps/org/kutuza/1084941511/'
   };
 
-  /* ── Контакты в разметке ─────────────────────────────────────────── */
-  function applyContacts() {
-    document.querySelectorAll('[data-phone-link]').forEach(function (el) {
-      el.href = 'tel:+' + CONTACT.phoneRaw;
-      if (el.dataset.phoneLink === 'text' || /^\+?[\d\s()\-–]+$/.test(el.textContent.trim())) {
-        el.textContent = CONTACT.phone;
+  var hasPhone = /^\d{10,15}$/.test(CONTACT.phoneRaw) && CONTACT.phone.length > 0;
+
+  /* ── Телефон и нижняя полоса звонка ──────────────────────────────── */
+  function initContacts() {
+    if (hasPhone) {
+      var cell = document.querySelector('[data-contact-phone]');
+      if (cell) {
+        cell.textContent = '';
+        var link = document.createElement('a');
+        link.href = 'tel:+' + CONTACT.phoneRaw;
+        link.className = 'phone-partial';
+        link.textContent = CONTACT.phone;
+        cell.appendChild(link);
+
+        if (CONTACT.whatsapp) {
+          var wa = document.createElement('a');
+          wa.href = 'https://wa.me/' + CONTACT.phoneRaw;
+          wa.target = '_blank';
+          wa.rel = 'noopener';
+          wa.textContent = 'Написать в WhatsApp';
+          cell.appendChild(document.createElement('br'));
+          cell.appendChild(wa);
+        }
       }
-    });
-    document.querySelectorAll('[data-wa-link]').forEach(function (el) {
-      el.href = 'https://wa.me/' + CONTACT.phoneRaw;
-    });
-    document.querySelectorAll('[data-tg-link]').forEach(function (el) {
-      el.href = CONTACT.telegram;
-    });
-  }
-
-  /* ── Меню ────────────────────────────────────────────────────────── */
-  var TAG_LABELS = {
-    'халяль': 'Халяль',
-    'острое': 'Остро',
-    'новинка': 'Новинка',
-    'хит': 'Хит'
-  };
-
-  function priceText(price) {
-    if (price === null || price === undefined) return 'уточняйте';
-    return price.toLocaleString('ru-RU') + ' ₽';
-  }
-
-  function buildCard(item) {
-    var card = document.createElement('article');
-    card.className = 'dish reveal';
-
-    var head = document.createElement('div');
-    head.className = 'dish-head';
-
-    var name = document.createElement('h3');
-    name.textContent = item.name;
-    head.appendChild(name);
-
-    var price = document.createElement('p');
-    price.className = 'dish-price' + (item.price == null ? ' dish-price-soft' : '');
-    price.textContent = priceText(item.price);
-    head.appendChild(price);
-
-    card.appendChild(head);
-
-    if (item.desc) {
-      var desc = document.createElement('p');
-      desc.className = 'dish-desc';
-      desc.textContent = item.desc;
-      card.appendChild(desc);
     }
 
-    var meta = document.createElement('div');
-    meta.className = 'dish-meta';
-
-    if (item.weight) {
-      var weight = document.createElement('span');
-      weight.className = 'dish-weight';
-      weight.textContent = item.weight;
-      meta.appendChild(weight);
+    var bar = document.createElement('a');
+    bar.className = 'call-bar';
+    if (hasPhone) {
+      bar.href = 'tel:+' + CONTACT.phoneRaw;
+      bar.textContent = 'Позвонить ' + CONTACT.phone;
+    } else {
+      bar.href = CONTACT.yandex;
+      bar.target = '_blank';
+      bar.rel = 'noopener';
+      bar.textContent = 'Позвонить';
+      var note = document.createElement('small');
+      note.textContent = 'номер — в карточке на Яндекс.Картах';
+      bar.appendChild(note);
     }
-
-    (item.tags || []).forEach(function (tag) {
-      var chip = document.createElement('span');
-      chip.className = 'tag tag-' + tag;
-      chip.textContent = TAG_LABELS[tag] || tag;
-      meta.appendChild(chip);
-    });
-
-    if (meta.childNodes.length) card.appendChild(meta);
-    return card;
+    document.body.appendChild(bar);
   }
 
-  function renderCategory(category, grid) {
-    grid.textContent = '';
-
-    if (category.lead) {
-      var lead = document.createElement('p');
-      lead.className = 'menu-lead';
-      lead.textContent = category.lead;
-      grid.appendChild(lead);
-    }
-
-    var list = document.createElement('div');
-    list.className = 'dish-list';
-    category.items.forEach(function (item) {
-      list.appendChild(buildCard(item));
-    });
-    grid.appendChild(list);
-
-    observeReveals(grid);
-  }
-
-  function initMenu() {
+  /* ── Меню: секции разметки становятся вкладками ──────────────────── */
+  function initMenuTabs() {
     var tabsEl = document.getElementById('menu-tabs');
     var grid = document.getElementById('menu-grid');
-    var data = window.KUTUZA_MENU;
-    if (!tabsEl || !grid || !data || !data.length) return;
+    if (!tabsEl || !grid) return;
 
-    var buttons = data.map(function (category, index) {
+    var panels = Array.prototype.slice.call(grid.querySelectorAll('.menu-cat'));
+    if (panels.length < 2) return;
+
+    var buttons = panels.map(function (panel, index) {
+      var heading = panel.querySelector('h3');
       var btn = document.createElement('button');
       btn.type = 'button';
       btn.className = 'menu-tab';
-      btn.textContent = category.title;
+      btn.id = 'tab-' + panel.id;
+      btn.textContent = heading ? heading.textContent : 'Раздел ' + (index + 1);
       btn.setAttribute('role', 'tab');
-      btn.id = 'tab-' + category.id;
-      btn.setAttribute('aria-controls', 'menu-grid');
-      btn.setAttribute('aria-selected', index === 0 ? 'true' : 'false');
-      btn.tabIndex = index === 0 ? 0 : -1;
+      btn.setAttribute('aria-controls', panel.id);
       tabsEl.appendChild(btn);
+
+      // Заголовок раздела дублирует надпись на вкладке, поэтому visually-hidden,
+      // а не hidden: иначе он выпадает из структуры заголовков и следующий
+      // h4 повисает под h2.
+      if (heading) heading.classList.add('visually-hidden');
+      panel.setAttribute('role', 'tabpanel');
+      panel.setAttribute('aria-labelledby', btn.id);
+      panel.tabIndex = 0;
       return btn;
     });
 
-    function select(index) {
+    tabsEl.setAttribute('role', 'tablist');
+    tabsEl.setAttribute('aria-label', 'Разделы меню');
+    tabsEl.hidden = false;
+
+    function select(index, moveFocus) {
       buttons.forEach(function (btn, i) {
         var active = i === index;
         btn.setAttribute('aria-selected', active ? 'true' : 'false');
         btn.tabIndex = active ? 0 : -1;
+        panels[i].hidden = !active;
       });
-      grid.setAttribute('aria-labelledby', buttons[index].id);
-      renderCategory(data[index], grid);
+      if (moveFocus) buttons[index].focus();
     }
 
     buttons.forEach(function (btn, index) {
-      btn.addEventListener('click', function () {
-        select(index);
-      });
+      btn.addEventListener('click', function () { select(index); });
       btn.addEventListener('keydown', function (event) {
         var next = null;
         if (event.key === 'ArrowRight') next = (index + 1) % buttons.length;
-        if (event.key === 'ArrowLeft') next = (index - 1 + buttons.length) % buttons.length;
+        else if (event.key === 'ArrowLeft') next = (index - 1 + buttons.length) % buttons.length;
+        else if (event.key === 'Home') next = 0;
+        else if (event.key === 'End') next = buttons.length - 1;
         if (next === null) return;
         event.preventDefault();
-        select(next);
-        buttons[next].focus();
+        select(next, true);
       });
     });
 
-    grid.setAttribute('role', 'tabpanel');
     select(0);
   }
 
@@ -164,76 +135,76 @@
     var nav = document.getElementById('nav');
     if (!burger || !nav) return;
 
-    function close() {
+    var links = Array.prototype.slice.call(nav.querySelectorAll('a'));
+
+    // Панель скрыта трансформацией, поэтому её ссылки нужно убрать
+    // из порядка табуляции, иначе фокус уходит за экран.
+    function setClosedState(closed) {
+      if ('inert' in HTMLElement.prototype) {
+        nav.inert = closed;
+      } else {
+        links.forEach(function (link) { link.tabIndex = closed ? -1 : 0; });
+      }
+    }
+
+    function isCollapsed() {
+      return getComputedStyle(burger).display !== 'none';
+    }
+
+    function open() {
+      document.body.classList.add('nav-open');
+      burger.setAttribute('aria-expanded', 'true');
+      setClosedState(false);
+      // Панель показывается через visibility, поэтому фокус ставим после
+      // пересчёта стилей: focus() на visibility:hidden молча не срабатывает.
+      requestAnimationFrame(function () { if (links[0]) links[0].focus(); });
+    }
+
+    function close(restoreFocus) {
       document.body.classList.remove('nav-open');
       burger.setAttribute('aria-expanded', 'false');
+      setClosedState(isCollapsed());
+      if (restoreFocus) burger.focus();
     }
 
     burger.addEventListener('click', function () {
-      var open = document.body.classList.toggle('nav-open');
-      burger.setAttribute('aria-expanded', open ? 'true' : 'false');
+      if (document.body.classList.contains('nav-open')) close(true);
+      else open();
     });
 
     nav.addEventListener('click', function (event) {
-      if (event.target.tagName === 'A') close();
+      if (event.target.closest('a')) close(false);
     });
 
     document.addEventListener('keydown', function (event) {
-      if (event.key === 'Escape') close();
+      if (event.key === 'Escape' && document.body.classList.contains('nav-open')) close(true);
     });
+
+    // Фокус не должен уходить из открытой панели на контент за ней.
+    document.addEventListener('focusin', function (event) {
+      if (!document.body.classList.contains('nav-open')) return;
+      if (nav.contains(event.target) || event.target === burger) return;
+      if (links[0]) links[0].focus();
+    });
+
+    // Переход между мобильной и десктопной раскладкой не должен оставлять
+    // страницу в промежуточном состоянии.
+    var sync = function () {
+      if (!isCollapsed()) close(false);
+      setClosedState(isCollapsed() && !document.body.classList.contains('nav-open'));
+    };
+    window.addEventListener('resize', sync, { passive: true });
+    sync();
   }
 
-  /* ── Шапка: тень при прокрутке ───────────────────────────────────── */
-  function initHeaderState() {
-    var header = document.querySelector('.site-header');
-    if (!header) return;
-    var ticking = false;
-
-    function update() {
-      header.classList.toggle('is-scrolled', window.scrollY > 12);
-      ticking = false;
-    }
-    window.addEventListener('scroll', function () {
-      if (ticking) return;
-      ticking = true;
-      window.requestAnimationFrame(update);
-    }, { passive: true });
-    update();
-  }
-
-  /* ── Появление блоков при прокрутке ──────────────────────────────── */
-  var revealObserver = null;
-
-  function observeReveals(root) {
-    var targets = (root || document).querySelectorAll('.reveal:not(.is-visible)');
-    if (!revealObserver) {
-      targets.forEach(function (el) { el.classList.add('is-visible'); });
-      return;
-    }
-    targets.forEach(function (el) { revealObserver.observe(el); });
-  }
-
-  function initReveals() {
-    var reduced = window.matchMedia('(prefers-reduced-motion: reduce)').matches;
-    if (!reduced && 'IntersectionObserver' in window) {
-      revealObserver = new IntersectionObserver(function (entries) {
-        entries.forEach(function (entry) {
-          if (!entry.isIntersecting) return;
-          entry.target.classList.add('is-visible');
-          revealObserver.unobserve(entry.target);
-        });
-      }, { rootMargin: '0px 0px -8% 0px', threshold: 0 });
-    }
-    observeReveals(document);
-  }
-
-  /* ── Подсветка активного пункта меню ─────────────────────────────── */
+  /* ── Подсветка текущего раздела ──────────────────────────────────── */
   function initScrollSpy() {
+    if (!('IntersectionObserver' in window)) return;
     var links = Array.prototype.slice.call(document.querySelectorAll('.nav a[href^="#"]'));
     var sections = links
       .map(function (link) { return document.querySelector(link.getAttribute('href')); })
       .filter(Boolean);
-    if (!sections.length || !('IntersectionObserver' in window)) return;
+    if (!sections.length) return;
 
     var spy = new IntersectionObserver(function (entries) {
       entries.forEach(function (entry) {
@@ -252,13 +223,9 @@
     if (year) year.textContent = new Date().getFullYear();
   }
 
-  document.addEventListener('DOMContentLoaded', function () {
-    applyContacts();
-    initMenu();
-    initNav();
-    initHeaderState();
-    initReveals();
-    initScrollSpy();
-    initYear();
-  });
+  initContacts();
+  initMenuTabs();
+  initNav();
+  initScrollSpy();
+  initYear();
 })();
