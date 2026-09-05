@@ -1,0 +1,9 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 160 200" width="160" height="200">
+  <style>
+    .f { transform-origin: 80px 170px; animation: flick 900ms ease-in-out infinite alternate; }
+    .fi { transform-origin: 80px 176px; animation: flick 640ms ease-in-out infinite alternate-reverse; }
+    @keyframes flick { from { transform: scaleY(.92) scaleX(1.04) } to { transform: scaleY(1.06) scaleX(.96) } }
+  </style>
+  <path class="f" d="M80 8c30 38 56 52 56 96a56 56 0 1 1-112 0c0-24 14-38 22-56 6 18 16 24 22 28 6-24 4-46 12-68z" fill="#F07B3F"/>
+  <path class="fi" d="M80 78c14 20 26 28 26 50a26 26 0 1 1-52 0c0-16 16-30 26-50z" fill="#FFD166"/>
+</svg>

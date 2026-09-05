@@ -1,0 +1,17 @@
+{
+  "name": "plsdonate",
+  "private": true,
+  "version": "0.1.0",
+  "workspaces": [
+    "packages/*",
+    "apps/*"
+  ],
+  "scripts": {
+    "dev": "npm run dev -w @plsdonate/miniapp",
+    "build": "npm run build -w @plsdonate/shared && npm run build -w @plsdonate/miniapp",
+    "typecheck": "npm run typecheck -w @plsdonate/shared && npm run typecheck -w @plsdonate/miniapp"
+  },
+  "engines": {
+    "node": ">=20"
+  }
+}

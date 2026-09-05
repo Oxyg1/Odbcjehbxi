@@ -1,0 +1,13 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 240 240" width="240" height="240">
+  <style>
+    .r { transform-origin: center; animation: spin 8s linear infinite; }
+    .r2 { animation-duration: 12s; animation-direction: reverse; }
+    @keyframes spin { to { transform: rotate(360deg) } }
+  </style>
+  <g class="r" fill="none" stroke="#FFD9A0" stroke-width="6" stroke-linecap="round">
+    <circle cx="120" cy="120" r="96" stroke-dasharray="30 34" opacity=".9"/>
+  </g>
+  <g class="r r2" fill="none" stroke="#E8B04B" stroke-width="10" stroke-linecap="round">
+    <circle cx="120" cy="120" r="74" stroke-dasharray="8 46"/>
+  </g>
+</svg>

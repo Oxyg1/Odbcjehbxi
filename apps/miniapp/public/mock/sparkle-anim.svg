@@ -1,0 +1,13 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 200 200" width="200" height="200">
+  <style>
+    .s { transform-origin: center; animation: pulse 1.6s ease-in-out infinite; }
+    .s2 { animation-delay: .45s; }
+    .s3 { animation-delay: .9s; }
+    @keyframes pulse { 0%,100% { transform: scale(.55); opacity:.45 } 50% { transform: scale(1); opacity:1 } }
+  </style>
+  <g fill="#FFE29A">
+    <path class="s" d="M100 44l12 40 40 12-40 12-12 40-12-40-40-12 40-12z"/>
+    <path class="s s2" d="M46 26l6 20 20 6-20 6-6 20-6-20-20-6 20-6z"/>
+    <path class="s s3" d="M158 122l6 20 20 6-20 6-6 20-6-20-20-6 20-6z"/>
+  </g>
+</svg>
