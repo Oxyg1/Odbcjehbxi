@@ -82,9 +82,13 @@ export function select(id: string | null): void {
   publish();
 }
 
+export type AddLayerResult =
+  | { ok: true; layer: StandLayer }
+  | { ok: false; reason: 'limit' };
+
 /** Добавляет ассет по центру холста, поверх остальных слоёв. */
-export function addLayer(asset: Asset): StandLayer | null {
-  if (doc.layers.length >= MAX_LAYERS) return null;
+export function addLayer(asset: Asset): AddLayerResult {
+  if (doc.layers.length >= MAX_LAYERS) return { ok: false, reason: 'limit' };
   const layer: StandLayer = {
     id: makeId(),
     assetId: asset.id,
@@ -96,7 +100,7 @@ export function addLayer(asset: Asset): StandLayer | null {
   };
   commit({ ...doc, layers: [...doc.layers, layer] });
   select(layer.id);
-  return layer;
+  return { ok: true, layer };
 }
 
 export function updateTransform(id: string, transform: LayerTransform): void {
@@ -150,15 +154,6 @@ export function moveLayer(id: string, direction: 1 | -1): void {
   swapped[index] = swapped[target]!;
   swapped[target] = moving;
   commit({ ...doc, layers: normalizeZ(swapped.map((layer, i) => ({ ...layer, zIndex: i }))) });
-}
-
-export function moveLayerToEdge(id: string, edge: 'front' | 'back'): void {
-  const ordered = [...doc.layers].sort((a, b) => a.zIndex - b.zIndex);
-  const moving = ordered.find((layer) => layer.id === id);
-  if (!moving) return;
-  const rest = ordered.filter((layer) => layer.id !== id);
-  const next = edge === 'front' ? [...rest, moving] : [moving, ...rest];
-  commit({ ...doc, layers: next.map((layer, i) => ({ ...layer, zIndex: i })) });
 }
 
 export function undo(): void {

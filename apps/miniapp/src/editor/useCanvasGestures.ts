@@ -3,7 +3,7 @@ import type { CanvasSize, Point, SafeZoneHit } from '@plsdonate/shared';
 import { haptic } from '../telegram/webapp';
 import { applyDrag, applyHandle, applyPinch, pinchAnchor, type PinchAnchor } from './gestures';
 import { layerBox, transformSafeZoneHit, writeLayerBox } from './render';
-import { findLayer, select, updateTransform, type LayerTransform } from './store';
+import { findLayer, getState, select, updateTransform, type LayerTransform } from './store';
 
 type Mode = 'drag' | 'pinch' | 'handle';
 
@@ -22,7 +22,8 @@ interface Session {
 }
 
 interface GestureDeps {
-  surfaceRef: RefObject<HTMLElement>;
+  /** Элемент, ловящий указатели: рамка холста, а не сам холст. */
+  hostRef: RefObject<HTMLElement>;
   frameRef: RefObject<HTMLElement>;
   layerNodes: MutableRefObject<Map<string, HTMLElement>>;
   canvasSizeRef: MutableRefObject<CanvasSize>;
@@ -33,6 +34,8 @@ interface GestureDeps {
 }
 
 const TAP_SLOP = 6;
+/** Насколько близко должен лечь повторный тап, чтобы считаться тем же местом. */
+const RETAP_SLOP = 16;
 
 const toTransform = (layer: {
   x: number;
@@ -58,13 +61,14 @@ export function useCanvasGestures(deps: GestureDeps): void {
   depsRef.current = deps;
 
   useEffect(() => {
-    const surface = depsRef.current.surfaceRef.current;
+    const surface = depsRef.current.hostRef.current;
     if (!surface) return;
 
     let session: Session | null = null;
     let rect = surface.getBoundingClientRect();
     let frame = 0;
     let reportedHit: SafeZoneHit | null = null;
+    let lastTap: Point | null = null;
 
     /** Захват может быть недоступен (эмуляция, редкие WebView) — жест это переживает. */
     const capture = (pointerId: number): void => {
@@ -73,6 +77,34 @@ export function useCanvasGestures(deps: GestureDeps): void {
       } catch {
         // Без захвата палец за пределами холста просто отпустит слой.
       }
+    };
+
+    /**
+     * Кого берём под пальцем. Попадание считается по габаритному боксу, поэтому
+     * крупный прозрачный ассет (рамка, ореол, фон) накрывает всё под собой и
+     * запирает его. Повторный тап в ту же точку спускается на слой ниже и по
+     * кругу — иначе до накрытого слоя дотянуться нечем.
+     */
+    const pickLayerAt = (event: PointerEvent): string | undefined => {
+      const stack = document
+        .elementsFromPoint(event.clientX, event.clientY)
+        .map((element) => (element as HTMLElement).dataset?.layerId)
+        .filter((id): id is string => Boolean(id));
+      const top = stack[0];
+      if (!top || stack.length === 1) {
+        lastTap = top ? { x: event.clientX, y: event.clientY } : null;
+        return top;
+      }
+
+      const sameSpot =
+        lastTap !== null &&
+        Math.hypot(event.clientX - lastTap.x, event.clientY - lastTap.y) <= RETAP_SLOP;
+      lastTap = { x: event.clientX, y: event.clientY };
+      if (!sameSpot) return top;
+
+      const current = stack.indexOf(getState().selectedId ?? '');
+      if (current < 0) return top;
+      return stack[(current + 1) % stack.length];
     };
 
     const pointFor = (event: PointerEvent): Point => ({
@@ -149,10 +181,11 @@ export function useCanvasGestures(deps: GestureDeps): void {
       const handle = target.closest<HTMLElement>('[data-handle]');
       const host = handle
         ? depsRef.current.frameRef.current?.dataset.layerId
-        : target.closest<HTMLElement>('[data-layer-id]')?.dataset.layerId;
+        : pickLayerAt(event);
 
       if (!host) {
         select(null);
+        lastTap = null;
         return;
       }
 

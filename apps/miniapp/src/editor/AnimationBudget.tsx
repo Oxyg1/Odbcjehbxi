@@ -13,12 +13,15 @@ export function AnimationBudget({ used }: AnimationBudgetProps) {
   return (
     <span className={over ? 'budget budget--over' : 'budget'}>
       <span className="budget__dots" aria-hidden>
-        {Array.from({ length: Math.max(ANIMATION_BUDGET, used) }, (_, index) => (
+        {Array.from({ length: ANIMATION_BUDGET }, (_, index) => (
           <i key={index} className={index < used ? 'is-on' : undefined} />
         ))}
       </span>
       <span className="budget__text">
-        Анимация {used} из {ANIMATION_BUDGET}
+        {/* «6 из 5» — арифметическая бессмыслица, за бюджетом счёт идёт иначе. */}
+        {over
+          ? `Анимация ${used}, бюджет ${ANIMATION_BUDGET}`
+          : `Анимация ${used} из ${ANIMATION_BUDGET}`}
       </span>
     </span>
   );

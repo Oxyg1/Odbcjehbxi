@@ -1,12 +1,19 @@
 import { useEffect, useState } from 'react';
-import { ANIMATION_BUDGET, type Asset, type AssetSource } from '@plsdonate/shared';
+import {
+  ANIMATION_BUDGET,
+  MAX_LAYERS,
+  type Asset,
+  type AssetSource,
+} from '@plsdonate/shared';
 import { Sheet } from '../components/Sheet';
 import { haptic } from '../telegram/webapp';
+import { layersWord } from '../text/plural';
 
 interface InventorySheetProps {
   open: boolean;
   assets: Asset[];
   animatedUsed: number;
+  layerCount: number;
   onClose: () => void;
   onPick: (asset: Asset) => void;
 }
@@ -20,6 +27,7 @@ export function InventorySheet({
   open,
   assets,
   animatedUsed,
+  layerCount,
   onClose,
   onPick,
 }: InventorySheetProps) {
@@ -32,8 +40,10 @@ export function InventorySheet({
   }, [open]);
 
   const visible = assets.filter((asset) => asset.source === tab);
+  const full = layerCount >= MAX_LAYERS;
 
   const pick = (asset: Asset) => {
+    if (full) return;
     // Превышение бюджета не запрещено, но требует осознанного согласия.
     if (asset.animated && animatedUsed >= ANIMATION_BUDGET) {
       haptic.warning();
@@ -50,7 +60,12 @@ export function InventorySheet({
   };
 
   return (
-    <Sheet open={open} title="Инвентарь" onClose={onClose}>
+    <Sheet
+      open={open}
+      title="Инвентарь"
+      meta={`Слоёв ${layerCount} из ${MAX_LAYERS}`}
+      onClose={onClose}
+    >
       <div className="tabs" role="tablist">
         {TABS.map((item) => (
           <button
@@ -69,20 +84,13 @@ export function InventorySheet({
         ))}
       </div>
 
-      {pending && (
+      {/* Молчаливый отказ на пределе читается как «приложение сломалось». */}
+      {full && (
         <div className="notice">
           <p className="notice__text">
-            На стенде уже {animatedUsed} анимированных слоя. Следующий будет
-            подтормаживать у зрителей на недорогих телефонах.
+            На стенде уже {MAX_LAYERS} {layersWord(MAX_LAYERS)} — это предел.
+            Удалите что-нибудь в «Слоях», чтобы добавить новое.
           </p>
-          <div className="notice__actions">
-            <button type="button" className="button button--quiet" onClick={() => setPending(null)}>
-              Не надо
-            </button>
-            <button type="button" className="button" onClick={confirm}>
-              Всё равно добавить
-            </button>
-          </div>
         </div>
       )}
 
@@ -92,6 +100,7 @@ export function InventorySheet({
             <button
               type="button"
               className={asset.source === 'shop' ? 'tile tile--foil' : 'tile'}
+              disabled={full}
               onClick={() => pick(asset)}
             >
               <span className="tile__art">
@@ -103,6 +112,23 @@ export function InventorySheet({
           </li>
         ))}
       </ul>
+
+      {pending && (
+        <div className="notice notice--confirm">
+          <p className="notice__text">
+            На стенде уже {animatedUsed} анимированных {layersWord(animatedUsed)}.
+            Следующий будет подтормаживать у зрителей на недорогих телефонах.
+          </p>
+          <div className="notice__actions">
+            <button type="button" className="button" onClick={() => setPending(null)}>
+              Не надо
+            </button>
+            <button type="button" className="button button--quiet" onClick={confirm}>
+              Всё равно добавить
+            </button>
+          </div>
+        </div>
+      )}
 
       {tab === 'user' && (
         <p className="hint">

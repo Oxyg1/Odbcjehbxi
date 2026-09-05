@@ -5,6 +5,12 @@
   flex-direction: column;
   height: 100dvh;
   padding: 0 var(--space-3);
+  /*
+   * Рамка выделения намеренно выходит за холст, чтобы ручка у слоя на краю
+   * оставалась доступной. За экран она выходить не должна: clip обрезает,
+   * не создавая прокрутки (в отличие от hidden) и не трогая листы — они fixed.
+   */
+  overflow: clip;
 }
 
 .topbar {
@@ -17,7 +23,7 @@
 
 .topbar__title h1 {
   margin: 0;
-  font-size: 17px;
+  font-size: 24px;
   font-weight: 560;
   letter-spacing: -0.01em;
 }
@@ -74,12 +80,22 @@
 
 /* ── Холст ─────────────────────────────────────────────────────── */
 
+.canvas-fit {
+  flex: 1;
+  min-width: 0;
+  min-height: 0;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+}
+
+/*
+ * Размер задаётся из JS ровно в пропорциях Stories. Рамка не обрезает
+ * содержимое: ручка выделения у слоя на краю должна оставаться доступной.
+ */
 .canvas-frame {
   position: relative;
-  height: 100%;
-  max-width: 100%;
   border-radius: var(--radius-l);
-  overflow: hidden;
   /* Слои и рамка выделения не должны всплывать над листами интерфейса. */
   isolation: isolate;
 }
@@ -87,6 +103,7 @@
 .canvas-surface {
   position: absolute;
   inset: 0;
+  border-radius: inherit;
   overflow: hidden;
   /* Все вертикальные жесты принадлежат холсту, а не прокрутке WebView. */
   touch-action: none;
@@ -151,8 +168,8 @@
   position: absolute;
   right: 0;
   bottom: 0;
-  width: 34px;
-  height: 34px;
+  width: 44px;
+  height: 44px;
   transform: translate(50%, 50%);
   pointer-events: auto;
   touch-action: none;
@@ -185,17 +202,19 @@
   transition: background var(--dur) var(--ease);
 }
 
+/* Подписи жмутся к линии границы, а не к краю холста: там они объясняют
+   именно линию, и их не перекрывает всплывающая панель слоя. */
 .zone--top {
   top: 0;
-  align-items: flex-start;
-  padding-top: var(--space-2);
+  align-items: flex-end;
+  padding-bottom: var(--space-2);
   background: linear-gradient(to bottom, var(--scrim-soft), transparent);
 }
 
 .zone--bottom {
   bottom: 0;
-  align-items: flex-end;
-  padding-bottom: var(--space-3);
+  align-items: flex-start;
+  padding-top: var(--space-2);
   background: linear-gradient(to top, var(--scrim-soft), transparent);
 }
 
@@ -207,11 +226,45 @@
   background: linear-gradient(to top, var(--scrim-hit), transparent);
 }
 
+/*
+ * Одно затемнение зону не показывает: на тёмном стенде scrim и холст дают
+ * контраст 1.03:1, и пользователь читает происходящее как «мой стикер
+ * испортился». Границу проводит светлая линия с тёмной подложкой — она
+ * видна и на чёрном стенде, и на белом.
+ */
+.zone::after {
+  content: '';
+  position: absolute;
+  left: 0;
+  right: 0;
+  height: 1px;
+  background: var(--zone-edge);
+  box-shadow: 0 0 0 0.5px rgba(15, 15, 20, 0.5);
+  opacity: 0.55;
+  transition: opacity var(--dur) var(--ease);
+}
+
+.zone--top::after {
+  bottom: 0;
+}
+
+.zone--bottom::after {
+  top: 0;
+}
+
+.zone.is-hit::after {
+  opacity: 1;
+}
+
 .zone__label {
   font-size: 11px;
   color: var(--text-muted);
   opacity: 0;
   transition: opacity var(--dur) var(--ease);
+}
+
+.zone.is-hit .zone__label {
+  opacity: 0.75;
 }
 
 .zone.is-live .zone__label {
@@ -221,6 +274,7 @@
 /* ── Нижняя панель ─────────────────────────────────────────────── */
 
 .dock {
+  position: relative;
   padding: var(--space-3) 0 calc(var(--tg-bottom) + var(--space-3));
 }
 
@@ -235,12 +289,20 @@
   gap: 2px;
 }
 
+/*
+ * Панель всплывает над доком, а не встраивается в него: иначе каждое
+ * выделение слоя сжимало бы холст на 58px, композиция бы деформировалась
+ * прямо под пальцем, и пользователь промахивался бы по уехавшей цели.
+ */
 .selection-bar {
+  position: absolute;
+  left: 0;
+  right: 0;
+  bottom: calc(100% - var(--space-2));
   display: flex;
   align-items: center;
   justify-content: space-between;
   gap: var(--space-3);
-  margin-bottom: var(--space-2);
   padding: var(--space-1) var(--space-2) var(--space-1) var(--space-3);
   background: var(--surface);
   border: 1px solid var(--hairline);
@@ -268,8 +330,10 @@
   align-items: center;
   justify-content: center;
   gap: var(--space-2);
+  /* Иначе на 320px «Слои» выдавливает себя за вьюпорт и страница едет вбок. */
+  min-width: 0;
   height: 44px;
-  padding: 0 var(--space-4);
+  padding: 0 var(--space-3);
   font-size: 14px;
   color: var(--text);
   background: var(--surface-raised);
@@ -285,6 +349,12 @@
   flex: 1;
 }
 
+.button__label {
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
 .button--quiet {
   background: transparent;
   border: 1px solid var(--hairline-strong);
@@ -298,8 +368,9 @@
   display: inline-flex;
   align-items: center;
   justify-content: center;
-  width: 40px;
-  height: 40px;
+  /* Минимальная цель для пальца. Ниже 44px начинаются промахи. */
+  width: 44px;
+  height: 44px;
   color: var(--text-muted);
   border-radius: var(--radius-s);
   transition:
@@ -313,7 +384,8 @@
 }
 
 .icon-button:disabled {
-  opacity: 0.32;
+  /* Достаточно, чтобы новичок увидел, что отмена вообще существует. */
+  opacity: 0.45;
 }
 
 /* ── Лист ──────────────────────────────────────────────────────── */
@@ -352,10 +424,24 @@
   border-bottom: 1px solid var(--hairline);
 }
 
+.sheet__heading {
+  display: flex;
+  align-items: baseline;
+  gap: var(--space-3);
+  min-width: 0;
+}
+
 .sheet__title {
   margin: 0;
-  font-size: 16px;
+  font-size: 19px;
   font-weight: 560;
+}
+
+.sheet__meta {
+  margin: 0;
+  font-size: 12px;
+  color: var(--text-muted);
+  white-space: nowrap;
 }
 
 .sheet__body {
@@ -375,7 +461,7 @@
 
 .tab {
   flex: 1;
-  height: 34px;
+  height: 44px;
   font-size: 13px;
   color: var(--text-muted);
   border-radius: var(--radius-s);
@@ -464,7 +550,7 @@
 .tile__badge {
   align-self: center;
   padding: 1px 6px;
-  font-size: 10px;
+  font-size: 11px;
   color: var(--text-muted);
   background: var(--surface-raised);
   border-radius: 999px;
@@ -476,6 +562,19 @@
   background: var(--surface-sunken);
   border: 1px solid var(--warn);
   border-radius: var(--radius-m);
+}
+
+/*
+ * Подтверждение прилипает к низу листа, а не встаёт над сеткой: иначе оно
+ * сдвигает вниз ту самую плитку, по которой пользователь только что тапнул,
+ * и второй тап добавляет не то, что он выбирал.
+ */
+.notice--confirm {
+  position: sticky;
+  bottom: 0;
+  margin: var(--space-3) 0 0;
+  background: var(--surface-raised);
+  box-shadow: 0 -8px 16px -8px rgba(9, 9, 12, 0.9);
 }
 
 .notice__text {
@@ -499,6 +598,8 @@
 
 .hint {
   margin: var(--space-4) 0 0;
+  /* Строка не должна разъезжаться, если лист когда-нибудь окажется шире телефона. */
+  max-width: 60ch;
   font-size: 13px;
   line-height: 1.45;
   color: var(--text-muted);
@@ -518,6 +619,7 @@
 .layer-row {
   display: flex;
   align-items: center;
+  min-height: 44px;
   gap: var(--space-2);
   padding: var(--space-1) var(--space-1) var(--space-1) var(--space-2);
   background: var(--surface-sunken);
@@ -527,6 +629,7 @@
 }
 
 .layer-row.is-selected {
+  background: var(--surface-raised);
   border-color: var(--hairline-strong);
 }
 
@@ -534,6 +637,7 @@
   display: flex;
   flex: 1;
   min-width: 0;
+  align-self: stretch;
   align-items: center;
   gap: var(--space-3);
   text-align: left;
@@ -567,8 +671,8 @@
 }
 
 .layer-row__actions .icon-button {
-  width: 34px;
-  height: 34px;
+  width: 44px;
+  height: 44px;
 }
 
 /* ── Отладка производительности ────────────────────────────────── */
@@ -596,5 +700,20 @@
   to {
     opacity: 1;
     transform: none;
+  }
+}
+
+/*
+ * Убираем движение, а не обратную связь: смена цвета и появление панелей
+ * остаются, уезжает только перемещение по экрану.
+ */
+@media (prefers-reduced-motion: reduce) {
+  @keyframes rise {
+    from {
+      opacity: 0;
+    }
+    to {
+      opacity: 1;
+    }
   }
 }

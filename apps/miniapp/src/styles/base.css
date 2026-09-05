@@ -37,7 +37,8 @@ button:disabled {
 }
 
 :focus-visible {
-  outline: 2px solid var(--live);
+  /* --live зарезервирован за тикером и статусом «в эфире», фокусу он не принадлежит. */
+  outline: 2px solid var(--text);
   outline-offset: 2px;
 }
 

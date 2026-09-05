@@ -34,11 +34,14 @@ export function EditorScreen() {
   );
 
   const handlePick = useCallback((asset: Asset) => {
-    const layer = addLayer(asset);
-    if (layer) {
+    const result = addLayer(asset);
+    if (result.ok) {
       haptic.impact('light');
       setSheet(null);
+      return;
     }
+    // Предел слоёв: лист остаётся открытым и объясняет себя сам.
+    haptic.warning();
   }, []);
 
   const selected = doc.layers.find((layer) => layer.id === selectedId);
@@ -77,11 +80,11 @@ export function EditorScreen() {
             onClick={() => setSheet('inventory')}
           >
             <PlusIcon />
-            Инвентарь
+            <span className="button__label">Инвентарь</span>
           </button>
           <button type="button" className="button" onClick={() => setSheet('layers')}>
             <LayersIcon />
-            Слои
+            <span className="button__label">Слои</span>
           </button>
         </div>
       </footer>
@@ -90,6 +93,7 @@ export function EditorScreen() {
         open={sheet === 'inventory'}
         assets={MOCK_INVENTORY}
         animatedUsed={animatedUsed}
+        layerCount={doc.layers.length}
         onClose={() => setSheet(null)}
         onPick={handlePick}
       />

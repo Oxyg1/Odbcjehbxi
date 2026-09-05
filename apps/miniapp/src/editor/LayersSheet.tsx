@@ -17,7 +17,12 @@ export function LayersSheet({ open, doc, selectedId, getAsset, onClose }: Layers
   const ordered = [...doc.layers].sort((a, b) => b.zIndex - a.zIndex);
 
   return (
-    <Sheet open={open} title="Слои" onClose={onClose}>
+    <Sheet
+      open={open}
+      title="Слои"
+      meta={ordered.length > 0 ? `Сверху — передний план` : undefined}
+      onClose={onClose}
+    >
       {ordered.length === 0 ? (
         <p className="hint">Слоёв пока нет.</p>
       ) : (
