@@ -12,6 +12,7 @@ from __future__ import annotations
 import asyncio
 import json
 import sys
+from contextlib import contextmanager
 from pathlib import Path
 from types import SimpleNamespace
 
@@ -35,6 +36,24 @@ from cryptexbot.services.quests import (  # noqa: E402
 from cryptexbot.services.rewards import RewardContext  # noqa: E402
 
 CTX = QuestContext(user_id=1, user_name="Player", chat_id=1, dial_count=3)
+
+
+@contextmanager
+def pinned_code(code):
+    """Force random_code() to return a known combination.
+
+    The verification cases compare a solver answer against the code, so the
+    code cannot be random: with a random one, "the solver disagrees" is only
+    true for the digits that happen not to match.
+    """
+    import cryptexbot.services.gemini as gemini_mod
+
+    original = gemini_mod.random_code
+    gemini_mod.random_code = lambda dial_count: list(code)
+    try:
+        yield list(code)
+    finally:
+        gemini_mod.random_code = original
 RCTX = RewardContext(
     user_id=1, user_name="Player", chat_id=1, message_id=2,
     code="732", attempts=9, theme="a drowned observatory",
@@ -179,48 +198,40 @@ async def main() -> None:
     # --- verification: a clue that does not solve back is swapped out ------- #
     provider, seen = quest_provider(
         verify=True,
-        content=[GOOD_QUEST, json.dumps({"digits": [9, 9, 9]})],  # solver disagrees
+        content=[GOOD_QUEST, json.dumps({"digits": [5, 5, 5]})],
     )
-    quest = await provider.generate(CTX)
+    with pinned_code([7, 3, 2]) as code:  # no digit matches the solver's answer
+        quest = await provider.generate(CTX)
+    assert quest.code == code
     assert len(seen["calls"]) == 2, "verification must be a second call"
     solver_prompt = seen["calls"][1]["contents"]
     assert "almanac gives a week" in solver_prompt, "the solver reads the clue text"
-    assert str(quest.code[0]) not in solver_prompt, "the solver must not see the code"
+    assert "732" not in solver_prompt, "the solver must not see the combination"
+    assert not any(ch.isdigit() for ch in solver_prompt), "no digits in the solver prompt"
     assert seen["calls"][1]["config"].temperature == 0.0
-    for clue, digit in zip(quest.clues, quest.code):
+    for clue, digit in zip(quest.clues, code):
         assert clue in DIGIT_CLUES[digit], "mismatched clues fall back to known-good"
     print("ok  clues are solved cold and replaced when the answer disagrees")
 
     # --- verification: agreement keeps the model's prose -------------------- #
-    provider, seen = quest_provider(verify=True, content=[GOOD_QUEST, None])
-
-    async def solver_echo(**kwargs):
-        seen.update(kwargs)
-        seen["calls"].append(dict(kwargs))
-        if len(seen["calls"]) == 1:
-            return SimpleNamespace(text=GOOD_QUEST, parsed=None)
-        # Answer with whatever code the quest actually drew.
-        return SimpleNamespace(text=json.dumps({"digits": provider._drawn}), parsed=None)
-
-    import cryptexbot.services.quests as quests_mod
-
-    real_random_code = quests_mod.random_code
-
-    def spy(dial_count):
-        provider._drawn = real_random_code(dial_count)
-        return provider._drawn
-
-    import cryptexbot.services.gemini as gemini_mod
-
-    gemini_mod.random_code = spy
-    provider._client.aio.models.generate_content = solver_echo
-    try:
+    provider, seen = quest_provider(
+        verify=True, content=[GOOD_QUEST, json.dumps({"digits": [7, 3, 2]})]
+    )
+    with pinned_code([7, 3, 2]):
         quest = await provider.generate(CTX)
-        assert quest.clues[0] == "Count the days the almanac gives a week."
-        assert quest.code == provider._drawn
-    finally:
-        gemini_mod.random_code = real_random_code
+    assert quest.clues[0] == "Count the days the almanac gives a week."
+    assert quest.clues[2] == "Count the legs of the milking stool."
     print("ok  clues that solve correctly are kept as the model wrote them")
+
+    # --- verification: only the wrong clue is replaced ---------------------- #
+    provider, _ = quest_provider(
+        verify=True, content=[GOOD_QUEST, json.dumps({"digits": [7, 3, 5]})]
+    )
+    with pinned_code([7, 3, 2]):
+        quest = await provider.generate(CTX)
+    assert quest.clues[0] == "Count the days the almanac gives a week."
+    assert quest.clues[2] in DIGIT_CLUES[2], "only the disagreeing clue is swapped"
+    print("ok  verification replaces only the clue that failed")
 
     # --- verification failure is not fatal ---------------------------------- #
     provider, _ = quest_provider(verify=True, content=[GOOD_QUEST, "not json"])

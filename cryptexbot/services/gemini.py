@@ -232,12 +232,16 @@ class GeminiQuestProvider(QuestProvider):
         from google.genai import types
 
         try:
-            numbered = "\n".join(f"{i + 1}. {clue}" for i, clue in enumerate(clues))
+            # Bulleted, not numbered: a numbered list would put digit
+            # characters next to clues whose answers are digits, which is both
+            # a needless hint and a needless source of confusion. Nothing in
+            # this prompt names the combination.
+            listed = "\n".join(f"- {clue}" for clue in clues)
             prompt = (
                 "Each line below is a riddle clue that resolves to exactly one "
-                "digit from 0 to 9 by counting a well-known set. Answer with "
-                "the digit each line resolves to, in order. Do not explain.\n\n"
-                f"{numbered}"
+                "digit by counting a well-known set. Answer with the digit each "
+                "line resolves to, in order. Do not explain.\n\n"
+                f"{listed}"
             )
             config = types.GenerateContentConfig(
                 response_mime_type="application/json",
