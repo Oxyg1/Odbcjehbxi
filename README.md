@@ -3,6 +3,8 @@
 A single-message interactive puzzle box for Telegram: a locked vault with three
 dials, built on **aiogram 3.x** and **Gemini** (`google-genai`).
 
+The bot speaks **English and Russian**, switchable mid-game with one button.
+
 Every vault is generated at run time, and **the riddle is actually solvable**:
 Python picks the combination, Gemini writes one clue per dial pointing at those
 exact digits, and a second model pass solves the clues cold to prove they
@@ -14,6 +16,13 @@ same message. No replies, no follow-ups, no notification spam.
 
 ```
 /vault  ->  [photo: locked safe]
+            🔒 THE CRYPTEX VAULT
+            Choose your language to begin.
+            Выберите язык, чтобы начать.
+            [🇬🇧 English] [🇷🇺 Русский]        <- quest already generating
+
+            ... same message, edited ...
+
             🔒 THE CRYPTEX VAULT
             Steel is cooling, tumblers are being set…      <- Gemini is working
             (no keyboard yet: there is no combination to tap)
@@ -66,15 +75,17 @@ Run the tests (no token, no API key, no network):
 ```bash
 python tests/test_flow.py      # the Telegram interaction, against a stub Bot
 python tests/test_gemini.py    # the Gemini providers, against a fake SDK client
-python tests/test_riddle.py    # code generation, leak scanning, clue repair
+python tests/test_riddle.py    # code generation, leak scanning, clue repair (both languages)
 ```
 
 ## How the Zero-Spam loop works
 
 | Event | Bot API call | Why |
 |---|---|---|
-| `/vault` | `sendPhoto` | The only message ever sent. Goes out **before** the Gemini call, with no keyboard — an instant sealed vault beats a silent bot. |
+| `/vault` | `sendPhoto` | The only message ever sent. Goes out **before** the Gemini call — an instant sealed vault beats a silent bot. |
+| Language picked | `editMessageCaption` | The quest was generating the whole time the picker was on screen, so this usually costs no waiting. |
 | Quest arrives | `editMessageCaption` | Riddle in, dials attached. Still the same message. |
+| Language switched | `editMessageCaption` | Same puzzle, other language. No regeneration — see below. |
 | Dial tap | `editMessageReplyMarkup` | Markup-only: the dial face flips with **no media reload and no flash**. Editing the caption or media here is what makes other bots blink. |
 | Correct code | `editMessageMedia` | Swaps to the open-safe photo and the reveal caption, once. |
 | Reward text | `editMessageCaption` | One edit for static text; a throttled stream for LLM text. |
@@ -228,6 +239,36 @@ dead key means locally generated codes and canned flavour — the game still
 runs. Swapping in another model means writing one class in
 `services/gemini.py`'s place; nothing in `handlers/` changes.
 
+## Language
+
+Both languages are authored **in the same Gemini call** (`theme_en`, `riddle_en`,
+`clues_en`, `theme_ru`, …). That is the whole design decision: translating on
+demand would mean regenerating the riddle mid-game, and a regenerated riddle is
+a different puzzle with a different answer. Carrying both means switching is a
+caption edit — the dials keep their positions, the turn count survives, and the
+combination never moves. A test asserts exactly that.
+
+The leak scan runs per language and knows Russian inflection: `семь`, `семи`,
+`седьмой` and `Седьмая` all give the answer away as plainly as `7` does, and are
+caught. The solver round-trip checks every language in one call, because the
+English clues being sound tells you nothing about the Russian ones — a test
+feeds it a set where only the third Russian clue is wrong and asserts only that
+one is replaced.
+
+The local clue bank (`DIGIT_CLUES`) exists in both languages, so offline play
+and every repair path stay fully bilingual.
+
+Three ways to change language:
+
+* the picker on a fresh vault, shown until a player chooses once;
+* the 🌐 button on the vault, which switches to the other language in place;
+* `/lang`, which opens a new vault and always asks.
+
+The choice is remembered per player, so the picker appears once. The reveal is
+generated in whatever language was on screen when the vault opened, and there is
+no language button afterwards — a toggle that switched the heading but not the
+prize would look broken.
+
 ## Configuration
 
 | Variable | Default | Notes |
@@ -236,6 +277,8 @@ runs. Swapping in another model means writing one class in
 | `GEMINI_API_KEY` | — | From AI Studio. Absent ⇒ offline mode (local codes, static reveal). |
 | `GEMINI_MODEL` | `gemini-2.5-flash` | Any `google-genai` model id. |
 | `QUEST_VERIFY` | `true` | Solve each clue cold and replace the ones that fail. One extra call per vault. |
+| `DEFAULT_LANG` | `en` | `en` or `ru`. Used before a player has chosen. |
+| `ASK_LANGUAGE` | `true` | `false` skips the picker and starts in `DEFAULT_LANG`. |
 | `SECRET_CODE` | *(unset)* | Normally empty — codes are generated per vault. Set it only to pin one for a demo. |
 | `DIAL_COUNT` | `3` | 1–8 dials; the keyboard adapts. |
 | `STATE_BACKEND` | `memory` | `memory` or `redis`. |

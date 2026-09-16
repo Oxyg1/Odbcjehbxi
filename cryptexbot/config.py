@@ -23,6 +23,12 @@ class Settings(BaseSettings):
     # vault; turn it off if you would rather have the second back.
     quest_verify: bool = Field(default=True, alias="QUEST_VERIFY")
 
+    # --- Language ---
+    # Used before a player has chosen, and for anyone who never does.
+    default_lang: str = Field(default="en", alias="DEFAULT_LANG")
+    # Skip the language picker and start every vault in DEFAULT_LANG.
+    ask_language: bool = Field(default=True, alias="ASK_LANGUAGE")
+
     # --- Puzzle ---
     dial_count: int = Field(default=3, alias="DIAL_COUNT", ge=1, le=8)
     # Normally unset: every vault's combination is generated per game. Set it
@@ -35,13 +41,9 @@ class Settings(BaseSettings):
     state_ttl: int = Field(default=86_400, alias="STATE_TTL")
 
     # --- Reward fallback (used when Gemini is unavailable) ---
-    static_reward: str = Field(
-        default=(
-            "The door gives, and {theme} exhales dust into the light. "
-            "Whatever was worth guarding is still here, and it is yours."
-        ),
-        alias="STATIC_REWARD",
-    )
+    # Optional override. Left empty, the offline prize comes from the
+    # translation table and follows the player's language.
+    static_reward: str | None = Field(default=None, alias="STATIC_REWARD")
 
     @field_validator("secret_code")
     @classmethod
@@ -50,6 +52,15 @@ class Settings(BaseSettings):
             return None
         if not v.isdigit():
             raise ValueError("SECRET_CODE must contain digits only")
+        return v
+
+    @field_validator("default_lang")
+    @classmethod
+    def _known_lang(cls, v: str) -> str:
+        from .i18n import LANGS
+
+        if v not in LANGS:
+            raise ValueError(f"DEFAULT_LANG must be one of {', '.join(LANGS)}")
         return v
 
     @field_validator("state_backend")

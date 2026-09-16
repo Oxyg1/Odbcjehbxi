@@ -17,6 +17,8 @@ from collections import OrderedDict
 from dataclasses import asdict, dataclass, field
 from typing import Iterable
 
+from .i18n import DEFAULT_LANG, normalize
+
 VaultKey = tuple[int, int]  # (chat_id, message_id)
 
 
@@ -32,9 +34,13 @@ class VaultState:
 
     dials: list[int]
     code: list[int] = field(default_factory=list)
-    theme: str = ""
-    riddle: str = ""
-    clues: list[str] = field(default_factory=list)
+    # Puzzle text per language: {"en": ..., "ru": ...}. Both are generated up
+    # front so switching language is a caption edit, never a new puzzle.
+    theme: dict[str, str] = field(default_factory=dict)
+    riddle: dict[str, str] = field(default_factory=dict)
+    clues: dict[str, list[str]] = field(default_factory=dict)
+    # None until the player picks one (or their saved choice is applied).
+    lang: str | None = None
     ready: bool = False
     attempts: int = 0
     opened: bool = False
@@ -49,6 +55,26 @@ class VaultState:
     @property
     def code_str(self) -> str:
         return "".join(str(d) for d in self.code)
+
+    def theme_in(self, lang: str | None = None) -> str:
+        code = normalize(lang or self.lang)
+        return self.theme.get(code) or self.theme.get(DEFAULT_LANG, "")
+
+    def riddle_in(self, lang: str | None = None) -> str:
+        code = normalize(lang or self.lang)
+        return self.riddle.get(code) or self.riddle.get(DEFAULT_LANG, "")
+
+    def clues_in(self, lang: str | None = None) -> list[str]:
+        code = normalize(lang or self.lang)
+        return self.clues.get(code) or self.clues.get(DEFAULT_LANG, [])
+
+    def apply(self, quest) -> None:  # noqa: ANN001 - services.quests.Quest
+        """Copy a generated quest into this vault."""
+        self.code = list(quest.code)
+        self.theme = dict(quest.theme)
+        self.riddle = dict(quest.riddle)
+        self.clues = {lang: list(items) for lang, items in quest.clues.items()}
+        self.ready = True
 
     def turn(self, index: int) -> int:
         """Advance one dial 0 -> 1 -> ... -> 9 -> 0 and return its new value."""
@@ -94,6 +120,14 @@ class StateStore(ABC):
     @abstractmethod
     def lock(self, key: VaultKey) -> asyncio.Lock: ...
 
+    @abstractmethod
+    async def get_user_lang(self, user_id: int) -> str | None:
+        """The language this player last chose, if any."""
+
+    @abstractmethod
+    async def set_user_lang(self, user_id: int, lang: str) -> None:
+        """Remember a player's language so later vaults skip the picker."""
+
     async def close(self) -> None:  # pragma: no cover - backend specific
         return None
 
@@ -107,6 +141,7 @@ class MemoryStateStore(StateStore):
     def __init__(self, max_entries: int = 50_000) -> None:
         self._data: "OrderedDict[VaultKey, VaultState]" = OrderedDict()
         self._locks: dict[VaultKey, asyncio.Lock] = {}
+        self._langs: dict[int, str] = {}
         self._max_entries = max_entries
 
     async def get(self, key: VaultKey) -> VaultState | None:
@@ -128,6 +163,12 @@ class MemoryStateStore(StateStore):
 
     def lock(self, key: VaultKey) -> asyncio.Lock:
         return self._locks.setdefault(key, asyncio.Lock())
+
+    async def get_user_lang(self, user_id: int) -> str | None:
+        return self._langs.get(user_id)
+
+    async def set_user_lang(self, user_id: int, lang: str) -> None:
+        self._langs[user_id] = lang
 
 
 class RedisStateStore(StateStore):
@@ -163,6 +204,13 @@ class RedisStateStore(StateStore):
 
     def lock(self, key: VaultKey) -> asyncio.Lock:
         return self._locks.setdefault(key, asyncio.Lock())
+
+    async def get_user_lang(self, user_id: int) -> str | None:
+        # No TTL: a language preference should outlive the vault it was set in.
+        return await self._redis.get(f"{self._prefix}:lang:{user_id}")
+
+    async def set_user_lang(self, user_id: int, lang: str) -> None:
+        await self._redis.set(f"{self._prefix}:lang:{user_id}", lang)
 
     async def close(self) -> None:
         await self._redis.aclose()

@@ -2,12 +2,16 @@
 
 The lifecycle of that single message:
 
-1. ``/vault`` sends the locked safe with a "sealing" caption and **no
-   keyboard** — the vault has no combination yet, so there is nothing to tap.
-2. Gemini returns a quest; the same message is edited to show the riddle and
-   the dials appear. (:func:`spawn_vault`)
+1. ``/vault`` sends the locked safe. If the player has no saved language it
+   shows the picker and no dials; otherwise it goes straight to "sealing".
+   Either way the quest starts generating **immediately, in the background**,
+   so choosing a language costs no waiting. (:func:`spawn_vault`)
+2. The quest lands and the same message is edited to show the riddle, the
+   clues and the dials. (:func:`_apply_quest`)
 3. Each tap edits the markup only. (:func:`turn_dial`)
-4. The correct combination swaps the media once, then streams the reveal into
+4. The language button re-renders the same puzzle in the other language — no
+   regeneration, because both were authored up front. (:func:`set_language`)
+5. The correct combination swaps the media once, then streams the reveal into
    the caption. (:func:`_unlock`)
 """
 
@@ -23,9 +27,18 @@ from aiogram.filters import Command, CommandStart
 from aiogram.types import CallbackQuery, InputMediaPhoto, Message
 
 from ..config import Settings
-from ..keyboards import DialCD, NoopCD, ResetCD, opened_keyboard, vault_keyboard
+from ..i18n import normalize, ordinal, t
+from ..keyboards import (
+    DialCD,
+    LangCD,
+    NoopCD,
+    ResetCD,
+    language_keyboard,
+    opened_keyboard,
+    vault_keyboard,
+)
 from ..services.artwork import ArtworkProvider, Frame
-from ..services.quests import ORDINALS, QuestContext, QuestProvider
+from ..services.quests import QuestContext, QuestProvider
 from ..services.rewards import RewardContext, RewardProvider
 from ..services.safe_calls import ack, safe_call
 from ..state import StateStore, VaultKey, VaultState
@@ -41,19 +54,23 @@ STREAM_EDIT_INTERVAL = 1.2
 # Trailing block while the reveal is still arriving — the typewriter's cursor.
 CURSOR = "▌"
 
+# Background quest generations. asyncio only holds a weak reference to a task,
+# so without this set a generation can be garbage collected mid-flight.
+_PENDING: set[asyncio.Task] = set()
+
 
 # --------------------------------------------------------------------------- #
 # Captions
 # --------------------------------------------------------------------------- #
 
-def sealing_caption() -> str:
-    """Shown for the second or two while Gemini forges the quest."""
-    return (
-        "🔒 <b>THE CRYPTEX VAULT</b>\n\n"
-        "<i>Steel is cooling, tumblers are being set…</i>\n\n"
-        "A new vault is being sealed for you, and a riddle is being written "
-        "around its combination."
-    )
+def picker_caption() -> str:
+    """Bilingual by design: the player cannot read the wrong half."""
+    return t(None, "choose_language")
+
+
+def sealing_caption(lang: str | None) -> str:
+    """Shown while Gemini forges the quest."""
+    return f"{t(lang, 'sealing_title')}\n\n{t(lang, 'sealing_body')}"
 
 
 def locked_caption(state: VaultState) -> str:
@@ -67,21 +84,24 @@ def locked_caption(state: VaultState) -> str:
     past it. The framing line goes first, then clue text is trimmed evenly —
     the clues are the puzzle, so they are the last thing to give.
     """
-    head = f"🔒 <b>{html.escape(state.theme.upper())}</b>\n\n"
+    lang = state.lang
+    head = f"🔒 <b>{html.escape(state.theme_in().upper())}</b>\n\n"
     tail = (
-        f"\n\n<b>Dials:</b> <code>{' '.join(str(d) for d in state.dials)}</code>"
-        f"\n<b>Turns:</b> {state.attempts}"
+        f"\n\n<b>{t(lang, 'dials')}:</b> "
+        f"<code>{' '.join(str(d) for d in state.dials)}</code>"
+        f"\n<b>{t(lang, 'turns')}:</b> {state.attempts}"
     )
-    framing = f"<i>{html.escape(state.riddle)}</i>\n\n" if state.riddle else ""
+    riddle = state.riddle_in()
+    framing = f"<i>{html.escape(riddle)}</i>\n\n" if riddle else ""
+    clues = state.clues_in()
 
-    def render(clues: list[str]) -> list[str]:
+    def render(items: list[str]) -> list[str]:
         return [
-            f"<b>{ORDINALS[i] if i < len(ORDINALS) else f'Dial {i + 1}'}</b> — "
-            f"{html.escape(clue)}"
-            for i, clue in enumerate(clues)
+            f"<b>{ordinal(lang, i)}</b> — {html.escape(clue)}"
+            for i, clue in enumerate(items)
         ]
 
-    lines = render(state.clues)
+    lines = render(clues)
     caption = head + framing + "\n".join(lines) + tail
     if len(caption) <= CAPTION_LIMIT:
         return caption
@@ -92,22 +112,27 @@ def locked_caption(state: VaultState) -> str:
         return caption
 
     # Still too long: trim every clue to an equal share of what is left.
-    overhead = len(head) + len(tail) + sum(len(line) for line in render([""] * len(state.clues)))
-    budget = max(40, (CAPTION_LIMIT - overhead - len(state.clues)) // max(1, len(state.clues)))
-    trimmed = [c[: budget - 1] + "…" if len(c) > budget else c for c in state.clues]
+    overhead = len(head) + len(tail) + sum(len(line) for line in render([""] * len(clues)))
+    budget = max(40, (CAPTION_LIMIT - overhead - len(clues)) // max(1, len(clues)))
+    trimmed = [c[: budget - 1] + "…" if len(c) > budget else c for c in clues]
     return (head + "\n".join(render(trimmed)) + tail)[:CAPTION_LIMIT]
 
 
 def _unlock_header(state: VaultState) -> str:
     return (
-        f"🔓 <b>{html.escape(state.theme.upper())}</b>\n\n"
-        f"Combination <code>{'-'.join(str(d) for d in state.code)}</code> "
-        f"accepted after {state.attempts} turns.\n\n"
+        f"🔓 <b>{html.escape(state.theme_in().upper())}</b>\n\n"
+        + t(
+            state.lang,
+            "accepted",
+            code="-".join(str(d) for d in state.code),
+            turns=state.attempts,
+        )
+        + "\n\n"
     )
 
 
 def opening_caption(state: VaultState) -> str:
-    return _unlock_header(state) + "<i>Reaching inside…</i>"
+    return _unlock_header(state) + t(state.lang, "reaching_inside")
 
 
 def opened_caption(state: VaultState, reward: str, streaming: bool = False) -> str:
@@ -137,7 +162,7 @@ def key_of(event: Message | CallbackQuery) -> VaultKey | None:
 
 
 # --------------------------------------------------------------------------- #
-# 1. /vault — send the shell, then fill it with a generated quest
+# 1. /vault and /lang — send the shell, generate in the background
 # --------------------------------------------------------------------------- #
 
 @router.message(CommandStart())
@@ -150,7 +175,50 @@ async def spawn_vault(
     quests: QuestProvider,
     settings: Settings,
 ) -> None:
-    state = VaultState.new(settings.dial_count, owner_id=message.from_user.id)
+    await _spawn(message, bot, store, artwork, quests, settings, force_picker=False)
+
+
+@router.message(Command("lang"))
+@router.message(Command("language"))
+async def spawn_with_picker(
+    message: Message,
+    bot: Bot,
+    store: StateStore,
+    artwork: ArtworkProvider,
+    quests: QuestProvider,
+    settings: Settings,
+) -> None:
+    """A fresh vault that always asks which language to play in.
+
+    Changing language is otherwise a button on the vault itself; this exists
+    for players who want to switch before starting, or who saved a choice they
+    now regret.
+    """
+    await _spawn(message, bot, store, artwork, quests, settings, force_picker=True)
+
+
+async def _spawn(
+    message: Message,
+    bot: Bot,
+    store: StateStore,
+    artwork: ArtworkProvider,
+    quests: QuestProvider,
+    settings: Settings,
+    force_picker: bool,
+) -> None:
+    user = message.from_user
+    state = VaultState.new(settings.dial_count, owner_id=user.id)
+
+    # A player who has chosen before is not asked again — the vault button and
+    # /lang are there if they change their mind.
+    if force_picker or not settings.ask_language:
+        saved = None if force_picker else settings.default_lang
+    else:
+        saved = await store.get_user_lang(user.id)
+    state.lang = normalize(saved) if saved else None
+
+    caption = picker_caption() if state.lang is None else sealing_caption(state.lang)
+    markup = language_keyboard() if state.lang is None else None
 
     # Send first, generate second. The API call takes a second or two, and an
     # immediate message beats a silent bot — it also keeps the Zero-Spam rule
@@ -159,8 +227,8 @@ async def spawn_vault(
         bot.send_photo,
         chat_id=message.chat.id,
         photo=artwork.input_for(Frame.LOCKED),
-        caption=sealing_caption(),
-        reply_markup=None,  # no dials until there is a combination behind them
+        caption=caption,
+        reply_markup=markup,
     )
     if sent is None:
         return
@@ -173,25 +241,48 @@ async def spawn_vault(
     key: VaultKey = (sent.chat.id, sent.message_id)
     await store.set(key, state)
 
-    quest = await quests.generate(
-        QuestContext(
-            user_id=message.from_user.id,
-            user_name=message.from_user.full_name,
-            chat_id=message.chat.id,
-            dial_count=settings.dial_count,
-        )
+    # Generation runs while the player reads the picker, so picking a language
+    # usually costs nothing at all.
+    ctx = QuestContext(
+        user_id=user.id,
+        user_name=user.full_name,
+        chat_id=message.chat.id,
+        dial_count=settings.dial_count,
     )
+    task = asyncio.create_task(_apply_quest(bot, store, quests, ctx, key))
+    _PENDING.add(task)
+    task.add_done_callback(_PENDING.discard)
+
+
+async def _apply_quest(
+    bot: Bot,
+    store: StateStore,
+    quests: QuestProvider,
+    ctx: QuestContext,
+    key: VaultKey,
+) -> None:
+    """Generate the quest, store it, and reveal it if the player is ready."""
+    quest = await quests.generate(ctx)
 
     async with store.lock(key):
-        state = await store.get(key) or state
-        state.code = quest.code
-        state.theme = quest.theme
-        state.riddle = quest.riddle
-        state.clues = quest.clues
-        state.ready = True
+        state = await store.get(key)
+        if state is None or state.opened:
+            return  # the vault went away while we were generating
+        state.apply(quest)
         await store.set(key, state)
 
-    # The reveal of the puzzle itself: same message, now with dials.
+    await _render_puzzle(bot, key, state)
+
+
+async def _render_puzzle(bot: Bot, key: VaultKey, state: VaultState) -> None:
+    """Show the riddle and the dials — the one edit that turns shell into game.
+
+    A no-op until both halves are in place: the quest has landed *and* the
+    player has picked a language. Whichever arrives second triggers the render,
+    so the two can race freely.
+    """
+    if not state.ready or state.lang is None or state.opened:
+        return
     await safe_call(
         bot.edit_message_caption,
         chat_id=key[0],
@@ -202,7 +293,61 @@ async def spawn_vault(
 
 
 # --------------------------------------------------------------------------- #
-# 2. Dial turns
+# 2. Language
+# --------------------------------------------------------------------------- #
+
+@router.callback_query(LangCD.filter())
+async def set_language(
+    query: CallbackQuery,
+    callback_data: LangCD,
+    bot: Bot,
+    store: StateStore,
+) -> None:
+    """Pick a language, or switch to the other one mid-game.
+
+    No regeneration: both languages were authored in the same call, so this is
+    a caption edit over the same combination. The dials keep their positions
+    and the turn count is untouched — switching language is not a restart.
+    """
+    key = key_of(query)
+    if key is None:
+        await ack(query)
+        return
+
+    lang = normalize(callback_data.code)
+
+    async with store.lock(key):
+        state = await store.get(key)
+        if state is None:
+            await ack(query, t(lang, "rusted_shut"), alert=True)
+            return
+        if state.opened:
+            await ack(query, t(state.lang, "already_open"))
+            return
+        first_choice = state.lang is None
+        state.lang = lang
+        await store.set(key, state)
+
+    await store.set_user_lang(query.from_user.id, lang)
+
+    if state.ready:
+        await _render_puzzle(bot, key, state)
+    else:
+        # Still generating: acknowledge the choice in the new language so the
+        # player sees something happen immediately.
+        await safe_call(
+            bot.edit_message_caption,
+            chat_id=key[0],
+            message_id=key[1],
+            caption=sealing_caption(lang),
+            reply_markup=None,
+        )
+
+    await ack(query, t(lang, "lang_prompt_done" if first_choice else "lang_switched"))
+
+
+# --------------------------------------------------------------------------- #
+# 3. Dial turns
 # --------------------------------------------------------------------------- #
 
 @router.callback_query(DialCD.filter())
@@ -227,17 +372,13 @@ async def turn_dial(
     async with store.lock(key):
         state = await store.get(key)
         if state is None:
-            await ack(
-                query,
-                "This vault has rusted shut. Send /vault for a new one.",
-                alert=True,
-            )
+            await ack(query, t(None, "rusted_shut"), alert=True)
             return
         if not state.ready:
-            await ack(query, "The vault is still being sealed. One moment.")
+            await ack(query, t(state.lang, "still_sealing"))
             return
         if state.opened:
-            await ack(query, "Already open.")
+            await ack(query, t(state.lang, "already_open"))
             return
         if not 0 <= callback_data.index < len(state.dials):
             await ack(query)
@@ -249,7 +390,7 @@ async def turn_dial(
         await store.set(key, state)
 
     if unlocked:
-        await ack(query, "🔓 Click.")
+        await ack(query, t(state.lang, "click"))
         await _unlock(query, bot, store, artwork, rewards, key, state)
         return
 
@@ -285,7 +426,7 @@ async def reset_dials(
         message_id=key[1],
         reply_markup=vault_keyboard(state),
     )
-    await ack(query, "Dials spun back to zero.")
+    await ack(query, t(state.lang, "reset_done"))
 
 
 @router.callback_query(NoopCD.filter())
@@ -294,7 +435,7 @@ async def noop(query: CallbackQuery) -> None:
 
 
 # --------------------------------------------------------------------------- #
-# 3. The unlock event
+# 4. The unlock event
 # --------------------------------------------------------------------------- #
 
 async def _unlock(
@@ -318,7 +459,7 @@ async def _unlock(
             caption=opening_caption(state),
             parse_mode="HTML",
         ),
-        reply_markup=opened_keyboard(),
+        reply_markup=opened_keyboard(state.lang),
     )
     if swapped is None:
         # A stale cached file_id is the usual suspect; drop it and retry once
@@ -333,7 +474,7 @@ async def _unlock(
                 caption=opening_caption(state),
                 parse_mode="HTML",
             ),
-            reply_markup=opened_keyboard(),
+            reply_markup=opened_keyboard(state.lang),
         )
     if swapped is not None and getattr(swapped, "photo", None):
         artwork.remember(Frame.OPEN, swapped.photo[-1].file_id)
@@ -345,8 +486,9 @@ async def _unlock(
         message_id=message_id,
         code=state.code_str,
         attempts=state.attempts,
-        theme=state.theme,
-        riddle=state.riddle,
+        theme=state.theme_in(),
+        riddle=state.riddle_in(),
+        lang=normalize(state.lang),
     )
 
     final = await _stream_reward(bot, rewards, ctx, key, state)
@@ -389,7 +531,7 @@ async def _stream_reward(
             message_id=message_id,
             caption=caption,
             parse_mode="HTML",
-            reply_markup=opened_keyboard(),
+            reply_markup=opened_keyboard(state.lang),
         )
 
     try:
@@ -403,7 +545,7 @@ async def _stream_reward(
         log.exception("reward stream failed")
 
     if not latest:
-        latest = "The vault is empty. Whatever was here, someone got to it first."
+        latest = t(state.lang, "empty_vault")
 
     await push(latest, streaming=False)  # always flush the final text
     return latest

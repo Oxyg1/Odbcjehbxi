@@ -10,6 +10,7 @@ from aiogram.enums import ParseMode
 from aiogram.types import BotCommand
 
 from .config import Settings, get_settings
+from .i18n import t
 from .handlers import build_router
 from .services.artwork import ArtworkProvider
 from .services.quests import build_quest_provider
@@ -18,10 +19,12 @@ from .state import build_state_store
 
 log = logging.getLogger(__name__)
 
-COMMANDS = [
-    BotCommand(command="vault", description="Open a fresh vault"),
-    BotCommand(command="start", description="Open a fresh vault"),
-]
+def commands_for(lang: str) -> list[BotCommand]:
+    return [
+        BotCommand(command="vault", description=t(lang, "cmd_vault")),
+        BotCommand(command="start", description=t(lang, "cmd_vault")),
+        BotCommand(command="lang", description=t(lang, "cmd_lang")),
+    ]
 
 
 def create_bot(settings: Settings) -> Bot:
@@ -65,7 +68,9 @@ async def run() -> None:
     # Everything that touches the network lives inside the try: a bad token or
     # an unreachable API during startup would otherwise leak the HTTP session.
     try:
-        await bot.set_my_commands(COMMANDS)
+        # Telegram picks the list matching each user's interface language.
+        await bot.set_my_commands(commands_for(settings.default_lang))
+        await bot.set_my_commands(commands_for("ru"), language_code="ru")
         me = await bot.get_me()
         log.info("CryptexBot online as @%s", me.username)
 

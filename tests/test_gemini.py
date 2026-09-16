@@ -111,16 +111,26 @@ def quest_provider(verify=False, **kw):
     return provider, seen
 
 
+EN_CLUES = [
+    "Count the days the almanac gives a week.",
+    "Count the oars a rower pulls.",
+    "Count the legs of the milking stool.",
+]
+RU_CLUES = [
+    "Сосчитайте дни, которые альманах отводит неделе.",
+    "Сосчитайте вёсла в руках гребца.",
+    "Сосчитайте ножки доильного табурета.",
+]
 GOOD_QUEST = json.dumps(
     {
-        "theme": "a salt mine",
-        "riddle": "The lift cable still swings.",
-        "clues": [
-            "Count the days the almanac gives a week.",
-            "Count the oars a rower pulls.",
-            "Count the legs of the milking stool.",
-        ],
-    }
+        "theme_en": "a salt mine",
+        "riddle_en": "The lift cable still swings.",
+        "clues_en": EN_CLUES,
+        "theme_ru": "соляная шахта",
+        "riddle_ru": "Трос подъёмника всё ещё качается.",
+        "clues_ru": RU_CLUES,
+    },
+    ensure_ascii=False,
 )
 
 
@@ -135,22 +145,26 @@ def reward_provider(**kw):
 async def main() -> None:
     # --- the schema pins the exact contract -------------------------------- #
     schema = _quest_schema(3)
-    clues = schema.properties["clues"]
-    assert schema.required == ["theme", "riddle", "clues"]
     assert "code" not in schema.properties, "the model is never asked for the code"
-    assert (clues.min_items, clues.max_items) == (3, 3)
+    for lang in ("en", "ru"):
+        assert f"theme_{lang}" in schema.properties
+        assert f"riddle_{lang}" in schema.properties
+        clues = schema.properties[f"clues_{lang}"]
+        assert (clues.min_items, clues.max_items) == (3, 3), lang
+    assert set(schema.required) == set(schema.properties)
     solver = _solver_schema(3)
     digits = solver.properties["digits"]
     assert (digits.items.minimum, digits.items.maximum) == (0, 9)
     assert (digits.min_items, digits.max_items) == (3, 3)
-    print("ok  quest schema asks for {theme, riddle, clues} — never the code")
+    print("ok  quest schema asks for both languages at once — never the code")
 
     # --- happy path: the code is local, the digits reach the prompt --------- #
     provider, seen = quest_provider(content=GOOD_QUEST)
     quest = await provider.generate(CTX)
     assert len(quest.code) == 3 and all(0 <= d <= 9 for d in quest.code)
-    assert quest.theme == "a salt mine"
-    assert len(quest.clues) == 3
+    assert quest.theme["en"] == "a salt mine"
+    assert quest.theme["ru"] == "соляная шахта"
+    assert len(quest.clues["en"]) == 3 and len(quest.clues["ru"]) == 3
     prompt = seen["contents"]
     for ordinal, digit in zip(["First", "Second", "Third"], quest.code):
         assert f"{ordinal} dial: the answer is {digit}" in prompt
@@ -174,31 +188,38 @@ async def main() -> None:
     # --- a leaking clue is repaired before the player ever sees it ---------- #
     leaky = json.dumps(
         {
-            "theme": "a salt mine",
-            "riddle": "Dust.",
-            "clues": ["The tag reads 7.", "Count the two oars.", "Count the stool legs."],
-        }
+            "theme_en": "a salt mine",
+            "riddle_en": "Dust.",
+            "clues_en": ["The tag reads 7.", "Count the two oars.", "Count the stool legs."],
+            "theme_ru": "соляная шахта",
+            "riddle_ru": "Пыль.",
+            "clues_ru": ["На бирке 7.", "Сосчитайте два весла.", "Сосчитайте ножки."],
+        },
+        ensure_ascii=False,
     )
     for _ in range(30):
         provider, _ = quest_provider(content=leaky)
         quest = await provider.generate(CTX)
-        for clue, digit in zip(quest.clues, quest.code):
-            assert not leaks_digit(clue, digit), (clue, digit)
+        for lang in ("en", "ru"):
+            for clue, digit in zip(quest.clues[lang], quest.code):
+                assert not leaks_digit(clue, digit), (lang, clue, digit)
     print("ok  clues that leak are cleaned or replaced before display")
 
     # --- garbage in, playable vault out ------------------------------------ #
-    for bad in ("", "I'm afraid I can't do that", "[1, 2, 3]", '{"clues": []}'):
+    for bad in ("", "I'm afraid I can't do that", "[1, 2, 3]", '{"clues_en": []}'):
         provider, _ = quest_provider(content=bad)
         guarded = FallbackQuestProvider(provider, StaticQuestProvider())
         quest = await guarded.generate(CTX)
-        assert len(quest.code) == 3 and len(quest.clues) == 3, bad
-        assert quest.theme and quest.riddle and all(quest.clues), bad
+        assert len(quest.code) == 3, bad
+        for lang in ("en", "ru"):
+            assert len(quest.clues[lang]) == 3, (bad, lang)
+            assert quest.theme[lang] and quest.riddle[lang], (bad, lang)
     print("ok  empty / prose / wrong-shape responses still yield a playable vault")
 
     # --- verification: a clue that does not solve back is swapped out ------- #
     provider, seen = quest_provider(
         verify=True,
-        content=[GOOD_QUEST, json.dumps({"digits": [5, 5, 5]})],
+        content=[GOOD_QUEST, json.dumps({"digits": [5, 5, 5, 5, 5, 5]})],
     )
     with pinned_code([7, 3, 2]) as code:  # no digit matches the solver's answer
         quest = await provider.generate(CTX)
@@ -206,37 +227,41 @@ async def main() -> None:
     assert len(seen["calls"]) == 2, "verification must be a second call"
     solver_prompt = seen["calls"][1]["contents"]
     assert "almanac gives a week" in solver_prompt, "the solver reads the clue text"
+    assert "альманах отводит неделе" in solver_prompt, "both languages in one call"
     assert "732" not in solver_prompt, "the solver must not see the combination"
     assert not any(ch.isdigit() for ch in solver_prompt), "no digits in the solver prompt"
     assert seen["calls"][1]["config"].temperature == 0.0
-    for clue, digit in zip(quest.clues, code):
-        assert clue in DIGIT_CLUES[digit], "mismatched clues fall back to known-good"
-    print("ok  clues are solved cold and replaced when the answer disagrees")
+    for lang in ("en", "ru"):
+        for clue, digit in zip(quest.clues[lang], code):
+            assert clue in DIGIT_CLUES[lang][digit], "mismatched clues fall back locally"
+    print("ok  clues in both languages are solved cold and replaced when wrong")
 
     # --- verification: agreement keeps the model's prose -------------------- #
     provider, seen = quest_provider(
-        verify=True, content=[GOOD_QUEST, json.dumps({"digits": [7, 3, 2]})]
+        verify=True, content=[GOOD_QUEST, json.dumps({"digits": [7, 3, 2, 7, 3, 2]})]
     )
     with pinned_code([7, 3, 2]):
         quest = await provider.generate(CTX)
-    assert quest.clues[0] == "Count the days the almanac gives a week."
-    assert quest.clues[2] == "Count the legs of the milking stool."
+    assert quest.clues["en"][0] == EN_CLUES[0]
+    assert quest.clues["ru"][0] == RU_CLUES[0]
     print("ok  clues that solve correctly are kept as the model wrote them")
 
-    # --- verification: only the wrong clue is replaced ---------------------- #
+    # --- verification: one bad Russian clue does not touch the English ------ #
     provider, _ = quest_provider(
-        verify=True, content=[GOOD_QUEST, json.dumps({"digits": [7, 3, 5]})]
+        verify=True, content=[GOOD_QUEST, json.dumps({"digits": [7, 3, 2, 7, 3, 5]})]
     )
     with pinned_code([7, 3, 2]):
         quest = await provider.generate(CTX)
-    assert quest.clues[0] == "Count the days the almanac gives a week."
-    assert quest.clues[2] in DIGIT_CLUES[2], "only the disagreeing clue is swapped"
-    print("ok  verification replaces only the clue that failed")
+    assert quest.clues["en"] == EN_CLUES, "English untouched"
+    assert quest.clues["ru"][0] == RU_CLUES[0] and quest.clues["ru"][1] == RU_CLUES[1]
+    assert quest.clues["ru"][2] in DIGIT_CLUES["ru"][2], "only the failing clue is swapped"
+    print("ok  verification replaces only the clue that failed, per language")
 
     # --- verification failure is not fatal ---------------------------------- #
     provider, _ = quest_provider(verify=True, content=[GOOD_QUEST, "not json"])
     quest = await provider.generate(CTX)
-    assert quest.clues[0] == "Count the days the almanac gives a week."
+    assert quest.clues["en"][0] == EN_CLUES[0]
+    assert quest.clues["ru"][0] == RU_CLUES[0]
     print("ok  a failed verification keeps the leak-scanned clues")
 
     # --- a hanging API does not hang the player ---------------------------- #
@@ -248,7 +273,7 @@ async def main() -> None:
         provider, _ = quest_provider(content="{}", delay=5)
         guarded = FallbackQuestProvider(provider, StaticQuestProvider())
         quest = await asyncio.wait_for(guarded.generate(CTX), timeout=2)
-        assert len(quest.code) == 3 and len(quest.clues) == 3
+        assert len(quest.code) == 3 and len(quest.clues["ru"]) == 3
     finally:
         gemini_mod.QUEST_TIMEOUT = original
     print("ok  a hung quest call times out and falls back locally")
@@ -261,6 +286,7 @@ async def main() -> None:
         seq = [partial async for partial in provider.stream(RCTX)]
         assert seq == ["You step ", "You step into the ", "You step into the dark."], seq
         assert "drowned observatory" in seen["contents"], "theme must reach the prompt"
+        assert "English" in seen["contents"], "the reveal is asked for in one language"
     print("ok  streaming yields cumulative text (awaitable and direct iterators)")
 
     # --- the adapter tolerates both shapes directly ------------------------ #

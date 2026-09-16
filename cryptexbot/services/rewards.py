@@ -17,6 +17,8 @@ import logging
 from abc import ABC, abstractmethod
 from dataclasses import dataclass
 from typing import TYPE_CHECKING
+
+from ..i18n import DEFAULT_LANG, t
 from typing import AsyncIterator
 
 if TYPE_CHECKING:  # avoids importing settings at runtime
@@ -39,6 +41,9 @@ class RewardContext:
     # actually cracked rather than a generic safe.
     theme: str = ""
     riddle: str = ""
+    # The language the player is reading in. The reveal is generated once, in
+    # this language, at the moment the vault opens.
+    lang: str = DEFAULT_LANG
 
 
 class RewardProvider(ABC):
@@ -48,13 +53,19 @@ class RewardProvider(ABC):
 
 
 class StaticRewardProvider(RewardProvider):
-    """Ships the boilerplate: one fixed prize string, yielded in one piece."""
+    """The offline prize: one fixed string per language, yielded in one piece.
 
-    def __init__(self, text: str) -> None:
-        self._text = text
+    ``override`` is the optional STATIC_REWARD from the environment. When it is
+    unset the text comes from the translation table, so the fallback speaks the
+    player's language too.
+    """
+
+    def __init__(self, override: str | None = None) -> None:
+        self._override = override or None
 
     async def stream(self, ctx: RewardContext) -> AsyncIterator[str]:
-        yield self._text.format(
+        template = self._override or t(ctx.lang, "static_reward")
+        yield template.format(
             user_name=ctx.user_name,
             code=ctx.code,
             attempts=ctx.attempts,
