@@ -62,11 +62,13 @@ async def run() -> None:
     bot = create_bot(settings)
     dp = create_dispatcher(settings)
 
-    await bot.set_my_commands(COMMANDS)
-    me = await bot.get_me()
-    log.info("CryptexBot online as @%s", me.username)
-
+    # Everything that touches the network lives inside the try: a bad token or
+    # an unreachable API during startup would otherwise leak the HTTP session.
     try:
+        await bot.set_my_commands(COMMANDS)
+        me = await bot.get_me()
+        log.info("CryptexBot online as @%s", me.username)
+
         # Zero-Spam means we only ever care about fresh taps: stale updates from
         # a downtime window would edit messages whose state no longer exists.
         await dp.start_polling(
