@@ -22,9 +22,19 @@ VaultKey = tuple[int, int]  # (chat_id, message_id)
 
 @dataclass(slots=True)
 class VaultState:
-    """Everything a single puzzle message needs to re-render itself."""
+    """Everything a single puzzle message needs to re-render itself.
+
+    The secret code lives *here*, not in settings: every vault is generated
+    fresh by Gemini, so two players in the same chat are solving different
+    safes. ``code`` is empty until the quest lands — ``ready`` gates the
+    keyboard so nobody can tap a vault that has no combination yet.
+    """
 
     dials: list[int]
+    code: list[int] = field(default_factory=list)
+    theme: str = ""
+    riddle: str = ""
+    ready: bool = False
     attempts: int = 0
     opened: bool = False
     owner_id: int | None = None
@@ -35,14 +45,24 @@ class VaultState:
     def new(cls, dial_count: int, owner_id: int | None = None) -> "VaultState":
         return cls(dials=[0] * dial_count, owner_id=owner_id)
 
+    @property
+    def code_str(self) -> str:
+        return "".join(str(d) for d in self.code)
+
     def turn(self, index: int) -> int:
         """Advance one dial 0 -> 1 -> ... -> 9 -> 0 and return its new value."""
         self.dials[index] = (self.dials[index] + 1) % 10
         self.attempts += 1
         return self.dials[index]
 
-    def matches(self, code: Iterable[int]) -> bool:
-        return self.dials == list(code)
+    def matches(self, code: Iterable[int] | None = None) -> bool:
+        """True when the dials sit on the combination.
+
+        An unready vault (no code yet) never matches, so a race between the
+        quest landing and a tap cannot open an empty safe.
+        """
+        target = list(code) if code is not None else self.code
+        return bool(target) and self.dials == target
 
     def to_json(self) -> str:
         return json.dumps(asdict(self), separators=(",", ":"))

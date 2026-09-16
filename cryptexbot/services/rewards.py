@@ -1,14 +1,14 @@
 """What the vault reveals once it opens.
 
-The swap point for "static text -> LLM call" lives here and nowhere else.
 Every provider exposes the same streaming interface::
 
     async for partial in provider.stream(ctx):
         ...  # `partial` is the full text so far, not a delta
 
-A static provider yields exactly once; an LLM provider yields as tokens land.
-The handler that renders the reward is written against the streaming shape, so
-turning on real streaming later is a config change, not a refactor.
+A static provider yields exactly once; the Gemini provider yields as chunks
+land, which is what drives the typewriter effect in ``handlers/vault.py``.
+Because the renderer only ever sees this interface, swapping models — or
+dropping back to static text — is a config change, not a refactor.
 """
 
 from __future__ import annotations
@@ -16,7 +16,11 @@ from __future__ import annotations
 import logging
 from abc import ABC, abstractmethod
 from dataclasses import dataclass
+from typing import TYPE_CHECKING
 from typing import AsyncIterator
+
+if TYPE_CHECKING:  # avoids importing settings at runtime
+    from ..config import Settings
 
 log = logging.getLogger(__name__)
 
@@ -31,6 +35,10 @@ class RewardContext:
     message_id: int
     code: str
     attempts: int
+    # Carried over from the quest, so the reveal matches the vault the player
+    # actually cracked rather than a generic safe.
+    theme: str = ""
+    riddle: str = ""
 
 
 class RewardProvider(ABC):
@@ -47,43 +55,11 @@ class StaticRewardProvider(RewardProvider):
 
     async def stream(self, ctx: RewardContext) -> AsyncIterator[str]:
         yield self._text.format(
-            user_name=ctx.user_name, code=ctx.code, attempts=ctx.attempts
+            user_name=ctx.user_name,
+            code=ctx.code,
+            attempts=ctx.attempts,
+            theme=ctx.theme or "the vault",
         )
-
-
-class LLMRewardProvider(RewardProvider):
-    """Generates the reveal with Claude, streaming as tokens arrive.
-
-    Kept deliberately thin — the only contract that matters is that it yields
-    the growing text. Telegram rate-limits ``editMessageCaption``, so the
-    renderer (see ``handlers/vault.py``) throttles how often it pushes an
-    update; do not throttle here.
-    """
-
-    def __init__(self, api_key: str, model: str = "claude-sonnet-5") -> None:
-        from anthropic import AsyncAnthropic  # lazy: optional dependency
-
-        self._client = AsyncAnthropic(api_key=api_key)
-        self._model = model
-
-    def _prompt(self, ctx: RewardContext) -> str:
-        return (
-            f"{ctx.user_name} just cracked a 3-digit vault in a Telegram puzzle "
-            f"game, on attempt {ctx.attempts}, with the code {ctx.code}. "
-            "Write the reveal that greets them inside the vault: 2-3 sentences, "
-            "noir heist tone, second person, no emoji, no preamble."
-        )
-
-    async def stream(self, ctx: RewardContext) -> AsyncIterator[str]:
-        buffer = ""
-        async with self._client.messages.stream(
-            model=self._model,
-            max_tokens=300,
-            messages=[{"role": "user", "content": self._prompt(ctx)}],
-        ) as stream:
-            async for delta in stream.text_stream:
-                buffer += delta
-                yield buffer
 
 
 class FallbackRewardProvider(RewardProvider):
@@ -106,13 +82,18 @@ class FallbackRewardProvider(RewardProvider):
                     yield partial
 
 
-def build_reward_provider(
-    kind: str, static_text: str, api_key: str | None, model: str
-) -> RewardProvider:
-    static = StaticRewardProvider(static_text)
-    if kind == "llm":
-        if not api_key:
-            log.warning("REWARD_PROVIDER=llm but no ANTHROPIC_API_KEY; using static")
-            return static
-        return FallbackRewardProvider(LLMRewardProvider(api_key, model), static)
-    return static
+def build_reward_provider(settings: "Settings") -> RewardProvider:
+    """Gemini when a key is configured, static otherwise — always wrapped.
+
+    The fallback is not defensive padding: a player who cracked the code has
+    earned a prize, and a 500 from the API is not their problem.
+    """
+    static = StaticRewardProvider(settings.static_reward)
+    if not settings.gemini_api_key:
+        return static
+
+    from .gemini import GeminiRewardProvider
+
+    return FallbackRewardProvider(
+        GeminiRewardProvider(settings.gemini_api_key, settings.gemini_model), static
+    )

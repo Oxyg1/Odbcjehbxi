@@ -12,6 +12,7 @@ from aiogram.types import BotCommand
 from .config import Settings, get_settings
 from .handlers import build_router
 from .services.artwork import ArtworkProvider
+from .services.quests import build_quest_provider
 from .services.rewards import build_reward_provider
 from .state import build_state_store
 
@@ -36,16 +37,16 @@ def create_dispatcher(settings: Settings) -> Dispatcher:
     )
     artwork = ArtworkProvider()
     artwork.ensure_rendered()
-    rewards = build_reward_provider(
-        settings.reward_provider,
-        settings.static_reward,
-        settings.anthropic_api_key,
-        settings.reward_model,
-    )
+    quests = build_quest_provider(settings)
+    rewards = build_reward_provider(settings)
 
     # Anything passed here is injected into handlers by parameter name.
     dp = Dispatcher(
-        settings=settings, store=store, artwork=artwork, rewards=rewards
+        settings=settings,
+        store=store,
+        artwork=artwork,
+        quests=quests,
+        rewards=rewards,
     )
     dp.include_router(build_router())
     dp.shutdown.register(_on_shutdown)
