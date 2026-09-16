@@ -143,7 +143,7 @@ A model-supplied `code` field, if one ever appears, is ignored outright — a
 tested guarantee, and the reason a prompt injection in a user's display name
 cannot talk its way to the combination.
 
-**`thinking_budget=0`.** `gemini-2.5-flash` thinks by default. For a short
+**`thinking_budget=0`.** Flash models think by default. For a short
 creative generation it buys nothing and costs the player seconds of staring at
 a sealed safe.
 
@@ -239,6 +239,33 @@ dead key means locally generated codes and canned flavour — the game still
 runs. Swapping in another model means writing one class in
 `services/gemini.py`'s place; nothing in `handlers/` changes.
 
+## When the model id stops working
+
+Google retires model ids and closes older ones to new API keys. That surfaces
+as a 404 whose message names the replacement:
+
+```
+404 NOT_FOUND ... This model models/gemini-2.5-flash is no longer available
+to new users. Please update your code to use models/gemini-3.6-flash
+```
+
+Ask your own key what it can reach rather than guessing:
+
+```bash
+python -m cryptexbot.models
+```
+
+It prints every model the key can call `generateContent` on, marks the one in
+your `.env`, and warns if that one is missing. Then set `GEMINI_MODEL`.
+
+The code is built to survive the next such change. Config is passed as a plain
+dict, and a 400 that names an unknown or unsupported field retries once without
+the optional knobs (`thinking_config` being the likely casualty), caching that
+decision for later calls. A genuine error is *not* retried — a test asserts a
+`500` falls back locally on the first attempt instead of burning a second call.
+Retired-model, bad-key and quota errors are each logged as a sentence telling
+you what to change.
+
 ## Language
 
 Both languages are authored **in the same Gemini call** (`theme_en`, `riddle_en`,
@@ -275,7 +302,7 @@ prize would look broken.
 |---|---|---|
 | `BOT_TOKEN` | — | Required. From @BotFather. |
 | `GEMINI_API_KEY` | — | From AI Studio. Absent ⇒ offline mode (local codes, static reveal). |
-| `GEMINI_MODEL` | `gemini-2.5-flash` | Any `google-genai` model id. |
+| `GEMINI_MODEL` | `gemini-3.6-flash` | Any id your key can reach — see below. |
 | `QUEST_VERIFY` | `true` | Solve each clue cold and replace the ones that fail. One extra call per vault. |
 | `DEFAULT_LANG` | `en` | `en` or `ru`. Used before a player has chosen. |
 | `ASK_LANGUAGE` | `true` | `false` skips the picker and starts in `DEFAULT_LANG`. |

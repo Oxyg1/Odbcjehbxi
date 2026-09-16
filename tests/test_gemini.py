@@ -19,9 +19,12 @@ from types import SimpleNamespace
 sys.path.insert(0, str(Path(__file__).resolve().parent.parent))
 
 from cryptexbot.services.gemini import (  # noqa: E402
+    DEFAULT_MODEL,
     GeminiQuestProvider,
     GeminiRewardProvider,
     _aiter,
+    _describe_failure,
+    _is_unsupported_parameter,
     _parse_json,
     _quest_schema,
     _solver_schema,
@@ -78,6 +81,8 @@ def fake_models(*, content=None, chunks=None, error=None, delay=0.0, as_coro=Tru
         if error:
             raise error
         reply = replies[min(len(calls) - 1, len(replies) - 1)]
+        if isinstance(reply, Exception):
+            raise reply
         return SimpleNamespace(text=reply, parsed=None)
 
     async def _agen():
@@ -106,8 +111,9 @@ def quest_provider(verify=False, **kw):
     provider = GeminiQuestProvider.__new__(GeminiQuestProvider)
     client, seen = fake_models(**kw)
     provider._client = client
-    provider._model = "gemini-2.5-flash"
+    provider._model = DEFAULT_MODEL
     provider._verify = verify
+    provider._drop_optional = False
     return provider, seen
 
 
@@ -138,7 +144,8 @@ def reward_provider(**kw):
     provider = GeminiRewardProvider.__new__(GeminiRewardProvider)
     client, seen = fake_models(**kw)
     provider._client = client
-    provider._model = "gemini-2.5-flash"
+    provider._model = DEFAULT_MODEL
+    provider._drop_optional = False
     return provider, seen
 
 
@@ -263,6 +270,41 @@ async def main() -> None:
     assert quest.clues["en"][0] == EN_CLUES[0]
     assert quest.clues["ru"][0] == RU_CLUES[0]
     print("ok  a failed verification keeps the leak-scanned clues")
+
+    # --- a model that refuses an optional knob is retried without it -------- #
+    thinking_rejected = RuntimeError(
+        '400 INVALID_ARGUMENT. {"error": {"message": "Unknown name \\"thinking_config\\""}}'
+    )
+    provider, seen = quest_provider(content=[thinking_rejected, GOOD_QUEST])
+    quest = await provider.generate(CTX)
+    assert len(seen["calls"]) == 2, "one retry, not a failure"
+    assert seen["calls"][0]["config"].thinking_config is not None
+    assert seen["calls"][1]["config"].thinking_config is None, "the knob is dropped"
+    assert quest.theme["en"] == "a salt mine", "the retry produced a real quest"
+    assert provider._drop_optional, "later calls skip straight to the plain form"
+    print("ok  a model that rejects thinking_config is retried without it")
+
+    # --- an ordinary 400 is not swallowed as a config problem --------------- #
+    assert not _is_unsupported_parameter(RuntimeError("400 INVALID_ARGUMENT: bad prompt"))
+    assert not _is_unsupported_parameter(RuntimeError("500 INTERNAL"))
+    provider, seen = quest_provider(content=[RuntimeError("500 INTERNAL"), GOOD_QUEST])
+    guarded = FallbackQuestProvider(provider, StaticQuestProvider())
+    quest = await guarded.generate(CTX)
+    assert len(seen["calls"]) == 1, "a real error is not retried into a second call"
+    assert len(quest.clues["ru"]) == 3, "it falls back locally instead"
+    print("ok  a genuine API error falls back instead of retrying blindly")
+
+    # --- opaque SDK errors become actionable messages ----------------------- #
+    retired = RuntimeError(
+        "404 NOT_FOUND. {'error': {'code': 404, 'message': 'This model "
+        "models/gemini-2.5-flash is no longer available to new users.'}}"
+    )
+    hint = _describe_failure(retired, "gemini-2.5-flash")
+    assert hint and "GEMINI_MODEL" in hint and "cryptexbot.models" in hint
+    assert "API key" in (_describe_failure(RuntimeError("401 API_KEY_INVALID"), "m") or "")
+    assert "quota" in (_describe_failure(RuntimeError("429 RESOURCE_EXHAUSTED"), "m") or "")
+    assert _describe_failure(RuntimeError("something else"), "m") is None
+    print("ok  retired-model, bad-key and quota errors get actionable messages")
 
     # --- a hanging API does not hang the player ---------------------------- #
     import cryptexbot.services.gemini as gemini_mod

@@ -17,7 +17,7 @@ class Settings(BaseSettings):
 
     # --- Gemini ---
     gemini_api_key: str | None = Field(default=None, alias="GEMINI_API_KEY")
-    gemini_model: str = Field(default="gemini-2.5-flash", alias="GEMINI_MODEL")
+    gemini_model: str = Field(default="gemini-3.6-flash", alias="GEMINI_MODEL")
     # Round-trip every generated clue through a solver that has not seen the
     # code, and replace any that do not resolve. Costs one extra fast call per
     # vault; turn it off if you would rather have the second back.

@@ -39,7 +39,11 @@ from .rewards import RewardContext, RewardProvider
 
 log = logging.getLogger(__name__)
 
-DEFAULT_MODEL = "gemini-2.5-flash"
+# Google retires model ids and closes old ones to new API keys, so this is a
+# moving target rather than a constant. Override with GEMINI_MODEL, and run
+# `python -m cryptexbot.models` to see what the key in your .env can actually
+# reach.
+DEFAULT_MODEL = "gemini-3.6-flash"
 QUEST_TIMEOUT = 15.0  # a player is staring at a sealed vault while this runs
 VERIFY_TIMEOUT = 12.0
 REVEAL_TIMEOUT = 45.0
@@ -108,6 +112,96 @@ def _solver_schema(count: int):
     )
 
 
+def _describe_failure(error: Exception, model: str) -> str | None:
+    """Turn an opaque SDK error into something a person can act on."""
+    text = str(error)
+    if "404" in text and "model" in text.lower():
+        return (
+            f"Gemini model {model!r} is not available to this API key. "
+            "Set GEMINI_MODEL in .env to one that is — run "
+            "`python -m cryptexbot.models` to list them."
+        )
+    if "API key" in text or "API_KEY_INVALID" in text or "401" in text:
+        return "Gemini rejected the API key. Check GEMINI_API_KEY in .env."
+    if "429" in text or "RESOURCE_EXHAUSTED" in text:
+        return "Gemini quota exhausted for this key; falling back to local generation."
+    return None
+
+
+def _is_unsupported_parameter(error: Exception) -> bool:
+    """True when the model rejected a knob rather than the request itself.
+
+    Newer models drop or rename configuration fields — `thinking_config` is the
+    one this bot sets that a future model is most likely to refuse. Rather than
+    pinning ourselves to one generation of the API, we retry once without the
+    optional knobs.
+    """
+    text = str(error).lower()
+    if "400" not in text and "invalid_argument" not in text:
+        return False
+    return any(
+        hint in text
+        for hint in ("thinking", "unknown name", "unsupported", "not supported", "invalid json payload")
+    )
+
+
+# Knobs that are nice to have but never worth failing a request over.
+_OPTIONAL_CONFIG = ("thinking_config",)
+
+
+class _ModelCaller:
+    """Shared call path: timeouts, readable errors, and one degrading retry."""
+
+    _client: Any
+    _model: str
+    _drop_optional: bool = False
+
+    async def _generate(self, contents: str, config: dict, timeout: float):
+        from google.genai import types
+
+        attempt = dict(config)
+        if self._drop_optional:
+            for knob in _OPTIONAL_CONFIG:
+                attempt.pop(knob, None)
+
+        try:
+            return await asyncio.wait_for(
+                self._client.aio.models.generate_content(
+                    model=self._model,
+                    contents=contents,
+                    config=types.GenerateContentConfig(**attempt),
+                ),
+                timeout=timeout,
+            )
+        except Exception as error:  # noqa: BLE001 - re-raised after diagnosis
+            if _is_unsupported_parameter(error) and not self._drop_optional:
+                log.warning(
+                    "model %s rejected an optional config field; retrying without %s",
+                    self._model,
+                    ", ".join(_OPTIONAL_CONFIG),
+                )
+                # Remember, so every later call skips straight to the plain form.
+                self._drop_optional = True
+                return await self._generate(contents, config, timeout)
+            hint = _describe_failure(error, self._model)
+            if hint:
+                log.error("%s", hint)
+            raise
+
+    def _stream_call(self, contents: str, config: dict):
+        from google.genai import types
+
+        attempt = dict(config)
+        if self._drop_optional:
+            for knob in _OPTIONAL_CONFIG:
+                attempt.pop(knob, None)
+        return self._client.aio.models.generate_content_stream(
+            model=self._model,
+            contents=contents,
+            config=types.GenerateContentConfig(**attempt),
+        )
+
+
 async def _aiter(stream_or_coro: Any) -> AsyncIterator[Any]:
     """Normalise the streaming call across google-genai versions.
 
@@ -143,7 +237,7 @@ def _parse_json(response: Any) -> dict:
 # 1. Riddle authoring (JSON mode) — the code is an input, never an output
 # --------------------------------------------------------------------------- #
 
-class GeminiQuestProvider(QuestProvider):
+class GeminiQuestProvider(_ModelCaller, QuestProvider):
     """Dresses a locally chosen combination in a solvable riddle."""
 
     def __init__(
@@ -197,7 +291,7 @@ class GeminiQuestProvider(QuestProvider):
         # The answer is decided here, in Python, before the model is involved.
         code = random_code(ctx.dial_count)
 
-        config = types.GenerateContentConfig(
+        config = dict(
             system_instruction=SYSTEM_INSTRUCTION,
             response_mime_type="application/json",
             response_schema=_quest_schema(ctx.dial_count),
@@ -208,12 +302,7 @@ class GeminiQuestProvider(QuestProvider):
             thinking_config=types.ThinkingConfig(thinking_budget=0),
         )
 
-        response = await asyncio.wait_for(
-            self._client.aio.models.generate_content(
-                model=self._model, contents=self._prompt(ctx, code), config=config
-            ),
-            timeout=QUEST_TIMEOUT,
-        )
+        response = await self._generate(self._prompt(ctx, code), config, QUEST_TIMEOUT)
 
         # coerce_quest runs the leak scan per language: numerals stripped, any
         # clue that names its own digit swapped for a local one.
@@ -275,19 +364,14 @@ class GeminiQuestProvider(QuestProvider):
                 "explain.\n\n"
                 f"{listed}"
             )
-            config = types.GenerateContentConfig(
+            config = dict(
                 response_mime_type="application/json",
                 response_schema=_solver_schema(len(flat)),
                 temperature=0.0,  # verification is not a creative act
                 max_output_tokens=300,
                 thinking_config=types.ThinkingConfig(thinking_budget=0),
             )
-            response = await asyncio.wait_for(
-                self._client.aio.models.generate_content(
-                    model=self._model, contents=prompt, config=config
-                ),
-                timeout=VERIFY_TIMEOUT,
-            )
+            response = await self._generate(prompt, config, VERIFY_TIMEOUT)
             solved = _parse_json(response).get("digits")
             if not isinstance(solved, list) or len(solved) != len(flat):
                 log.warning("solver returned an unusable answer; keeping clues as-is")
@@ -321,7 +405,7 @@ class GeminiQuestProvider(QuestProvider):
 # 3. Cinematic victory streaming
 # --------------------------------------------------------------------------- #
 
-class GeminiRewardProvider(RewardProvider):
+class GeminiRewardProvider(_ModelCaller, RewardProvider):
     """Streams the reveal, themed on the quest the player just solved.
 
     Yields the *cumulative* text so the caller can drop it straight into
@@ -350,7 +434,7 @@ class GeminiRewardProvider(RewardProvider):
     async def stream(self, ctx: RewardContext) -> AsyncIterator[str]:
         from google.genai import types
 
-        config = types.GenerateContentConfig(
+        config = dict(
             system_instruction=SYSTEM_INSTRUCTION,
             temperature=1.15,
             max_output_tokens=300,
@@ -360,9 +444,7 @@ class GeminiRewardProvider(RewardProvider):
         buffer = ""
         deadline = asyncio.get_running_loop().time() + REVEAL_TIMEOUT
 
-        stream = self._client.aio.models.generate_content_stream(
-            model=self._model, contents=self._prompt(ctx), config=config
-        )
+        stream = self._stream_call(self._prompt(ctx), config)
         async for chunk in _aiter(stream):
             delta = getattr(chunk, "text", None)
             if delta:
