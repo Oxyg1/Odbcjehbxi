@@ -49,6 +49,11 @@ cp .env.example .env    # BOT_TOKEN from @BotFather, GEMINI_API_KEY from AI Stud
 python main.py
 ```
 
+Needs Python 3.10 or newer. Note that `aiogram` below 3.17 caps `pydantic`
+under 2.10, which `google-genai` cannot satisfy — `requirements.txt` carries a
+floor rather than an exact pin for that reason, and a clean install resolves to
+aiogram 3.31 / google-genai 2.23 / pydantic 2.13.
+
 Get a Gemini key at <https://aistudio.google.com/apikey>. Without one the bot
 still runs: codes are generated locally and the reveal falls back to
 `STATIC_REWARD`, so you can develop the Telegram side offline.

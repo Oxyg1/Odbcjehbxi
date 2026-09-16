@@ -1,7 +1,9 @@
-# Pinned to the versions this code was tested against.
-aiogram==3.15.0
-google-genai==2.23.0
-pydantic-settings==2.15.0
-Pillow==12.3.0
+# Verified to resolve together on a clean install (Python 3.11 and 3.12).
+# aiogram < 3.17 caps pydantic below 2.10, which google-genai cannot satisfy —
+# hence the floor here rather than an exact pin.
+aiogram>=3.17,<4
+google-genai>=2.0,<3
+pydantic-settings>=2.6,<3
+Pillow>=10,<13
 # Only needed for STATE_BACKEND=redis.
 redis>=5.0
