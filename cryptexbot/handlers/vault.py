@@ -25,7 +25,7 @@ from aiogram.types import CallbackQuery, InputMediaPhoto, Message
 from ..config import Settings
 from ..keyboards import DialCD, NoopCD, ResetCD, opened_keyboard, vault_keyboard
 from ..services.artwork import ArtworkProvider, Frame
-from ..services.quests import QuestContext, QuestProvider
+from ..services.quests import ORDINALS, QuestContext, QuestProvider
 from ..services.rewards import RewardContext, RewardProvider
 from ..services.safe_calls import ack, safe_call
 from ..state import StateStore, VaultKey, VaultState
@@ -51,21 +51,51 @@ def sealing_caption() -> str:
     return (
         "🔒 <b>THE CRYPTEX VAULT</b>\n\n"
         "<i>Steel is cooling, tumblers are being set…</i>\n\n"
-        "A new vault is being sealed for you. Its combination does not exist "
-        "yet — not even the bot knows it."
+        "A new vault is being sealed for you, and a riddle is being written "
+        "around its combination."
     )
 
 
 def locked_caption(state: VaultState) -> str:
-    dials = " ".join(str(d) for d in state.dials)
-    return (
-        f"🔒 <b>{html.escape(state.theme.upper())}</b>\n\n"
-        f"<i>{html.escape(state.riddle)}</i>\n\n"
-        "Tap a dial to turn it one notch. Line up the right combination "
-        "and the vault opens.\n\n"
-        f"<b>Dials:</b> <code>{dials}</code>\n"
-        f"<b>Turns:</b> {state.attempts}"
+    """Theme, framing, one clue per dial, and the dial read-out.
+
+    Clues are labelled with ordinal words rather than "1." — printing numerals
+    beside a puzzle whose answer is numerals is asking to be misread.
+
+    Assembly is budgeted, not hoped for: a caption over 1024 characters is
+    rejected outright by Telegram, and with eight dials the full text would run
+    past it. The framing line goes first, then clue text is trimmed evenly —
+    the clues are the puzzle, so they are the last thing to give.
+    """
+    head = f"🔒 <b>{html.escape(state.theme.upper())}</b>\n\n"
+    tail = (
+        f"\n\n<b>Dials:</b> <code>{' '.join(str(d) for d in state.dials)}</code>"
+        f"\n<b>Turns:</b> {state.attempts}"
     )
+    framing = f"<i>{html.escape(state.riddle)}</i>\n\n" if state.riddle else ""
+
+    def render(clues: list[str]) -> list[str]:
+        return [
+            f"<b>{ORDINALS[i] if i < len(ORDINALS) else f'Dial {i + 1}'}</b> — "
+            f"{html.escape(clue)}"
+            for i, clue in enumerate(clues)
+        ]
+
+    lines = render(state.clues)
+    caption = head + framing + "\n".join(lines) + tail
+    if len(caption) <= CAPTION_LIMIT:
+        return caption
+
+    # Too long: drop the framing line first.
+    caption = head + "\n".join(lines) + tail
+    if len(caption) <= CAPTION_LIMIT:
+        return caption
+
+    # Still too long: trim every clue to an equal share of what is left.
+    overhead = len(head) + len(tail) + sum(len(line) for line in render([""] * len(state.clues)))
+    budget = max(40, (CAPTION_LIMIT - overhead - len(state.clues)) // max(1, len(state.clues)))
+    trimmed = [c[: budget - 1] + "…" if len(c) > budget else c for c in state.clues]
+    return (head + "\n".join(render(trimmed)) + tail)[:CAPTION_LIMIT]
 
 
 def _unlock_header(state: VaultState) -> str:
@@ -157,6 +187,7 @@ async def spawn_vault(
         state.code = quest.code
         state.theme = quest.theme
         state.riddle = quest.riddle
+        state.clues = quest.clues
         state.ready = True
         await store.set(key, state)
 

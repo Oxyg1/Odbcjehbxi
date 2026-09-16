@@ -18,6 +18,10 @@ class Settings(BaseSettings):
     # --- Gemini ---
     gemini_api_key: str | None = Field(default=None, alias="GEMINI_API_KEY")
     gemini_model: str = Field(default="gemini-2.5-flash", alias="GEMINI_MODEL")
+    # Round-trip every generated clue through a solver that has not seen the
+    # code, and replace any that do not resolve. Costs one extra fast call per
+    # vault; turn it off if you would rather have the second back.
+    quest_verify: bool = Field(default=True, alias="QUEST_VERIFY")
 
     # --- Puzzle ---
     dial_count: int = Field(default=3, alias="DIAL_COUNT", ge=1, le=8)

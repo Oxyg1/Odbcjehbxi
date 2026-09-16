@@ -10,6 +10,7 @@ Run with:  python tests/test_gemini.py
 from __future__ import annotations
 
 import asyncio
+import json
 import sys
 from pathlib import Path
 from types import SimpleNamespace
@@ -22,11 +23,14 @@ from cryptexbot.services.gemini import (  # noqa: E402
     _aiter,
     _parse_json,
     _quest_schema,
+    _solver_schema,
 )
 from cryptexbot.services.quests import (  # noqa: E402
+    DIGIT_CLUES,
     FallbackQuestProvider,
     QuestContext,
     StaticQuestProvider,
+    leaks_digit,
 )
 from cryptexbot.services.rewards import RewardContext  # noqa: E402
 
@@ -38,16 +42,24 @@ RCTX = RewardContext(
 
 
 def fake_models(*, content=None, chunks=None, error=None, delay=0.0, as_coro=True):
-    """A stand-in for ``client.aio.models`` with recorded call kwargs."""
+    """A stand-in for ``client.aio.models`` with recorded call kwargs.
+
+    ``content`` may be a list, in which case successive calls return successive
+    entries — the quest call first, then the verification call.
+    """
     seen: dict = {}
+    calls: list[dict] = []
+    replies = list(content) if isinstance(content, list) else [content]
 
     async def generate_content(**kwargs):
         seen.update(kwargs)
+        calls.append(dict(kwargs))
         if delay:
             await asyncio.sleep(delay)
         if error:
             raise error
-        return SimpleNamespace(text=content, parsed=None)
+        reply = replies[min(len(calls) - 1, len(replies) - 1)]
+        return SimpleNamespace(text=reply, parsed=None)
 
     async def _agen():
         for chunk in chunks or []:
@@ -67,15 +79,30 @@ def fake_models(*, content=None, chunks=None, error=None, delay=0.0, as_coro=Tru
             generate_content_stream_coro if as_coro else generate_content_stream
         ),
     )
+    seen["calls"] = calls
     return SimpleNamespace(aio=SimpleNamespace(models=models)), seen
 
 
-def quest_provider(**kw):
+def quest_provider(verify=False, **kw):
     provider = GeminiQuestProvider.__new__(GeminiQuestProvider)
     client, seen = fake_models(**kw)
     provider._client = client
     provider._model = "gemini-2.5-flash"
+    provider._verify = verify
     return provider, seen
+
+
+GOOD_QUEST = json.dumps(
+    {
+        "theme": "a salt mine",
+        "riddle": "The lift cable still swings.",
+        "clues": [
+            "Count the days the almanac gives a week.",
+            "Count the oars a rower pulls.",
+            "Count the legs of the milking stool.",
+        ],
+    }
+)
 
 
 def reward_provider(**kw):
@@ -89,39 +116,117 @@ def reward_provider(**kw):
 async def main() -> None:
     # --- the schema pins the exact contract -------------------------------- #
     schema = _quest_schema(3)
-    code = schema.properties["code"]
-    assert schema.required == ["code", "theme", "riddle"]
-    assert schema.property_ordering == ["code", "theme", "riddle"]
-    assert (code.min_items, code.max_items) == (3, 3)
-    assert (code.items.minimum, code.items.maximum) == (0, 9)
-    print("ok  response schema is {code: [x, y, z], theme, riddle}, digits 0-9")
+    clues = schema.properties["clues"]
+    assert schema.required == ["theme", "riddle", "clues"]
+    assert "code" not in schema.properties, "the model is never asked for the code"
+    assert (clues.min_items, clues.max_items) == (3, 3)
+    solver = _solver_schema(3)
+    digits = solver.properties["digits"]
+    assert (digits.items.minimum, digits.items.maximum) == (0, 9)
+    assert (digits.min_items, digits.max_items) == (3, 3)
+    print("ok  quest schema asks for {theme, riddle, clues} — never the code")
 
-    # --- happy path -------------------------------------------------------- #
-    provider, seen = quest_provider(
-        content='{"code": [4, 0, 8], "theme": "a salt mine", "riddle": "It hums."}'
-    )
+    # --- happy path: the code is local, the digits reach the prompt --------- #
+    provider, seen = quest_provider(content=GOOD_QUEST)
     quest = await provider.generate(CTX)
-    assert quest.code == [4, 0, 8]
-    assert quest.theme == "a salt mine" and quest.riddle == "It hums."
-    assert seen["model"] == "gemini-2.5-flash"
+    assert len(quest.code) == 3 and all(0 <= d <= 9 for d in quest.code)
+    assert quest.theme == "a salt mine"
+    assert len(quest.clues) == 3
+    prompt = seen["contents"]
+    for ordinal, digit in zip(["First", "Second", "Third"], quest.code):
+        assert f"{ordinal} dial: the answer is {digit}" in prompt
     cfg = seen["config"]
     assert cfg.response_mime_type == "application/json"
-    assert cfg.response_schema is not None
     assert cfg.thinking_config.thinking_budget == 0
-    print("ok  JSON mode parsed; request sends schema + mime type, thinking off")
+    print("ok  code chosen in Python and handed to the model, dial by dial")
+
+    # --- two vaults in a row are different --------------------------------- #
+    seen_codes = set()
+    for _ in range(50):
+        provider, _ = quest_provider(content=GOOD_QUEST)
+        seen_codes.add(tuple((await provider.generate(CTX)).code))
+    assert len(seen_codes) > 10, seen_codes
+    print("ok  the combination is fresh per vault")
 
     # --- `parsed` is preferred when the SDK supplies it -------------------- #
-    assert _parse_json(SimpleNamespace(parsed={"code": [1]}, text="{}")) == {"code": [1]}
+    assert _parse_json(SimpleNamespace(parsed={"theme": "t"}, text="{}")) == {"theme": "t"}
     print("ok  SDK-parsed payload preferred over raw text")
 
+    # --- a leaking clue is repaired before the player ever sees it ---------- #
+    leaky = json.dumps(
+        {
+            "theme": "a salt mine",
+            "riddle": "Dust.",
+            "clues": ["The tag reads 7.", "Count the two oars.", "Count the stool legs."],
+        }
+    )
+    for _ in range(30):
+        provider, _ = quest_provider(content=leaky)
+        quest = await provider.generate(CTX)
+        for clue, digit in zip(quest.clues, quest.code):
+            assert not leaks_digit(clue, digit), (clue, digit)
+    print("ok  clues that leak are cleaned or replaced before display")
+
     # --- garbage in, playable vault out ------------------------------------ #
-    for bad in ("", "I'm afraid I can't do that", "[1, 2, 3]", '{"code": [1, 2]}'):
+    for bad in ("", "I'm afraid I can't do that", "[1, 2, 3]", '{"clues": []}'):
         provider, _ = quest_provider(content=bad)
         guarded = FallbackQuestProvider(provider, StaticQuestProvider())
         quest = await guarded.generate(CTX)
-        assert len(quest.code) == 3 and all(0 <= d <= 9 for d in quest.code), bad
-        assert quest.theme and quest.riddle, bad
+        assert len(quest.code) == 3 and len(quest.clues) == 3, bad
+        assert quest.theme and quest.riddle and all(quest.clues), bad
     print("ok  empty / prose / wrong-shape responses still yield a playable vault")
+
+    # --- verification: a clue that does not solve back is swapped out ------- #
+    provider, seen = quest_provider(
+        verify=True,
+        content=[GOOD_QUEST, json.dumps({"digits": [9, 9, 9]})],  # solver disagrees
+    )
+    quest = await provider.generate(CTX)
+    assert len(seen["calls"]) == 2, "verification must be a second call"
+    solver_prompt = seen["calls"][1]["contents"]
+    assert "almanac gives a week" in solver_prompt, "the solver reads the clue text"
+    assert str(quest.code[0]) not in solver_prompt, "the solver must not see the code"
+    assert seen["calls"][1]["config"].temperature == 0.0
+    for clue, digit in zip(quest.clues, quest.code):
+        assert clue in DIGIT_CLUES[digit], "mismatched clues fall back to known-good"
+    print("ok  clues are solved cold and replaced when the answer disagrees")
+
+    # --- verification: agreement keeps the model's prose -------------------- #
+    provider, seen = quest_provider(verify=True, content=[GOOD_QUEST, None])
+
+    async def solver_echo(**kwargs):
+        seen.update(kwargs)
+        seen["calls"].append(dict(kwargs))
+        if len(seen["calls"]) == 1:
+            return SimpleNamespace(text=GOOD_QUEST, parsed=None)
+        # Answer with whatever code the quest actually drew.
+        return SimpleNamespace(text=json.dumps({"digits": provider._drawn}), parsed=None)
+
+    import cryptexbot.services.quests as quests_mod
+
+    real_random_code = quests_mod.random_code
+
+    def spy(dial_count):
+        provider._drawn = real_random_code(dial_count)
+        return provider._drawn
+
+    import cryptexbot.services.gemini as gemini_mod
+
+    gemini_mod.random_code = spy
+    provider._client.aio.models.generate_content = solver_echo
+    try:
+        quest = await provider.generate(CTX)
+        assert quest.clues[0] == "Count the days the almanac gives a week."
+        assert quest.code == provider._drawn
+    finally:
+        gemini_mod.random_code = real_random_code
+    print("ok  clues that solve correctly are kept as the model wrote them")
+
+    # --- verification failure is not fatal ---------------------------------- #
+    provider, _ = quest_provider(verify=True, content=[GOOD_QUEST, "not json"])
+    quest = await provider.generate(CTX)
+    assert quest.clues[0] == "Count the days the almanac gives a week."
+    print("ok  a failed verification keeps the leak-scanned clues")
 
     # --- a hanging API does not hang the player ---------------------------- #
     import cryptexbot.services.gemini as gemini_mod
@@ -132,7 +237,7 @@ async def main() -> None:
         provider, _ = quest_provider(content="{}", delay=5)
         guarded = FallbackQuestProvider(provider, StaticQuestProvider())
         quest = await asyncio.wait_for(guarded.generate(CTX), timeout=2)
-        assert len(quest.code) == 3
+        assert len(quest.code) == 3 and len(quest.clues) == 3
     finally:
         gemini_mod.QUEST_TIMEOUT = original
     print("ok  a hung quest call times out and falls back locally")

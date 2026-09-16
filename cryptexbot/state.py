@@ -34,6 +34,7 @@ class VaultState:
     code: list[int] = field(default_factory=list)
     theme: str = ""
     riddle: str = ""
+    clues: list[str] = field(default_factory=list)
     ready: bool = False
     attempts: int = 0
     opened: bool = False

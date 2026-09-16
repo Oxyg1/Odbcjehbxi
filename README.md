@@ -3,10 +3,10 @@
 A single-message interactive puzzle box for Telegram: a locked vault with three
 dials, built on **aiogram 3.x** and **Gemini** (`google-genai`).
 
-Every vault is generated at run time. The combination exists nowhere in the
-source — Gemini invents the code, the theme and the riddle when you type
-`/vault`, and narrates what is inside when you crack it, streamed into the
-message as it writes.
+Every vault is generated at run time, and **the riddle is actually solvable**:
+Python picks the combination, Gemini writes one clue per dial pointing at those
+exact digits, and a second model pass solves the clues cold to prove they
+resolve. Crack it and the reveal is streamed into the message as it is written.
 
 The bot sends **exactly one message per vault**. Every interaction after that —
 turning a dial, resetting, opening the safe, revealing the prize — edits that
@@ -22,6 +22,11 @@ same message. No replies, no follow-ups, no notification spam.
 
             🔒 A DROWNED OBSERVATORY
             Salt has eaten the brass, but the tide still keeps time.
+
+            First  — Count the days the almanac gives a week.
+            Second — Count the legs of the milking stool by the door.
+            Third  — Count the oars a rower pulls.
+
             Dials: 0 0 0
             [0️⃣] [0️⃣] [0️⃣]
             [🔄 Reset dials]
@@ -30,7 +35,7 @@ same message. No replies, no follow-ups, no notification spam.
 
             [photo swaps to open safe]
             🔓 A DROWNED OBSERVATORY
-            Combination 4-0-8 accepted after 31 turns.
+            Combination 7-3-2 accepted after 31 turns.
             You step into green light, and the telescope is still▌   <- streaming
             [🔓 VAULT OPEN]
 ```
@@ -56,6 +61,7 @@ Run the tests (no token, no API key, no network):
 ```bash
 python tests/test_flow.py      # the Telegram interaction, against a stub Bot
 python tests/test_gemini.py    # the Gemini providers, against a fake SDK client
+python tests/test_riddle.py    # code generation, leak scanning, clue repair
 ```
 
 ## How the Zero-Spam loop works
@@ -86,7 +92,7 @@ cryptexbot/
     errors.py                  catch-all so one bad update can't stop polling
   services/
     artwork.py                 Pillow safe frames + file_id cache
-    quests.py                  Quest interface, validation, offline generator
+    quests.py                  code generation, leak scanning, clue repair
     rewards.py                 reveal interface, static + fallback providers
     gemini.py                  <- both Gemini calls live here, and only here
     safe_calls.py              CallbackQuery / edit error handling
@@ -99,36 +105,52 @@ tests/
 
 Both live in `services/gemini.py`. They are deliberately different shapes.
 
-### 1. Quest generation — one blocking call, JSON mode
+### 1. Riddle authoring — one blocking call, JSON mode
 
-`GeminiQuestProvider.generate()` sends a `response_schema`, so the model
-returns parseable JSON rather than prose we would have to regex out of a
-code fence:
+**Python owns the answer.** `random.randint` picks the digits before the model
+is called, and the response schema has no `code` field to return one in:
 
 ```python
-config = types.GenerateContentConfig(
-    system_instruction=SYSTEM_INSTRUCTION,
-    response_mime_type="application/json",
-    response_schema=_quest_schema(dial_count),   # {"code": [x,y,z], "theme", "riddle"}
-    temperature=1.4,                              # vaults must not converge
-    thinking_config=types.ThinkingConfig(thinking_budget=0),
-)
+code = random_code(ctx.dial_count)      # the answer, decided here
+...
+response_schema=_quest_schema(dial_count)   # {"theme", "riddle", "clues": [...]}
 ```
 
-Two things worth keeping:
+The prompt hands the model those digits dial by dial ("First dial: the answer
+is 7") and asks for one clue each, naming a countable set whose size is common
+knowledge. This ordering is the whole fix: when the model invented the code and
+the riddle together, nothing tied them to each other and the clues were
+decoration. Now the digits are an input, so a clue that fails to resolve is a
+detectable defect.
 
-* **`thinking_budget=0`.** `gemini-2.5-flash` thinks by default. For a short
-  creative generation it buys nothing and costs the player seconds of staring
-  at a sealed safe.
-* **Validate anyway.** Structured output guarantees the *shape*, never the
-  *values* — a model can still return four digits, a `12`, or an empty theme.
-  `quests.coerce_quest()` repairs rather than rejects, because a bad digit
-  would otherwise make the safe literally unopenable. The tests feed it empty
-  strings, prose, a JSON array and a short code; all four produce a playable
-  vault.
+A model-supplied `code` field, if one ever appears, is ignored outright — a
+tested guarantee, and the reason a prompt injection in a user's display name
+cannot talk its way to the combination.
 
-It plugs into `spawn_vault` (`handlers/vault.py`) between the `sendPhoto` and
-the caption edit.
+**`thinking_budget=0`.** `gemini-2.5-flash` thinks by default. For a short
+creative generation it buys nothing and costs the player seconds of staring at
+a sealed safe.
+
+### 1a. Two guarantees on the clue text
+
+**Leak scan** (`quests.leaks_digit`, no API call). A clue may not contain a
+digit character — `7`, `"7"`, `07` — nor name its own digit in words
+("seven lamps", "the seventh lamp"). Counting *devices* like "a pair of gloves"
+are the intended mechanism and are left alone. An incidental numeral ("Room 12")
+is stripped and the model's prose kept; a sentence built around naming the
+answer is replaced outright. The framing line is scanned too.
+
+**Solver round-trip** (`GeminiQuestProvider.verify_clues`, one extra call). The
+leak scan proves a clue does not *state* the answer. It says nothing about
+whether the clue *reaches* it. So the clue text alone — no code, no theme —
+goes back to the model at `temperature=0` with a `{"digits": [...]}` schema,
+and anything that does not solve back to its digit is swapped for a clue from
+`DIGIT_CLUES`, a local bank that is correct by construction. Set
+`QUEST_VERIFY=false` to skip it and save the round trip.
+
+Both repairs degrade the same way: you lose atmosphere, never solvability. And
+because the local bank is the floor, a dead API key still produces a playable
+vault.
 
 ### 2. The reveal — streaming, buffered on our side
 
@@ -208,6 +230,7 @@ runs. Swapping in another model means writing one class in
 | `BOT_TOKEN` | — | Required. From @BotFather. |
 | `GEMINI_API_KEY` | — | From AI Studio. Absent ⇒ offline mode (local codes, static reveal). |
 | `GEMINI_MODEL` | `gemini-2.5-flash` | Any `google-genai` model id. |
+| `QUEST_VERIFY` | `true` | Solve each clue cold and replace the ones that fail. One extra call per vault. |
 | `SECRET_CODE` | *(unset)* | Normally empty — codes are generated per vault. Set it only to pin one for a demo. |
 | `DIAL_COUNT` | `3` | 1–8 dials; the keyboard adapts. |
 | `STATE_BACKEND` | `memory` | `memory` or `redis`. |

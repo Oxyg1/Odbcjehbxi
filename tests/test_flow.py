@@ -28,7 +28,6 @@ from cryptexbot.services.quests import (  # noqa: E402
     QuestContext,
     QuestProvider,
     StaticQuestProvider,
-    coerce_quest,
 )
 from cryptexbot.services.rewards import (  # noqa: E402
     RewardContext,
@@ -122,7 +121,16 @@ async def main() -> None:
     artwork = ArtworkProvider()
     artwork.ensure_rendered()
     quests = ScriptedQuestProvider(
-        Quest(code=[7, 3, 2], theme="a drowned observatory", riddle="Salt keeps time.")
+        Quest(
+            code=[7, 3, 2],
+            theme="a drowned observatory",
+            riddle="Salt keeps time.",
+            clues=[
+                "Count the days the almanac gives a week.",
+                "Count the legs of the milking stool.",
+                "Count the oars a rower pulls.",
+            ],
+        )
     )
     rewards = StaticRewardProvider("Promo code: CRYPTEX-732-OPEN")
     bot = StubBot()
@@ -139,6 +147,7 @@ async def main() -> None:
     state = await store.get((CHAT.id, 100))
     assert state is not None and state.dials == [0, 0, 0]
     assert state.code == [7, 3, 2] and state.ready
+    assert len(state.clues) == 3
     print("ok  /vault sent one photo and stored the generated code")
 
     # The shell goes out with no dials; the riddle edit is what adds them.
@@ -146,6 +155,9 @@ async def main() -> None:
     quest_edit = bot.named("edit_message_caption")[0]
     assert "Salt keeps time." in quest_edit["caption"]
     assert "DROWNED OBSERVATORY" in quest_edit["caption"]
+    assert "almanac gives a week" in quest_edit["caption"], "clues must be displayed"
+    assert "First" in quest_edit["caption"] and "Third" in quest_edit["caption"]
+    assert len(quest_edit["caption"]) <= vault.CAPTION_LIMIT
     assert quest_edit["reply_markup"] is not None
     print("ok  riddle edited into the same message, dials attached only then")
 
@@ -218,18 +230,7 @@ async def main() -> None:
     assert [b.text for b in kb.inline_keyboard[0]] == ["7️⃣", "3️⃣", "2️⃣"]
     print("ok  keyboard renders the current dials")
 
-    # --- malformed model output is repaired, not rejected ------------------ #
-    good = coerce_quest(
-        {"code": [7, 3, 2], "theme": "a vault", "riddle": "tick"}, 3
-    )
-    assert good.code == [7, 3, 2]
-    assert coerce_quest({"code": [1, 2], "theme": "t", "riddle": "r"}, 3).code.__len__() == 3
-    assert coerce_quest({"code": [12, 3, 2], "theme": "t", "riddle": "r"}, 3).code[0] == 2
-    assert coerce_quest({"code": [7, 3, 2, 9], "theme": "t", "riddle": "r"}, 3).code == [7, 3, 2]
-    patched = coerce_quest({"code": ["x", 3, 2], "theme": "", "riddle": ""}, 3)
-    assert len(patched.code) == 3 and patched.theme and patched.riddle
-    assert coerce_quest("not json at all", 3).code.__len__() == 3
-    print("ok  malformed quest JSON is repaired into a playable vault")
+    # (quest validation and leak scanning live in tests/test_riddle.py)
 
     # --- local quest provider stays random --------------------------------- #
     local = StaticQuestProvider()
