@@ -27009,6 +27009,30 @@ async def cmd_dm(update: Update, ctx: ContextTypes.DEFAULT_TYPE):
         await update.message.reply_text(f"{_E_CROSS} Не удалось отправить сообщение: {he(e)}", parse_mode=ParseMode.HTML)
 
 
+# Последняя строка текста рассылки может задавать кнопку-ссылку под сообщением:
+#   Кнопка: Текст кнопки | https://t.me/что-то
+# Строка вырезается из текста, «https://» подставляется сама, если админ
+# написал ссылку без схемы (t.me/... вместо https://t.me/...).
+_BROADCAST_BTN_RE = re.compile(
+    r"^[ \t]*(?:кнопка|button)[ \t]*:[ \t]*(.+?)[ \t]*\|[ \t]*(\S+)[ \t]*$",
+    re.IGNORECASE | re.MULTILINE,
+)
+
+
+def _extract_broadcast_button(text: str) -> tuple[str, InlineKeyboardMarkup | None]:
+    """Вынимает из текста рассылки строку с кнопкой, если она там есть."""
+    m = _BROADCAST_BTN_RE.search(text)
+    if not m:
+        return text, None
+    label, url = m.group(1).strip(), m.group(2).strip()
+    if not label or not url:
+        return text, None
+    if "://" not in url:
+        url = f"https://{url}"
+    clean = (text[:m.start()] + text[m.end():]).strip()
+    return clean, InlineKeyboardMarkup([[btn(label, url=url)]])
+
+
 async def cmd_broadcast(update: Update, ctx: ContextTypes.DEFAULT_TYPE):
     """Рассылка всем игрокам: /broadcast текст (HTML-форматирование сохраняется)
     Чтобы прикрепить фото: отправь фото с подписью /broadcast текст,
@@ -27053,10 +27077,14 @@ async def cmd_broadcast(update: Update, ctx: ContextTypes.DEFAULT_TYPE):
             "• <code>/broadcast текст</code> — текстовая рассылка\n"
             "• Отправь фото с подписью <code>/broadcast текст</code> — рассылка с картинкой\n"
             "• Ответь на фото командой <code>/broadcast текст</code> — рассылка с картинкой\n\n"
-            "Поддерживается HTML: <b>жирный</b>, <i>курсив</i>, <code>код</code>.",
+            "Поддерживается HTML: <b>жирный</b>, <i>курсив</i>, <code>код</code>.\n\n"
+            "Кнопка-ссылка под сообщением — последней строкой:\n"
+            "<code>Кнопка: Текст кнопки | https://ссылка</code>",
             parse_mode=ParseMode.HTML,
         )
         return
+
+    text, kb_bc = _extract_broadcast_button(text)
 
     async with aiosqlite.connect(DB_PATH) as db:
         async with db.execute("SELECT user_id FROM frogs WHERE alive=1") as c:
@@ -27078,9 +27106,12 @@ async def cmd_broadcast(update: Update, ctx: ContextTypes.DEFAULT_TYPE):
                         photo=photo_file_id,
                         caption=text or None,
                         parse_mode=ParseMode.HTML if text else None,
+                        reply_markup=kb_bc,
                     )
                 else:
-                    await ctx.bot.send_message(target_uid, text, parse_mode=ParseMode.HTML)
+                    await ctx.bot.send_message(
+                        target_uid, text, parse_mode=ParseMode.HTML, reply_markup=kb_bc,
+                    )
                 sent += 1
             except Exception:
                 failed += 1
@@ -27134,10 +27165,14 @@ async def cmd_broadcast_test(update: Update, ctx: ContextTypes.DEFAULT_TYPE):
             "• Отправь фото с подписью <code>/broadcast_test текст</code> — тест с картинкой\n"
             "• Ответь на фото командой <code>/broadcast_test текст</code> — тест с картинкой\n\n"
             "Отправит сообщение только тебе — для проверки перед реальной рассылкой.\n"
-            "HTML: <b>жирный</b>, <i>курсив</i>, <code>код</code>.",
+            "HTML: <b>жирный</b>, <i>курсив</i>, <code>код</code>.\n\n"
+            "Кнопка-ссылка под сообщением — последней строкой:\n"
+            "<code>Кнопка: Текст кнопки | https://ссылка</code>",
             parse_mode=ParseMode.HTML,
         )
         return
+
+    text, kb_bc = _extract_broadcast_button(text)
 
     try:
         if photo_file_id:
@@ -27146,9 +27181,12 @@ async def cmd_broadcast_test(update: Update, ctx: ContextTypes.DEFAULT_TYPE):
                 photo=photo_file_id,
                 caption=text or None,
                 parse_mode=ParseMode.HTML if text else None,
+                reply_markup=kb_bc,
             )
         else:
-            await ctx.bot.send_message(user.id, text, parse_mode=ParseMode.HTML)
+            await ctx.bot.send_message(
+                user.id, text, parse_mode=ParseMode.HTML, reply_markup=kb_bc,
+            )
 
         photo_note = " с фото 🖼" if photo_file_id else ""
         await msg.reply_text(
@@ -27162,53 +27200,6 @@ async def cmd_broadcast_test(update: Update, ctx: ContextTypes.DEFAULT_TYPE):
             f"Скорее всего проблема с HTML-разметкой — проверь теги.",
             parse_mode=ParseMode.HTML,
         )
-
-
-
-    """/dm @username текст — написать игроку напрямую от имени бота"""
-    user = update.effective_user
-    if user.id not in ADMIN_IDS:
-        return
-    if not ctx.args or len(ctx.args) < 2:
-        await update.message.reply_text(
-            "Использование: /dm @username <текст>\n"
-            "Также можно ответить на сообщение: /dm @username (в ответе на текст)\n\n"
-            "Поддерживается HTML: <b>жирный</b>, <i>курсив</i>, <code>код</code>"
-        )
-        return
-    mention = ctx.args[0].lstrip("@")
-    raw = update.message.text or ""
-    # Получаем текст после команды и @username
-    second_space = raw.find(" ", raw.find(" ") + 1)
-    text = raw[second_space + 1:].strip() if second_space != -1 else ""
-    if not text and update.message.reply_to_message:
-        text = update.message.reply_to_message.text or update.message.reply_to_message.caption or ""
-    if not text:
-        await update.message.reply_text("Укажи текст сообщения.")
-        return
-    async with aiosqlite.connect(DB_PATH) as db:
-        db.row_factory = aiosqlite.Row
-        if mention.isdigit():
-            async with db.execute("SELECT * FROM frogs WHERE user_id=?", (int(mention),)) as c:
-                row = await c.fetchone()
-        else:
-            async with db.execute("SELECT * FROM frogs WHERE username=?", (mention,)) as c:
-                row = await c.fetchone()
-    if not row:
-        await update.message.reply_text(f"{_E_CROSS} Игрок не найден: {he(mention)}", parse_mode=ParseMode.HTML)
-        return
-    target = dict(row)
-    try:
-        await ctx.bot.send_message(
-            target["user_id"],
-            text,
-            parse_mode=ParseMode.HTML,
-        )
-        await update.message.reply_text(
-            f"✅ Сообщение отправлено игроку @{target.get('username') or mention} (id: {target['user_id']})"
-        )
-    except Exception as e:
-        await update.message.reply_text(f"{_E_CROSS} Не удалось отправить: {he(e)}", parse_mode=ParseMode.HTML)
 
 
 async def cmd_admincasino(update: Update, ctx: ContextTypes.DEFAULT_TYPE):
@@ -58856,9 +58847,14 @@ async def cmd_broadcast_nft(update: Update, ctx: ContextTypes.DEFAULT_TYPE):
         )
     if not text:
         await update.message.reply_text(
-            "Использование: /broadcast_nft <текст>\nИли ответь на сообщение: /broadcast_nft"
+            "Использование: /broadcast_nft <текст>\nИли ответь на сообщение: /broadcast_nft\n\n"
+            "Кнопка-ссылка под сообщением — последней строкой:\n"
+            "<code>Кнопка: Текст кнопки | https://ссылка</code>",
+            parse_mode=ParseMode.HTML,
         )
         return
+
+    text, kb_bc = _extract_broadcast_button(text)
 
     async with aiosqlite.connect(DB_PATH) as db:
         async with db.execute(
@@ -58881,7 +58877,9 @@ async def cmd_broadcast_nft(update: Update, ctx: ContextTypes.DEFAULT_TYPE):
         nonlocal sent, failed
         async with sem:
             try:
-                await ctx.bot.send_message(uid, text, parse_mode=ParseMode.HTML)
+                await ctx.bot.send_message(
+                    uid, text, parse_mode=ParseMode.HTML, reply_markup=kb_bc,
+                )
                 sent += 1
             except Exception:
                 failed += 1
