@@ -29868,6 +29868,209 @@ async def cmd_admin_nft_invite(update: Update, ctx: ContextTypes.DEFAULT_TYPE):
     except (BadRequest, Forbidden, TimedOut):
         pass
 
+
+# ── Отвязка NFT от игрока ─────────────────────────────────────────────────────
+# Гифт продали или передали, а в боте он так и числится за прежним хозяином:
+# облик в коллекции, «🪸 KissedFrog #N» в профиле, а новый владелец получает
+# в /nft «уже зарегистрирована». Найти запись в /nft_list по пять штук на
+# страницу при сотне страниц нельзя, поэтому поиск — по номеру гифта.
+
+def _nft_number_from_arg(arg: str) -> str:
+    """Номер гифта из «12345», «#12345» или ссылки t.me/nft/KissedFrog-12345."""
+    m = re.search(r"KissedFrog-(\d+)", arg) or re.fullmatch(r"#?(\d+)", arg.strip())
+    return m.group(1) if m else ""
+
+
+def _nft_url_number(url: str) -> str:
+    m = re.search(r"KissedFrog-(\d+)", url or "")
+    return m.group(1) if m else ""
+
+
+async def nft_unlink(nft_id: int, bot) -> str | None:
+    """
+    Снять гифт с игрока целиком: запись о владении, облик, надетый гифт.
+
+    Запись удаляется, а не помечается отклонённой: проверки занятости в /nft
+    берут первую попавшуюся строку по номеру, и оставшаяся строка прежнего
+    хозяина путала бы их. След остаётся в журнале действий игрока.
+
+    Облик забирается одной копией и только у подтверждённого гифта — выдан
+    он был только при подтверждении, а копии того же облика из гачи или
+    крафта остаются у игрока.
+
+    Возвращает строку-итог для админа или None, если записи уже нет.
+    """
+    async with aiosqlite.connect(DB_PATH) as db:
+        db.row_factory = aiosqlite.Row
+        async with db.execute("SELECT * FROM nft_frogs WHERE id=?", (nft_id,)) as c:
+            row = await c.fetchone()
+        if not row:
+            return None
+        row = dict(row)
+        await db.execute("DELETE FROM nft_frogs WHERE id=?", (nft_id,))
+        await db.commit()
+
+    uid = row["user_id"]
+    number = str(row["nft_number"])
+    model = (row.get("model_name") or "").strip()
+    skin = model if model in SKINS else f"KissedFrog #{number}"
+
+    skin_removed = False
+    still_has_skin = False
+    if row.get("verified") == 1:
+        await db_remove_skins_batch(uid, [skin])
+        async with aiosqlite.connect(DB_PATH) as db:
+            async with db.execute(
+                "SELECT qty FROM collections WHERE user_id=? AND skin=?", (uid, skin)
+            ) as c:
+                r = await c.fetchone()
+        still_has_skin = bool(r and (r[0] or 0) > 0)
+        skin_removed = not still_has_skin
+
+    # Другой подтверждённый гифт той же модели у того же игрока — на него
+    # и переключаем надетый облик, чтобы лягушка не теряла NFT-статус зря.
+    other_url = ""
+    if model:
+        async with aiosqlite.connect(DB_PATH) as db:
+            async with db.execute(
+                "SELECT nft_url FROM nft_frogs WHERE user_id=? AND verified=1 AND model_name=? "
+                "ORDER BY id LIMIT 1",
+                (uid, model),
+            ) as c:
+                r = await c.fetchone()
+        other_url = (r[0] or "") if r else ""
+
+    f = await db_get(uid)
+    took_off = False
+    if f:
+        wore_this = _nft_url_number(f.get("equipped_nft_url", "")) == number
+        if wore_this:
+            took_off = True
+            if other_url:
+                f["equipped_nft_url"] = other_url
+            else:
+                f["equipped_nft_url"] = ""
+                if not still_has_skin:
+                    f["skin"] = "Brownie"
+        elif f.get("skin") == skin and not still_has_skin:
+            f["skin"] = "Brownie"
+            f["equipped_nft_url"] = ""
+            took_off = True
+        if took_off:
+            await db_save(f)
+
+    asyncio.create_task(plog(uid, "nft_unlink", f"#{number} model={model or '-'}"))
+    logger.info("nft_unlink: #%s снят с user=%s (облик %s, снят=%s)",
+                number, uid, skin, skin_removed)
+
+    lines = [f"{_E_CORAL} Гифт больше не у тебя, в боте он отвязан."]
+    if skin_removed:
+        lines.append(f"Облик <b>{he(skin)}</b> убран из коллекции.")
+    try:
+        await bot.send_message(
+            uid,
+            ui_card(
+                ui_title(_E_CORAL, f"KissedFrog #{he(number)} отвязан"),
+                "\n".join(lines),
+                hint="Если это ошибка — напиши администратору",
+            ),
+            parse_mode=ParseMode.HTML,
+        )
+    except (BadRequest, Forbidden, TimedOut):
+        pass
+
+    who = fname(f) if f else f"ID {uid}"
+    result = f"{_E_CHECK} Отвязан от {who}"
+    if skin_removed:
+        result += f"{SEP}облик снят"
+    elif row.get("verified") == 1:
+        result += f"{SEP}облик остался (есть ещё копии)"
+    return result
+
+
+async def cmd_nft_unlink(update: Update, ctx: ContextTypes.DEFAULT_TYPE):
+    """/nft_unlink <номер|ссылка> — отвязать KissedFrog от игрока (только ADMIN_IDS)."""
+    user = update.effective_user
+    if user.id not in ADMIN_IDS:
+        return
+    number = _nft_number_from_arg(" ".join(ctx.args or []))
+    if not number:
+        await update.message.reply_text(
+            ui_card(
+                ui_title(_E_CORAL, "Отвязать NFT"),
+                "<code>/nft_unlink 12345</code>\n"
+                "<code>/nft_unlink https://t.me/nft/KissedFrog-12345</code>",
+                hint="Сначала покажу, за кем гифт числится и чей он сейчас",
+            ),
+            parse_mode=ParseMode.HTML,
+        )
+        return
+
+    async with aiosqlite.connect(DB_PATH) as db:
+        db.row_factory = aiosqlite.Row
+        async with db.execute(
+            "SELECT * FROM nft_frogs WHERE nft_number=? ORDER BY id", (number,)
+        ) as c:
+            rows = [dict(r) for r in await c.fetchall()]
+    if not rows:
+        await update.message.reply_text(
+            f"{_E_CORAL} KissedFrog #{he(number)} в боте не зарегистрирован.",
+            parse_mode=ParseMode.HTML,
+        )
+        return
+
+    try:
+        await update.effective_chat.send_chat_action(ChatAction.TYPING)
+    except (BadRequest, Forbidden, TimedOut):
+        pass
+    gift = await seetg_get_gift_by_url(f"https://t.me/nft/KissedFrog-{number}")
+    owner = ((gift.get("current_owner") or gift.get("owner") or {}) if gift else {})
+    owner_tg = str(owner.get("telegram_id") or "")
+    if gift is None:
+        owner_line = f"{_E_WARN} see.tg не ответил — проверь по ссылке"
+    elif owner.get("owner_type") == "hidden" or not (owner.get("username") or owner_tg):
+        owner_line = "Сейчас: профиль скрыт"
+    else:
+        uname = owner.get("username") or ""
+        owner_line = "Сейчас: " + (f"@{he(uname)}" if uname else f"ID {he(owner_tg)}")
+
+    status_names = {1: "✅ подтверждён", 0: "⏳ на проверке", -1: "❌ отклонён"}
+    blocks = []
+    kb_rows = []
+    for row in rows:
+        f = await db_get(row["user_id"])
+        name = fname(f) if f else f"ID {row['user_id']}"
+        uname = f"@{he(f['username'])}" if f and f.get("username") else f"ID {row['user_id']}"
+        worn = bool(f) and _nft_url_number(f.get("equipped_nft_url", "")) == number
+        if owner_tg:
+            owns = ("владеет сейчас" if owner_tg == str(row["user_id"])
+                    else "уже не владелец")
+        else:
+            owns = ""
+        blocks.append("\n".join(filter(None, [
+            f"<b>{name}</b>{SEP}{uname}",
+            ui_line(status_names.get(row.get("verified"), "?"),
+                    he(row.get("model_name") or ""), "надет" if worn else ""),
+            owns,
+        ])))
+        # В кнопке HTML не работает — имя берём сырое и короткое
+        raw = ((f.get("frog_name") or f.get("first_name")) if f else "") or str(row["user_id"])
+        kb_rows.append([btn(f"Отвязать · {raw[:14]}",
+                            callback_data=f"nft_unlink_do_{row['id']}", style="danger")])
+    kb_rows.append([btn("Отмена", callback_data="nft_unlink_cancel")])
+
+    await update.message.reply_text(
+        ui_card(
+            ui_title(_E_CORAL, f"KissedFrog #{he(number)}"),
+            f'<a href="https://t.me/nft/KissedFrog-{number}">Гифт в Telegram</a>\n{owner_line}',
+            *blocks,
+        ),
+        parse_mode=ParseMode.HTML,
+        reply_markup=InlineKeyboardMarkup(kb_rows),
+        disable_web_page_preview=True,
+    )
+
+
 async def cmd_giftfloors(update: Update, ctx: ContextTypes.DEFAULT_TYPE):
     """
     /giftfloors [slug] — флор коллекции и флоры по моделям.
@@ -34346,6 +34549,7 @@ async def cb_guard(update: Update, ctx: ContextTypes.DEFAULT_TYPE):
         "gift_keepfreeze_",
         "nft_recheck_keep_",    # перепроверка НФТ — только ADMIN_IDS (проверка внутри)
         "nft_recheck_revoke_",  # перепроверка НФТ — только ADMIN_IDS (проверка внутри)
+        "nft_unlink_",          # отвязка НФТ — только ADMIN_IDS (проверка внутри)
         "admin_skin_browse_",   # просмотр обликов — только ADMIN_IDS (проверка внутри)
         "adv_buy_extra_slot",   # покупка доп. слота похода за Stars
         "war_",         # война стай
@@ -35316,6 +35520,32 @@ async def nft_router(update: Update, ctx: ContextTypes.DEFAULT_TYPE):
         page = int(d.split("_")[-1])
         await show_nft_list(q, ctx, page, edit=True)
         await q.answer()
+        return
+    # ── ADMIN: отвязка гифта от игрока (/nft_unlink) ───────────────────
+    if d.startswith("nft_unlink_"):
+        if uid not in ADMIN_IDS:
+            await q.answer("⛔", show_alert=True); return
+        if d == "nft_unlink_cancel":
+            await q.answer()
+            try:
+                await q.message.edit_reply_markup(reply_markup=None)
+            except (BadRequest, Forbidden, TimedOut):
+                pass
+            return
+        try:
+            nft_id = int(d.removeprefix("nft_unlink_do_"))
+        except ValueError:
+            await q.answer(); return
+        result = await nft_unlink(nft_id, ctx.bot)
+        await q.answer("Готово" if result else "Уже отвязан")
+        try:
+            await q.message.edit_text(
+                q.message.text_html + "\n\n" + (result or f"{_E_CHECK} Уже отвязан"),
+                parse_mode=ParseMode.HTML,
+                disable_web_page_preview=True,
+            )
+        except (BadRequest, Forbidden, TimedOut):
+            pass
         return
     # ── ADMIN: НФТ ПЕРЕПРОВЕРКА — оставить или забрать скин ────────────
     if d.startswith("nft_recheck_keep_"):
@@ -70043,6 +70273,7 @@ def main():
     app.add_handler(CommandHandler("adminfunnel", cmd_adminfunnel))
     app.add_handler(CommandHandler("admin_nft_recheck", cmd_admin_nft_recheck))
     app.add_handler(CommandHandler("admin_nft_invite",  cmd_admin_nft_invite))
+    app.add_handler(CommandHandler("nft_unlink",        cmd_nft_unlink))
     # ── Расследование ботоводов ───────────────────────────────────────────
     app.add_handler(CommandHandler("admingiftchain", cmd_admingiftchain))
     app.add_handler(CommandHandler("adminrollbackdry", cmd_adminrollbackdry))
