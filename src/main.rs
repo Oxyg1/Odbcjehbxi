@@ -278,7 +278,30 @@ fn usage() -> ! {
     std::process::exit(2)
 }
 
+/// `ton-vanity verify <seed_hex> [wallet_id]` - независимо пересчитать адрес по seed.
+fn verify(args: &[String]) {
+    let raw = args.get(0).map(|s| s.trim()).unwrap_or_else(|| usage());
+    if raw.len() != 64 || !raw.is_ascii() {
+        eprintln!("seed - это 64 hex-символа");
+        std::process::exit(2);
+    }
+    let mut seed = [0u8; 32];
+    for i in 0..32 {
+        seed[i] = u8::from_str_radix(&raw[i * 2..i * 2 + 2], 16).unwrap_or_else(|_| usage());
+    }
+    let wid: u32 = args.get(1).map(|s| s.parse().unwrap_or_else(|_| usage())).unwrap_or(DEFAULT_WALLET_ID);
+    let pk = pubkey_from_seed(&seed);
+    let h = address_hash_slow(&pk, wid);
+    println!("bounceable    (EQ..): {}", friendly(FLAG_BOUNCEABLE, &h));
+    println!("non-bounceable (UQ..): {}", friendly(FLAG_NON_BOUNCEABLE, &h));
+    println!("public key: {}", hex(&pk));
+}
+
 fn main() {
+    let argv: Vec<String> = std::env::args().skip(1).collect();
+    if argv.first().map(|s| s.as_str()) == Some("verify") {
+        return verify(&argv[1..]);
+    }
     let mut suffix = "pulse".to_string();
     let mut nocase = false;
     let mut threads = std::thread::available_parallelism().map(|n| n.get()).unwrap_or(1);
