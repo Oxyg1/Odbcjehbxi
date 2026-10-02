@@ -1,2 +1,5 @@
 /target
 found.txt
+.env
+__pycache__/
+*.pyc

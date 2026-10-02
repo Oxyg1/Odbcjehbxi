@@ -46,3 +46,7 @@ nvcc -O3 -arch=native -o ton_vanity_cuda ton_vanity.cu     # нужен CUDA Too
 
 
 CUDA-версия пока умеет только v4R2.
+
+
+## Telegram-бот для кошелька
+Каталог `bot/` - бот, через который можно смотреть баланс, пополнять и отправлять TON с найденного кошелька. См. `bot/README.md`.
