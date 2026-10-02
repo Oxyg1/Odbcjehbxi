@@ -17,13 +17,47 @@ use std::{
     time::{Duration, Instant},
 };
 
-/// Хеш и глубина кода WalletV4R2 (проверено по tonsdk).
-const CODE_HASH: [u8; 32] = [
+/// Версия кошелька. Хеши кода и глубины сверены с tonsdk (v4R2) и tonutils (v5R1).
+#[derive(Clone, Copy, PartialEq, Eq)]
+enum Wallet {
+    V4R2,
+    V5R1,
+}
+
+const V4R2_CODE_HASH: [u8; 32] = [
     0xfe, 0xb5, 0xff, 0x68, 0x20, 0xe2, 0xff, 0x0d, 0x94, 0x83, 0xe7, 0xe0, 0xd6, 0x2c, 0x81, 0x7d,
     0x84, 0x67, 0x89, 0xfb, 0x4a, 0xe5, 0x80, 0xc8, 0x78, 0x86, 0x6d, 0x95, 0x9d, 0xab, 0xd5, 0xc0,
 ];
-const CODE_DEPTH: u16 = 7;
-const DEFAULT_WALLET_ID: u32 = 698_983_191;
+const V5R1_CODE_HASH: [u8; 32] = [
+    0x20, 0x83, 0x4b, 0x7b, 0x72, 0xb1, 0x12, 0x14, 0x7e, 0x1b, 0x2f, 0xb4, 0x57, 0xb8, 0x4e, 0x74,
+    0xd1, 0xa3, 0x0f, 0x04, 0xf7, 0x37, 0xd4, 0xf6, 0x2a, 0x66, 0x8e, 0x95, 0x52, 0xd2, 0xb7, 0x2f,
+];
+
+impl Wallet {
+    fn code_hash(self) -> &'static [u8; 32] {
+        match self { Wallet::V4R2 => &V4R2_CODE_HASH, Wallet::V5R1 => &V5R1_CODE_HASH }
+    }
+    fn code_depth(self) -> u8 {
+        match self { Wallet::V4R2 => 7, Wallet::V5R1 => 6 }
+    }
+    fn name(self) -> &'static str {
+        match self { Wallet::V4R2 => "v4R2", Wallet::V5R1 => "v5R1" }
+    }
+    /// Стандартный wallet_id: v4R2 - 698983191; v5R1 (mainnet, workchain 0) - 2147483409.
+    fn default_wallet_id(self) -> u32 {
+        match self { Wallet::V4R2 => 698_983_191, Wallet::V5R1 => 0x7FFF_FF11 }
+    }
+    /// j-й субкошелёк: v4 - сложение, v5 - XOR в 15-битном поле номера субкошелька.
+    fn wallet_id(self, j: u32) -> u32 {
+        match self { Wallet::V4R2 => self.default_wallet_id().wrapping_add(j), Wallet::V5R1 => self.default_wallet_id() ^ (j & 0x7FFF) }
+    }
+    fn max_subwallets(self) -> u32 {
+        match self { Wallet::V4R2 => u32::MAX, Wallet::V5R1 => 0x8000 }
+    }
+    fn parse(s: &str) -> Option<Wallet> {
+        match s.to_ascii_lowercase().as_str() { "v4" | "v4r2" => Some(Wallet::V4R2), "v5" | "v5r1" => Some(Wallet::V5R1), _ => None }
+    }
+}
 const FLAG_BOUNCEABLE: u8 = 0x11;
 const FLAG_NON_BOUNCEABLE: u8 = 0x51;
 const FLAGS: [u8; 2] = [FLAG_BOUNCEABLE, FLAG_NON_BOUNCEABLE];
@@ -85,35 +119,61 @@ fn compress(blocks: &[[u8; 64]], mut st: [u32; 8]) -> [u32; 8] {
 
 /// Быстрый расчёт адресного хеша с готовыми шаблонами блоков SHA-256.
 struct AddrHasher {
+    wallet: Wallet,
+    pk: [u8; 32],
     a: [u8; 64],  // ячейка data (43 байта + паддинг)
     b1: [u8; 64], // ячейка StateInit, блок 1
     b2: [u8; 64], // блок 2
 }
 
 impl AddrHasher {
-    fn new() -> Self {
+    fn new(wallet: Wallet) -> Self {
+        // d2 = floor(bits/8) + ceil(bits/8) = 81 и 41 байт данных (с завершающим тегом) у обоих кошельков:
+        // v4R2 - 321 бит, v5R1 - 322 бита.
         let mut a = [0u8; 64];
-        a[1] = 0x51; // d2 = ceil(321/8) + floor(321/8)
-        a[42] = 0x40; // 1 бит (пустые плагины) + завершающий тег
+        a[1] = 0x51;
         a[43] = 0x80;
         a[56..].copy_from_slice(&(43u64 * 8).to_be_bytes());
         let mut b1 = [0u8; 64];
-        b1[..7].copy_from_slice(&[0x02, 0x01, 0x34, (CODE_DEPTH >> 8) as u8, CODE_DEPTH as u8, 0, 0]);
-        b1[7..39].copy_from_slice(&CODE_HASH);
+        b1[..7].copy_from_slice(&[0x02, 0x01, 0x34, 0, wallet.code_depth(), 0, 0]);
+        b1[7..39].copy_from_slice(wallet.code_hash());
         let mut b2 = [0u8; 64];
         b2[7] = 0x80;
         b2[56..].copy_from_slice(&(71u64 * 8).to_be_bytes());
-        Self { a, b1, b2 }
+        Self { wallet, pk: [0; 32], a, b1, b2 }
     }
 
     #[inline(always)]
     fn set_pubkey(&mut self, pk: &[u8; 32]) {
-        self.a[10..42].copy_from_slice(pk);
+        self.pk = *pk;
+        if self.wallet == Wallet::V4R2 {
+            self.a[10..42].copy_from_slice(pk);
+            self.a[42] = 0x40; // бит «плагины пусты» + тег
+        }
     }
 
     #[inline(always)]
     fn address_hash(&mut self, wallet_id: u32) -> [u8; 32] {
-        self.a[6..10].copy_from_slice(&wallet_id.to_be_bytes());
+        match self.wallet {
+            Wallet::V4R2 => self.a[6..10].copy_from_slice(&wallet_id.to_be_bytes()),
+            Wallet::V5R1 => {
+                // биты: 1 (подпись разрешена) | seqno=0 (32) | wallet_id (32) | pubkey (256) | 0 (расширения) | тег 1
+                let d = &mut self.a[2..43];
+                d[0] = 0x80;
+                d[1] = 0;
+                d[2] = 0;
+                d[3] = 0;
+                d[4] = ((wallet_id >> 25) & 0x7f) as u8;
+                d[5] = (wallet_id >> 17) as u8;
+                d[6] = (wallet_id >> 9) as u8;
+                d[7] = (wallet_id >> 1) as u8;
+                d[8] = ((wallet_id & 1) << 7) as u8 | self.pk[0] >> 1;
+                for i in 1..32 {
+                    d[8 + i] = self.pk[i - 1] << 7 | self.pk[i] >> 1;
+                }
+                d[40] = (self.pk[31] & 1) << 7 | 0x20;
+            }
+        }
         let d = compress(&[self.a], SHA256_IV);
         let mut dh = [0u8; 32];
         for i in 0..8 {
@@ -131,14 +191,30 @@ impl AddrHasher {
 }
 
 /// Медленный эталон через обычный Digest - для проверки найденного результата и тестов.
-fn address_hash_slow(pk: &[u8; 32], wallet_id: u32) -> [u8; 32] {
-    let mut data = vec![0u8, 0x51, 0, 0, 0, 0];
-    data.extend_from_slice(&wallet_id.to_be_bytes());
-    data.extend_from_slice(pk);
-    data.push(0x40);
-    let dh = Sha256::digest(&data);
-    let mut st = vec![0x02u8, 0x01, 0x34, 0, CODE_DEPTH as u8, 0, 0];
-    st.extend_from_slice(&CODE_HASH);
+fn address_hash_slow(wallet: Wallet, pk: &[u8; 32], wallet_id: u32) -> [u8; 32] {
+    // независимая от быстрого пути сборка data-ячейки через побитовый записыватель
+    let mut bits: Vec<bool> = Vec::new();
+    let mut put = |v: u64, n: u32| (0..n).rev().for_each(|i| bits.push(v >> i & 1 == 1));
+    if wallet == Wallet::V5R1 {
+        put(1, 1); // подпись разрешена
+    }
+    put(0, 32); // seqno
+    put(wallet_id as u64, 32);
+    pk.iter().for_each(|&b| put(b as u64, 8));
+    put(0, 1); // v4: плагины, v5: расширения - пусто
+    let nbits = bits.len();
+    let (d2, mut data) = ((nbits / 8 + (nbits + 7) / 8) as u8, vec![0u8; (nbits + 7) / 8]);
+    for (i, b) in bits.iter().enumerate() {
+        if *b { data[i / 8] |= 0x80 >> (i % 8); }
+    }
+    if nbits % 8 != 0 {
+        data[nbits / 8] |= 0x80 >> (nbits % 8); // завершающий тег внутри последнего байта
+    }
+    let mut cell = vec![0u8, d2];
+    cell.extend_from_slice(&data);
+    let dh = Sha256::digest(&cell);
+    let mut st = vec![0x02u8, 0x01, 0x34, 0, wallet.code_depth(), 0, 0];
+    st.extend_from_slice(wallet.code_hash());
     st.extend_from_slice(&dh);
     Sha256::digest(&st).into()
 }
@@ -181,6 +257,7 @@ struct Cfg {
     targets: Vec<u64>, // отсортированы
     mask: u64,
     subwallets: u32,
+    wallet: Wallet,
 }
 
 struct Hit {
@@ -244,7 +321,7 @@ fn worker(cfg: Arc<Cfg>, stop: Arc<AtomicBool>, total: Arc<AtomicU64>, tx: mpsc:
     getrandom::getrandom(&mut os).expect("нет источника случайности ОС");
     let mut rng = ChaCha20Rng::from_seed(os);
     let k = crc_consts();
-    let mut hasher = AddrHasher::new();
+    let mut hasher = AddrHasher::new(cfg.wallet);
     let single = (cfg.targets.len() == 1).then(|| cfg.targets[0]);
     let mask = cfg.mask;
     let nsub = cfg.subwallets;
@@ -256,7 +333,7 @@ fn worker(cfg: Arc<Cfg>, stop: Arc<AtomicBool>, total: Arc<AtomicU64>, tx: mpsc:
             let pk = pubkey_from_seed(&seed);
             hasher.set_pubkey(&pk);
             for j in 0..nsub {
-                let wid = DEFAULT_WALLET_ID.wrapping_add(j);
+                let wid = cfg.wallet.wallet_id(j);
                 let h = hasher.address_hash(wid);
                 let crc0 = crc16(0, &h);
                 let tail = u64::from_be_bytes(h[24..32].try_into().unwrap()) << 16;
@@ -280,17 +357,19 @@ fn worker(cfg: Arc<Cfg>, stop: Arc<AtomicBool>, total: Arc<AtomicU64>, tx: mpsc:
 
 fn usage() -> ! {
     eprintln!(
-        "Использование: ton-vanity [--suffix pulse] [--nocase] [--threads N] [--subwallets N] [--out found.txt]\n\
+        "Использование: ton-vanity [--suffix pulse] [--nocase] [--threads N] [--wallet v5|v4] [--subwallets N] [--out found.txt]\n\
+         \n       ton-vanity verify <seed_hex> [v5|v4] [wallet_id]\n\
          \n  --suffix S       нужное окончание адреса (по умолчанию pulse, регистр важен)\n\
          \n  --nocase         игнорировать регистр (гораздо быстрее)\n\
          \n  --threads N      число потоков (по умолчанию - все ядра)\n\
          \n  --subwallets N   на каждый ключ перебирать N subwallet_id (быстрее ~ в N раз, но wallet_id будет нестандартным!)\n\
+         \n  --wallet W       версия кошелька: v5 (v5R1, по умолчанию) или v4 (v4R2)\n\
          \n  --out FILE       куда дописывать результат (по умолчанию found.txt)"
     );
     std::process::exit(2)
 }
 
-/// `ton-vanity verify <seed_hex> [wallet_id]` - независимо пересчитать адрес по seed.
+/// `ton-vanity verify <seed_hex> [v5|v4] [wallet_id]` - независимо пересчитать адрес по seed.
 fn verify(args: &[String]) {
     let raw = args.get(0).map(|s| s.trim()).unwrap_or_else(|| usage());
     if raw.len() != 64 || !raw.is_ascii() {
@@ -301,9 +380,18 @@ fn verify(args: &[String]) {
     for i in 0..32 {
         seed[i] = u8::from_str_radix(&raw[i * 2..i * 2 + 2], 16).unwrap_or_else(|_| usage());
     }
-    let wid: u32 = args.get(1).map(|s| s.parse().unwrap_or_else(|_| usage())).unwrap_or(DEFAULT_WALLET_ID);
+    let mut wallet = Wallet::V5R1;
+    let mut wid = None;
+    for a in &args[1..] {
+        match Wallet::parse(a) {
+            Some(w) => wallet = w,
+            None => wid = Some(a.parse::<u32>().unwrap_or_else(|_| usage())),
+        }
+    }
+    let wid = wid.unwrap_or(wallet.default_wallet_id());
     let pk = pubkey_from_seed(&seed);
-    let h = address_hash_slow(&pk, wid);
+    let h = address_hash_slow(wallet, &pk, wid);
+    println!("wallet: {}, wallet_id {}", wallet.name(), wid);
     println!("bounceable    (EQ..): {}", friendly(FLAG_BOUNCEABLE, &h));
     println!("non-bounceable (UQ..): {}", friendly(FLAG_NON_BOUNCEABLE, &h));
     println!("public key: {}", hex(&pk));
@@ -318,6 +406,7 @@ fn main() {
     let mut nocase = false;
     let mut threads = std::thread::available_parallelism().map(|n| n.get()).unwrap_or(1);
     let mut subwallets = 1u32;
+    let mut wallet = Wallet::V5R1;
     let mut out = "found.txt".to_string();
     let mut args = std::env::args().skip(1);
     while let Some(a) = args.next() {
@@ -327,11 +416,12 @@ fn main() {
             "--nocase" => nocase = true,
             "--threads" => threads = val().parse().unwrap_or_else(|_| usage()),
             "--subwallets" => subwallets = val().parse().unwrap_or_else(|_| usage()),
+            "--wallet" => wallet = Wallet::parse(&val()).unwrap_or_else(|| usage()),
             "--out" => out = val(),
             _ => usage(),
         }
     }
-    if threads == 0 || subwallets == 0 {
+    if threads == 0 || subwallets == 0 || subwallets > wallet.max_subwallets() {
         usage();
     }
     let targets = build_targets(&suffix, nocase).unwrap_or_else(|e| {
@@ -343,12 +433,14 @@ fn main() {
         targets,
         suffix: suffix.clone(),
         subwallets,
+        wallet,
     });
 
     // вероятность успеха одной проверки: 2 флага * |targets| / 64^k
     let p = 2.0 * cfg.targets.len() as f64 / 64f64.powi(suffix.len() as i32);
     println!(
-        "Ищу адрес на \"{suffix}\"{}; потоков: {threads}; ожидаемо ~{} проверок (50% шанс за {})",
+        "Кошелёк {}. Ищу адрес на \"{suffix}\"{}; потоков: {threads}; ожидаемо ~{} проверок (50% шанс за {})",
+        wallet.name(),
         if nocase { " (без учёта регистра)" } else { "" },
         human(1.0 / p),
         human(std::f64::consts::LN_2 / p)
@@ -388,7 +480,7 @@ fn main() {
     eprintln!();
 
     // независимая перепроверка медленным путём
-    let slow = address_hash_slow(&hit.pubkey, hit.wallet_id);
+    let slow = address_hash_slow(wallet, &hit.pubkey, hit.wallet_id);
     assert_eq!(slow, hit.hash, "внутренняя ошибка: быстрый и эталонный хеши расходятся");
     assert_eq!(pubkey_from_seed(&hit.seed), hit.pubkey);
 
@@ -401,7 +493,7 @@ fn main() {
         report += &format!("{name}: {a}{}\n", if matches(&a) { "   <== нужное окончание" } else { "" });
     }
     report += &format!("raw:            0:{}\n", hex(&slow));
-    report += &format!("wallet:         v4R2, workchain 0, wallet_id {}\n", hit.wallet_id);
+    report += &format!("wallet:         {}, workchain 0, wallet_id {}\n", wallet.name(), hit.wallet_id);
     report += &format!("public key:     {}\n", hex(&hit.pubkey));
     report += &format!("private seed:   {}\n", hex(&hit.seed));
     report += &format!("secret (seed||pub): {}{}\n", hex(&hit.seed), hex(&hit.pubkey));
@@ -432,12 +524,49 @@ mod tests {
 
     #[test]
     fn matches_tonsdk_vector() {
-        let mut h = AddrHasher::new();
+        // v4R2: эталон tonsdk
+        let mut h = AddrHasher::new(Wallet::V4R2);
         h.set_pubkey(&pk0());
-        let fast = h.address_hash(DEFAULT_WALLET_ID);
+        let wid = Wallet::V4R2.default_wallet_id();
+        let fast = h.address_hash(wid);
         assert_eq!(hex(&fast), "7c380f242a59749f692f522934c3dd60ff1def38555349861702bb1ca9258623");
-        assert_eq!(fast, address_hash_slow(&pk0(), DEFAULT_WALLET_ID));
+        assert_eq!(fast, address_hash_slow(Wallet::V4R2, &pk0(), wid));
         assert_eq!(friendly(FLAG_NON_BOUNCEABLE, &fast), "UQB8OA8kKll0n2kvUik0w91g_x3vOFVTSYYXArscqSWGI8My");
+    }
+
+    #[test]
+    fn matches_tonutils_v5_vector() {
+        // v5R1: эталон tonutils/ton_core; wallet_id mainnet = 2147483409, субкошелёк 5 -> XOR 5
+        let mut h = AddrHasher::new(Wallet::V5R1);
+        h.set_pubkey(&pk0());
+        let wid = Wallet::V5R1.default_wallet_id();
+        assert_eq!(wid, 2147483409);
+        let fast = h.address_hash(wid);
+        assert_eq!(hex(&fast), "6dfe165a8f27095f7206fea75bd22e890441dc486493987c2278ffd2c620818c");
+        assert_eq!(fast, address_hash_slow(Wallet::V5R1, &pk0(), wid));
+        assert_eq!(friendly(FLAG_NON_BOUNCEABLE, &fast), "UQBt_hZajycJX3IG_qdb0i6JBEHcSGSTmHwieP_SxiCBjJ_5");
+        assert_eq!(friendly(FLAG_BOUNCEABLE, &fast), "EQBt_hZajycJX3IG_qdb0i6JBEHcSGSTmHwieP_SxiCBjMI8");
+        let w5 = Wallet::V5R1.wallet_id(5);
+        assert_eq!(w5, 2147483412);
+        assert_eq!(hex(&h.address_hash(w5)), "135014d0995b60e4cfe1367554da7c70db2ac9530f1df95126da4f8371baf16b");
+    }
+
+    #[test]
+    fn fast_equals_slow_random() {
+        // быстрый путь (со сдвигами битов) против побитового эталона на разных ключах и wallet_id
+        let mut x = 0x9E3779B97F4A7C15u64;
+        let mut next = || { x ^= x << 13; x ^= x >> 7; x ^= x << 17; x };
+        for w in [Wallet::V4R2, Wallet::V5R1] {
+            let mut h = AddrHasher::new(w);
+            for _ in 0..2000 {
+                let mut pk = [0u8; 32];
+                pk.chunks_mut(8).for_each(|c| c.copy_from_slice(&next().to_le_bytes()));
+                h.set_pubkey(&pk);
+                for wid in [next() as u32, w.default_wallet_id(), w.wallet_id(next() as u32 & 0x7fff)] {
+                    assert_eq!(h.address_hash(wid), address_hash_slow(w, &pk, wid));
+                }
+            }
+        }
     }
 
     #[test]
