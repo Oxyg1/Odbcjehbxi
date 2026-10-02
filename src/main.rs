@@ -190,6 +190,18 @@ struct Hit {
     hash: [u8; 32],
 }
 
+/// 13_630_000 -> "13.6M", 581_518 -> "582k"
+fn human(x: f64) -> String {
+    let (v, u) = match x {
+        x if x >= 1e12 => (x / 1e12, "T"),
+        x if x >= 1e9 => (x / 1e9, "B"),
+        x if x >= 1e6 => (x / 1e6, "M"),
+        x if x >= 1e3 => (x / 1e3, "k"),
+        x => (x, ""),
+    };
+    if v >= 100.0 || u.is_empty() { format!("{v:.0}{u}") } else { format!("{v:.1}{u}") }
+}
+
 fn hex(b: &[u8]) -> String {
     b.iter().map(|x| format!("{x:02x}")).collect()
 }
@@ -336,10 +348,10 @@ fn main() {
     // вероятность успеха одной проверки: 2 флага * |targets| / 64^k
     let p = 2.0 * cfg.targets.len() as f64 / 64f64.powi(suffix.len() as i32);
     println!(
-        "Ищу адрес на \"{suffix}\"{}; потоков: {threads}; ожидаемо ~{:.2e} проверок (50% шанс за {:.2e})",
+        "Ищу адрес на \"{suffix}\"{}; потоков: {threads}; ожидаемо ~{} проверок (50% шанс за {})",
         if nocase { " (без учёта регистра)" } else { "" },
-        1.0 / p,
-        std::f64::consts::LN_2 / p
+        human(1.0 / p),
+        human(std::f64::consts::LN_2 / p)
     );
 
     let stop = Arc::new(AtomicBool::new(false));
@@ -361,9 +373,9 @@ fn main() {
                 let n = total.load(Relaxed);
                 let secs = start.elapsed().as_secs_f64();
                 eprint!(
-                    "\r{:.3e} проверок, {:.0}/с, вероятность найти к этому моменту {:.1}%   ",
-                    n as f64,
-                    n as f64 / secs,
+                    "\r{} проверок, {}/с, вероятность найти к этому моменту {:.1}%   ",
+                    human(n as f64),
+                    human(n as f64 / secs),
                     (1.0 - (-p * n as f64).exp()) * 100.0
                 );
             }
@@ -394,7 +406,7 @@ fn main() {
     report += &format!("private seed:   {}\n", hex(&hit.seed));
     report += &format!("secret (seed||pub): {}{}\n", hex(&hit.seed), hex(&hit.pubkey));
     let secs = start.elapsed().as_secs_f64();
-    report += &format!("найдено за {:.1} с, {:.3e} проверок\n", secs, total.load(Relaxed) as f64);
+    report += &format!("найдено за {:.1} с, {} проверок\n", secs, human(total.load(Relaxed) as f64));
     print!("\n{report}");
 
     #[cfg(unix)]
