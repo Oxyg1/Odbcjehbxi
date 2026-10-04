@@ -1,0 +1,76 @@
+{
+  "schema_version": 1,
+  "style": "drawn",
+  "primary_pack": "Naturevista_my",
+  "secondary_packs": [],
+  "roles": {
+    "expedition": {
+      "id": "5238106182505230010",
+      "key": "naturevista_my_binokl",
+      "name": "Бинокль",
+      "pack": "Naturevista_my",
+      "html_fallback": "🔭",
+      "query": "бинокль"
+    },
+    "lobby": {
+      "id": "5237735243359746236",
+      "key": "naturevista_my_palatka",
+      "name": "Палатка",
+      "pack": "Naturevista_my",
+      "html_fallback": "🏕",
+      "query": "палатка"
+    },
+    "supply": {
+      "id": "5237975186002704915",
+      "key": "naturevista_my_korzina_yagod",
+      "name": "Корзина ягод",
+      "pack": "Naturevista_my",
+      "html_fallback": "🍓",
+      "query": "корзина"
+    },
+    "finds": {
+      "id": "5237865526897699343",
+      "key": "naturevista_my_lupa",
+      "name": "Лупа",
+      "pack": "Naturevista_my",
+      "html_fallback": "🔍",
+      "query": "лупа"
+    },
+    "journal": {
+      "id": "5240126986092834113",
+      "key": "naturevista_my_otkrytaya_kniga",
+      "name": "Открытая книга",
+      "pack": "Naturevista_my",
+      "html_fallback": "📔",
+      "query": "книга"
+    },
+    "time": {
+      "id": "5239992545026532580",
+      "key": "naturevista_my_zakhodyashchee_solntse",
+      "name": "Заходящее солнце",
+      "pack": "Naturevista_my",
+      "html_fallback": "☀️",
+      "query": "заходящее солнце"
+    },
+    "route_reeds": {
+      "id": "5238010237230802803",
+      "key": "naturevista_my_list",
+      "name": "Лист",
+      "pack": "Naturevista_my",
+      "html_fallback": "🌿",
+      "query": "лист"
+    },
+    "route_bog": {
+      "id": "5240019195298610904",
+      "key": "naturevista_my_dva_griba",
+      "name": "Два гриба",
+      "pack": "Naturevista_my",
+      "html_fallback": "🍄",
+      "query": "гриб"
+    }
+  },
+  "catalog_version": "04c1ad3856e54f09",
+  "constraints": {
+    "animation": "static"
+  }
+}

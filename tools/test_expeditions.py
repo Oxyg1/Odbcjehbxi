@@ -999,6 +999,32 @@ async def suite_switch():
     await B.ex_lobby_cancel(bot, rid)
     print("E27 позвать своих, уведомления, статистика: ок")
 
+    # E28. Премиум-эмодзи из emoji-style.json: роли на месте, id совпадают с профилем
+    prof = json.load(open(os.path.join(ROOT, "emoji-style.json"), encoding="utf-8"))["roles"]
+    assert set(B.EMOJI_STYLE) == set(prof), B.EMOJI_STYLE.keys()
+    def has(text, role):
+        return f'emoji-id="{prof[role]["id"]}"' in text
+    await add_frog(900, "Стиль", level=10)
+    f900 = await B.db_get(900)
+    text, kb = await B.ex_menu_view(f900)
+    assert has(text, "expedition") and has(text, "route_reeds") and has(text, "route_bog"), text
+    icons = {b.callback_data: b.to_dict().get("icon_custom_emoji_id") for row in kb.inline_keyboard for b in row}
+    assert icons["ex|route|reeds"] == prof["route_reeds"]["id"] and icons["ex|finds"] == prof["finds"]["id"], icons
+    assert icons["ex|route|mill"] in (None, B.BUTTON_ICONS.get("🏚")), icons   # мельницы в каталоге нет
+    rid, _ = await B.ex_lobby_create(f900, "reeds", 0)
+    await B.ex_start(bot, rid)
+    stop = bot.last_to(900, "send")[3]
+    assert has(stop, "route_reeds") and has(stop, "supply") and has(stop, "time"), stop
+    await B.ex_stop(bot, rid)
+    assert has(bot.last_to(900, "send")[3], "journal")
+    # без профиля — обычные эмодзи, ничего не ломается
+    saved = B.EMOJI_STYLE
+    B.EMOJI_STYLE = {}
+    text, kb = await B.ex_menu_view(f900)
+    assert "emoji-id=\"" + prof["expedition"]["id"] not in text and "🔭" in text
+    B.EMOJI_STYLE = saved
+    print("E28 премиум-эмодзи экспедиций: ок")
+
 
 if __name__ == "__main__":
     setup_db()

@@ -59660,6 +59660,45 @@ import exp_routes as _exr
 EX_ROUTES: dict = _exr.ROUTES
 EX_FINDS: dict = _exr.FINDS
 EX_PERSONAL: list = _exr.PERSONAL
+for _rk, _r in EX_ROUTES.items():
+    _r.setdefault("key", _rk)
+
+
+# ── Премиум-эмодзи экспедиций ────────────────────────────────────────────────
+# Выбор сделан инструментом premium-telegram-emoji и лежит в emoji-style.json
+# рядом с ботом: роль → id из одного пака (Naturevista_my, рисунок тушью).
+# Номера в код не переписываются — правится профиль, код берёт роль.
+# Нет файла или роли — обычный эмодзи, бот не падает.
+
+def _load_emoji_style() -> dict:
+    path = os.path.join(os.path.dirname(os.path.abspath(__file__)), "emoji-style.json")
+    try:
+        with open(path, encoding="utf-8") as fh:
+            roles = json.load(fh).get("roles", {})
+        return {k: v for k, v in roles.items()
+                if isinstance(v, dict) and str(v.get("id", "")).isdigit()}
+    except (OSError, ValueError, AttributeError) as e:
+        logger.warning("emoji-style.json не прочитан: %s — экспедиции с обычными эмодзи", e)
+        return {}
+
+
+EMOJI_STYLE: dict = _load_emoji_style()
+
+
+def ex_emoji(role: str, fallback: str) -> str:
+    """Эмодзи роли для текста сообщения (HTML)."""
+    r = EMOJI_STYLE.get(role)
+    return _pe(r["id"], r.get("html_fallback") or fallback) if r else fallback
+
+
+def ex_emoji_id(role: str) -> str | None:
+    """id роли для иконки кнопки: в подписи кнопки <tg-emoji> не работает."""
+    r = EMOJI_STYLE.get(role)
+    return r["id"] if r else None
+
+
+def ex_route_icon(r: dict) -> str:
+    return ex_emoji(f"route_{r.get('key', '')}", r.get("emoji", "🗺"))
 
 EX_MAX_TEAM       = 4
 EX_SUPPLY_START   = 8          # запас на старте, если маршрут не задаёт свой
@@ -60070,7 +60109,7 @@ def ex_lobby_text(run: dict, members: list[dict], names: dict) -> str:
     r = EX_ROUTES[run["route"]]
     team = ", ".join(names[m["user_id"]]["html"] for m in members)
     return ui_card(
-        ui_title(r["emoji"], f"{r['name']}{SEP}сбор"),
+        ui_title(ex_emoji("lobby", "🏕"), f"{r['name']}{SEP}сбор"),
         f"{_E_USERS} {team}\n"
         f"Команда {len(members)}/{EX_MAX_TEAM}{SEP}выход через {_ex_left(run['gather_until'])}",
         hint="Каждый сверх первого — +20% к добыче всем",
@@ -60229,10 +60268,10 @@ async def ex_start(bot, run_id: int) -> bool:
         team = ", ".join(names[m["user_id"]]["html"] for m in members)
         gap_min = round(r["hours"] * 60 / n)
         text = ui_card(
-            ui_title(r["emoji"], r["name"]),
+            ui_title(ex_route_icon(r), r["name"]),
             f"{_E_USERS} {team}",
             f"Стоянок {n}, раз в {gap_min} мин. Первая — сейчас.\n"
-            f"{_E_BAG} Запас {ex_supply_max(run['route'])}. Его тратят рискованные решения; "
+            f"{ex_emoji("supply", "🎒")} Запас {ex_supply_max(run['route'])}. Его тратят рискованные решения; "
             f"кончится — поворот домой, добыча пополам.",
         )
         for m in members:
@@ -60262,7 +60301,7 @@ def ex_stop_text(run: dict, idx: int, members: list[dict], names: dict,
     r = EX_ROUTES[run["route"]]
     plan = json.loads(run["plan_json"])
     card = _ex_card(run["route"], plan[idx]["card"])
-    head = f"{r['emoji']} <b>{card['title']}</b>{SEP}{idx + 1}/{len(plan)}"
+    head = f"{ex_route_icon(r)} <b>{card['title']}</b>{SEP}{idx + 1}/{len(plan)}"
     solo = len(members) == 1
 
     if result is None:
@@ -60285,7 +60324,7 @@ def ex_stop_text(run: dict, idx: int, members: list[dict], names: dict,
         safe = card["options"][0]
         return ui_card(
             head, card["text"], *odds, status, votes,
-            hint=f"Закроется через {_ex_left(run['closes_at'])}. "
+            hint=f"{ex_emoji('time', '⏳')} Закроется через {_ex_left(run['closes_at'])}. "
                  f"Без ответов — {_ex_opt_emoji(safe)} {_ex_opt_name(safe)}",
         )
 
@@ -60307,11 +60346,12 @@ def ex_stop_text(run: dict, idx: int, members: list[dict], names: dict,
         lines.append(f"Находка: {fd['emoji']} <b>{fd['name']}</b>")
     status = _ex_status(result["supply_after"], ex_supply_max(run["route"]), result["loot_after"])
     return ui_card(head, card["text"], how, "\n".join(lines), status,
-                   hint=f"Следующая стоянка — через {_ex_left(next_at)}" if next_at else "")
+                   hint=f"{ex_emoji('time', '⏳')} Следующая стоянка — через {_ex_left(next_at)}"
+                   if next_at else "")
 
 
 def _ex_status(supply: int, supply_max: int, loot: int) -> str:
-    return f"{_E_BAG} Запас {supply} из {supply_max}{SEP}добыча {loot}{_E_COIN}"
+    return f"{ex_emoji("supply", "🎒")} Запас {supply} из {supply_max}{SEP}добыча {loot}{_E_COIN}"
 
 
 def _ex_opt(card: dict, key: str) -> dict | None:
@@ -60585,7 +60625,7 @@ async def _ex_grant_find(bot, run: dict, members: list[dict], fkey: str, names: 
                 await bot.send_message(
                     uid,
                     ui_card(
-                        ui_title(route["emoji"], "Набор собран"),
+                        ui_title(ex_route_icon(route), "Набор собран"),
                         f"Все находки маршрута «{route['name']}» у тебя.\n"
                         f"Облик <b>{route['skin']}</b> — в коллекции.",
                         hint="Надеть: /frog → 🎒 Инвентарь",
@@ -60596,7 +60636,7 @@ async def _ex_grant_find(bot, run: dict, members: list[dict], fkey: str, names: 
                 pass
             await announce(
                 bot,
-                f"{route['emoji']} {name} собрала все находки маршрута "
+                f"{ex_route_icon(route)} {name} собрала все находки маршрута "
                 f"«{route['name']}» и получила облик <b>{route['skin']}</b>",
                 delete_after=0, announce_level="major",
             )
@@ -60736,7 +60776,7 @@ async def ex_final_text(run: dict, members: list[dict], m: dict, names: dict, p:
     else:
         rows.append(f"{_E_COIN} Добыча {p['loot']}")
     if p["supply_bonus"]:
-        rows.append(f"{_E_BAG} Запас {run['supply']} → +{p['supply_bonus']}")
+        rows.append(f"{ex_emoji("supply", "🎒")} Запас {run['supply']} → +{p['supply_bonus']}")
     if n > 1:
         rows.append(f"{_E_USERS} Команда из {n}{SEP}×{p['mult']:.1f}")
     if p["personal"]:
@@ -60775,7 +60815,7 @@ async def ex_final_text(run: dict, members: list[dict], m: dict, names: dict, p:
             pers.append(f"{names[x['user_id']]['html']} отдала находку в котёл.")
 
     return ui_card(
-        ui_title(r["emoji"], f"{r['name']}{SEP}итог"),
+        ui_title(ex_emoji("journal", "📔"), f"{r['name']}{SEP}итог"),
         how,
         ui_quote(*rows),
         total,
@@ -60961,27 +61001,28 @@ async def ex_menu_view(f: dict, back: str = "plaza") -> tuple[str, InlineKeyboar
     rows = []
     for rk, r in EX_ROUTES.items():
         locked = lvl < r["level"]
-        routes.append(f"{r['emoji']} {r['name']}{SEP}{r['hours']} ч"
+        routes.append(f"{ex_route_icon(r)} {r['name']}{SEP}{r['hours']} ч"
                       + (f"{SEP}с {r['level']} ур." if locked else ""))
         rows.append([btn(f"{'🔒' if locked else r['emoji']} {r['name']}",
-                         callback_data=f"ex|route|{rk}")])
+                         callback_data=f"ex|route|{rk}",
+                         icon_id=None if locked else ex_emoji_id(f"route_{rk}"))])
     lobbies = [lb for lb in await ex_open_lobbies(f["user_id"])
                if lb["route"] in EX_ROUTES and lvl >= EX_ROUTES[lb["route"]]["level"]]
     for lb in lobbies[:6]:
         r = EX_ROUTES[lb["route"]]
         if r:
-            rows.append([btn(f"{r['emoji']} Сбор {lb['team']}/{EX_MAX_TEAM}{SEP}"
+            rows.append([btn(f"🏕 Сбор {lb['team']}/{EX_MAX_TEAM}{SEP}"
                              f"{_ex_left(lb['gather_until'])}",
-                             callback_data=f"ex|join|{lb['id']}")])
+                             callback_data=f"ex|join|{lb['id']}", icon_id=ex_emoji_id("lobby"))])
     if ex_today_used(f):
         today = f"Сегодня экспедиция уже была. Следующая — через {_ex_today_left()}."
         rows.append([btn(f"⭐ Ещё одна за {EX_EXTRA_STARS} Stars", callback_data="ex|stars")])
     else:
         today = "Сегодня экспедиция свободна."
-    rows.append([btn("🧺 Находки", callback_data="ex|finds"),
+    rows.append([btn("🔍 Находки", callback_data="ex|finds", icon_id=ex_emoji_id("finds")),
                  btn("◀️ Назад", callback_data=back)])
     text = ui_card(
-        ui_title(_E_MAP, "Экспедиции"),
+        ui_title(ex_emoji("expedition", "🔭"), "Экспедиции"),
         "Команда до четырёх лягушек — или одна — идёт по маршруту. "
         "Стоянки приходят по расписанию, решает большинство.",
         "\n".join(routes),
@@ -61007,10 +61048,10 @@ async def ex_route_view(f: dict, route_key: str) -> tuple[str, InlineKeyboardMar
     if why == "today":
         why = f"Сегодня экспедиция уже была. Следующая — через {_ex_today_left()}."
     text = ui_card(
-        ui_title(r["emoji"], r["name"]),
+        ui_title(ex_route_icon(r), r["name"]),
         r["about"],
         f"⏱ {r['hours']} ч{SEP}{r['stops']} стоянок{SEP}+{r['xp']} {_E_XP}",
-        f"🧺 Находки {have}/{len(keys)}"
+        f"{ex_emoji('finds', '🔍')} Находки {have}/{len(keys)}"
         + (f"{SEP}облик получен" if skin_done else f"\nЗа все — облик <b>{r['skin']}</b>"),
         why,
     )
@@ -61020,7 +61061,7 @@ async def ex_route_view(f: dict, route_key: str) -> tuple[str, InlineKeyboardMar
 def ex_gather_view(route_key: str) -> tuple[str, InlineKeyboardMarkup]:
     r = EX_ROUTES[route_key]
     text = ui_card(
-        ui_title(r["emoji"], "Собрать команду"),
+        ui_title(ex_route_icon(r), "Собрать команду"),
         f"Пока идёт сбор, друзья вступают по ссылке или из меню экспедиций — "
         f"до {EX_MAX_TEAM} лягушек. Выйти можно и раньше.",
         hint="Не соберётся никто — выход в одиночку",
@@ -61041,7 +61082,8 @@ async def ex_active_view(run: dict, uid: int) -> tuple[str, InlineKeyboardMarkup
     if run["step"] > run["resolved"]:
         now_line = f"Стоянка {run['step'] + 1}/{len(plan)} открыта ещё {_ex_left(run['closes_at'])}"
     elif run["step"] + 1 < len(plan):
-        now_line = f"Следующая стоянка через {_ex_left(plan[run['step'] + 1]['at'])}"
+        now_line = (f"{ex_emoji('time', '⏳')} Следующая стоянка через "
+                    f"{_ex_left(plan[run['step'] + 1]['at'])}")
     else:
         now_line = "Подводим итог"
     rows = []
@@ -61049,7 +61091,7 @@ async def ex_active_view(run: dict, uid: int) -> tuple[str, InlineKeyboardMarkup
         rows.append([btn("📍 К стоянке", callback_data=f"ex|here|{run['id']}")])
     rows.append([btn("◀️ Назад", callback_data="plaza")])
     text = ui_card(
-        ui_title(r["emoji"], r["name"]),
+        ui_title(ex_route_icon(r), r["name"]),
         f"{_E_USERS} {team}",
         f"{now_line}\n{_ex_status(run['supply'], ex_supply_max(run['route']), run['loot'])}",
         hint="Написать команде: /m текст" if len(members) > 1 else "",
@@ -61063,7 +61105,7 @@ async def ex_finds_view(uid: int) -> tuple[str, InlineKeyboardMarkup]:
     for rk, r in EX_ROUTES.items():
         keys = [k for k, v in EX_FINDS.items() if v["route"] == rk]
         have = sum(1 for k in keys if k in owned)
-        lines = [f"{r['emoji']} <b>{r['name']}</b>{SEP}{have}/{len(keys)}"]
+        lines = [f"{ex_route_icon(r)} <b>{r['name']}</b>{SEP}{have}/{len(keys)}"]
         for k in keys:
             fd = EX_FINDS[k]
             if k in owned:
@@ -61083,7 +61125,7 @@ async def ex_finds_view(uid: int) -> tuple[str, InlineKeyboardMarkup]:
             runs, done, coins, xp = await c.fetchone()
     stats = (f"Экспедиций {runs}{SEP}до конца {done or 0}\n"
              f"Заработано {coins or 0}{_E_COIN}{SEP}{xp or 0} {_E_XP}") if runs else ""
-    text = ui_card(ui_title("🧺", "Находки"), stats, *blocks,
+    text = ui_card(ui_title(ex_emoji("finds", "🔍"), "Находки"), stats, *blocks,
                    hint="Находка достаётся каждому в команде")
     return text, InlineKeyboardMarkup([[btn("◀️ Назад", callback_data="ex|menu")]])
 
@@ -61092,13 +61134,13 @@ async def ex_join_view(f: dict, run_id: int) -> tuple[str, InlineKeyboardMarkup]
     """Экран приглашения: куда зовут и кнопка «Вступить»."""
     run = await ex_run_get(run_id)
     if not run or run["status"] != "lobby" or run["gather_until"] <= time.time():
-        return (ui_card(ui_title(_E_MAP, "Экспедиция"), "Этот сбор уже закрыт."),
+        return (ui_card(ui_title(ex_emoji("expedition", "🔭"), "Экспедиция"), "Этот сбор уже закрыт."),
                 InlineKeyboardMarkup([[btn("🗺️ Экспедиции", callback_data="ex|menu")]]))
     r = EX_ROUTES[run["route"]]
     members = await ex_members_get(run_id)
     names = await _ex_names(members)
     text = ui_card(
-        ui_title(r["emoji"], r["name"]),
+        ui_title(ex_route_icon(r), r["name"]),
         r["about"],
         f"{_E_USERS} {', '.join(names[m['user_id']]['html'] for m in members)}"
         f"{SEP}{len(members)}/{EX_MAX_TEAM}\n"
@@ -61163,7 +61205,7 @@ async def ex_invite_neighbours(bot, run: dict, f: dict) -> int:
     """Позвать в сбор своих, кто может пойти. Возвращает, скольким дошло."""
     r = EX_ROUTES[run["route"]]
     text = ui_card(
-        ui_title(r["emoji"], r["name"]),
+        ui_title(ex_route_icon(r), r["name"]),
         f"<b>{fname(f)}</b> зовёт в экспедицию. Выход через {_ex_left(run['gather_until'])}.",
     )
     kb = InlineKeyboardMarkup([[btn("✅ Вступить", callback_data=f"ex|join|{run['id']}",
@@ -61321,7 +61363,7 @@ async def ex_router(update: Update, ctx: ContextTypes.DEFAULT_TYPE):
                 r = EX_ROUTES[run["route"]]
                 await announce(
                     bot,
-                    f"{r['emoji']} <b>{fname(f)}</b> собирает команду: "
+                    f"{ex_route_icon(r)} <b>{fname(f)}</b> собирает команду: "
                     f"«{r['name']}», {r['hours']} ч. Выход через {_ex_left(run['gather_until'])}.",
                     reply_markup=InlineKeyboardMarkup([[btn(
                         "🚪 Вступить", url=f"https://t.me/{bot.username}?start=ex_{run_id}")]]),
@@ -61440,12 +61482,12 @@ async def ex_admin_view() -> tuple[str, InlineKeyboardMarkup]:
     for run in live:
         r = EX_ROUTES.get(run["route"], {"emoji": "?", "name": run["route"]})
         if run["status"] == "lobby":
-            lines.append(f"#{run['id']} {r['emoji']} сбор{SEP}{run['team']}/{EX_MAX_TEAM}")
+            lines.append(f"#{run['id']} {ex_route_icon(r)} сбор{SEP}{run['team']}/{EX_MAX_TEAM}")
             rows.append([btn(f"✖️ Отменить сбор #{run['id']}",
                              callback_data=f"ex|adm|cancel|{run['id']}")])
         else:
             n = len(json.loads(run["plan_json"]))
-            lines.append(f"#{run['id']} {r['emoji']} {run['step'] + 1}/{n}{SEP}{run['team']} чел."
+            lines.append(f"#{run['id']} {ex_route_icon(r)} {run['step'] + 1}/{n}{SEP}{run['team']} чел."
                          f"{SEP}🎒{run['supply']}{SEP}🪙{run['loot']}")
             rows.append([btn(f"⏹ Завершить #{run['id']}", callback_data=f"ex|adm|stop|{run['id']}")])
     total = sum(outcomes.values())
@@ -61456,7 +61498,7 @@ async def ex_admin_view() -> tuple[str, InlineKeyboardMarkup]:
     if not await db_setting("ex_refund_done") and await ex_lost_stakes(0):
         rows.append([btn("💸 Старые ставки", callback_data="ex|adm|refund_view|0")])
     text = ui_card(
-        ui_title(_E_MAP, "Экспедиции · админ"),
+        ui_title(ex_emoji("expedition", "🔭"), "Экспедиции · админ"),
         "\n".join(lines) or "Сейчас никто не идёт.",
         f"<b>За 7 дней: {total}</b>\n{week}",
         ("⚠️ Ошибки в маршрутах:\n" + "\n".join(he(e) for e in errs[:10])) if errs else "",
@@ -61611,7 +61653,7 @@ async def ex_migrate_old(bot):
         try:
             await bot.send_message(
                 uid,
-                ui_card(ui_title(_E_MAP, "Экспедиции обновились"), "\n".join(parts),
+                ui_card(ui_title(ex_emoji("expedition", "🔭"), "Экспедиции обновились"), "\n".join(parts),
                         hint="Новые маршруты — на площади"),
                 parse_mode=ParseMode.HTML, reply_markup=kb,
             )
@@ -61622,7 +61664,7 @@ async def ex_migrate_old(bot):
                f"возвращено {sum(back.values())}🪙 ({len(back)} игр.); "
                f"припасы → {sum(supplies.values())}🪙 ({len(supplies)} игр.)")
     logger.info(summary)
-    await announce(bot, f"{_E_MAP} {summary}", admin_only=True)
+    await announce(bot, f"{ex_emoji("expedition", "🔭")} {summary}", admin_only=True)
 
 
 async def ex_lost_stakes(since: float = 0) -> dict[int, int]:
@@ -61646,7 +61688,7 @@ async def ex_lost_stakes(since: float = 0) -> dict[int, int]:
 
 async def ex_refund_view() -> tuple[str, InlineKeyboardMarkup]:
     done = await db_setting("ex_refund_done")
-    head = ui_title(_E_MAP, "Старые ставки")
+    head = ui_title(ex_emoji("expedition", "🔭"), "Старые ставки")
     if done:
         return (ui_card(head, f"Возврат уже сделан: {he(done)}."),
                 InlineKeyboardMarkup([[btn("◀️ Назад", callback_data="ex|adm|view|0")]]))
@@ -61686,7 +61728,7 @@ async def ex_refund_do(bot, season_only: bool) -> str:
         try:
             await bot.send_message(
                 uid,
-                ui_card(ui_title(_E_MAP, "Возврат за экспедиции"),
+                ui_card(ui_title(ex_emoji("expedition", "🔭"), "Возврат за экспедиции"),
                         f"Монеты, взятые с собой в старые экспедиции, из-за ошибки "
                         f"не вернулись. Возвращаем: +{amount}{_E_COIN}."),
                 parse_mode=ParseMode.HTML,
