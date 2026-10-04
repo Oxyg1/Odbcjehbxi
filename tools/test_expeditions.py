@@ -158,11 +158,13 @@ async def suite_engine():
             assert width_w(head) <= 19, (head, width_w(head))
             for o in c["options"]:
                 assert width_w(o["label"]) <= 19, (o["label"], width_w(o["label"]))
-                hint = f"{B._ex_opt_emoji(o)} {B.ex_option_hint(o, html=False)}"
-                assert width_w(hint) <= 21, (hint, width_w(hint))
+                for line in B.ex_option_lines(o, html=False):
+                    assert width_w(line) <= 21, (line, width_w(line))
     for k, fd in B.EX_FINDS.items():
         line = f"{fd['emoji']} {fd['name']} · новая, 6/6"
         assert width_w(line) <= 21, (line, width_w(line))
+    status = "🎒 Запас 13 из 13 · добыча 999🪙"
+    assert width_w(status) <= 21, width_w(status)
     print("0 данные: ок")
 
     # ── 1. Соло: голос сразу закрывает стоянку, молчание — осторожный вариант ──
@@ -944,7 +946,7 @@ async def suite_switch():
         await B.ex_start(bot, rid)
         run = await B.ex_run_get(rid)
         assert run["supply"] == route["supply"] and len(json.loads(run["plan_json"])) == route["stops"]
-        assert f"{route['supply']}/{route['supply']}" in plain(bot.last_to(uid, "send")[3])
+        assert f"Запас {route['supply']} из {route['supply']}" in plain(bot.last_to(uid, "send")[3])
         for _ in range(route["stops"] + 2):
             run = await B.ex_run_get(rid)
             if run["status"] != "active":

@@ -59878,25 +59878,35 @@ def ex_validate_content() -> list[str]:
 
 # ── Цифры в тексте ───────────────────────────────────────────────────────────
 
-def _ex_fx(o: dict, html: bool = True) -> str:
-    """«+20🪙 −1🎒» — последствия исхода. Минус — типографский."""
+def _ex_fx(o: dict, html: bool = True, done: bool = False) -> str:
+    """
+    Последствия словами: «добыча +15🪙, запас −3». Значки 🎒 и 🪙 без подписи
+    игроки не считывали — «−1🎒» выглядело шифром. Минус — типографский.
+    done=True — для уже случившегося исхода.
+    """
     coin = _E_COIN if html else "🪙"
-    bag = _E_BAG if html else "🎒"
     parts = []
-    for val, icon in ((o.get("loot", 0), coin), (o.get("supply", 0), bag)):
-        if val:
-            parts.append(f"{'+' if val > 0 else '−'}{abs(val)}{icon}")
-    return " ".join(parts) or "без потерь"
+    loot, supply = o.get("loot", 0), o.get("supply", 0)
+    if loot:
+        parts.append(f"добыча {'+' if loot > 0 else '−'}{abs(loot)}{coin}")
+    if supply:
+        parts.append(f"запас {'+' if supply > 0 else '−'}{abs(supply)}")
+    if parts:
+        return ", ".join(parts)
+    return "ничего не изменилось" if done else "ничего не меняется"
+
+
+def ex_option_lines(opt: dict, html: bool = True) -> list[str]:
+    """Исходы варианта построчно: «наверняка: запас −1» или «60%: добыча +15🪙»."""
+    outs = opt["outcomes"]
+    if len(outs) == 1:
+        return [f"наверняка: {_ex_fx(outs[0], html)}"]
+    return [f"{x['p']}%: {_ex_fx(x, html)}" for x in outs]
 
 
 def ex_option_hint(opt: dict, html: bool = True) -> str:
-    outs = opt["outcomes"]
-    if len(outs) == 1:
-        return _ex_fx(outs[0], html)
-    if len(outs) == 2:
-        a, b = outs
-        return f"{a['p']}%: {_ex_fx(a, html)}, иначе {_ex_fx(b, html)}"
-    return SEP.join(f"{x['p']}%: {_ex_fx(x, html)}" for x in outs)
+    """Цена варианта одной строкой — для распечаток и админки."""
+    return "; ".join(ex_option_lines(opt, html))
 
 
 def ex_supply_max(route_key: str) -> int:
@@ -60222,7 +60232,8 @@ async def ex_start(bot, run_id: int) -> bool:
             ui_title(r["emoji"], r["name"]),
             f"{_E_USERS} {team}",
             f"Стоянок {n}, раз в {gap_min} мин. Первая — сейчас.\n"
-            f"{_E_BAG} Запас {ex_supply_max(run['route'])}{SEP}кончится — поворот домой",
+            f"{_E_BAG} Запас {ex_supply_max(run['route'])}. Его тратят рискованные решения; "
+            f"кончится — поворот домой, добыча пополам.",
         )
         for m in members:
             try:
@@ -60255,25 +60266,25 @@ def ex_stop_text(run: dict, idx: int, members: list[dict], names: dict,
     solo = len(members) == 1
 
     if result is None:
-        odds = "\n".join(
-            f"{_ex_icon(_ex_opt_emoji(o))} {ex_option_hint(o)}" for o in card["options"]
-        )
-        status = f"{_E_BAG} {run['supply']}/{ex_supply_max(run['route'])}{SEP}{_E_COIN} {run['loot']}"
+        # Каждый вариант — названием, как на кнопке, и исходами под ним
+        odds = [
+            "\n".join([f"{_ex_icon(_ex_opt_emoji(o))} <b>{_ex_opt_name(o)}</b>"]
+                      + ex_option_lines(o))
+            for o in card["options"]
+        ]
+        status = _ex_status(run["supply"], ex_supply_max(run["route"]), run["loot"])
         votes = ""
         if not solo:
-            said = [f"{names[m['user_id']]['html']} "
-                    f"{_ex_icon(_ex_opt_emoji(_ex_opt(card, m['vote_opt'])))}"
+            said = [f"{names[m['user_id']]['html']} — "
+                    f"{_ex_opt_name(_ex_opt(card, m['vote_opt'])).lower()}"
                     for m in members
                     if m["vote_step"] == idx and _ex_opt(card, m["vote_opt"])]
             wait = [names[m["user_id"]]["html"] for m in members
                     if not (m["vote_step"] == idx and _ex_opt(card, m["vote_opt"]))]
-            votes = "\n".join(filter(None, [
-                f"Голоса: {', '.join(said)}" if said else "",
-                f"Ещё не ответили: {', '.join(wait)}" if wait else "",
-            ]))
+            votes = "\n".join(said + ([f"Ещё не ответили: {', '.join(wait)}"] if wait else []))
         safe = card["options"][0]
         return ui_card(
-            head, card["text"], odds, "\n".join(filter(None, [status, votes])),
+            head, card["text"], *odds, status, votes,
             hint=f"Закроется через {_ex_left(run['closes_at'])}. "
                  f"Без ответов — {_ex_opt_emoji(safe)} {_ex_opt_name(safe)}",
         )
@@ -60287,20 +60298,20 @@ def ex_stop_text(run: dict, idx: int, members: list[dict], names: dict,
     elif solo:
         how = choice
     else:
-        tally = SEP.join(
-            f"{_ex_icon(_ex_opt_emoji(_ex_opt(card, k)))} {v}"
-            for k, v in sorted(result.get("votes", {}).items(), key=lambda kv: -kv[1])
-            if _ex_opt(card, k)
-        )
-        how = f"{choice}\n<i>Голоса: {tally}</i>"
-    lines = [out["text"], _ex_fx({"loot": result["dl"], "supply": result["ds"]})]
+        votes = result.get("votes", {})
+        how = (f"{choice}\n<i>За этот вариант — {votes.get(result['opt'], 0)} "
+               f"из {sum(votes.values())} ответивших</i>")
+    lines = [out["text"], _ex_fx({"loot": result["dl"], "supply": result["ds"]}, done=True)]
     fd = EX_FINDS.get(result.get("find") or "")
     if fd:
         lines.append(f"Находка: {fd['emoji']} <b>{fd['name']}</b>")
-    status = (f"{_E_BAG} {result['supply_after']}/{ex_supply_max(run['route'])}"
-              f"{SEP}{_E_COIN} {result['loot_after']}")
+    status = _ex_status(result["supply_after"], ex_supply_max(run["route"]), result["loot_after"])
     return ui_card(head, card["text"], how, "\n".join(lines), status,
                    hint=f"Следующая стоянка — через {_ex_left(next_at)}" if next_at else "")
+
+
+def _ex_status(supply: int, supply_max: int, loot: int) -> str:
+    return f"{_E_BAG} Запас {supply} из {supply_max}{SEP}добыча {loot}{_E_COIN}"
 
 
 def _ex_opt(card: dict, key: str) -> dict | None:
@@ -60753,8 +60764,8 @@ async def ex_final_text(run: dict, members: list[dict], m: dict, names: dict, p:
     for e in log:
         card = _ex_card(run["route"], e["card"])
         opt, _ = _ex_out(card, e["opt"], e["o"])
-        steps.append(f"{e['i'] + 1}. {card['title']}: {_ex_icon(_ex_opt_emoji(opt))} "
-                     f"{_ex_fx({'loot': e['dl'], 'supply': e['ds']})}")
+        steps.append(f"{e['i'] + 1}. {card['title']} — {_ex_opt_name(opt).lower()}: "
+                     f"{_ex_fx({'loot': e['dl'], 'supply': e['ds']}, done=True)}")
 
     pers = []
     for x in members:
@@ -61040,7 +61051,7 @@ async def ex_active_view(run: dict, uid: int) -> tuple[str, InlineKeyboardMarkup
     text = ui_card(
         ui_title(r["emoji"], r["name"]),
         f"{_E_USERS} {team}",
-        f"{now_line}\n{_E_BAG} {run['supply']}/{ex_supply_max(run['route'])}{SEP}{_E_COIN} {run['loot']}",
+        f"{now_line}\n{_ex_status(run['supply'], ex_supply_max(run['route']), run['loot'])}",
         hint="Написать команде: /m текст" if len(members) > 1 else "",
     )
     return text, InlineKeyboardMarkup(rows)
