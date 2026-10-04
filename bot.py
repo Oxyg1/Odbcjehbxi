@@ -59723,6 +59723,7 @@ def ex_sync_migration(conn):
             pers_key      TEXT    NOT NULL DEFAULT '',
             pers_choice   TEXT    NOT NULL DEFAULT '', -- keep|share
             pers_msg_id   INTEGER NOT NULL DEFAULT 0,
+            invited       INTEGER NOT NULL DEFAULT 0,  -- позвал(а) своих
             coins         INTEGER NOT NULL DEFAULT 0,  -- итог, пишется в финале
             xp            INTEGER NOT NULL DEFAULT 0,
             finds_json    TEXT    NOT NULL DEFAULT '[]',
@@ -59744,7 +59745,10 @@ def ex_sync_migration(conn):
     if "invited" not in {r[1] for r in cur.fetchall()}:
         cur.execute("ALTER TABLE ex_runs ADD COLUMN invited INTEGER NOT NULL DEFAULT 0")
     cur.execute("PRAGMA table_info(ex_members)")
-    if "paid" not in {r[1] for r in cur.fetchall()}:
+    _mcols = {r[1] for r in cur.fetchall()}
+    if "invited" not in _mcols:
+        cur.execute("ALTER TABLE ex_members ADD COLUMN invited INTEGER NOT NULL DEFAULT 0")
+    if "paid" not in _mcols:
         cur.execute("ALTER TABLE ex_members ADD COLUMN paid INTEGER NOT NULL DEFAULT 0")
         # Всё, что завершилось до появления флага, уже выплачено
         cur.execute("UPDATE ex_members SET paid=1 WHERE run_id IN "
@@ -60063,21 +60067,28 @@ def ex_lobby_text(run: dict, members: list[dict], names: dict) -> str:
     )
 
 
-def ex_lobby_kb(run: dict, uid: int, bot_username: str) -> InlineKeyboardMarkup:
+def ex_lobby_kb(run: dict, uid: int, bot_username: str, invited: bool = False) -> InlineKeyboardMarkup:
+    """
+    Кнопки сбора. Звать своих (соседей, стаю, связь) и звать в чат может
+    любой в команде, как и раньше; выйти и отменить — по роли.
+    """
     rid = run["id"]
     rows = []
     if uid == run["creator_id"]:
         rows.append([btn("▶️ Выходим", callback_data=f"ex|go|{rid}", style="success")])
-        if bot_username:
-            link = _urlquote(f"https://t.me/{bot_username}?start=ex_{rid}", safe="")
-            rows.append([btn("🔗 Позвать друга", url=f"https://t.me/share/url?url={link}")])
-        if not run.get("invited"):
-            rows.append([btn("💌 Позвать соседей", callback_data=f"ex|invite|{rid}")])
-        if not run.get("announced"):
-            rows.append([btn("📣 Позвать в чат", callback_data=f"ex|call|{rid}")])
-        rows.append([btn("✖️ Отменить сбор", callback_data=f"ex|cancel|{rid}")])
+    if not invited:
+        rows.append([btn("💌 Позвать своих", callback_data=f"ex|invite|{rid}")])
+    if bot_username:
+        link = _urlquote(f"https://t.me/{bot_username}?start=ex_{rid}", safe="")
+        rows.append([btn("🔗 Позвать друга", url=f"https://t.me/share/url?url={link}")])
+    if not run.get("announced"):
+        rows.append([btn("📣 Позвать в чат", callback_data=f"ex|call|{rid}")])
+    if uid == run["creator_id"]:
+        rows.append([btn("🔄 Обновить", callback_data="ex|menu"),
+                     btn("✖️ Отменить", callback_data=f"ex|cancel|{rid}")])
     else:
-        rows.append([btn("🚪 Выйти из команды", callback_data=f"ex|leave|{rid}")])
+        rows.append([btn("🔄 Обновить", callback_data="ex|menu"),
+                     btn("🚪 Выйти", callback_data=f"ex|leave|{rid}")])
     return InlineKeyboardMarkup(rows)
 
 
@@ -60096,7 +60107,7 @@ async def ex_lobby_refresh(bot, run_id: int, skip_uid: int = 0):
             await bot.edit_message_text(
                 text, chat_id=m["user_id"], message_id=m["msg_id"],
                 parse_mode=ParseMode.HTML,
-                reply_markup=ex_lobby_kb(run, m["user_id"], bot.username),
+                reply_markup=ex_lobby_kb(run, m["user_id"], bot.username, bool(m["invited"])),
             )
         except _TgError:
             pass
@@ -60945,7 +60956,7 @@ async def ex_menu_view(f: dict, back: str = "plaza") -> tuple[str, InlineKeyboar
                          callback_data=f"ex|route|{rk}")])
     lobbies = [lb for lb in await ex_open_lobbies(f["user_id"])
                if lb["route"] in EX_ROUTES and lvl >= EX_ROUTES[lb["route"]]["level"]]
-    for lb in lobbies[:3]:
+    for lb in lobbies[:6]:
         r = EX_ROUTES[lb["route"]]
         if r:
             rows.append([btn(f"{r['emoji']} Сбор {lb['team']}/{EX_MAX_TEAM}{SEP}"
@@ -61052,7 +61063,16 @@ async def ex_finds_view(uid: int) -> tuple[str, InlineKeyboardMarkup]:
         lines.append(f"Облик <b>{r['skin']}</b>{SEP}"
                      + ("получен" if f"set:{rk}" in owned else "за все находки"))
         blocks.append("\n".join(lines))
-    text = ui_card(ui_title("🧺", "Находки"), *blocks,
+    async with aiosqlite.connect(DB_PATH) as db:
+        async with db.execute(
+            "SELECT COUNT(*), SUM(r.outcome='done'), SUM(m.coins), SUM(m.xp) "
+            "FROM ex_members m JOIN ex_runs r ON r.id=m.run_id "
+            "WHERE m.user_id=? AND r.status='finished'", (uid,)
+        ) as c:
+            runs, done, coins, xp = await c.fetchone()
+    stats = (f"Экспедиций {runs}{SEP}до конца {done or 0}\n"
+             f"Заработано {coins or 0}{_E_COIN}{SEP}{xp or 0} {_E_XP}") if runs else ""
+    text = ui_card(ui_title("🧺", "Находки"), stats, *blocks,
                    hint="Находка достаётся каждому в команде")
     return text, InlineKeyboardMarkup([[btn("◀️ Назад", callback_data="ex|menu")]])
 
@@ -61099,16 +61119,37 @@ async def ex_open_section(q, f: dict, bot, back: str = "plaza"):
     run = await ex_user_run(uid)
     if run and run["status"] == "lobby":
         members = await ex_members_get(run["id"])
+        me = next((m for m in members if m["user_id"] == uid), {})
         await _ex_show(q, ex_lobby_text(run, members, await _ex_names(members)),
-                       ex_lobby_kb(run, uid, bot.username))
+                       ex_lobby_kb(run, uid, bot.username, bool(me.get("invited"))))
         await ex_set_msg(run["id"], uid, q.message.message_id)
         return
     text, kb = await ex_entry_view(f, back)
     await _ex_show(q, text, kb)
 
 
+async def ex_lobby_notify(bot, run_id: int, actor: int, text: str):
+    """
+    Короткое уведомление команде: правка сообщения сбора приходит без звука,
+    и без этого создатель не узнал бы, что кто-то вступил.
+    """
+    run = await ex_run_get(run_id)
+    if not run or run["status"] != "lobby":
+        return
+    members = await ex_members_get(run_id)
+    line = f"{_E_USERS} {text}{SEP}{len(members)}/{EX_MAX_TEAM}"
+    for m in members:
+        if m["user_id"] == actor:
+            continue
+        try:
+            await bot.send_message(m["user_id"], line, parse_mode=ParseMode.HTML,
+                                   disable_notification=False)
+        except _TgError:
+            pass
+
+
 async def ex_invite_neighbours(bot, run: dict, f: dict) -> int:
-    """Позвать в сбор всех соседей, кто может пойти. Возвращает, скольким дошло."""
+    """Позвать в сбор своих, кто может пойти. Возвращает, скольким дошло."""
     r = EX_ROUTES[run["route"]]
     text = ui_card(
         ui_title(r["emoji"], r["name"]),
@@ -61116,12 +61157,25 @@ async def ex_invite_neighbours(bot, run: dict, f: dict) -> int:
     )
     kb = InlineKeyboardMarkup([[btn("✅ Вступить", callback_data=f"ex|join|{run['id']}",
                                     style="success")]])
+    # Свои — соседи, стая и болотная связь, как в прежних экспедициях
+    uids: set[int] = {nb["user_id"] for nb in await friend_list(f["user_id"], accepted_only=True)}
+    if f.get("staya_id"):
+        try:
+            uids |= {m["user_id"] for m in await staya_get_members(f["staya_id"])}
+        except Exception:
+            logger.exception("ex invite: стая %s", f.get("staya_id"))
+    try:
+        uids |= {b["partner_id"] for b in await get_user_bonds(f["user_id"]) if b.get("partner_id")}
+    except Exception:
+        logger.exception("ex invite: связи %s", f["user_id"])
+    uids.discard(f["user_id"])
     sent = 0
-    for nb in await friend_list(f["user_id"], accepted_only=True):
-        if await ex_cant_go(nb, run["route"]):
+    for nb_uid in uids:
+        nb = await db_get(nb_uid)
+        if not nb or await ex_cant_go(nb, run["route"]):
             continue
         try:
-            await bot.send_message(nb["user_id"], text, parse_mode=ParseMode.HTML, reply_markup=kb)
+            await bot.send_message(nb_uid, text, parse_mode=ParseMode.HTML, reply_markup=kb)
             sent += 1
         except _TgError:
             pass
@@ -61194,12 +61248,14 @@ async def ex_router(update: Update, ctx: ContextTypes.DEFAULT_TYPE):
         await ex_set_msg(run_id, uid, q.message.message_id)
         await q.answer("Ты в команде")
         await ex_lobby_refresh(bot, run_id)
+        await ex_lobby_notify(bot, run_id, uid, f"{fname(f)} в команде")
         return
 
     if act == "leave":
         why = await ex_lobby_leave(bot, _int(2), uid)
         if why:
             await q.answer(why[:200], show_alert=True); return
+        await ex_lobby_notify(bot, _int(2), uid, f"{fname(f)} больше не в команде")
         text, kb = await ex_menu_view(f)
         await _ex_show(q, text, kb)
         await q.answer("Ты больше не в команде")
@@ -61210,22 +61266,22 @@ async def ex_router(update: Update, ctx: ContextTypes.DEFAULT_TYPE):
         run = await ex_run_get(run_id)
         if not run or run["status"] != "lobby":
             await q.answer("Сбор уже закрыт", show_alert=True); return
-        if run["creator_id"] != uid:
-            await q.answer("Это решает создатель сбора", show_alert=True); return
         async with aiosqlite.connect(DB_PATH) as db:
             cur = await db.execute(
-                "UPDATE ex_runs SET invited=1 WHERE id=? AND invited=0", (run_id,))
+                "UPDATE ex_members SET invited=1 WHERE run_id=? AND user_id=? AND invited=0",
+                (run_id, uid))
             await db.commit()
             claimed = cur.rowcount
         if not claimed:
-            await q.answer("Соседей уже позвали"); return
-        await q.answer("Зову соседей…")
+            await q.answer("Свои уже позваны")
+            return
+        await q.answer("Зову…")
         sent = await ex_invite_neighbours(bot, run, f)
         await ex_lobby_refresh(bot, run_id)
         try:
-            await bot.send_message(uid, f"💌 Приглашение ушло соседям: {sent}." if sent
-                                   else "Соседей, которых можно позвать, нет: у них не тот "
-                                        "уровень, они уже в пути или сегодня уже ходили.")
+            await bot.send_message(uid, f"💌 Приглашение ушло: {sent}." if sent
+                                   else "Позвать некого: соседи, стая и связь не подходят по "
+                                        "уровню, уже в пути или сегодня уже ходили.")
         except _TgError:
             pass
         return
@@ -61235,7 +61291,9 @@ async def ex_router(update: Update, ctx: ContextTypes.DEFAULT_TYPE):
         run = await ex_run_get(run_id)
         if not run or run["status"] != "lobby":
             await q.answer("Сбор уже закрыт", show_alert=True); return
-        if run["creator_id"] != uid:
+        if act == "call" and not any(m["user_id"] == uid for m in await ex_members_get(run_id)):
+            await q.answer(); return
+        if act != "call" and run["creator_id"] != uid:
             await q.answer("Это решает создатель сбора", show_alert=True); return
         if act == "go":
             await q.answer()
@@ -61425,7 +61483,8 @@ async def cmd_ex(update: Update, ctx: ContextTypes.DEFAULT_TYPE):
         members = await ex_members_get(run["id"])
         sent = await update.message.reply_text(
             ex_lobby_text(run, members, await _ex_names(members)), parse_mode=ParseMode.HTML,
-            reply_markup=ex_lobby_kb(run, f["user_id"], ctx.bot.username),
+            reply_markup=ex_lobby_kb(run, f["user_id"], ctx.bot.username,
+                                     any(m["invited"] for m in members if m["user_id"] == f["user_id"])),
         )
         await ex_set_msg(run["id"], f["user_id"], sent.message_id)
         return

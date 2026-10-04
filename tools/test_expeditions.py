@@ -973,8 +973,29 @@ async def suite_switch():
     inv = bot.last_to(801, "send")
     assert kb_data(inv[4]) == [f"ex|join|{rid}"] and "зовёт" in plain(inv[3])
     assert not bot.last_to(803, "send")
+    # участник тоже зовёт своих, но только один раз; вступление — уведомление команде
+    await add_frog(804, "Участница", level=5)
+    q = types.SimpleNamespace(from_user=types.SimpleNamespace(id=804), data=f"ex|join|{rid}",
+                              message=types.SimpleNamespace(message_id=90))
+    answers = []
+    async def ans(text=None, show_alert=False, **k): answers.append(text)
+    q.answer = ans
+    f804 = await B.db_get(804)
+    async def guard(update, ctx): return (q, 804, q.data, f804)
+    B.cb_guard = guard
+    await B.ex_router(types.SimpleNamespace(callback_query=q), types.SimpleNamespace(bot=bot))
+    assert "Участница в команде" in plain(bot.last_to(800, "send")[3])
+    m804 = types.SimpleNamespace()
+    for d in (f"ex|invite|{rid}", f"ex|invite|{rid}"):
+        q.data = d
+        await B.ex_router(types.SimpleNamespace(callback_query=q), types.SimpleNamespace(bot=bot))
+    assert answers[-1] == "Свои уже позваны", answers
+    kb = B.ex_lobby_kb(await B.ex_run_get(rid), 804, "frogbot", invited=True)
+    assert f"ex|invite|{rid}" not in kb_data(kb) and f"ex|leave|{rid}" in kb_data(kb)
+    text, _ = await B.ex_finds_view(1)
+    assert "Экспедиций" in plain(text), plain(text)
     await B.ex_lobby_cancel(bot, rid)
-    print("E27 позвать соседей: ок")
+    print("E27 позвать своих, уведомления, статистика: ок")
 
 
 if __name__ == "__main__":
