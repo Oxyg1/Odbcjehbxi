@@ -43,10 +43,13 @@ class Sent:
 class FakeBot:
     username = "frogbot"
     def __init__(self):
+        self.fail = {}         # uid -> исключение, которое бросать при отправке
         self.mid = 1000
         self.log = []          # (kind, chat, mid, text, kb)
         self.msgs = {}         # (chat, mid) -> (text, kb)
     async def send_message(self, chat_id, text, parse_mode=None, reply_markup=None, **kw):
+        if chat_id in self.fail:
+            raise self.fail[chat_id]
         self.mid += 1
         self.log.append(("send", chat_id, self.mid, text, reply_markup))
         self.msgs[(chat_id, self.mid)] = (text, reply_markup)
@@ -99,7 +102,18 @@ def setup_db():
     asyncio.get_event_loop().run_until_complete(B.init_db())
     B.run_sync_migration()
 
-def add_frog(uid, name, level=5, coins=100):
+async def settle():
+    """Дождаться фоновых задач бота (журнал действий и т.п.): синхронная запись
+    в базу из теста иначе упрётся в их незакоммиченную транзакцию."""
+    for _ in range(3):
+        pending = [t for t in asyncio.all_tasks() if t is not asyncio.current_task()]
+        if not pending:
+            return
+        await asyncio.gather(*pending, return_exceptions=True)
+
+
+async def add_frog(uid, name, level=5, coins=100):
+    await settle()
     con = sqlite3.connect(DB)
     con.execute("INSERT INTO frogs(user_id, frog_name, first_name, level, coins, alive, last_expedition) "
                 "VALUES(?,?,?,?,?,1,0)", (uid, name, name, level, coins))
@@ -144,7 +158,7 @@ async def suite_engine():
     print("0 данные: ок")
 
     # ── 1. Соло: голос сразу закрывает стоянку, молчание — осторожный вариант ──
-    add_frog(1, "Квака", level=1, coins=100)
+    await add_frog(1, "Квака", level=1, coins=100)
     f1 = await B.db_get(1)
     rid, why = await B.ex_lobby_create(f1, "reeds", 0)
     assert rid and not why
@@ -200,7 +214,7 @@ async def suite_engine():
 
     # ── 2. Команда из трёх: сбор, голоса, ничья, личные находки ──────────────
     for uid, name in ((2, "Жаба"), (3, "Ряска"), (4, "Тина"), (5, "Кувшинка")):
-        add_frog(uid, name, level=3)
+        await add_frog(uid, name, level=3)
     f2 = await B.db_get(2)
     rid, _ = await B.ex_lobby_create(f2, "reeds", 10)
     await B.ex_set_msg(rid, 2, 777)
@@ -229,6 +243,10 @@ async def suite_engine():
     assert [m["user_id"] for m in members] == [2, 3, 5]
     pers = {m["user_id"]: m["pers_step"] for m in members}
     assert all(1 <= s <= N - 2 for s in pers.values()), pers
+    # Личная находка Жабы — на третьей стоянке, чтобы сценарий был повторяемым
+    con = sqlite3.connect(DB)
+    con.execute("UPDATE ex_members SET pers_step=3 WHERE run_id=? AND user_id=2", (rid,))
+    con.commit(); con.close()
     # стоянка 0: 2 за рискованный, 1 за осторожный — побеждает рискованный
     plan = json.loads(run["plan_json"])
     card = B.ex_card("reeds", plan[0]["card"])
@@ -282,7 +300,7 @@ async def suite_engine():
     print(plain(bot.last_to(2, "send")[3]))
 
     # ── 3. Запас кончился — домой с половиной ────────────────────────────────
-    add_frog(6, "Осока", level=1)
+    await add_frog(6, "Осока", level=1)
     rid, _ = await B.ex_lobby_create(await B.db_get(6), "reeds", 0)
     real_roll = B._ex_roll
     B._ex_roll = lambda opt: len(opt["outcomes"]) - 1   # всегда худший исход
@@ -307,7 +325,7 @@ async def suite_engine():
         assert "повернула домой" in plain(bot.last_to(6, "send")[3])
 
     # ── 4. Простой бота: стоянка после долгого перерыва открыта ≥10 мин ─────
-    add_frog(7, "Ил", level=1)
+    await add_frog(7, "Ил", level=1)
     rid, _ = await B.ex_lobby_create(await B.db_get(7), "reeds", 0)
     await B.ex_start(bot, rid)
     B._EX_LOCKS.clear()                       # «перезапуск»
@@ -326,7 +344,7 @@ async def suite_engine():
     assert (await B.ex_run_get(rid))["outcome"] == "stopped"
 
     # ── 5. Находки: каждому, повтор — монетами, полный набор — облик ─────────
-    add_frog(8, "Ряска2", level=1); add_frog(9, "Тина2", level=1)
+    await add_frog(8, "Ряска2", level=1); await add_frog(9, "Тина2", level=1)
     rid, _ = await B.ex_lobby_create(await B.db_get(8), "reeds", 5)
     await B.ex_lobby_join(await B.db_get(9), rid)
     await B.ex_start(bot, rid)
@@ -352,10 +370,10 @@ async def suite_engine():
     print(plain(text))
 
     # ── 6. Проверки сбора ───────────────────────────────────────────────────
-    add_frog(10, "Лист", level=1)
+    await add_frog(10, "Лист", level=1)
     rid, _ = await B.ex_lobby_create(await B.db_get(10), "reeds", 5)
     for uid in (11, 12, 13, 14):
-        add_frog(uid, f"Л{uid}", level=1)
+        await add_frog(uid, f"Л{uid}", level=1)
     for uid in (11, 12, 13):
         assert await B.ex_lobby_join(await B.db_get(uid), rid) == ""
     assert "уже 4" in await B.ex_lobby_join(await B.db_get(14), rid)
@@ -368,7 +386,7 @@ async def suite_engine():
     print("6 сбор: ок")
 
     # ── 7. Экраны ───────────────────────────────────────────────────────────
-    add_frog(20, "Экран", level=1)
+    await add_frog(20, "Экран", level=1)
     f20 = await B.db_get(20)
     for view in (B.ex_menu_view(f20), B.ex_route_view(f20, "reeds"), B.ex_finds_view(20),
                  B.ex_admin_view()):
@@ -413,7 +431,7 @@ async def press(uid, d, mid=1):
     return q, shown
 
 async def suite_router():
-    add_frog(101, "Квака", level=1); add_frog(102, "Жаба", level=1); add_frog(103, "Ряска", level=1)
+    await add_frog(101, "Квака", level=1); await add_frog(102, "Жаба", level=1); await add_frog(103, "Ряска", level=1)
     ann0 = len(ANN)
     q, (t, kb) = await press(101, "ex|menu", 10)
     assert "Экспедиции" in plain(t)
@@ -478,13 +496,13 @@ async def suite_router():
     # соло кнопкой: уже был сегодня → отказ со звёздами
     q, (t, kb) = await press(101, "ex|route|reeds", 13)
     assert "ex|stars" in kb_data(kb), kb_data(kb)
-    add_frog(104, "Тина", level=1)
+    await add_frog(104, "Тина", level=1)
     q, (t, kb) = await press(104, "ex|solo|reeds", 40)
     run = await B.ex_user_run(104)
     assert run and run["status"] == "active"
     print(plain(bot.msgs[(104, 40)][0]))
     # отмена сбора
-    add_frog(105, "Осока", level=1)
+    await add_frog(105, "Осока", level=1)
     await press(105, "ex|make|reeds|10", 50)
     r5 = await B.ex_user_run(105)
     q, (t, kb) = await press(105, f"ex|cancel|{r5['id']}", 50)
@@ -497,10 +515,333 @@ async def suite_router():
 
 
 
+# ══ Пограничные случаи и сбои ══
+from telegram.error import Forbidden, RetryAfter
+
+async def go_stop(rid, idx):
+    """Довести экспедицию до открытой стоянки idx, двигая часы."""
+    while True:
+        run = await B.ex_run_get(rid)
+        if run["status"] != "active" or (run["step"] == idx and run["resolved"] < idx):
+            return run
+        plan = json.loads(run["plan_json"])
+        nxt = plan[min(run["step"] + 1, len(plan) - 1)]["at"]
+        CLOCK.t = max(CLOCK.t + 1, nxt, run["closes_at"] if run["step"] > run["resolved"] else 0)
+        await tick_job()
+
+
+async def suite_edge():
+    # E1. Вступление в ту же секунду, что и старт
+    for order in (0, 1):
+        a, b = 300 + order * 2, 301 + order * 2
+        await add_frog(a, f"А{a}", level=1); await add_frog(b, f"Б{b}", level=1)
+        rid, _ = await B.ex_lobby_create(await B.db_get(a), "reeds", 10)
+        fb = await B.db_get(b)
+        jobs = [B.ex_lobby_join(fb, rid), B.ex_start(bot, rid)]
+        if order:
+            jobs.reverse()
+        await asyncio.gather(*jobs)
+        members = [m["user_id"] for m in await B.ex_members_get(rid)]
+        B._user_cache.invalidate(b)
+        used = (await B.db_get(b))["last_expedition"] > 0
+        assert (b in members) == used, (order, members, used)
+        await B.ex_stop(bot, rid)
+    print("E1 гонка старта и вступления: ок")
+
+    # E2. Сбой выплаты одному не задевает других; падение посреди выплат — доплата
+    await add_frog(310, "Пятак", level=1, coins=0); await add_frog(311, "Грош", level=1, coins=0)
+    rid, _ = await B.ex_lobby_create(await B.db_get(310), "reeds", 5)
+    await B.ex_lobby_join(await B.db_get(311), rid)
+    await B.ex_start(bot, rid)
+    real_levelup = B.levelup
+    async def bad_levelup(f, bot=None):
+        if f["user_id"] == 310:
+            raise RuntimeError("levelup сломан")
+        return await real_levelup(f, bot)
+    B.levelup = bad_levelup
+    await B.ex_stop(bot, rid)
+    B.levelup = real_levelup
+    paid = {m["user_id"]: (m["paid"], m["coins"]) for m in await B.ex_members_get(rid)}
+    assert all(v[0] == 1 for v in paid.values()), paid
+    assert await coins(310) == paid[310][1] and await coins(311) == paid[311][1], paid
+    # «упал» сразу после смены статуса
+    await add_frog(312, "Медяк", level=1, coins=0)
+    rid, _ = await B.ex_lobby_create(await B.db_get(312), "reeds", 0)
+    await B.ex_start(bot, rid)
+    con = sqlite3.connect(DB)
+    con.execute("UPDATE ex_runs SET status='finished', outcome='stopped', finished_at=?, loot=30 WHERE id=?",
+                (CLOCK.t, rid))
+    con.commit(); con.close()
+    await tick_job()
+    m = (await B.ex_members_get(rid))[0]
+    assert m["paid"] == 1 and await coins(312) == m["coins"] > 0, (m, await coins(312))
+    before = await coins(312)
+    await tick_job()
+    assert await coins(312) == before
+    assert "итог" in plain(bot.last_to(312, "send")[3])
+    print("E2 выплаты: ок, доплата после падения", m["coins"])
+
+    # E3. Стоянку убрали из маршрута посреди экспедиции
+    await add_frog(320, "Правка", level=1)
+    rid, _ = await B.ex_lobby_create(await B.db_get(320), "reeds", 0)
+    await B.ex_start(bot, rid)
+    run = await B.ex_run_get(rid)
+    plan = json.loads(run["plan_json"])
+    gone = plan[1]["card"]
+    saved = list(R["cards"])
+    R["cards"][:] = [c for c in saved if c["key"] != gone]
+    run = await go_stop(rid, 1)
+    stop = bot.last_to(320, "send")
+    assert "Стоянка" in plain(stop[3]) and kb_data(stop[4]) == [f"ex|v|{rid}|1|_"], kb_data(stop[4])
+    await B.ex_vote(bot, rid, 1, 320, "_")
+    # и вариант, за который голосовали на стоянке 0, тоже пропал
+    con = sqlite3.connect(DB)
+    log = json.loads(con.execute("SELECT log_json FROM ex_runs WHERE id=?", (rid,)).fetchone()[0])
+    log[0]["opt"] = "нет_такого"; log[0]["o"] = 7
+    con.execute("UPDATE ex_runs SET log_json=? WHERE id=?", (json.dumps(log), rid))
+    con.commit(); con.close()
+    await B.ex_stop(bot, rid)
+    R["cards"][:] = saved
+    assert "итог" in plain(bot.last_to(320, "send")[3])
+    print("E3 правка маршрута на ходу: ок")
+
+    # E4. Участник заблокировал бота — его не ждём
+    await add_frog(330, "Есть", level=1); await add_frog(331, "Нет", level=1)
+    rid, _ = await B.ex_lobby_create(await B.db_get(330), "reeds", 5)
+    await B.ex_lobby_join(await B.db_get(331), rid)
+    bot.fail[331] = Forbidden("bot was blocked by the user")
+    await B.ex_start(bot, rid)
+    run = await B.ex_run_get(rid)
+    card = B._ex_card("reeds", json.loads(run["plan_json"])[0]["card"])
+    await B.ex_vote(bot, rid, 0, 330, card["options"][0]["key"])
+    assert (await B.ex_run_get(rid))["resolved"] == 0
+    del bot.fail[331]
+    await B.ex_stop(bot, rid)
+    print("E4 недоступный участник: ок")
+
+    # E5. Личная находка держит стоянку открытой, пока на неё не ответили
+    await add_frog(340, "Лич", level=1); await add_frog(341, "Ная", level=1)
+    rid, _ = await B.ex_lobby_create(await B.db_get(340), "reeds", 5)
+    await B.ex_lobby_join(await B.db_get(341), rid)
+    await B.ex_start(bot, rid)
+    con = sqlite3.connect(DB)
+    con.execute("UPDATE ex_members SET pers_step=1 WHERE run_id=? AND user_id=340", (rid,))
+    con.execute("UPDATE ex_members SET pers_step=2 WHERE run_id=? AND user_id=341", (rid,))
+    con.commit(); con.close()
+    # E6. Раньше своей стоянки не выбрать
+    assert "впереди" in await B.ex_personal_choose(bot, rid, 341, "keep")
+    run = await go_stop(rid, 1)
+    card = B._ex_card("reeds", json.loads(run["plan_json"])[1]["card"])
+    k = card["options"][0]["key"]
+    await B.ex_vote(bot, rid, 1, 340, k); await B.ex_vote(bot, rid, 1, 341, k)
+    assert (await B.ex_run_get(rid))["resolved"] == 0, "закрылась, не дождавшись личной находки"
+    assert await B.ex_personal_choose(bot, rid, 340, "keep") == "Себе"
+    assert (await B.ex_run_get(rid))["resolved"] == 1
+    print("E5–E6 личная находка: ок")
+
+    # E7. «К стоянке» снимает кнопки со старого сообщения
+    run = await go_stop(rid, 2)
+    old = next(m["msg_id"] for m in await B.ex_members_get(rid) if m["user_id"] == 340)
+    q = types.SimpleNamespace(from_user=types.SimpleNamespace(id=340), data=f"ex|here|{rid}",
+                              message=types.SimpleNamespace(message_id=1), answers=[])
+    async def ans(*a, **k): pass
+    q.answer = ans
+    f340 = await B.db_get(340)
+    async def guard(update, ctx): return (q, 340, q.data, f340)
+    B.cb_guard = guard
+    await B.ex_router(types.SimpleNamespace(callback_query=q), types.SimpleNamespace(bot=bot))
+    assert bot.msgs[(340, old)][1] is None, "старые кнопки остались"
+    print("E7 «К стоянке»: ок")
+
+    # E8. Telegram ответил «слишком часто» одному — остальным всё дошло
+    bot.fail[341] = RetryAfter(30)
+    run = await go_stop(rid, 3)
+    assert bot.last_to(340, "send")[3] and "4/6" in plain(bot.last_to(340, "send")[3])
+    del bot.fail[341]
+    # недоставленному ответить не на что — стоянку закрывает голос второго
+    await B.ex_vote(bot, rid, 3, 340, B._ex_card("reeds", json.loads(run["plan_json"])[3]["card"])["options"][0]["key"])
+    assert (await B.ex_run_get(rid))["resolved"] == 3
+    # E14. Переголосование туда-сюда: пока второй не ответил, стоянка открыта
+    run = await go_stop(rid, 4)
+    card = B._ex_card("reeds", json.loads(run["plan_json"])[4]["card"])
+    keys = [o["key"] for o in card["options"]]
+    for i in range(7):
+        await B.ex_vote(bot, rid, 4, 340, keys[i % len(keys)])
+    assert (await B.ex_run_get(rid))["resolved"] == 3
+    await B.ex_stop(bot, rid)
+    print("E8 сбой отправки, E14 переголосование: ок")
+
+    # E9. Запас кончился на предпоследней — домой; на финале в ноль — всё равно дошли
+    await add_frog(350, "Ноль", level=1)
+    rid, _ = await B.ex_lobby_create(await B.db_get(350), "reeds", 0)
+    await B.ex_start(bot, rid)
+    run = await go_stop(rid, N - 2)
+    con = sqlite3.connect(DB)
+    con.execute("UPDATE ex_runs SET supply=1, loot=40 WHERE id=?", (rid,)); con.commit(); con.close()
+    card = B._ex_card("reeds", json.loads(run["plan_json"])[N - 2]["card"])
+    worst = min(card["options"], key=lambda o: o["outcomes"][-1].get("supply", 0))
+    if worst["outcomes"][-1].get("supply", 0) < 0:
+        real_roll = B._ex_roll
+        B._ex_roll = lambda opt: len(opt["outcomes"]) - 1
+        await B.ex_vote(bot, rid, N - 2, 350, worst["key"])
+        B._ex_roll = real_roll
+        run = await B.ex_run_get(rid)
+        assert run["outcome"] == "turned_back" and len(json.loads(run["log_json"])) == N - 1, run
+        m = (await B.ex_members_get(rid))[0]
+        assert m["coins"] == 20, m          # 40 пополам, без бонуса запаса
+    else:
+        await B.ex_stop(bot, rid)
+    await add_frog(351, "Финал", level=1)
+    rid, _ = await B.ex_lobby_create(await B.db_get(351), "reeds", 0)
+    await B.ex_start(bot, rid)
+    run = await go_stop(rid, N - 1)
+    con = sqlite3.connect(DB)
+    con.execute("UPDATE ex_runs SET supply=1 WHERE id=?", (rid,)); con.commit(); con.close()
+    real_roll = B._ex_roll
+    B._ex_roll = lambda opt: len(opt["outcomes"]) - 1
+    await B.ex_vote(bot, rid, N - 1, 351, R["finale"]["options"][-1]["key"])
+    B._ex_roll = real_roll
+    run = await B.ex_run_get(rid)
+    assert run["outcome"] == "done" and run["supply"] == 0, run
+    print("E9 запас в ноль: ок")
+
+    # E10. Сбор истёк, никто не пришёл — выход в одиночку
+    await add_frog(360, "Один", level=1)
+    rid, _ = await B.ex_lobby_create(await B.db_get(360), "reeds", 5)
+    CLOCK.t += 5 * 60 + 1
+    await tick_job()
+    run = await B.ex_run_get(rid)
+    assert run["status"] == "active" and run["step"] == 0
+    await B.ex_stop(bot, rid)
+    print("E10 пустой сбор: ок")
+
+    # E11. Сборы маршрутов не своего уровня в меню не видны
+    await add_frog(370, "Старший", level=20); await add_frog(371, "Младший", level=1)
+    R["level"] = 10
+    rid, _ = await B.ex_lobby_create(await B.db_get(370), "reeds", 10)
+    _, kb = await B.ex_menu_view(await B.db_get(371))
+    assert f"ex|join|{rid}" not in kb_data(kb)
+    _, kb = await B.ex_menu_view(await B.db_get(372 - 2))  # сам создатель свой сбор не видит
+    R["level"] = 1
+    _, kb = await B.ex_menu_view(await B.db_get(371))
+    assert f"ex|join|{rid}" in kb_data(kb)
+    await B.ex_lobby_cancel(bot, rid)
+    print("E11 сборы по уровню: ок")
+
+    # E12. Экспедицию ничто не двигало 6 часов — завершается с выплатой
+    await add_frog(380, "Сон", level=1)
+    rid, _ = await B.ex_lobby_create(await B.db_get(380), "reeds", 0)
+    await B.ex_start(bot, rid)
+    CLOCK.t += 6 * 3600
+    await tick_job()
+    run = await B.ex_run_get(rid)
+    assert run["status"] == "finished" and run["outcome"] == "stopped", run
+    # E13. Остановка админом при открытой стоянке снимает кнопки
+    open_msg = bot.sends_to(380)[0]
+    assert bot.msgs[(380, open_msg[2])][1] is None
+    print("E12 зависшая, E13 остановка: ок")
+
+    # E15. Сутки — по UTC
+    await add_frog(390, "Полночь", level=1)
+    f = await B.db_get(390)
+    mid = CLOCK.t - CLOCK.t % 86400
+    f["last_expedition"] = mid - 60
+    assert not B.ex_today_used(f)
+    f["last_expedition"] = mid + 60
+    assert B.ex_today_used(f)
+    print("E15 сутки: ок")
+
+    # E16. Проверка данных: сломанный маршрут не прячет ошибки соседнего
+    B.EX_ROUTES["broken"] = {"name": "x"}
+    B.EX_ROUTES["bad2"] = dict(R, cards=[dict(R["cards"][0], text="a < b")], stops=2)
+    errs = B.ex_validate_content()
+    del B.EX_ROUTES["broken"], B.EX_ROUTES["bad2"]
+    assert any(e.startswith("broken:") for e in errs) and any("bad2" in e and "<" in e for e in errs) \
+        and any("bad2" in e and "трёх" in e for e in errs), errs
+    assert not B.ex_validate_content()
+    print("E16 проверка данных: ок")
+
+    # E17. В поход нельзя, пока лягушка в экспедиции
+    await add_frog(400, "Занята", level=1)
+    rid, _ = await B.ex_lobby_create(await B.db_get(400), "reeds", 10)
+    replies = []
+    class M:
+        text = "/pohod @x"
+        async def reply_text(self, t, **k): replies.append(t)
+    upd = types.SimpleNamespace(effective_user=types.SimpleNamespace(id=400), message=M())
+    await B.cmd_pohod(upd, types.SimpleNamespace(args=["@x"], bot=bot))
+    assert "экспедиции" in replies[-1], replies
+    # E18. /m — команде, без разметки
+    await add_frog(401, "Слушает", level=1)
+    await B.ex_lobby_join(await B.db_get(401), rid)
+    M.text = "/m привет <b>жирный"
+    await B.cmd_m_new(upd, types.SimpleNamespace(args=["привет"], bot=bot))
+    got = bot.last_to(401, "send")[3]
+    assert "&lt;b&gt;" in got and "Занята" in got, got
+    assert "Доставлено: 1 из 1" in replies[-1], replies
+    await B.ex_lobby_cancel(bot, rid)
+    print("E17 поход занят, E18 /m: ок")
+
+    # E19. Бот «упал» посреди рассылки стоянки: недоставленным старое сообщение
+    # не переписывается, и их не ждут
+    await add_frog(430, "Дошло", level=1); await add_frog(431, "НеДошло", level=1)
+    rid, _ = await B.ex_lobby_create(await B.db_get(430), "reeds", 5)
+    await B.ex_lobby_join(await B.db_get(431), rid)
+    await B.ex_start(bot, rid)
+    con = sqlite3.connect(DB)   # личные находки здесь ни при чём
+    con.execute("UPDATE ex_members SET pers_key='' WHERE run_id=?", (rid,))
+    con.commit(); con.close()
+    prev = next(m["msg_id"] for m in await B.ex_members_get(rid) if m["user_id"] == 431)
+    bot.fail[431] = RuntimeError("процесс остановлен посреди рассылки")
+    try:
+        await go_stop(rid, 1)
+    except RuntimeError:
+        pass
+    del bot.fail[431]
+    run = await B.ex_run_get(rid)
+    assert run["step"] == 1, run
+    card = B._ex_card("reeds", json.loads(run["plan_json"])[1]["card"])
+    await B.ex_vote(bot, rid, 1, 430, card["options"][0]["key"])
+    assert (await B.ex_run_get(rid))["resolved"] == 1
+    old_text = plain(bot.msgs[(431, prev)][0])
+    assert "1/6" in old_text and "2/6" not in old_text, "в сообщение прошлой стоянки вписана новая"
+    # E20. Остановка при открытой личной находке снимает и её кнопки
+    con = sqlite3.connect(DB)
+    con.execute("UPDATE ex_members SET pers_step=2, pers_key='coin' WHERE run_id=? AND user_id=430", (rid,))
+    con.commit(); con.close()
+    await go_stop(rid, 2)
+    pm = next(m["pers_msg_id"] for m in await B.ex_members_get(rid) if m["user_id"] == 430)
+    assert pm and kb_data(bot.msgs[(430, pm)][1])
+    await B.ex_stop(bot, rid)
+    assert bot.msgs[(430, pm)][1] is None
+    print("E19 обрыв рассылки, E20 остановка с находкой: ок")
+
+    # E21. Команда в группе — кнопка в личку; /start exp до переключения — только админам
+    await add_frog(440, "Группа", level=1)
+    replies = []
+    class GM:
+        async def reply_text(self, t, reply_markup=None, **k): replies.append((t, reply_markup))
+    grp = types.SimpleNamespace(effective_user=types.SimpleNamespace(id=440), message=GM(),
+                                effective_chat=types.SimpleNamespace(type="supergroup"))
+    await B.cmd_ex(grp, types.SimpleNamespace(bot=bot, args=[]))
+    t, kb = replies[-1]
+    assert "личке" in t and kb.inline_keyboard[0][0].url.endswith("start=exp"), replies
+    dm = types.SimpleNamespace(effective_user=types.SimpleNamespace(id=440), message=GM(),
+                               effective_chat=types.SimpleNamespace(type="private"))
+    assert await B.ex_start_deeplink(dm, types.SimpleNamespace(bot=bot), "exp") is False
+    B.EX_LIVE = True
+    assert await B.ex_start_deeplink(dm, types.SimpleNamespace(bot=bot), "exp") is True
+    assert "Экспедиции" in plain(replies[-1][0])
+    B.EX_LIVE = False
+    print("E21 группа и ссылка: ок")
+
+
 if __name__ == "__main__":
     setup_db()
     bot = FakeBot()
     loop = asyncio.get_event_loop()
     loop.run_until_complete(suite_engine())
     loop.run_until_complete(suite_router())
+    loop.run_until_complete(suite_edge())
+    loop.run_until_complete(settle())   # журнал действий пишется фоновыми задачами
     print("ВСЁ ОК")

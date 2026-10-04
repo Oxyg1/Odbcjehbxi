@@ -45008,6 +45008,9 @@ async def on_callback(update: Update, ctx: ContextTypes.DEFAULT_TYPE):
             left_m = int((f["adventure_locked_until"] - time.time()) / 60)
             await q.answer((f"Лягушка уже в походе. Осталось {left_m} мин.")[:200], show_alert=True)
             return
+        if await ex_user_run(uid):
+            await q.answer("Лягушка в экспедиции. Поход — после неё", show_alert=True)
+            return
 
         friends = await friend_list(uid, accepted_only=True)
         eligible = []
@@ -45729,6 +45732,13 @@ async def on_callback(update: Update, ctx: ContextTypes.DEFAULT_TYPE):
             return
         if _inv_row.get("locked", 0) > _now_adv or _inv_row.get("adv_id", 0):
             await q.answer("Их лягушка уже в походе", show_alert=True)
+            return
+        # Поход и экспедиция — не одновременно
+        if await ex_user_run(uid):
+            await q.answer("Твоя лягушка в экспедиции. Поход — после неё", show_alert=True)
+            return
+        if await ex_user_run(inviter_id):
+            await q.answer("Их лягушка в экспедиции. Поход — после неё", show_alert=True)
             return
 
         # ── Проверка дневного лимита 8 часов ─────────────────────────────────
@@ -58775,6 +58785,9 @@ async def cmd_pohod(update: Update, ctx: ContextTypes.DEFAULT_TYPE):
         left = int((f["adventure_locked_until"] - time.time()) / 60)
         await update.message.reply_text(f"{_E_SWORDS} Лягушка уже в походе. До конца: {he(left)} мин.", parse_mode=ParseMode.HTML)
         return
+    if await ex_user_run(user.id):
+        await update.message.reply_text("Лягушка в экспедиции. Поход — после неё.")
+        return
     args = ctx.args
     if not args:
         await update.message.reply_text("Использование: /pohod @username\nОтправляет лягушек в совместный поход!")
@@ -60175,6 +60188,8 @@ async def handle_checkers_callback(q, d, uid, ctx):
 
 from urllib.parse import quote as _urlquote
 
+from telegram.error import TelegramError as _TgError
+
 import exp_routes as _exr
 
 EX_ROUTES: dict = _exr.ROUTES
@@ -60189,6 +60204,7 @@ EX_GATHER_MIN     = (5, 10, 15, 30)
 EX_MIN_WINDOW_S   = 10 * 60    # после простоя бота стоянка открыта хотя бы столько
 EX_DUP_FIND_COINS = 10         # находка, которая уже есть, — монетами
 EX_EXTRA_STARS    = 10         # вторая экспедиция за сутки
+EX_LIVE           = False      # до переключения раздел открыт только админам (/exp2)
 
 _EX_LOCKS: dict[int, asyncio.Lock] = {}
 _EX_LOBBY_LOCK = asyncio.Lock()
@@ -60244,6 +60260,7 @@ def ex_sync_migration(conn):
             coins         INTEGER NOT NULL DEFAULT 0,  -- итог, пишется в финале
             xp            INTEGER NOT NULL DEFAULT 0,
             finds_json    TEXT    NOT NULL DEFAULT '[]',
+            paid          INTEGER NOT NULL DEFAULT 0,  -- итог выплачен
             PRIMARY KEY (run_id, user_id)
         );
         CREATE INDEX IF NOT EXISTS idx_ex_members_user ON ex_members(user_id);
@@ -60257,6 +60274,12 @@ def ex_sync_migration(conn):
             PRIMARY KEY (user_id, find_key)
         );
     """)
+    cur.execute("PRAGMA table_info(ex_members)")
+    if "paid" not in {r[1] for r in cur.fetchall()}:
+        cur.execute("ALTER TABLE ex_members ADD COLUMN paid INTEGER NOT NULL DEFAULT 0")
+        # Всё, что завершилось до появления флага, уже выплачено
+        cur.execute("UPDATE ex_members SET paid=1 WHERE run_id IN "
+                    "(SELECT id FROM ex_runs WHERE status='finished')")
     conn.commit()
 
 
@@ -60269,6 +60292,27 @@ def ex_card(route_key: str, card_key: str) -> dict | None:
     if r["finale"]["key"] == card_key:
         return r["finale"]
     return next((c for c in r["cards"] if c["key"] == card_key), None)
+
+
+# Стоянку могут убрать или переименовать в exp_routes.py, пока экспедиция идёт:
+# её план хранит ключи. Тогда на её месте — проходная стоянка, а не падение.
+_EX_GONE_CARD = {
+    "key": "_gone", "title": "Стоянка",
+    "text": "Тропа здесь изменилась с тех пор, как команда вышла.",
+    "options": [{"key": "_", "label": "🍃 Дальше",
+                 "outcomes": [{"text": "Путь продолжился без происшествий."}]}],
+}
+
+
+def _ex_card(route_key: str, card_key: str) -> dict:
+    return ex_card(route_key, card_key) or _EX_GONE_CARD
+
+
+def _ex_out(card: dict, opt_key: str, oi: int) -> tuple[dict, dict]:
+    """Вариант и исход из журнала — даже если в маршруте их уже нет."""
+    opt = _ex_opt(card, opt_key) or card["options"][0]
+    outs = opt["outcomes"]
+    return opt, (outs[oi] if 0 <= oi < len(outs) else {"text": ""})
 
 
 def _ex_opt_emoji(opt: dict) -> str:
@@ -60292,12 +60336,14 @@ def ex_validate_content() -> list[str]:
     errs = []
     used_finds = set()
     for rk, r in EX_ROUTES.items():
-        for field in ("name", "emoji", "level", "hours", "stops", "xp", "skin",
-                      "about", "personal", "cards", "finale"):
-            if field not in r:
-                errs.append(f"{rk}: нет поля {field}")
-        if errs:
+        missing = [field for field in ("name", "emoji", "level", "hours", "stops", "xp",
+                                       "skin", "about", "personal", "cards", "finale")
+                   if field not in r]
+        if missing:
+            errs.append(f"{rk}: нет полей {', '.join(missing)}")
             continue
+        if r["stops"] < 3:
+            errs.append(f"{rk}: стоянок меньше трёх — некуда положить личную находку")
         if r["skin"] not in SKINS:
             errs.append(f"{rk}: облика {r['skin']} нет в SKINS")
         if len(r["cards"]) < r["stops"] - 1:
@@ -60310,6 +60356,8 @@ def ex_validate_content() -> list[str]:
             for field in ("key", "title", "text", "options"):
                 if field not in c:
                     errs.append(f"{where}: нет поля {field}")
+            if any(ch in str(c.get("title", "")) + str(c.get("text", "")) for ch in "<>&"):
+                errs.append(f"{where}: символы < > & ломают разметку сообщения")
             opts = c.get("options", [])
             if not 2 <= len(opts) <= 3:
                 errs.append(f"{where}: вариантов {len(opts)}, нужно 2–3")
@@ -60331,6 +60379,8 @@ def ex_validate_content() -> list[str]:
                 for x in outs:
                     if not x.get("text"):
                         errs.append(f"{where}/{o['key']}: исход без текста")
+                    elif any(ch in x["text"] for ch in "<>&"):
+                        errs.append(f"{where}/{o['key']}: символы < > & ломают разметку")
                     fk = x.get("find")
                     if fk:
                         fkey = fk[0]
@@ -60347,6 +60397,9 @@ def ex_validate_content() -> list[str]:
     pkeys = [p["key"] for p in EX_PERSONAL]
     if len(pkeys) != len(set(pkeys)):
         errs.append("повторяются ключи личных находок")
+    for pc in EX_PERSONAL:
+        if "{name}" not in pc["text"] or any(ch in pc["text"] for ch in "<>&"):
+            errs.append(f"личная находка {pc['key']}: нужен {{name}} и без < > &")
     return errs
 
 
@@ -60569,7 +60622,7 @@ async def ex_lobby_refresh(bot, run_id: int, skip_uid: int = 0):
                 parse_mode=ParseMode.HTML,
                 reply_markup=ex_lobby_kb(run, m["user_id"], bot.username),
             )
-        except (BadRequest, Forbidden, TimedOut):
+        except _TgError:
             pass
 
 
@@ -60621,7 +60674,7 @@ async def ex_lobby_cancel(bot, run_id: int, reason: str = "Сбор отменё
                 chat_id=m["user_id"], message_id=m["msg_id"],
                 parse_mode=ParseMode.HTML,
             )
-        except (BadRequest, Forbidden, TimedOut):
+        except _TgError:
             pass
     return True
 
@@ -60639,32 +60692,35 @@ def _ex_make_plan(route_key: str, start: float) -> list[dict]:
 
 async def ex_start(bot, run_id: int) -> bool:
     async with _ex_lock(run_id):
-        run = await ex_run_get(run_id)
-        if not run or run["status"] != "lobby":
-            return False
-        r = EX_ROUTES[run["route"]]
-        members = await ex_members_get(run_id)
-        now = time.time()
-        plan = _ex_make_plan(run["route"], now)
-        n = len(plan)
-        async with aiosqlite.connect(DB_PATH) as db:
-            cur = await db.execute(
-                "UPDATE ex_runs SET status='active', started_at=?, plan_json=?, "
-                "step=-1, resolved=-1, supply=?, loot=0 WHERE id=? AND status='lobby'",
-                (now, json.dumps(plan), EX_SUPPLY_START, run_id),
-            )
-            if cur.rowcount == 0:
+        # Состав команды читается и фиксируется под замком сбора: иначе тот,
+        # кто вступил в ту же секунду, попал бы в экспедицию без списания дня.
+        async with _EX_LOBBY_LOCK:
+            run = await ex_run_get(run_id)
+            if not run or run["status"] != "lobby":
                 return False
-            # Личная находка — у каждого своя, раз за маршрут и только в команде:
-            # одной лягушке делиться не с кем. Не на первой и не на финальной.
-            if len(members) > 1:
-                pers = random.sample(EX_PERSONAL, min(len(members), len(EX_PERSONAL)))
-                for m, card in zip(members, pers):
-                    await db.execute(
-                        "UPDATE ex_members SET pers_step=?, pers_key=? WHERE run_id=? AND user_id=?",
-                        (random.randint(1, n - 2), card["key"], run_id, m["user_id"]),
-                    )
-            await db.commit()
+            r = EX_ROUTES[run["route"]]
+            members = await ex_members_get(run_id)
+            now = time.time()
+            plan = _ex_make_plan(run["route"], now)
+            n = len(plan)
+            async with aiosqlite.connect(DB_PATH) as db:
+                cur = await db.execute(
+                    "UPDATE ex_runs SET status='active', started_at=?, plan_json=?, "
+                    "step=-1, resolved=-1, supply=?, loot=0 WHERE id=? AND status='lobby'",
+                    (now, json.dumps(plan), EX_SUPPLY_START, run_id),
+                )
+                if cur.rowcount == 0:
+                    return False
+                # Личная находка — у каждого своя, раз за маршрут и только в команде:
+                # одной лягушке делиться не с кем. Не на первой и не на финальной.
+                if len(members) > 1:
+                    pers = random.sample(EX_PERSONAL, min(len(members), len(EX_PERSONAL)))
+                    for m, card in zip(members, pers):
+                        await db.execute(
+                            "UPDATE ex_members SET pers_step=?, pers_key=? WHERE run_id=? AND user_id=?",
+                            (random.randint(1, n - 2), card["key"], run_id, m["user_id"]),
+                        )
+                await db.commit()
 
         for m in members:
             f = await db_get(m["user_id"])
@@ -60690,7 +60746,7 @@ async def ex_start(bot, run_id: int) -> bool:
                     )
                 else:
                     await bot.send_message(m["user_id"], text, parse_mode=ParseMode.HTML)
-            except (BadRequest, Forbidden, TimedOut):
+            except _TgError:
                 pass
         logger.info("expedition %s started: route=%s team=%s", run_id, run["route"], len(members))
     await ex_advance(bot, run_id)
@@ -60700,14 +60756,14 @@ async def ex_start(bot, run_id: int) -> bool:
 # ── Стоянка: экран ───────────────────────────────────────────────────────────
 
 def ex_stop_text(run: dict, idx: int, members: list[dict], names: dict,
-                 result: dict | None = None) -> str:
+                 result: dict | None = None, next_at: float = 0) -> str:
     """
     Экран стоянки. result=None — стоянка открыта и ждёт голосов;
     иначе — запись из журнала, и экран показывает, чем кончилось.
     """
     r = EX_ROUTES[run["route"]]
     plan = json.loads(run["plan_json"])
-    card = ex_card(run["route"], plan[idx]["card"])
+    card = _ex_card(run["route"], plan[idx]["card"])
     head = f"{r['emoji']} <b>{card['title']}</b>{SEP}{idx + 1}/{len(plan)}"
     solo = len(members) == 1
 
@@ -60735,7 +60791,7 @@ def ex_stop_text(run: dict, idx: int, members: list[dict], names: dict,
                  f"Без ответов — {_ex_opt_emoji(safe)} {_ex_opt_name(safe)}",
         )
 
-    opt = _ex_opt(card, result["opt"])
+    opt, out = _ex_out(card, result["opt"], result["o"])
     choice = f"{_ex_icon(_ex_opt_emoji(opt))} {_ex_opt_name(opt)}"
     if result.get("why") == "silence":
         how = f"Никто не ответил — {choice}"
@@ -60747,15 +60803,16 @@ def ex_stop_text(run: dict, idx: int, members: list[dict], names: dict,
         tally = SEP.join(
             f"{_ex_icon(_ex_opt_emoji(_ex_opt(card, k)))} {v}"
             for k, v in sorted(result.get("votes", {}).items(), key=lambda kv: -kv[1])
+            if _ex_opt(card, k)
         )
         how = f"{choice}\n<i>Голоса: {tally}</i>"
-    out = opt["outcomes"][result["o"]]
     lines = [out["text"], _ex_fx({"loot": result["dl"], "supply": result["ds"]})]
-    if result.get("find"):
-        fd = EX_FINDS[result["find"]]
+    fd = EX_FINDS.get(result.get("find") or "")
+    if fd:
         lines.append(f"Находка: {fd['emoji']} <b>{fd['name']}</b>")
     status = f"{_E_BAG} {result['supply_after']}/{EX_SUPPLY_START}{SEP}{_E_COIN} {result['loot_after']}"
-    return ui_card(head, card["text"], how, "\n".join(lines), status)
+    return ui_card(head, card["text"], how, "\n".join(lines), status,
+                   hint=f"Следующая стоянка — через {_ex_left(next_at)}" if next_at else "")
 
 
 def _ex_opt(card: dict, key: str) -> dict | None:
@@ -60770,13 +60827,13 @@ def ex_stop_kb(run_id: int, idx: int, card: dict) -> InlineKeyboardMarkup:
 
 
 async def _ex_redraw(bot, run: dict, idx: int, members: list[dict], names: dict,
-                     result: dict | None = None):
+                     result: dict | None = None, next_at: float = 0):
     """Перерисовать стоянку у всех: голоса пришли или стоянка закрылась."""
-    text = ex_stop_text(run, idx, members, names, result)
+    text = ex_stop_text(run, idx, members, names, result, next_at)
     kb = None
     if result is None:
         plan = json.loads(run["plan_json"])
-        kb = ex_stop_kb(run["id"], idx, ex_card(run["route"], plan[idx]["card"]))
+        kb = ex_stop_kb(run["id"], idx, _ex_card(run["route"], plan[idx]["card"]))
     for m in members:
         if not m["msg_id"]:
             continue
@@ -60785,7 +60842,7 @@ async def _ex_redraw(bot, run: dict, idx: int, members: list[dict], names: dict,
                 text, chat_id=m["user_id"], message_id=m["msg_id"],
                 parse_mode=ParseMode.HTML, reply_markup=kb,
             )
-        except (BadRequest, Forbidden, TimedOut):
+        except _TgError:
             pass
 
 
@@ -60802,20 +60859,25 @@ async def _ex_open(bot, run: dict, idx: int):
             "UPDATE ex_runs SET step=?, closes_at=? WHERE id=? AND status='active' AND step=?",
             (idx, closes, run["id"], idx - 1),
         )
-        await db.commit()
         if cur.rowcount == 0:
+            await db.commit()
             return
+        # Номер сообщения — только у тех, кому эта стоянка дошла. Если бот
+        # перезапустится посреди рассылки, недоставленных не будут ждать и не
+        # впишут им новую стоянку в сообщение прошлой.
+        await db.execute("UPDATE ex_members SET msg_id=0 WHERE run_id=?", (run["id"],))
+        await db.commit()
     run = await ex_run_get(run["id"])
     members = await ex_members_get(run["id"])
     names = await _ex_names(members)
-    card = ex_card(run["route"], plan[idx]["card"])
+    card = _ex_card(run["route"], plan[idx]["card"])
     text = ex_stop_text(run, idx, members, names)
     kb = ex_stop_kb(run["id"], idx, card)
     for m in members:
         try:
             sent = await bot.send_message(m["user_id"], text, parse_mode=ParseMode.HTML, reply_markup=kb)
             await ex_set_msg(run["id"], m["user_id"], sent.message_id)
-        except (BadRequest, Forbidden, TimedOut):
+        except _TgError:
             await ex_set_msg(run["id"], m["user_id"], 0)
         if m["pers_step"] == idx and m["pers_key"]:
             await _ex_send_personal(bot, run, m, names[m["user_id"]]["html"])
@@ -60828,7 +60890,7 @@ async def ex_vote(bot, run_id: int, idx: int, uid: int, opt_key: str) -> str:
         if not run or run["status"] != "active" or run["step"] != idx or run["resolved"] >= idx:
             return "Эта стоянка уже позади"
         plan = json.loads(run["plan_json"])
-        card = ex_card(run["route"], plan[idx]["card"])
+        card = _ex_card(run["route"], plan[idx]["card"])
         opt = _ex_opt(card, opt_key)
         if not opt:
             return "Такого варианта нет"
@@ -60841,11 +60903,31 @@ async def ex_vote(bot, run_id: int, idx: int, uid: int, opt_key: str) -> str:
             if cur.rowcount == 0:
                 return "Ты не в этой экспедиции"
         members = await ex_members_get(run_id)
-        if all(m["vote_step"] == idx for m in members):
+        if _ex_all_answered(members, idx):
             await _ex_resolve(bot, run_id, idx)
         else:
             await _ex_redraw(bot, run, idx, members, await _ex_names(members))
     return f"{_ex_opt_emoji(opt)} {_ex_opt_name(opt)}"
+
+
+def _ex_all_answered(members: list[dict], idx: int) -> bool:
+    """
+    Все ли ответили и можно закрыть стоянку раньше срока.
+
+    Кто недоступен (заблокировал бота — сообщение не дошло), того не ждём.
+    Личная находка на этой стоянке — тоже ответ: её окно закрывается вместе
+    со стоянкой, и быстрые голоса остальных не должны её отнимать.
+    """
+    voted = False
+    for m in members:
+        if m["vote_step"] == idx:
+            voted = True
+        elif m["msg_id"]:
+            return False
+        if (m["pers_step"] == idx and m["pers_key"] and m["pers_msg_id"]
+                and not m["pers_choice"]):
+            return False
+    return voted
 
 
 def _ex_tally(card: dict, members: list[dict], idx: int) -> tuple[str, str, dict]:
@@ -60888,7 +60970,7 @@ async def _ex_resolve(bot, run_id: int, idx: int):
     run = await ex_run_get(run_id)
     members = await ex_members_get(run_id)
     plan = json.loads(run["plan_json"])
-    card = ex_card(run["route"], plan[idx]["card"])
+    card = _ex_card(run["route"], plan[idx]["card"])
     opt_key, why, votes = _ex_tally(card, members, idx)
     opt = _ex_opt(card, opt_key)
     oi = _ex_roll(opt)
@@ -60918,14 +61000,17 @@ async def _ex_resolve(bot, run_id: int, idx: int):
     run.update(loot=loot, supply=supply, log_json=json.dumps(log))
 
     names = await _ex_names(members)
-    await _ex_redraw(bot, run, idx, members, names, entry)
+    # Закрылась раньше срока — пусть будет видно, когда ждать следующую
+    nxt = plan[idx + 1]["at"] if idx + 1 < len(plan) else 0
+    await _ex_redraw(bot, run, idx, members, names, entry,
+                     next_at=nxt if nxt - time.time() > 60 else 0)
     if find:
         await _ex_grant_find(bot, run, members, find, names)
 
     # Личные находки этой стоянки, на которые не ответили, — в общий котёл
     for m in members:
         if m["pers_step"] == idx and m["pers_key"] and not m["pers_choice"]:
-            await _ex_personal_set(bot, run, m, "share", names[m["user_id"]]["html"], silent=True)
+            await _ex_personal_set(bot, run, m, "share", names[m["user_id"]]["html"])
 
     if idx == len(plan) - 1:
         await _ex_finish(bot, run_id, "done")
@@ -61008,7 +61093,7 @@ async def _ex_grant_find(bot, run: dict, members: list[dict], fkey: str, names: 
                     ),
                     parse_mode=ParseMode.HTML,
                 )
-            except (BadRequest, Forbidden, TimedOut):
+            except _TgError:
                 pass
             await announce(
                 bot,
@@ -61021,8 +61106,9 @@ async def _ex_grant_find(bot, run: dict, members: list[dict], fkey: str, names: 
 
 # ── Личная находка ───────────────────────────────────────────────────────────
 
-def _ex_pers_card(key: str) -> dict | None:
-    return next((p for p in EX_PERSONAL if p["key"] == key), None)
+def _ex_pers_card(key: str) -> dict:
+    return next((p for p in EX_PERSONAL if p["key"] == key),
+                {"key": key, "text": "{name} замечает в траве что-то блестящее."})
 
 
 def ex_personal_text(run: dict, m: dict, name: str, choice: str = "") -> str:
@@ -61033,7 +61119,7 @@ def ex_personal_text(run: dict, m: dict, name: str, choice: str = "") -> str:
     if not choice:
         return ui_card(
             head, body,
-            f"{_ex_icon('🎒')} +{2 * v}{_E_COIN} тебе\n"
+            f"{_ex_icon('👛')} +{2 * v}{_E_COIN} тебе\n"
             f"{_ex_icon('🤝')} +{v}{_E_COIN} каждому в команде",
             hint="Выбор увидит команда в итоге. Без ответа — в котёл",
         )
@@ -61046,7 +61132,7 @@ def ex_personal_text(run: dict, m: dict, name: str, choice: str = "") -> str:
 
 async def _ex_send_personal(bot, run: dict, m: dict, name: str):
     kb = InlineKeyboardMarkup([[
-        btn("🎒 Взять себе", callback_data=f"ex|p|{run['id']}|keep"),
+        btn("👛 Взять себе", callback_data=f"ex|p|{run['id']}|keep"),
         btn("🤝 В котёл", callback_data=f"ex|p|{run['id']}|share"),
     ]])
     try:
@@ -61055,7 +61141,7 @@ async def _ex_send_personal(bot, run: dict, m: dict, name: str):
             parse_mode=ParseMode.HTML, reply_markup=kb,
         )
         mid = sent.message_id
-    except (BadRequest, Forbidden, TimedOut):
+    except _TgError:
         mid = 0
     async with aiosqlite.connect(DB_PATH) as db:
         await db.execute(
@@ -61065,7 +61151,7 @@ async def _ex_send_personal(bot, run: dict, m: dict, name: str):
         await db.commit()
 
 
-async def _ex_personal_set(bot, run: dict, m: dict, choice: str, name: str, silent: bool = False):
+async def _ex_personal_set(bot, run: dict, m: dict, choice: str, name: str):
     async with aiosqlite.connect(DB_PATH) as db:
         cur = await db.execute(
             "UPDATE ex_members SET pers_choice=? WHERE run_id=? AND user_id=? AND pers_choice=''",
@@ -61081,7 +61167,7 @@ async def _ex_personal_set(bot, run: dict, m: dict, choice: str, name: str, sile
                 ex_personal_text(run, m, name, choice),
                 chat_id=m["user_id"], message_id=msg_id, parse_mode=ParseMode.HTML,
             )
-        except (BadRequest, Forbidden, TimedOut):
+        except _TgError:
             pass
 
 
@@ -61096,10 +61182,15 @@ async def ex_personal_choose(bot, run_id: int, uid: int, choice: str) -> str:
             return "Эта находка уже позади"
         if m["pers_choice"]:
             return "Уже решено"
+        if run["step"] < m["pers_step"]:
+            return "Эта находка ещё впереди"
         if run["resolved"] >= m["pers_step"]:
             return "Стоянка уже позади"
         names = await _ex_names([m])
         await _ex_personal_set(bot, run, m, choice, names[uid]["html"])
+        members = await ex_members_get(run_id)
+        if _ex_all_answered(members, run["step"]):
+            await _ex_resolve(bot, run_id, run["step"])
     return "Себе" if choice == "keep" else "В котёл"
 
 
@@ -61161,7 +61252,9 @@ async def ex_final_text(run: dict, members: list[dict], m: dict, names: dict, p:
         owned = await ex_finds_of(m["user_id"])
         lines = []
         for x in p["finds"]:
-            fd = EX_FINDS[x["key"]]
+            fd = EX_FINDS.get(x["key"])
+            if not fd:
+                continue
             have = sum(1 for k, v in EX_FINDS.items() if v["route"] == fd["route"] and k in owned)
             of = sum(1 for v in EX_FINDS.values() if v["route"] == fd["route"])
             tag = f"новая, {have}/{of}" if x.get("new") else "повтор"
@@ -61170,8 +61263,8 @@ async def ex_final_text(run: dict, members: list[dict], m: dict, names: dict, p:
 
     steps = []
     for e in log:
-        card = ex_card(run["route"], e["card"])
-        opt = _ex_opt(card, e["opt"])
+        card = _ex_card(run["route"], e["card"])
+        opt, _ = _ex_out(card, e["opt"], e["o"])
         steps.append(f"{e['i'] + 1}. {card['title']}: {_ex_icon(_ex_opt_emoji(opt))} "
                      f"{_ex_fx({'loot': e['dl'], 'supply': e['ds']})}")
 
@@ -61206,48 +61299,81 @@ async def _ex_finish(bot, run_id: int, outcome: str):
         if cur.rowcount == 0:
             return
     run = await ex_run_get(run_id)
-    members = await ex_members_get(run_id)
-    names = await _ex_names(members)
 
-    # Стоянка, открытая в момент остановки, — без кнопок
+    # Стоянка и личная находка, открытые в момент остановки, — без кнопок
     if run["step"] > run["resolved"]:
-        for m in members:
-            if m["msg_id"]:
+        for m in await ex_members_get(run_id):
+            stale = [m["msg_id"]]
+            if m["pers_step"] == run["step"] and not m["pers_choice"]:
+                stale.append(m["pers_msg_id"])
+            for mid in stale:
+                if not mid:
+                    continue
                 try:
                     await bot.edit_message_reply_markup(
-                        chat_id=m["user_id"], message_id=m["msg_id"], reply_markup=None)
-                except (BadRequest, Forbidden, TimedOut):
+                        chat_id=m["user_id"], message_id=mid, reply_markup=None)
+                except _TgError:
                     pass
 
-    for m in members:
-        p = ex_payout(run, members, m)
-        f = await db_get(m["user_id"])
-        if f:
-            f["coins"] = f.get("coins", 0) + p["total"]
-            add_xp(f, p["xp"])
-            await levelup(f, bot)
-            await db_save(f)
-        async with aiosqlite.connect(DB_PATH) as db:
-            await db.execute(
-                "UPDATE ex_members SET coins=?, xp=? WHERE run_id=? AND user_id=?",
-                (p["total"], p["xp"], run_id, m["user_id"]),
-            )
-            await db.commit()
-        asyncio.create_task(plog(
-            m["user_id"], "expedition_end",
-            f"route={run['route']} outcome={outcome} team={len(members)} "
-            f"loot={run['loot']} supply={run['supply']} coins={p['total']} xp={p['xp']}",
-            coins_delta=p["total"],
-        ))
-        try:
-            await bot.send_message(
-                m["user_id"], await ex_final_text(run, members, m, names, p),
-                parse_mode=ParseMode.HTML,
-            )
-        except (BadRequest, Forbidden, TimedOut):
-            pass
+    await _ex_pay_all(bot, run_id)
     _EX_LOCKS.pop(run_id, None)
     logger.info("expedition %s finished: %s loot=%s supply=%s", run_id, outcome, run["loot"], run["supply"])
+
+
+async def _ex_pay_all(bot, run_id: int):
+    """
+    Выплатить всем, кому ещё не выплачено. Сбой на одном участнике не
+    задевает остальных, а недоплаченных (бот упал посреди выплат) находит
+    job_ex_tick и вызывает эту же функцию снова.
+    """
+    run = await ex_run_get(run_id)
+    members = await ex_members_get(run_id)
+    names = await _ex_names(members)
+    for m in members:
+        if m["paid"]:
+            continue
+        try:
+            await _ex_pay_one(bot, run, members, m, names)
+        except Exception:
+            logger.exception("expedition %s: выплата user=%s", run_id, m["user_id"])
+
+
+async def _ex_pay_one(bot, run: dict, members: list[dict], m: dict, names: dict):
+    p = ex_payout(run, members, m)
+    # Сначала отметка, потом начисление: при сбое между ними участник может
+    # недополучить, но никогда не получит дважды.
+    async with aiosqlite.connect(DB_PATH) as db:
+        cur = await db.execute(
+            "UPDATE ex_members SET paid=1, coins=?, xp=? "
+            "WHERE run_id=? AND user_id=? AND paid=0",
+            (p["total"], p["xp"], run["id"], m["user_id"]),
+        )
+        await db.commit()
+        if cur.rowcount == 0:
+            return
+    f = await db_get(m["user_id"])
+    if f:
+        f["coins"] = f.get("coins", 0) + p["total"]
+        add_xp(f, p["xp"])
+        await db_save(f)
+        try:
+            await levelup(f, bot)
+            await db_save(f)
+        except Exception:
+            logger.exception("expedition %s: levelup user=%s", run["id"], m["user_id"])
+    asyncio.create_task(plog(
+        m["user_id"], "expedition_end",
+        f"route={run['route']} outcome={run['outcome']} team={len(members)} "
+        f"loot={run['loot']} supply={run['supply']} coins={p['total']} xp={p['xp']}",
+        coins_delta=p["total"],
+    ))
+    try:
+        await bot.send_message(
+            m["user_id"], await ex_final_text(run, members, m, names, p),
+            parse_mode=ParseMode.HTML,
+        )
+    except _TgError:
+        pass
 
 
 async def ex_stop(bot, run_id: int) -> bool:
@@ -61273,6 +61399,15 @@ async def job_ex_tick(ctx: ContextTypes.DEFAULT_TYPE):
             rows = await c.fetchall()
     for run_id, status, gather_until, started_at, route in rows:
         try:
+            if route not in EX_ROUTES:
+                # Маршрут убрали из exp_routes.py — без него ни стоянок, ни выплат
+                async with aiosqlite.connect(DB_PATH) as db:
+                    await db.execute(
+                        "UPDATE ex_runs SET status='cancelled', finished_at=? WHERE id=?",
+                        (now, run_id))
+                    await db.commit()
+                logger.error("job_ex_tick: экспедиция %s — маршрута %s больше нет", run_id, route)
+                continue
             if status == "lobby":
                 if now >= gather_until:
                     await ex_start(ctx.bot, run_id)
@@ -61287,6 +61422,21 @@ async def job_ex_tick(ctx: ContextTypes.DEFAULT_TYPE):
         except Exception:
             logger.exception("job_ex_tick: экспедиция %s", run_id)
 
+    # Недоплаченные: бот упал между завершением и выплатами
+    async with aiosqlite.connect(DB_PATH) as db:
+        async with db.execute(
+            "SELECT DISTINCT m.run_id FROM ex_members m JOIN ex_runs r ON r.id=m.run_id "
+            "WHERE r.status='finished' AND m.paid=0 AND r.finished_at>?",
+            (now - 2 * 86400,),
+        ) as c:
+            unpaid = [r[0] for r in await c.fetchall()]
+    for run_id in unpaid:
+        try:
+            async with _ex_lock(run_id):
+                await _ex_pay_all(ctx.bot, run_id)
+        except Exception:
+            logger.exception("job_ex_tick: доплата экспедиции %s", run_id)
+
 
 # ── Экраны ───────────────────────────────────────────────────────────────────
 
@@ -61296,8 +61446,8 @@ async def _ex_show(q, text: str, kb: InlineKeyboardMarkup | None = None):
                                   disable_web_page_preview=True)
     except BadRequest as e:
         if "not modified" not in str(e).lower():
-            raise
-    except (Forbidden, TimedOut):
+            logger.warning("ex screen: %s", e)
+    except _TgError:
         pass
 
 
@@ -61316,8 +61466,10 @@ async def ex_menu_view(f: dict, back: str = "plaza") -> tuple[str, InlineKeyboar
                       + (f"{SEP}с {r['level']} ур." if locked else ""))
         rows.append([btn(f"{'🔒' if locked else r['emoji']} {r['name']}",
                          callback_data=f"ex|route|{rk}")])
-    for lb in (await ex_open_lobbies(f["user_id"]))[:3]:
-        r = EX_ROUTES.get(lb["route"])
+    lobbies = [lb for lb in await ex_open_lobbies(f["user_id"])
+               if lb["route"] in EX_ROUTES and lvl >= EX_ROUTES[lb["route"]]["level"]]
+    for lb in lobbies[:3]:
+        r = EX_ROUTES[lb["route"]]
         if r:
             rows.append([btn(f"{r['emoji']} Сбор {lb['team']}/{EX_MAX_TEAM}{SEP}"
                              f"{_ex_left(lb['gather_until'])}",
@@ -61451,14 +61603,10 @@ async def ex_join_view(f: dict, run_id: int) -> tuple[str, InlineKeyboardMarkup]
 
 
 async def ex_entry_view(f: dict, back: str = "plaza") -> tuple[str, InlineKeyboardMarkup]:
-    """Вход в раздел: идущая экспедиция, свой сбор или меню."""
+    """Вход в раздел: идущая экспедиция или меню. Сбор вызывающий показывает сам."""
     run = await ex_user_run(f["user_id"])
     if run and run["status"] == "active":
         return await ex_active_view(run, f["user_id"])
-    if run and run["status"] == "lobby":
-        members = await ex_members_get(run["id"])
-        names = await _ex_names(members)
-        return ex_lobby_text(run, members, names), None
     return await ex_menu_view(f, back)
 
 
@@ -61602,7 +61750,13 @@ async def ex_router(update: Update, ctx: ContextTypes.DEFAULT_TYPE):
         if not any(m["user_id"] == uid for m in members):
             await q.answer(); return
         plan = json.loads(run["plan_json"])
-        card = ex_card(run["route"], plan[run["step"]]["card"])
+        card = _ex_card(run["route"], plan[run["step"]]["card"])
+        old = next(m["msg_id"] for m in members if m["user_id"] == uid)
+        if old:
+            try:
+                await bot.edit_message_reply_markup(chat_id=uid, message_id=old, reply_markup=None)
+            except _TgError:
+                pass
         sent = await bot.send_message(
             uid, ex_stop_text(run, run["step"], members, await _ex_names(members)),
             parse_mode=ParseMode.HTML, reply_markup=ex_stop_kb(run["id"], run["step"], card),
@@ -61629,7 +61783,7 @@ async def ex_router(update: Update, ctx: ContextTypes.DEFAULT_TYPE):
                 currency="XTR",
                 prices=[LabeledPrice("Экспедиция", EX_EXTRA_STARS)],
             )
-        except (BadRequest, Forbidden, TimedOut) as e:
+        except _TgError as e:
             logger.warning("ex stars invoice: %s", e)
         return
 
@@ -61708,6 +61862,16 @@ async def cmd_adminexp(update: Update, ctx: ContextTypes.DEFAULT_TYPE):
 
 async def cmd_ex(update: Update, ctx: ContextTypes.DEFAULT_TYPE):
     """Вход в экспедиции командой."""
+    if update.effective_chat and update.effective_chat.type != "private":
+        # В группе меню видят все, и нажать на его кнопки может любой —
+        # экспедиции ведутся в личке с ботом.
+        username = ctx.bot.username
+        await update.message.reply_text(
+            "Экспедиции — в личке с ботом.",
+            reply_markup=InlineKeyboardMarkup([[btn(
+                "🗺️ Открыть", url=f"https://t.me/{username}?start=exp")]]) if username else None,
+        )
+        return
     f = await db_get(update.effective_user.id)
     if not f:
         await update.message.reply_text("Сначала /start 🐸")
@@ -61721,7 +61885,7 @@ async def cmd_ex(update: Update, ctx: ContextTypes.DEFAULT_TYPE):
         )
         await ex_set_msg(run["id"], f["user_id"], sent.message_id)
         return
-    text, kb = await ex_entry_view(f, back="ex|menu")
+    text, kb = await ex_entry_view(f)
     await update.message.reply_text(text, parse_mode=ParseMode.HTML, reply_markup=kb,
                                     disable_web_page_preview=True)
 
@@ -61734,7 +61898,12 @@ async def cmd_exp2(update: Update, ctx: ContextTypes.DEFAULT_TYPE):
 
 
 async def ex_start_deeplink(update: Update, ctx: ContextTypes.DEFAULT_TYPE, arg: str) -> bool:
-    """/start ex_<id> — приглашение в сбор. True, если ссылка наша."""
+    """/start ex_<id> — приглашение в сбор, /start exp — сам раздел. True, если ссылка наша."""
+    if arg == "exp":
+        if not EX_LIVE and update.effective_user.id not in ADMIN_IDS:
+            return False
+        await cmd_ex(update, ctx)
+        return True
     if not arg.startswith("ex_"):
         return False
     try:
@@ -71396,6 +71565,31 @@ async def cmd_m_new(update: Update, ctx: ContextTypes.DEFAULT_TYPE):
                 "<code>/m @username текст</code> — личное сообщение",
                 parse_mode=ParseMode.HTML,
             )
+            return
+
+        # Новая экспедиция (или её сбор): текст как есть, без разметки и без
+        # копии в админ-чат — это разговор команды.
+        ex_run = await ex_user_run(user.id)
+        if ex_run:
+            ex_members = await ex_members_get(ex_run["id"])
+            my_name = f.get("frog_name") or f.get("first_name") or user.first_name
+            delivered = 0
+            for m in ex_members:
+                if m["user_id"] == user.id:
+                    continue
+                try:
+                    await ctx.bot.send_message(
+                        m["user_id"], f"💬 <b>{he(my_name)}:</b> {he(msg_text)}",
+                        parse_mode=ParseMode.HTML,
+                    )
+                    delivered += 1
+                except _TgError:
+                    pass
+            if len(ex_members) == 1:
+                reply = "В команде только ты."
+            else:
+                reply = f"Доставлено: {delivered} из {len(ex_members) - 1}."
+            await update.message.reply_text(reply)
             return
 
         exp = await _exp_get_user_active(user.id)
