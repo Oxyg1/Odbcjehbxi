@@ -4987,6 +4987,10 @@ def run_sync_migration():
     # ── Экспедиции ───────────────────────────────────────────────────────────
     _gift_log_migration(conn)
     exp_sync_migration(conn)
+    try:
+        ex_sync_migration(conn)
+    except Exception as _e:
+        logger.exception("ex_sync_migration: %s", _e)
 
     # ── Фриз-ивент ───────────────────────────────────────────────────────────
     freeze_run_sync_migration(conn, cur)
@@ -6415,6 +6419,8 @@ SKINS = {
     # 🏅 СЕЗОН — топ-10 закрытого сезона. В гаче не выпадает и второй раз за
     # тот же сезон не выдаётся: это отметка о месте, а не предмет.
     "Season Champ": {"chance": 0, "sid": 105, "rarity": "mythic", "emoji": "🏅", "award": "season"},
+    # 🗺️ ЭКСПЕДИЦИИ — за полный набор находок маршрута, один раз
+    "Reed Rambler": {"chance": 0, "sid": 106, "rarity": "mythic", "emoji": "🌾", "award": "expedition"},
 }
 
 # ══════════════════════════════════════════════════════════════════════════════
@@ -23704,6 +23710,8 @@ async def cmd_start(update: Update, ctx: ContextTypes.DEFAULT_TYPE):
                 return
 
         # Deep-link для вступления в экспедицию: ?start=exp_join_<id>
+        if ctx.args and await ex_start_deeplink(update, ctx, ctx.args[0]):
+            return
         if ctx.args and ctx.args[0].startswith("exp_join_"):
             try:
                 _exp_join_id = int(ctx.args[0].removeprefix("exp_join_"))
@@ -56020,6 +56028,9 @@ async def post_init(app: Application):
     # ⚔️ Поход — тик каждые 15 мин: логи, развилки, завершение
     app.job_queue.run_repeating(job_adventure_tick, interval=15 * 60, first=120)
     app.job_queue.run_repeating(job_expedition_tick, interval=10 * 60, first=90)
+    app.job_queue.run_repeating(job_ex_tick, interval=60, first=30)
+    for _err in ex_validate_content():
+        logger.error("Маршруты экспедиций: %s", _err)
     # 🍲 Столовая — автокормление каждые 10 мин
     app.job_queue.run_repeating(job_canteen_tick, interval=10 * 60, first=180)
     # 📊 Ежедневный отчёт столовой вожаку — 20:00 МСК = 17:00 UTC
@@ -60137,6 +60148,1605 @@ async def handle_checkers_callback(q, d, uid, ctx):
 
 
 
+
+
+# ══════════════════════════════════════════════════════════════════════════════
+# 🗺️  ЭКСПЕДИЦИИ
+# ══════════════════════════════════════════════════════════════════════════════
+#
+# Команда до четырёх лягушек — или одна — идёт по маршруту из 6–8 стоянок.
+# Стоянки приходят по расписанию, раз в 20–30 минут. На каждой — ситуация и
+# два-три варианта с честно написанной ценой. Решает большинство; кто не
+# ответил, тот не штрафуется. Не ответил никто — берётся первый вариант,
+# он на каждой стоянке осторожный.
+#
+# Счёт у команды общий: запас (🎒) и добыча (🪙, сразу на каждого — чтобы
+# цифра на экране совпадала с тем, что придёт на счёт). Кончился запас —
+# команда поворачивает домой с половиной добычи. Смерти нет.
+#
+# Тексты и цифры маршрутов — в exp_routes.py. Подсказки к вариантам движок
+# собирает из цифр сам, поэтому текст не может разойтись с механикой.
+#
+# Всё состояние — в базе: перезапуск бота посреди стоянки ничего не теряет.
+# Стоянки открывает и закрывает job_ex_tick раз в минуту; голос закрывает
+# стоянку раньше, если ответили все. Каждая экспедиция обрабатывается под
+# своим замком, а закрытие стоянки — ещё и атомарным захватом в SQL, поэтому
+# тик и последний голос не разрешат одну стоянку дважды.
+
+from urllib.parse import quote as _urlquote
+
+import exp_routes as _exr
+
+EX_ROUTES: dict = _exr.ROUTES
+EX_FINDS: dict = _exr.FINDS
+EX_PERSONAL: list = _exr.PERSONAL
+
+EX_MAX_TEAM       = 4
+EX_SUPPLY_START   = 8
+EX_SUPPLY_COIN    = 2          # 🪙 каждому за каждый несъеденный запас в конце
+EX_TEAM_BONUS     = 0.20       # +20% к добыче за каждого участника сверх первого
+EX_GATHER_MIN     = (5, 10, 15, 30)
+EX_MIN_WINDOW_S   = 10 * 60    # после простоя бота стоянка открыта хотя бы столько
+EX_DUP_FIND_COINS = 10         # находка, которая уже есть, — монетами
+EX_EXTRA_STARS    = 10         # вторая экспедиция за сутки
+
+_EX_LOCKS: dict[int, asyncio.Lock] = {}
+_EX_LOBBY_LOCK = asyncio.Lock()
+
+
+def _ex_lock(run_id: int) -> asyncio.Lock:
+    lock = _EX_LOCKS.get(run_id)
+    if lock is None:
+        lock = _EX_LOCKS[run_id] = asyncio.Lock()
+    return lock
+
+
+# ── Таблицы ──────────────────────────────────────────────────────────────────
+
+def ex_sync_migration(conn):
+    """Таблицы экспедиций. Вызывается из run_sync_migration(), идемпотентна."""
+    cur = conn.cursor()
+    cur.execute("PRAGMA table_info(frogs)")
+    if "last_expedition" not in {r[1] for r in cur.fetchall()}:
+        cur.execute("ALTER TABLE frogs ADD COLUMN last_expedition REAL DEFAULT 0")
+    cur.executescript("""
+        CREATE TABLE IF NOT EXISTS ex_runs (
+            id            INTEGER PRIMARY KEY AUTOINCREMENT,
+            route         TEXT    NOT NULL,
+            status        TEXT    NOT NULL DEFAULT 'lobby',  -- lobby|active|finished|cancelled
+            creator_id    INTEGER NOT NULL,
+            created_at    REAL    NOT NULL,
+            gather_until  REAL    NOT NULL DEFAULT 0,
+            announced     INTEGER NOT NULL DEFAULT 0,
+            started_at    REAL    NOT NULL DEFAULT 0,
+            finished_at   REAL    NOT NULL DEFAULT 0,
+            plan_json     TEXT    NOT NULL DEFAULT '[]',     -- [{"card", "at"}]
+            step          INTEGER NOT NULL DEFAULT -1,       -- открытая стоянка
+            resolved      INTEGER NOT NULL DEFAULT -1,       -- последняя закрытая
+            closes_at     REAL    NOT NULL DEFAULT 0,
+            supply        INTEGER NOT NULL DEFAULT 8,
+            loot          INTEGER NOT NULL DEFAULT 0,
+            log_json      TEXT    NOT NULL DEFAULT '[]',
+            outcome       TEXT    NOT NULL DEFAULT ''        -- done|turned_back|stopped
+        );
+        CREATE INDEX IF NOT EXISTS idx_ex_runs_status ON ex_runs(status);
+        CREATE TABLE IF NOT EXISTS ex_members (
+            run_id        INTEGER NOT NULL,
+            user_id       INTEGER NOT NULL,
+            joined_at     REAL    NOT NULL,
+            msg_id        INTEGER NOT NULL DEFAULT 0,  -- сообщение лобби или открытой стоянки
+            vote_step     INTEGER NOT NULL DEFAULT -1,
+            vote_opt      TEXT    NOT NULL DEFAULT '',
+            pers_step     INTEGER NOT NULL DEFAULT -1, -- на какой стоянке личная находка
+            pers_key      TEXT    NOT NULL DEFAULT '',
+            pers_choice   TEXT    NOT NULL DEFAULT '', -- keep|share
+            pers_msg_id   INTEGER NOT NULL DEFAULT 0,
+            coins         INTEGER NOT NULL DEFAULT 0,  -- итог, пишется в финале
+            xp            INTEGER NOT NULL DEFAULT 0,
+            finds_json    TEXT    NOT NULL DEFAULT '[]',
+            PRIMARY KEY (run_id, user_id)
+        );
+        CREATE INDEX IF NOT EXISTS idx_ex_members_user ON ex_members(user_id);
+        -- Коллекция находок. Строка 'set:<маршрут>' — отметка, что облик
+        -- за полный набор уже выдан: второй раз его не дают.
+        CREATE TABLE IF NOT EXISTS ex_finds (
+            user_id   INTEGER NOT NULL,
+            find_key  TEXT    NOT NULL,
+            qty       INTEGER NOT NULL DEFAULT 1,
+            first_at  REAL    NOT NULL,
+            PRIMARY KEY (user_id, find_key)
+        );
+    """)
+    conn.commit()
+
+
+# ── Содержимое маршрутов ─────────────────────────────────────────────────────
+
+def ex_card(route_key: str, card_key: str) -> dict | None:
+    r = EX_ROUTES.get(route_key)
+    if not r:
+        return None
+    if r["finale"]["key"] == card_key:
+        return r["finale"]
+    return next((c for c in r["cards"] if c["key"] == card_key), None)
+
+
+def _ex_opt_emoji(opt: dict) -> str:
+    m = _BTN_LEAD_EMOJI.match(opt["label"])
+    return m.group(1) if m else ""
+
+
+def _ex_opt_name(opt: dict) -> str:
+    m = _BTN_LEAD_EMOJI.match(opt["label"])
+    return opt["label"][m.end():].strip() if m else opt["label"]
+
+
+def _ex_icon(emoji: str) -> str:
+    """Эмодзи варианта в тексте — той же премиум-картинкой, что на кнопке."""
+    pid = BUTTON_ICONS.get(emoji)
+    return _pe(pid, emoji) if pid else emoji
+
+
+def ex_validate_content() -> list[str]:
+    """Ошибки в данных маршрутов. Пустой список — всё сходится."""
+    errs = []
+    used_finds = set()
+    for rk, r in EX_ROUTES.items():
+        for field in ("name", "emoji", "level", "hours", "stops", "xp", "skin",
+                      "about", "personal", "cards", "finale"):
+            if field not in r:
+                errs.append(f"{rk}: нет поля {field}")
+        if errs:
+            continue
+        if r["skin"] not in SKINS:
+            errs.append(f"{rk}: облика {r['skin']} нет в SKINS")
+        if len(r["cards"]) < r["stops"] - 1:
+            errs.append(f"{rk}: стоянок {len(r['cards'])}, а нужно хотя бы {r['stops'] - 1}")
+        keys = [c["key"] for c in r["cards"]] + [r["finale"]["key"]]
+        if len(keys) != len(set(keys)):
+            errs.append(f"{rk}: повторяются ключи стоянок")
+        for c in r["cards"] + [r["finale"]]:
+            where = f"{rk}/{c.get('key')}"
+            for field in ("key", "title", "text", "options"):
+                if field not in c:
+                    errs.append(f"{where}: нет поля {field}")
+            opts = c.get("options", [])
+            if not 2 <= len(opts) <= 3:
+                errs.append(f"{where}: вариантов {len(opts)}, нужно 2–3")
+            okeys = [o.get("key") for o in opts]
+            if len(okeys) != len(set(okeys)):
+                errs.append(f"{where}: повторяются ключи вариантов")
+            emojis = [_ex_opt_emoji(o) for o in opts]
+            if "" in emojis or len(emojis) != len(set(emojis)):
+                errs.append(f"{where}: у каждого варианта своя эмодзи в начале подписи")
+            for i, o in enumerate(opts):
+                outs = o.get("outcomes", [])
+                if not outs:
+                    errs.append(f"{where}/{o.get('key')}: нет исходов")
+                    continue
+                if i == 0 and len(outs) != 1:
+                    errs.append(f"{where}: первый вариант — осторожный, у него один исход")
+                if len(outs) > 1 and sum(x.get("p", 0) for x in outs) != 100:
+                    errs.append(f"{where}/{o['key']}: шансы исходов не дают 100")
+                for x in outs:
+                    if not x.get("text"):
+                        errs.append(f"{where}/{o['key']}: исход без текста")
+                    fk = x.get("find")
+                    if fk:
+                        fkey = fk[0]
+                        used_finds.add(fkey)
+                        if fkey not in EX_FINDS:
+                            errs.append(f"{where}: находки {fkey} нет в FINDS")
+                        elif EX_FINDS[fkey]["route"] != rk:
+                            errs.append(f"{where}: находка {fkey} с другого маршрута")
+    for fkey, fd in EX_FINDS.items():
+        if fd["route"] not in EX_ROUTES:
+            errs.append(f"находка {fkey}: нет маршрута {fd['route']}")
+        if fkey not in used_finds:
+            errs.append(f"находка {fkey} не выпадает ни на одной стоянке")
+    pkeys = [p["key"] for p in EX_PERSONAL]
+    if len(pkeys) != len(set(pkeys)):
+        errs.append("повторяются ключи личных находок")
+    return errs
+
+
+# ── Цифры в тексте ───────────────────────────────────────────────────────────
+
+def _ex_fx(o: dict, html: bool = True) -> str:
+    """«+20🪙 −1🎒» — последствия исхода. Минус — типографский."""
+    coin = _E_COIN if html else "🪙"
+    bag = _E_BAG if html else "🎒"
+    parts = []
+    for val, icon in ((o.get("loot", 0), coin), (o.get("supply", 0), bag)):
+        if val:
+            parts.append(f"{'+' if val > 0 else '−'}{abs(val)}{icon}")
+    return " ".join(parts) or "без потерь"
+
+
+def ex_option_hint(opt: dict, html: bool = True) -> str:
+    outs = opt["outcomes"]
+    if len(outs) == 1:
+        return _ex_fx(outs[0], html)
+    if len(outs) == 2:
+        a, b = outs
+        return f"{a['p']}%: {_ex_fx(a, html)}, иначе {_ex_fx(b, html)}"
+    return SEP.join(f"{x['p']}%: {_ex_fx(x, html)}" for x in outs)
+
+
+def ex_team_mult(n: int) -> float:
+    return 1 + EX_TEAM_BONUS * max(0, n - 1)
+
+
+def _ex_left(ts: float) -> str:
+    m = max(1, math.ceil((ts - time.time()) / 60))
+    if m < 60:
+        return f"{m} мин"
+    h, m = divmod(m, 60)
+    return f"{h} ч {m} мин" if m else f"{h} ч"
+
+
+def ex_today_used(f: dict) -> bool:
+    """Бесплатная экспедиция одна в сутки, сутки — по UTC, как и раньше."""
+    now = time.time()
+    return (f.get("last_expedition") or 0) >= now - now % 86400
+
+
+# ── Чтение из базы ───────────────────────────────────────────────────────────
+
+async def ex_run_get(run_id: int) -> dict | None:
+    async with aiosqlite.connect(DB_PATH) as db:
+        db.row_factory = aiosqlite.Row
+        async with db.execute("SELECT * FROM ex_runs WHERE id=?", (run_id,)) as c:
+            r = await c.fetchone()
+    return dict(r) if r else None
+
+
+async def ex_members_get(run_id: int) -> list[dict]:
+    async with aiosqlite.connect(DB_PATH) as db:
+        db.row_factory = aiosqlite.Row
+        async with db.execute(
+            "SELECT * FROM ex_members WHERE run_id=? ORDER BY joined_at", (run_id,)
+        ) as c:
+            return [dict(r) for r in await c.fetchall()]
+
+
+async def ex_user_run(uid: int) -> dict | None:
+    """Сбор или экспедиция, в которой лягушка сейчас."""
+    async with aiosqlite.connect(DB_PATH) as db:
+        db.row_factory = aiosqlite.Row
+        async with db.execute(
+            "SELECT r.* FROM ex_runs r JOIN ex_members m ON m.run_id=r.id "
+            "WHERE m.user_id=? AND r.status IN ('lobby','active') "
+            "ORDER BY r.id DESC LIMIT 1",
+            (uid,),
+        ) as c:
+            r = await c.fetchone()
+    return dict(r) if r else None
+
+
+async def ex_open_lobbies(exclude_uid: int = 0) -> list[dict]:
+    """Сборы, к которым ещё можно присоединиться."""
+    async with aiosqlite.connect(DB_PATH) as db:
+        db.row_factory = aiosqlite.Row
+        async with db.execute(
+            "SELECT r.*, COUNT(m.user_id) AS team FROM ex_runs r "
+            "JOIN ex_members m ON m.run_id=r.id "
+            "WHERE r.status='lobby' AND r.gather_until>? "
+            "GROUP BY r.id HAVING team<? ORDER BY r.gather_until",
+            (time.time(), EX_MAX_TEAM),
+        ) as c:
+            rows = [dict(r) for r in await c.fetchall()]
+    if exclude_uid:
+        mine = await ex_user_run(exclude_uid)
+        rows = [r for r in rows if not mine or r["id"] != mine["id"]]
+    return rows
+
+
+async def ex_finds_of(uid: int) -> dict[str, int]:
+    async with aiosqlite.connect(DB_PATH) as db:
+        async with db.execute(
+            "SELECT find_key, qty FROM ex_finds WHERE user_id=?", (uid,)
+        ) as c:
+            return {k: q for k, q in await c.fetchall()}
+
+
+async def _ex_names(members: list[dict]) -> dict[int, dict]:
+    """{uid: {"html": экранированное имя, "raw": как есть}} — для текста и кнопок."""
+    out = {}
+    for m in members:
+        f = await db_get(m["user_id"])
+        raw = ((f.get("frog_name") or f.get("first_name")) if f else "") or "Лягушка"
+        out[m["user_id"]] = {"html": he(raw), "raw": raw}
+    return out
+
+
+# ── Проверки перед сбором ────────────────────────────────────────────────────
+
+async def ex_cant_go(f: dict, route_key: str) -> str:
+    """Почему лягушка не может идти. Пусто — может."""
+    r = EX_ROUTES.get(route_key)
+    if not r:
+        return "Такого маршрута нет."
+    if not f.get("alive"):
+        return "Лягушка мертва. Сначала /revive"
+    if f.get("level", 1) < r["level"]:
+        return f"Маршрут открывается с {r['level']} уровня."
+    if await ex_user_run(f["user_id"]):
+        return "Лягушка уже в экспедиции или на сборе."
+    if f.get("adventure_locked_until", 0) > time.time() or f.get("adventure_id"):
+        return "Лягушка в походе. Экспедиция — после него."
+    if ex_today_used(f):
+        return "today"
+    return ""
+
+
+# ── Сбор ─────────────────────────────────────────────────────────────────────
+
+async def ex_lobby_create(f: dict, route_key: str, gather_min: int) -> tuple[int, str]:
+    """Создать сбор. Возвращает (id, "") или (0, причина отказа)."""
+    async with _EX_LOBBY_LOCK:
+        why = await ex_cant_go(f, route_key)
+        if why:
+            return 0, why
+        now = time.time()
+        async with aiosqlite.connect(DB_PATH) as db:
+            cur = await db.execute(
+                "INSERT INTO ex_runs(route, status, creator_id, created_at, gather_until, supply) "
+                "VALUES(?, 'lobby', ?, ?, ?, ?)",
+                (route_key, f["user_id"], now, now + gather_min * 60, EX_SUPPLY_START),
+            )
+            run_id = cur.lastrowid
+            await db.execute(
+                "INSERT INTO ex_members(run_id, user_id, joined_at) VALUES(?,?,?)",
+                (run_id, f["user_id"], now),
+            )
+            await db.commit()
+    return run_id, ""
+
+
+async def ex_lobby_join(f: dict, run_id: int) -> str:
+    """Вступить в сбор. Пусто — получилось, иначе причина."""
+    async with _EX_LOBBY_LOCK:
+        run = await ex_run_get(run_id)
+        if not run or run["status"] != "lobby" or run["gather_until"] <= time.time():
+            return "Этот сбор уже закрыт."
+        why = await ex_cant_go(f, run["route"])
+        if why:
+            return why
+        members = await ex_members_get(run_id)
+        if len(members) >= EX_MAX_TEAM:
+            return f"В команде уже {EX_MAX_TEAM}."
+        async with aiosqlite.connect(DB_PATH) as db:
+            await db.execute(
+                "INSERT OR IGNORE INTO ex_members(run_id, user_id, joined_at) VALUES(?,?,?)",
+                (run_id, f["user_id"], time.time()),
+            )
+            await db.commit()
+    return ""
+
+
+def ex_lobby_text(run: dict, members: list[dict], names: dict) -> str:
+    r = EX_ROUTES[run["route"]]
+    team = ", ".join(names[m["user_id"]]["html"] for m in members)
+    return ui_card(
+        ui_title(r["emoji"], f"{r['name']}{SEP}сбор"),
+        f"{_E_USERS} {team}\n"
+        f"Команда {len(members)}/{EX_MAX_TEAM}{SEP}выход через {_ex_left(run['gather_until'])}",
+        hint="Каждый сверх первого — +20% к добыче всем",
+    )
+
+
+def ex_lobby_kb(run: dict, uid: int, bot_username: str) -> InlineKeyboardMarkup:
+    rid = run["id"]
+    rows = []
+    if uid == run["creator_id"]:
+        rows.append([btn("▶️ Выходим", callback_data=f"ex|go|{rid}", style="success")])
+        if bot_username:
+            link = _urlquote(f"https://t.me/{bot_username}?start=ex_{rid}", safe="")
+            rows.append([btn("🔗 Позвать друга", url=f"https://t.me/share/url?url={link}")])
+        if not run.get("announced"):
+            rows.append([btn("📣 Позвать в чат", callback_data=f"ex|call|{rid}")])
+        rows.append([btn("✖️ Отменить сбор", callback_data=f"ex|cancel|{rid}")])
+    else:
+        rows.append([btn("🚪 Выйти из команды", callback_data=f"ex|leave|{rid}")])
+    return InlineKeyboardMarkup(rows)
+
+
+async def ex_lobby_refresh(bot, run_id: int, skip_uid: int = 0):
+    """Перерисовать сообщение сбора у всех участников."""
+    run = await ex_run_get(run_id)
+    if not run or run["status"] != "lobby":
+        return
+    members = await ex_members_get(run_id)
+    names = await _ex_names(members)
+    text = ex_lobby_text(run, members, names)
+    for m in members:
+        if not m["msg_id"] or m["user_id"] == skip_uid:
+            continue
+        try:
+            await bot.edit_message_text(
+                text, chat_id=m["user_id"], message_id=m["msg_id"],
+                parse_mode=ParseMode.HTML,
+                reply_markup=ex_lobby_kb(run, m["user_id"], bot.username),
+            )
+        except (BadRequest, Forbidden, TimedOut):
+            pass
+
+
+async def ex_set_msg(run_id: int, uid: int, msg_id: int):
+    async with aiosqlite.connect(DB_PATH) as db:
+        await db.execute(
+            "UPDATE ex_members SET msg_id=? WHERE run_id=? AND user_id=?",
+            (msg_id, run_id, uid),
+        )
+        await db.commit()
+
+
+async def ex_lobby_leave(bot, run_id: int, uid: int) -> str:
+    """Выйти из сбора. Создатель не выходит, а отменяет сбор."""
+    async with _EX_LOBBY_LOCK:
+        run = await ex_run_get(run_id)
+        if not run or run["status"] != "lobby":
+            return "Сбор уже закрыт."
+        if uid == run["creator_id"]:
+            return "Создатель сбора не выходит, а отменяет его."
+        async with aiosqlite.connect(DB_PATH) as db:
+            await db.execute(
+                "DELETE FROM ex_members WHERE run_id=? AND user_id=?", (run_id, uid)
+            )
+            await db.commit()
+    await ex_lobby_refresh(bot, run_id)
+    return ""
+
+
+async def ex_lobby_cancel(bot, run_id: int, reason: str = "Сбор отменён.") -> bool:
+    async with _EX_LOBBY_LOCK:
+        async with aiosqlite.connect(DB_PATH) as db:
+            cur = await db.execute(
+                "UPDATE ex_runs SET status='cancelled', finished_at=? "
+                "WHERE id=? AND status='lobby'",
+                (time.time(), run_id),
+            )
+            await db.commit()
+            if cur.rowcount == 0:
+                return False
+    run = await ex_run_get(run_id)
+    r = EX_ROUTES.get(run["route"], {})
+    for m in await ex_members_get(run_id):
+        if not m["msg_id"]:
+            continue
+        try:
+            await bot.edit_message_text(
+                ui_card(ui_title(r.get("emoji", "🗺"), r.get("name", "Экспедиция")), reason),
+                chat_id=m["user_id"], message_id=m["msg_id"],
+                parse_mode=ParseMode.HTML,
+            )
+        except (BadRequest, Forbidden, TimedOut):
+            pass
+    return True
+
+
+# ── Старт ────────────────────────────────────────────────────────────────────
+
+def _ex_make_plan(route_key: str, start: float) -> list[dict]:
+    """Стоянки маршрута: случайные из колоды и финал. Первая — сразу на старте."""
+    r = EX_ROUTES[route_key]
+    n = r["stops"]
+    gap = r["hours"] * 3600 / n
+    cards = random.sample(r["cards"], n - 1) + [r["finale"]]
+    return [{"card": c["key"], "at": start + i * gap} for i, c in enumerate(cards)]
+
+
+async def ex_start(bot, run_id: int) -> bool:
+    async with _ex_lock(run_id):
+        run = await ex_run_get(run_id)
+        if not run or run["status"] != "lobby":
+            return False
+        r = EX_ROUTES[run["route"]]
+        members = await ex_members_get(run_id)
+        now = time.time()
+        plan = _ex_make_plan(run["route"], now)
+        n = len(plan)
+        async with aiosqlite.connect(DB_PATH) as db:
+            cur = await db.execute(
+                "UPDATE ex_runs SET status='active', started_at=?, plan_json=?, "
+                "step=-1, resolved=-1, supply=?, loot=0 WHERE id=? AND status='lobby'",
+                (now, json.dumps(plan), EX_SUPPLY_START, run_id),
+            )
+            if cur.rowcount == 0:
+                return False
+            # Личная находка — у каждого своя, раз за маршрут и только в команде:
+            # одной лягушке делиться не с кем. Не на первой и не на финальной.
+            if len(members) > 1:
+                pers = random.sample(EX_PERSONAL, min(len(members), len(EX_PERSONAL)))
+                for m, card in zip(members, pers):
+                    await db.execute(
+                        "UPDATE ex_members SET pers_step=?, pers_key=? WHERE run_id=? AND user_id=?",
+                        (random.randint(1, n - 2), card["key"], run_id, m["user_id"]),
+                    )
+            await db.commit()
+
+        for m in members:
+            f = await db_get(m["user_id"])
+            if f:
+                f["last_expedition"] = now
+                await db_save(f)
+
+        names = await _ex_names(members)
+        team = ", ".join(names[m["user_id"]]["html"] for m in members)
+        gap_min = round(r["hours"] * 60 / n)
+        text = ui_card(
+            ui_title(r["emoji"], r["name"]),
+            f"{_E_USERS} {team}",
+            f"Стоянок {n}, раз в {gap_min} мин. Первая — сейчас.\n"
+            f"{_E_BAG} Запас {EX_SUPPLY_START}{SEP}кончится — поворот домой",
+        )
+        for m in members:
+            try:
+                if m["msg_id"]:
+                    await bot.edit_message_text(
+                        text, chat_id=m["user_id"], message_id=m["msg_id"],
+                        parse_mode=ParseMode.HTML,
+                    )
+                else:
+                    await bot.send_message(m["user_id"], text, parse_mode=ParseMode.HTML)
+            except (BadRequest, Forbidden, TimedOut):
+                pass
+        logger.info("expedition %s started: route=%s team=%s", run_id, run["route"], len(members))
+    await ex_advance(bot, run_id)
+    return True
+
+
+# ── Стоянка: экран ───────────────────────────────────────────────────────────
+
+def ex_stop_text(run: dict, idx: int, members: list[dict], names: dict,
+                 result: dict | None = None) -> str:
+    """
+    Экран стоянки. result=None — стоянка открыта и ждёт голосов;
+    иначе — запись из журнала, и экран показывает, чем кончилось.
+    """
+    r = EX_ROUTES[run["route"]]
+    plan = json.loads(run["plan_json"])
+    card = ex_card(run["route"], plan[idx]["card"])
+    head = f"{r['emoji']} <b>{card['title']}</b>{SEP}{idx + 1}/{len(plan)}"
+    solo = len(members) == 1
+
+    if result is None:
+        odds = "\n".join(
+            f"{_ex_icon(_ex_opt_emoji(o))} {ex_option_hint(o)}" for o in card["options"]
+        )
+        status = f"{_E_BAG} {run['supply']}/{EX_SUPPLY_START}{SEP}{_E_COIN} {run['loot']}"
+        votes = ""
+        if not solo:
+            said = [f"{names[m['user_id']]['html']} "
+                    f"{_ex_icon(_ex_opt_emoji(_ex_opt(card, m['vote_opt'])))}"
+                    for m in members
+                    if m["vote_step"] == idx and _ex_opt(card, m["vote_opt"])]
+            wait = [names[m["user_id"]]["html"] for m in members
+                    if not (m["vote_step"] == idx and _ex_opt(card, m["vote_opt"]))]
+            votes = "\n".join(filter(None, [
+                f"Голоса: {', '.join(said)}" if said else "",
+                f"Ещё не ответили: {', '.join(wait)}" if wait else "",
+            ]))
+        safe = card["options"][0]
+        return ui_card(
+            head, card["text"], odds, "\n".join(filter(None, [status, votes])),
+            hint=f"Закроется через {_ex_left(run['closes_at'])}. "
+                 f"Без ответов — {_ex_opt_emoji(safe)} {_ex_opt_name(safe)}",
+        )
+
+    opt = _ex_opt(card, result["opt"])
+    choice = f"{_ex_icon(_ex_opt_emoji(opt))} {_ex_opt_name(opt)}"
+    if result.get("why") == "silence":
+        how = f"Никто не ответил — {choice}"
+    elif result.get("why") == "tie":
+        how = f"Голоса поровну — взяли осторожнее: {choice}"
+    elif solo:
+        how = choice
+    else:
+        tally = SEP.join(
+            f"{_ex_icon(_ex_opt_emoji(_ex_opt(card, k)))} {v}"
+            for k, v in sorted(result.get("votes", {}).items(), key=lambda kv: -kv[1])
+        )
+        how = f"{choice}\n<i>Голоса: {tally}</i>"
+    out = opt["outcomes"][result["o"]]
+    lines = [out["text"], _ex_fx({"loot": result["dl"], "supply": result["ds"]})]
+    if result.get("find"):
+        fd = EX_FINDS[result["find"]]
+        lines.append(f"Находка: {fd['emoji']} <b>{fd['name']}</b>")
+    status = f"{_E_BAG} {result['supply_after']}/{EX_SUPPLY_START}{SEP}{_E_COIN} {result['loot_after']}"
+    return ui_card(head, card["text"], how, "\n".join(lines), status)
+
+
+def _ex_opt(card: dict, key: str) -> dict | None:
+    return next((o for o in card["options"] if o["key"] == key), None)
+
+
+def ex_stop_kb(run_id: int, idx: int, card: dict) -> InlineKeyboardMarkup:
+    return InlineKeyboardMarkup([
+        [btn(o["label"], callback_data=f"ex|v|{run_id}|{idx}|{o['key']}")]
+        for o in card["options"]
+    ])
+
+
+async def _ex_redraw(bot, run: dict, idx: int, members: list[dict], names: dict,
+                     result: dict | None = None):
+    """Перерисовать стоянку у всех: голоса пришли или стоянка закрылась."""
+    text = ex_stop_text(run, idx, members, names, result)
+    kb = None
+    if result is None:
+        plan = json.loads(run["plan_json"])
+        kb = ex_stop_kb(run["id"], idx, ex_card(run["route"], plan[idx]["card"]))
+    for m in members:
+        if not m["msg_id"]:
+            continue
+        try:
+            await bot.edit_message_text(
+                text, chat_id=m["user_id"], message_id=m["msg_id"],
+                parse_mode=ParseMode.HTML, reply_markup=kb,
+            )
+        except (BadRequest, Forbidden, TimedOut):
+            pass
+
+
+# ── Стоянка: открыть, проголосовать, закрыть ─────────────────────────────────
+
+async def _ex_open(bot, run: dict, idx: int):
+    plan = json.loads(run["plan_json"])
+    r = EX_ROUTES[run["route"]]
+    now = time.time()
+    planned_end = plan[idx + 1]["at"] if idx + 1 < len(plan) else run["started_at"] + r["hours"] * 3600
+    closes = max(planned_end, now + EX_MIN_WINDOW_S)
+    async with aiosqlite.connect(DB_PATH) as db:
+        cur = await db.execute(
+            "UPDATE ex_runs SET step=?, closes_at=? WHERE id=? AND status='active' AND step=?",
+            (idx, closes, run["id"], idx - 1),
+        )
+        await db.commit()
+        if cur.rowcount == 0:
+            return
+    run = await ex_run_get(run["id"])
+    members = await ex_members_get(run["id"])
+    names = await _ex_names(members)
+    card = ex_card(run["route"], plan[idx]["card"])
+    text = ex_stop_text(run, idx, members, names)
+    kb = ex_stop_kb(run["id"], idx, card)
+    for m in members:
+        try:
+            sent = await bot.send_message(m["user_id"], text, parse_mode=ParseMode.HTML, reply_markup=kb)
+            await ex_set_msg(run["id"], m["user_id"], sent.message_id)
+        except (BadRequest, Forbidden, TimedOut):
+            await ex_set_msg(run["id"], m["user_id"], 0)
+        if m["pers_step"] == idx and m["pers_key"]:
+            await _ex_send_personal(bot, run, m, names[m["user_id"]]["html"])
+
+
+async def ex_vote(bot, run_id: int, idx: int, uid: int, opt_key: str) -> str:
+    """Голос за вариант. Возвращает текст всплывашки."""
+    async with _ex_lock(run_id):
+        run = await ex_run_get(run_id)
+        if not run or run["status"] != "active" or run["step"] != idx or run["resolved"] >= idx:
+            return "Эта стоянка уже позади"
+        plan = json.loads(run["plan_json"])
+        card = ex_card(run["route"], plan[idx]["card"])
+        opt = _ex_opt(card, opt_key)
+        if not opt:
+            return "Такого варианта нет"
+        async with aiosqlite.connect(DB_PATH) as db:
+            cur = await db.execute(
+                "UPDATE ex_members SET vote_step=?, vote_opt=? WHERE run_id=? AND user_id=?",
+                (idx, opt_key, run_id, uid),
+            )
+            await db.commit()
+            if cur.rowcount == 0:
+                return "Ты не в этой экспедиции"
+        members = await ex_members_get(run_id)
+        if all(m["vote_step"] == idx for m in members):
+            await _ex_resolve(bot, run_id, idx)
+        else:
+            await _ex_redraw(bot, run, idx, members, await _ex_names(members))
+    return f"{_ex_opt_emoji(opt)} {_ex_opt_name(opt)}"
+
+
+def _ex_tally(card: dict, members: list[dict], idx: int) -> tuple[str, str, dict]:
+    """(вариант, почему, голоса). Ничья — к более осторожному, он выше в списке."""
+    order = [o["key"] for o in card["options"]]
+    votes: dict[str, int] = {}
+    for m in members:
+        if m["vote_step"] == idx and m["vote_opt"] in order:
+            votes[m["vote_opt"]] = votes.get(m["vote_opt"], 0) + 1
+    if not votes:
+        return order[0], "silence", votes
+    top = max(votes.values())
+    leaders = [k for k in order if votes.get(k) == top]
+    return leaders[0], ("tie" if len(leaders) > 1 else ""), votes
+
+
+def _ex_roll(opt: dict) -> int:
+    outs = opt["outcomes"]
+    if len(outs) == 1:
+        return 0
+    x = random.uniform(0, 100)
+    acc = 0
+    for i, o in enumerate(outs):
+        acc += o["p"]
+        if x < acc:
+            return i
+    return len(outs) - 1
+
+
+async def _ex_resolve(bot, run_id: int, idx: int):
+    """Закрыть стоянку. Вызывать под замком экспедиции."""
+    async with aiosqlite.connect(DB_PATH) as db:
+        cur = await db.execute(
+            "UPDATE ex_runs SET resolved=? WHERE id=? AND status='active' AND step=? AND resolved<?",
+            (idx, run_id, idx, idx),
+        )
+        await db.commit()
+        if cur.rowcount == 0:
+            return
+    run = await ex_run_get(run_id)
+    members = await ex_members_get(run_id)
+    plan = json.loads(run["plan_json"])
+    card = ex_card(run["route"], plan[idx]["card"])
+    opt_key, why, votes = _ex_tally(card, members, idx)
+    opt = _ex_opt(card, opt_key)
+    oi = _ex_roll(opt)
+    out = opt["outcomes"][oi]
+
+    loot = max(0, run["loot"] + out.get("loot", 0))
+    supply = max(0, min(EX_SUPPLY_START, run["supply"] + out.get("supply", 0)))
+    find = ""
+    if out.get("find"):
+        fkey, pct = out["find"]
+        if random.uniform(0, 100) < pct:
+            find = fkey
+
+    # В журнал — что изменилось на самом деле: «−8🪙» при пустой добыче
+    # ничего не отнимает, и показывать его как потерю было бы неправдой.
+    entry = {"i": idx, "card": card["key"], "opt": opt_key, "o": oi, "why": why,
+             "votes": votes, "find": find, "loot_after": loot, "supply_after": supply,
+             "dl": loot - run["loot"], "ds": supply - run["supply"]}
+    log = json.loads(run["log_json"])
+    log.append(entry)
+    async with aiosqlite.connect(DB_PATH) as db:
+        await db.execute(
+            "UPDATE ex_runs SET loot=?, supply=?, log_json=? WHERE id=?",
+            (loot, supply, json.dumps(log), run_id),
+        )
+        await db.commit()
+    run.update(loot=loot, supply=supply, log_json=json.dumps(log))
+
+    names = await _ex_names(members)
+    await _ex_redraw(bot, run, idx, members, names, entry)
+    if find:
+        await _ex_grant_find(bot, run, members, find, names)
+
+    # Личные находки этой стоянки, на которые не ответили, — в общий котёл
+    for m in members:
+        if m["pers_step"] == idx and m["pers_key"] and not m["pers_choice"]:
+            await _ex_personal_set(bot, run, m, "share", names[m["user_id"]]["html"], silent=True)
+
+    if idx == len(plan) - 1:
+        await _ex_finish(bot, run_id, "done")
+    elif supply <= 0:
+        await _ex_finish(bot, run_id, "turned_back")
+
+
+async def ex_advance(bot, run_id: int):
+    """Продвинуть экспедицию по расписанию: закрыть просроченную стоянку, открыть следующую."""
+    async with _ex_lock(run_id):
+        run = await ex_run_get(run_id)
+        if not run or run["status"] != "active":
+            return
+        now = time.time()
+        if run["step"] > run["resolved"]:
+            if now < run["closes_at"]:
+                return
+            await _ex_resolve(bot, run_id, run["step"])
+            run = await ex_run_get(run_id)
+            if run["status"] != "active":
+                return
+        plan = json.loads(run["plan_json"])
+        nxt = run["step"] + 1
+        if nxt < len(plan) and now >= plan[nxt]["at"]:
+            await _ex_open(bot, run, nxt)
+
+
+# ── Находки ──────────────────────────────────────────────────────────────────
+
+async def _ex_grant_find(bot, run: dict, members: list[dict], fkey: str, names: dict):
+    """Находка достаётся каждому в команде. Полный набор маршрута — облик."""
+    fd = EX_FINDS[fkey]
+    route = EX_ROUTES[fd["route"]]
+    route_finds = [k for k, v in EX_FINDS.items() if v["route"] == fd["route"]]
+    now = time.time()
+    for m in members:
+        uid = m["user_id"]
+        async with aiosqlite.connect(DB_PATH) as db:
+            async with db.execute(
+                "SELECT qty FROM ex_finds WHERE user_id=? AND find_key=?", (uid, fkey)
+            ) as c:
+                had = await c.fetchone()
+            await db.execute(
+                "INSERT INTO ex_finds(user_id, find_key, qty, first_at) VALUES(?,?,1,?) "
+                "ON CONFLICT(user_id, find_key) DO UPDATE SET qty=qty+1",
+                (uid, fkey, now),
+            )
+            async with db.execute(
+                "SELECT finds_json FROM ex_members WHERE run_id=? AND user_id=?",
+                (run["id"], uid),
+            ) as c:
+                row = await c.fetchone()
+            got = json.loads((row[0] if row else None) or "[]")
+            got.append({"key": fkey, "new": not had})
+            await db.execute(
+                "UPDATE ex_members SET finds_json=? WHERE run_id=? AND user_id=?",
+                (json.dumps(got), run["id"], uid),
+            )
+            await db.commit()
+        if had:
+            continue
+        owned = await ex_finds_of(uid)
+        if all(k in owned for k in route_finds) and f"set:{fd['route']}" not in owned:
+            async with aiosqlite.connect(DB_PATH) as db:
+                await db.execute(
+                    "INSERT OR IGNORE INTO ex_finds(user_id, find_key, qty, first_at) VALUES(?,?,1,?)",
+                    (uid, f"set:{fd['route']}", now),
+                )
+                await db.commit()
+            await db_add_skin(uid, route["skin"])
+            name = names[uid]["html"]
+            try:
+                await bot.send_message(
+                    uid,
+                    ui_card(
+                        ui_title(route["emoji"], "Набор собран"),
+                        f"Все находки маршрута «{route['name']}» у тебя.\n"
+                        f"Облик <b>{route['skin']}</b> — в коллекции.",
+                        hint="Надеть: /frog → 🎒 Инвентарь",
+                    ),
+                    parse_mode=ParseMode.HTML,
+                )
+            except (BadRequest, Forbidden, TimedOut):
+                pass
+            await announce(
+                bot,
+                f"{route['emoji']} {name} собрала все находки маршрута "
+                f"«{route['name']}» и получила облик <b>{route['skin']}</b>",
+                delete_after=0, announce_level="major",
+            )
+            logger.info("expedition set done: user=%s route=%s", uid, fd["route"])
+
+
+# ── Личная находка ───────────────────────────────────────────────────────────
+
+def _ex_pers_card(key: str) -> dict | None:
+    return next((p for p in EX_PERSONAL if p["key"] == key), None)
+
+
+def ex_personal_text(run: dict, m: dict, name: str, choice: str = "") -> str:
+    card = _ex_pers_card(m["pers_key"])
+    v = EX_ROUTES[run["route"]]["personal"]
+    head = ui_title("🎁", "Личная находка")
+    body = card["text"].format(name=name)
+    if not choice:
+        return ui_card(
+            head, body,
+            f"{_ex_icon('🎒')} +{2 * v}{_E_COIN} тебе\n"
+            f"{_ex_icon('🤝')} +{v}{_E_COIN} каждому в команде",
+            hint="Выбор увидит команда в итоге. Без ответа — в котёл",
+        )
+    if choice == "keep":
+        res = f"{name} оставила находку себе: +{2 * v}{_E_COIN} в итоге."
+    else:
+        res = f"{name} отдала находку в общий котёл: +{v}{_E_COIN} каждому."
+    return ui_card(head, body, res)
+
+
+async def _ex_send_personal(bot, run: dict, m: dict, name: str):
+    kb = InlineKeyboardMarkup([[
+        btn("🎒 Взять себе", callback_data=f"ex|p|{run['id']}|keep"),
+        btn("🤝 В котёл", callback_data=f"ex|p|{run['id']}|share"),
+    ]])
+    try:
+        sent = await bot.send_message(
+            m["user_id"], ex_personal_text(run, m, name),
+            parse_mode=ParseMode.HTML, reply_markup=kb,
+        )
+        mid = sent.message_id
+    except (BadRequest, Forbidden, TimedOut):
+        mid = 0
+    async with aiosqlite.connect(DB_PATH) as db:
+        await db.execute(
+            "UPDATE ex_members SET pers_msg_id=? WHERE run_id=? AND user_id=?",
+            (mid, run["id"], m["user_id"]),
+        )
+        await db.commit()
+
+
+async def _ex_personal_set(bot, run: dict, m: dict, choice: str, name: str, silent: bool = False):
+    async with aiosqlite.connect(DB_PATH) as db:
+        cur = await db.execute(
+            "UPDATE ex_members SET pers_choice=? WHERE run_id=? AND user_id=? AND pers_choice=''",
+            (choice, run["id"], m["user_id"]),
+        )
+        await db.commit()
+        if cur.rowcount == 0:
+            return
+    msg_id = m.get("pers_msg_id")
+    if msg_id:
+        try:
+            await bot.edit_message_text(
+                ex_personal_text(run, m, name, choice),
+                chat_id=m["user_id"], message_id=msg_id, parse_mode=ParseMode.HTML,
+            )
+        except (BadRequest, Forbidden, TimedOut):
+            pass
+
+
+async def ex_personal_choose(bot, run_id: int, uid: int, choice: str) -> str:
+    if choice not in ("keep", "share"):
+        return "Нет такого выбора"
+    async with _ex_lock(run_id):
+        run = await ex_run_get(run_id)
+        members = await ex_members_get(run_id)
+        m = next((x for x in members if x["user_id"] == uid), None)
+        if not run or run["status"] != "active" or not m or not m["pers_key"]:
+            return "Эта находка уже позади"
+        if m["pers_choice"]:
+            return "Уже решено"
+        if run["resolved"] >= m["pers_step"]:
+            return "Стоянка уже позади"
+        names = await _ex_names([m])
+        await _ex_personal_set(bot, run, m, choice, names[uid]["html"])
+    return "Себе" if choice == "keep" else "В котёл"
+
+
+# ── Итог ─────────────────────────────────────────────────────────────────────
+
+def ex_payout(run: dict, members: list[dict], m: dict) -> dict:
+    """Что получает участник. Чистая функция — её же показывает итог."""
+    r = EX_ROUTES[run["route"]]
+    n = len(members)
+    outcome = run["outcome"]
+    loot = run["loot"] if outcome != "turned_back" else run["loot"] // 2
+    supply_bonus = run["supply"] * EX_SUPPLY_COIN if outcome == "done" else 0
+    mult = ex_team_mult(n)
+    team_part = round((loot + supply_bonus) * mult)
+    v = r["personal"]
+    personal = sum(v for x in members if x["pers_choice"] == "share")
+    if m["pers_choice"] == "keep":
+        personal += 2 * v
+    finds = json.loads(m.get("finds_json") or "[]")
+    dup = sum(EX_DUP_FIND_COINS for x in finds if not x.get("new"))
+    xp = r["xp"] if outcome != "turned_back" else r["xp"] // 2
+    return {
+        "loot": run["loot"], "loot_paid": loot, "supply_bonus": supply_bonus,
+        "mult": mult, "team_part": team_part, "personal": personal, "dup": dup,
+        "total": team_part + personal + dup, "xp": xp, "finds": finds,
+    }
+
+
+async def ex_final_text(run: dict, members: list[dict], m: dict, names: dict, p: dict) -> str:
+    r = EX_ROUTES[run["route"]]
+    plan = json.loads(run["plan_json"])
+    log = json.loads(run["log_json"])
+    n = len(members)
+    if run["outcome"] == "done":
+        how = "Маршрут пройден до конца."
+    elif run["outcome"] == "turned_back":
+        how = f"Запас кончился на стоянке {len(log)}/{len(plan)} — команда повернула домой."
+    else:
+        how = "Экспедицию остановили досрочно."
+
+    rows = []
+    if run["outcome"] == "turned_back":
+        rows.append(f"{_E_COIN} Добыча {p['loot']} → половина, {p['loot_paid']}")
+    else:
+        rows.append(f"{_E_COIN} Добыча {p['loot']}")
+    if p["supply_bonus"]:
+        rows.append(f"{_E_BAG} Запас {run['supply']} → +{p['supply_bonus']}")
+    if n > 1:
+        rows.append(f"{_E_USERS} Команда из {n}{SEP}×{p['mult']:.1f}")
+    if p["personal"]:
+        rows.append(f"🎁 Личные находки +{p['personal']}")
+    if p["dup"]:
+        rows.append(f"🔁 Повторные находки +{p['dup']}")
+
+    total = f"Итого <b>+{p['total']}</b>{_E_COIN}{SEP}<b>+{p['xp']}</b> {_E_XP}"
+
+    finds_block = ""
+    if p["finds"]:
+        owned = await ex_finds_of(m["user_id"])
+        lines = []
+        for x in p["finds"]:
+            fd = EX_FINDS[x["key"]]
+            have = sum(1 for k, v in EX_FINDS.items() if v["route"] == fd["route"] and k in owned)
+            of = sum(1 for v in EX_FINDS.values() if v["route"] == fd["route"])
+            tag = f"новая, {have}/{of}" if x.get("new") else "повтор"
+            lines.append(f"{fd['emoji']} {fd['name']}{SEP}{tag}")
+        finds_block = "Находки:\n" + "\n".join(lines)
+
+    steps = []
+    for e in log:
+        card = ex_card(run["route"], e["card"])
+        opt = _ex_opt(card, e["opt"])
+        steps.append(f"{e['i'] + 1}. {card['title']}: {_ex_icon(_ex_opt_emoji(opt))} "
+                     f"{_ex_fx({'loot': e['dl'], 'supply': e['ds']})}")
+
+    pers = []
+    for x in members:
+        if x["pers_choice"] == "keep":
+            pers.append(f"{names[x['user_id']]['html']} оставила находку себе.")
+        elif x["pers_choice"] == "share":
+            pers.append(f"{names[x['user_id']]['html']} отдала находку в котёл.")
+
+    return ui_card(
+        ui_title(r["emoji"], f"{r['name']}{SEP}итог"),
+        how,
+        ui_quote(*rows),
+        total,
+        finds_block,
+        ui_quote(*steps, expandable=True),
+        " ".join(pers),
+    )
+
+
+async def _ex_finish(bot, run_id: int, outcome: str):
+    """Завершить и выплатить. Вызывать под замком экспедиции."""
+    now = time.time()
+    async with aiosqlite.connect(DB_PATH) as db:
+        cur = await db.execute(
+            "UPDATE ex_runs SET status='finished', outcome=?, finished_at=? "
+            "WHERE id=? AND status='active'",
+            (outcome, now, run_id),
+        )
+        await db.commit()
+        if cur.rowcount == 0:
+            return
+    run = await ex_run_get(run_id)
+    members = await ex_members_get(run_id)
+    names = await _ex_names(members)
+
+    # Стоянка, открытая в момент остановки, — без кнопок
+    if run["step"] > run["resolved"]:
+        for m in members:
+            if m["msg_id"]:
+                try:
+                    await bot.edit_message_reply_markup(
+                        chat_id=m["user_id"], message_id=m["msg_id"], reply_markup=None)
+                except (BadRequest, Forbidden, TimedOut):
+                    pass
+
+    for m in members:
+        p = ex_payout(run, members, m)
+        f = await db_get(m["user_id"])
+        if f:
+            f["coins"] = f.get("coins", 0) + p["total"]
+            add_xp(f, p["xp"])
+            await levelup(f, bot)
+            await db_save(f)
+        async with aiosqlite.connect(DB_PATH) as db:
+            await db.execute(
+                "UPDATE ex_members SET coins=?, xp=? WHERE run_id=? AND user_id=?",
+                (p["total"], p["xp"], run_id, m["user_id"]),
+            )
+            await db.commit()
+        asyncio.create_task(plog(
+            m["user_id"], "expedition_end",
+            f"route={run['route']} outcome={outcome} team={len(members)} "
+            f"loot={run['loot']} supply={run['supply']} coins={p['total']} xp={p['xp']}",
+            coins_delta=p["total"],
+        ))
+        try:
+            await bot.send_message(
+                m["user_id"], await ex_final_text(run, members, m, names, p),
+                parse_mode=ParseMode.HTML,
+            )
+        except (BadRequest, Forbidden, TimedOut):
+            pass
+    _EX_LOCKS.pop(run_id, None)
+    logger.info("expedition %s finished: %s loot=%s supply=%s", run_id, outcome, run["loot"], run["supply"])
+
+
+async def ex_stop(bot, run_id: int) -> bool:
+    """Остановить идущую экспедицию досрочно (админ): выплатить, что набрано."""
+    async with _ex_lock(run_id):
+        run = await ex_run_get(run_id)
+        if not run or run["status"] != "active":
+            return False
+        await _ex_finish(bot, run_id, "stopped")
+    return True
+
+
+# ── Фоновая задача ───────────────────────────────────────────────────────────
+
+async def job_ex_tick(ctx: ContextTypes.DEFAULT_TYPE):
+    """Раз в минуту: стартовать собравшиеся команды, двигать идущие экспедиции."""
+    now = time.time()
+    async with aiosqlite.connect(DB_PATH) as db:
+        async with db.execute(
+            "SELECT id, status, gather_until, started_at, route FROM ex_runs "
+            "WHERE status IN ('lobby','active')"
+        ) as c:
+            rows = await c.fetchall()
+    for run_id, status, gather_until, started_at, route in rows:
+        try:
+            if status == "lobby":
+                if now >= gather_until:
+                    await ex_start(ctx.bot, run_id)
+                continue
+            # Предохранитель: экспедиция, которую что-то держит вдвое дольше
+            # положенного, завершается с тем, что набрано.
+            hours = EX_ROUTES.get(route, {}).get("hours", 4)
+            if now > started_at + hours * 3600 * 2 + 3600:
+                await ex_stop(ctx.bot, run_id)
+                continue
+            await ex_advance(ctx.bot, run_id)
+        except Exception:
+            logger.exception("job_ex_tick: экспедиция %s", run_id)
+
+
+# ── Экраны ───────────────────────────────────────────────────────────────────
+
+async def _ex_show(q, text: str, kb: InlineKeyboardMarkup | None = None):
+    try:
+        await q.message.edit_text(text, parse_mode=ParseMode.HTML, reply_markup=kb,
+                                  disable_web_page_preview=True)
+    except BadRequest as e:
+        if "not modified" not in str(e).lower():
+            raise
+    except (Forbidden, TimedOut):
+        pass
+
+
+def _ex_today_left() -> str:
+    now = time.time()
+    return _ex_left(now - now % 86400 + 86400)
+
+
+async def ex_menu_view(f: dict, back: str = "plaza") -> tuple[str, InlineKeyboardMarkup]:
+    lvl = f.get("level", 1)
+    routes = []
+    rows = []
+    for rk, r in EX_ROUTES.items():
+        locked = lvl < r["level"]
+        routes.append(f"{r['emoji']} {r['name']}{SEP}{r['hours']} ч"
+                      + (f"{SEP}с {r['level']} ур." if locked else ""))
+        rows.append([btn(f"{'🔒' if locked else r['emoji']} {r['name']}",
+                         callback_data=f"ex|route|{rk}")])
+    for lb in (await ex_open_lobbies(f["user_id"]))[:3]:
+        r = EX_ROUTES.get(lb["route"])
+        if r:
+            rows.append([btn(f"{r['emoji']} Сбор {lb['team']}/{EX_MAX_TEAM}{SEP}"
+                             f"{_ex_left(lb['gather_until'])}",
+                             callback_data=f"ex|join|{lb['id']}")])
+    if ex_today_used(f):
+        today = f"Сегодня экспедиция уже была. Следующая — через {_ex_today_left()}."
+        rows.append([btn(f"⭐ Ещё одна за {EX_EXTRA_STARS} Stars", callback_data="ex|stars")])
+    else:
+        today = "Сегодня экспедиция свободна."
+    rows.append([btn("🧺 Находки", callback_data="ex|finds"),
+                 btn("◀️ Назад", callback_data=back)])
+    text = ui_card(
+        ui_title(_E_MAP, "Экспедиции"),
+        "Команда до четырёх лягушек — или одна — идёт по маршруту. "
+        "Стоянки приходят по расписанию, решает большинство.",
+        "\n".join(routes),
+        today,
+    )
+    return text, InlineKeyboardMarkup(rows)
+
+
+async def ex_route_view(f: dict, route_key: str) -> tuple[str, InlineKeyboardMarkup]:
+    r = EX_ROUTES[route_key]
+    owned = await ex_finds_of(f["user_id"])
+    keys = [k for k, v in EX_FINDS.items() if v["route"] == route_key]
+    have = sum(1 for k in keys if k in owned)
+    skin_done = f"set:{route_key}" in owned
+    why = await ex_cant_go(f, route_key)
+    rows = []
+    if not why:
+        rows.append([btn("🐸 В одиночку", callback_data=f"ex|solo|{route_key}", style="success")])
+        rows.append([btn("👥 Собрать команду", callback_data=f"ex|team|{route_key}")])
+    elif why == "today":
+        rows.append([btn(f"⭐ Ещё одна за {EX_EXTRA_STARS} Stars", callback_data="ex|stars")])
+    rows.append([btn("◀️ Назад", callback_data="ex|menu")])
+    if why == "today":
+        why = f"Сегодня экспедиция уже была. Следующая — через {_ex_today_left()}."
+    text = ui_card(
+        ui_title(r["emoji"], r["name"]),
+        r["about"],
+        f"⏱ {r['hours']} ч{SEP}{r['stops']} стоянок{SEP}+{r['xp']} {_E_XP}",
+        f"🧺 Находки {have}/{len(keys)}"
+        + (f"{SEP}облик получен" if skin_done else f"\nЗа все — облик <b>{r['skin']}</b>"),
+        why,
+    )
+    return text, InlineKeyboardMarkup(rows)
+
+
+def ex_gather_view(route_key: str) -> tuple[str, InlineKeyboardMarkup]:
+    r = EX_ROUTES[route_key]
+    text = ui_card(
+        ui_title(r["emoji"], "Собрать команду"),
+        f"Пока идёт сбор, друзья вступают по ссылке или из меню экспедиций — "
+        f"до {EX_MAX_TEAM} лягушек. Выйти можно и раньше.",
+        hint="Не соберётся никто — выход в одиночку",
+    )
+    kb = InlineKeyboardMarkup([
+        [btn(f"{m} мин", callback_data=f"ex|make|{route_key}|{m}") for m in EX_GATHER_MIN],
+        [btn("◀️ Назад", callback_data=f"ex|route|{route_key}")],
+    ])
+    return text, kb
+
+
+async def ex_active_view(run: dict, uid: int) -> tuple[str, InlineKeyboardMarkup]:
+    r = EX_ROUTES[run["route"]]
+    plan = json.loads(run["plan_json"])
+    members = await ex_members_get(run["id"])
+    names = await _ex_names(members)
+    team = ", ".join(names[m["user_id"]]["html"] for m in members)
+    if run["step"] > run["resolved"]:
+        now_line = f"Стоянка {run['step'] + 1}/{len(plan)} открыта ещё {_ex_left(run['closes_at'])}"
+    elif run["step"] + 1 < len(plan):
+        now_line = f"Следующая стоянка через {_ex_left(plan[run['step'] + 1]['at'])}"
+    else:
+        now_line = "Подводим итог"
+    rows = []
+    if run["step"] > run["resolved"]:
+        rows.append([btn("📍 К стоянке", callback_data=f"ex|here|{run['id']}")])
+    rows.append([btn("◀️ Назад", callback_data="plaza")])
+    text = ui_card(
+        ui_title(r["emoji"], r["name"]),
+        f"{_E_USERS} {team}",
+        f"{now_line}\n{_E_BAG} {run['supply']}/{EX_SUPPLY_START}{SEP}{_E_COIN} {run['loot']}",
+        hint="Написать команде: /m текст" if len(members) > 1 else "",
+    )
+    return text, InlineKeyboardMarkup(rows)
+
+
+async def ex_finds_view(uid: int) -> tuple[str, InlineKeyboardMarkup]:
+    owned = await ex_finds_of(uid)
+    blocks = []
+    for rk, r in EX_ROUTES.items():
+        keys = [k for k, v in EX_FINDS.items() if v["route"] == rk]
+        have = sum(1 for k in keys if k in owned)
+        lines = [f"{r['emoji']} <b>{r['name']}</b>{SEP}{have}/{len(keys)}"]
+        for k in keys:
+            fd = EX_FINDS[k]
+            if k in owned:
+                qty = f"{SEP}×{owned[k]}" if owned[k] > 1 else ""
+                lines.append(f"{fd['emoji']} {fd['name']}{qty}")
+            else:
+                lines.append("❔ …")
+        lines.append(f"Облик <b>{r['skin']}</b>{SEP}"
+                     + ("получен" if f"set:{rk}" in owned else "за все находки"))
+        blocks.append("\n".join(lines))
+    text = ui_card(ui_title("🧺", "Находки"), *blocks,
+                   hint="Находка достаётся каждому в команде")
+    return text, InlineKeyboardMarkup([[btn("◀️ Назад", callback_data="ex|menu")]])
+
+
+async def ex_join_view(f: dict, run_id: int) -> tuple[str, InlineKeyboardMarkup]:
+    """Экран приглашения: куда зовут и кнопка «Вступить»."""
+    run = await ex_run_get(run_id)
+    if not run or run["status"] != "lobby" or run["gather_until"] <= time.time():
+        return (ui_card(ui_title(_E_MAP, "Экспедиция"), "Этот сбор уже закрыт."),
+                InlineKeyboardMarkup([[btn("🗺️ Экспедиции", callback_data="ex|menu")]]))
+    r = EX_ROUTES[run["route"]]
+    members = await ex_members_get(run_id)
+    names = await _ex_names(members)
+    text = ui_card(
+        ui_title(r["emoji"], r["name"]),
+        r["about"],
+        f"{_E_USERS} {', '.join(names[m['user_id']]['html'] for m in members)}"
+        f"{SEP}{len(members)}/{EX_MAX_TEAM}\n"
+        f"⏱ {r['hours']} ч{SEP}выход через {_ex_left(run['gather_until'])}",
+    )
+    return text, InlineKeyboardMarkup([
+        [btn("✅ Вступить", callback_data=f"ex|join|{run_id}", style="success")],
+        [btn("🗺️ Все экспедиции", callback_data="ex|menu")],
+    ])
+
+
+async def ex_entry_view(f: dict, back: str = "plaza") -> tuple[str, InlineKeyboardMarkup]:
+    """Вход в раздел: идущая экспедиция, свой сбор или меню."""
+    run = await ex_user_run(f["user_id"])
+    if run and run["status"] == "active":
+        return await ex_active_view(run, f["user_id"])
+    if run and run["status"] == "lobby":
+        members = await ex_members_get(run["id"])
+        names = await _ex_names(members)
+        return ex_lobby_text(run, members, names), None
+    return await ex_menu_view(f, back)
+
+
+async def _ex_cant_alert(q, why: str):
+    if why == "today":
+        why = f"Сегодня экспедиция уже была. Следующая — через {_ex_today_left()}."
+    await q.answer(why[:200], show_alert=True)
+
+
+async def ex_router(update: Update, ctx: ContextTypes.DEFAULT_TYPE):
+    _g = await cb_guard(update, ctx)
+    if _g is None:
+        return
+    q, uid, d, f = _g
+    parts = d.split("|")
+    act = parts[1] if len(parts) > 1 else ""
+    bot = ctx.bot
+
+    def _int(i: int) -> int:
+        try:
+            return int(parts[i])
+        except (IndexError, ValueError):
+            return 0
+
+    if act == "menu":
+        run = await ex_user_run(uid)
+        if run and run["status"] == "lobby":
+            members = await ex_members_get(run["id"])
+            await _ex_show(q, ex_lobby_text(run, members, await _ex_names(members)),
+                           ex_lobby_kb(run, uid, bot.username))
+            await ex_set_msg(run["id"], uid, q.message.message_id)
+        else:
+            text, kb = await ex_entry_view(f)
+            await _ex_show(q, text, kb)
+        await q.answer()
+        return
+
+    if act == "route":
+        rk = parts[2] if len(parts) > 2 else ""
+        if rk not in EX_ROUTES:
+            await q.answer(); return
+        text, kb = await ex_route_view(f, rk)
+        await _ex_show(q, text, kb)
+        await q.answer()
+        return
+
+    if act == "team":
+        rk = parts[2] if len(parts) > 2 else ""
+        if rk not in EX_ROUTES:
+            await q.answer(); return
+        why = await ex_cant_go(f, rk)
+        if why:
+            await _ex_cant_alert(q, why); return
+        text, kb = ex_gather_view(rk)
+        await _ex_show(q, text, kb)
+        await q.answer()
+        return
+
+    if act in ("solo", "make"):
+        rk = parts[2] if len(parts) > 2 else ""
+        gather = 0 if act == "solo" else _int(3)
+        if rk not in EX_ROUTES or (act == "make" and gather not in EX_GATHER_MIN):
+            await q.answer(); return
+        run_id, why = await ex_lobby_create(f, rk, gather)
+        if not run_id:
+            await _ex_cant_alert(q, why); return
+        await ex_set_msg(run_id, uid, q.message.message_id)
+        await q.answer()
+        if act == "solo":
+            await ex_start(bot, run_id)
+        else:
+            await ex_lobby_refresh(bot, run_id)
+        return
+
+    if act == "join":
+        run_id = _int(2)
+        why = await ex_lobby_join(f, run_id)
+        if why:
+            await _ex_cant_alert(q, why); return
+        await ex_set_msg(run_id, uid, q.message.message_id)
+        await q.answer("Ты в команде")
+        await ex_lobby_refresh(bot, run_id)
+        return
+
+    if act == "leave":
+        why = await ex_lobby_leave(bot, _int(2), uid)
+        if why:
+            await q.answer(why[:200], show_alert=True); return
+        text, kb = await ex_menu_view(f)
+        await _ex_show(q, text, kb)
+        await q.answer("Ты больше не в команде")
+        return
+
+    if act in ("go", "cancel", "call"):
+        run_id = _int(2)
+        run = await ex_run_get(run_id)
+        if not run or run["status"] != "lobby":
+            await q.answer("Сбор уже закрыт", show_alert=True); return
+        if run["creator_id"] != uid:
+            await q.answer("Это решает создатель сбора", show_alert=True); return
+        if act == "go":
+            await q.answer()
+            await ex_start(bot, run_id)
+        elif act == "cancel":
+            await q.answer()
+            await ex_lobby_cancel(bot, run_id)
+        else:
+            async with aiosqlite.connect(DB_PATH) as db:
+                cur = await db.execute(
+                    "UPDATE ex_runs SET announced=1 WHERE id=? AND announced=0", (run_id,))
+                await db.commit()
+            if cur.rowcount and bot.username:
+                r = EX_ROUTES[run["route"]]
+                await announce(
+                    bot,
+                    f"{r['emoji']} <b>{fname(f)}</b> собирает команду: "
+                    f"«{r['name']}», {r['hours']} ч. Выход через {_ex_left(run['gather_until'])}.",
+                    reply_markup=InlineKeyboardMarkup([[btn(
+                        "🚪 Вступить", url=f"https://t.me/{bot.username}?start=ex_{run_id}")]]),
+                    delete_after=max(60, int(run["gather_until"] - time.time())),
+                )
+            await q.answer("Сбор объявлен в чате")
+            await ex_lobby_refresh(bot, run_id)
+        return
+
+    if act == "v":
+        msg = await ex_vote(bot, _int(2), _int(3), uid, parts[4] if len(parts) > 4 else "")
+        await q.answer(msg[:200])
+        return
+
+    if act == "p":
+        msg = await ex_personal_choose(bot, _int(2), uid, parts[3] if len(parts) > 3 else "")
+        await q.answer(msg[:200])
+        return
+
+    if act == "here":
+        run = await ex_run_get(_int(2))
+        if not run or run["status"] != "active" or run["step"] <= run["resolved"]:
+            await q.answer("Открытой стоянки нет", show_alert=True); return
+        members = await ex_members_get(run["id"])
+        if not any(m["user_id"] == uid for m in members):
+            await q.answer(); return
+        plan = json.loads(run["plan_json"])
+        card = ex_card(run["route"], plan[run["step"]]["card"])
+        sent = await bot.send_message(
+            uid, ex_stop_text(run, run["step"], members, await _ex_names(members)),
+            parse_mode=ParseMode.HTML, reply_markup=ex_stop_kb(run["id"], run["step"], card),
+        )
+        await ex_set_msg(run["id"], uid, sent.message_id)
+        await q.answer()
+        return
+
+    if act == "finds":
+        text, kb = await ex_finds_view(uid)
+        await _ex_show(q, text, kb)
+        await q.answer()
+        return
+
+    if act == "stars":
+        await q.answer()
+        try:
+            await bot.send_invoice(
+                chat_id=uid,
+                title="Ещё одна экспедиция",
+                description="Вторая экспедиция сегодня. Бесплатная снова будет после полуночи по UTC.",
+                payload="exp_extra_slot",
+                provider_token="",
+                currency="XTR",
+                prices=[LabeledPrice("Экспедиция", EX_EXTRA_STARS)],
+            )
+        except (BadRequest, Forbidden, TimedOut) as e:
+            logger.warning("ex stars invoice: %s", e)
+        return
+
+    if act == "adm":
+        if uid not in ADMIN_IDS:
+            await q.answer("⛔", show_alert=True); return
+        what, run_id = (parts[2] if len(parts) > 2 else ""), _int(3)
+        if what == "stop":
+            ok = await ex_stop(bot, run_id)
+        elif what == "cancel":
+            ok = await ex_lobby_cancel(bot, run_id, "Сбор отменил администратор.")
+        else:
+            ok = False
+        await q.answer("Готово" if ok else "Уже не идёт")
+        text, kb = await ex_admin_view()
+        await _ex_show(q, text, kb)
+        return
+
+    await q.answer()
+
+
+async def ex_admin_view() -> tuple[str, InlineKeyboardMarkup]:
+    now = time.time()
+    async with aiosqlite.connect(DB_PATH) as db:
+        db.row_factory = aiosqlite.Row
+        async with db.execute(
+            "SELECT r.*, COUNT(m.user_id) AS team FROM ex_runs r "
+            "JOIN ex_members m ON m.run_id=r.id "
+            "WHERE r.status IN ('lobby','active') GROUP BY r.id ORDER BY r.id"
+        ) as c:
+            live = [dict(r) for r in await c.fetchall()]
+        async with db.execute(
+            "SELECT outcome, COUNT(*) FROM ex_runs WHERE status='finished' AND finished_at>? "
+            "GROUP BY outcome", (now - 7 * 86400,)
+        ) as c:
+            outcomes = dict(await c.fetchall())
+        async with db.execute(
+            "SELECT AVG(m.coins), COUNT(*) FROM ex_members m JOIN ex_runs r ON r.id=m.run_id "
+            "WHERE r.status='finished' AND r.finished_at>?", (now - 7 * 86400,)
+        ) as c:
+            avg_coins, payouts = await c.fetchone()
+    rows, lines = [], []
+    for run in live:
+        r = EX_ROUTES.get(run["route"], {"emoji": "?", "name": run["route"]})
+        if run["status"] == "lobby":
+            lines.append(f"#{run['id']} {r['emoji']} сбор{SEP}{run['team']}/{EX_MAX_TEAM}")
+            rows.append([btn(f"✖️ Отменить сбор #{run['id']}",
+                             callback_data=f"ex|adm|cancel|{run['id']}")])
+        else:
+            n = len(json.loads(run["plan_json"]))
+            lines.append(f"#{run['id']} {r['emoji']} {run['step'] + 1}/{n}{SEP}{run['team']} чел."
+                         f"{SEP}🎒{run['supply']}{SEP}🪙{run['loot']}")
+            rows.append([btn(f"⏹ Завершить #{run['id']}", callback_data=f"ex|adm|stop|{run['id']}")])
+    total = sum(outcomes.values())
+    week = (f"Пройдено {outcomes.get('done', 0)}{SEP}повернули {outcomes.get('turned_back', 0)}"
+            f"{SEP}остановлено {outcomes.get('stopped', 0)}\n"
+            f"Средняя выплата {round(avg_coins or 0)}{_E_COIN} на участника ({payouts or 0})")
+    errs = ex_validate_content()
+    text = ui_card(
+        ui_title(_E_MAP, "Экспедиции · админ"),
+        "\n".join(lines) or "Сейчас никто не идёт.",
+        f"<b>За 7 дней: {total}</b>\n{week}",
+        ("⚠️ Ошибки в маршрутах:\n" + "\n".join(he(e) for e in errs[:10])) if errs else "",
+        hint="Завершить — выплатить набранное как есть",
+    )
+    return text, InlineKeyboardMarkup(rows)
+
+
+async def cmd_adminexp(update: Update, ctx: ContextTypes.DEFAULT_TYPE):
+    """/adminexp — идущие экспедиции, досрочное завершение, сводка за неделю."""
+    if update.effective_user.id not in ADMIN_IDS:
+        return
+    text, kb = await ex_admin_view()
+    await update.message.reply_text(text, parse_mode=ParseMode.HTML, reply_markup=kb)
+
+
+async def cmd_ex(update: Update, ctx: ContextTypes.DEFAULT_TYPE):
+    """Вход в экспедиции командой."""
+    f = await db_get(update.effective_user.id)
+    if not f:
+        await update.message.reply_text("Сначала /start 🐸")
+        return
+    run = await ex_user_run(f["user_id"])
+    if run and run["status"] == "lobby":
+        members = await ex_members_get(run["id"])
+        sent = await update.message.reply_text(
+            ex_lobby_text(run, members, await _ex_names(members)), parse_mode=ParseMode.HTML,
+            reply_markup=ex_lobby_kb(run, f["user_id"], ctx.bot.username),
+        )
+        await ex_set_msg(run["id"], f["user_id"], sent.message_id)
+        return
+    text, kb = await ex_entry_view(f, back="ex|menu")
+    await update.message.reply_text(text, parse_mode=ParseMode.HTML, reply_markup=kb,
+                                    disable_web_page_preview=True)
+
+
+async def cmd_exp2(update: Update, ctx: ContextTypes.DEFAULT_TYPE):
+    """/exp2 — новые экспедиции до переключения, только для админов."""
+    if update.effective_user.id not in ADMIN_IDS:
+        return
+    await cmd_ex(update, ctx)
+
+
+async def ex_start_deeplink(update: Update, ctx: ContextTypes.DEFAULT_TYPE, arg: str) -> bool:
+    """/start ex_<id> — приглашение в сбор. True, если ссылка наша."""
+    if not arg.startswith("ex_"):
+        return False
+    try:
+        run_id = int(arg[3:])
+    except ValueError:
+        return False
+    f = await db_get(update.effective_user.id)
+    if not f:
+        return False
+    text, kb = await ex_join_view(f, run_id)
+    await update.message.reply_text(text, parse_mode=ParseMode.HTML, reply_markup=kb)
+    return True
 
 
 # ════════════════════════════════════════════════════════════════════════════
@@ -70274,6 +71884,8 @@ def main():
     app.add_handler(CommandHandler("admin_nft_recheck", cmd_admin_nft_recheck))
     app.add_handler(CommandHandler("admin_nft_invite",  cmd_admin_nft_invite))
     app.add_handler(CommandHandler("nft_unlink",        cmd_nft_unlink))
+    app.add_handler(CommandHandler("adminexp",          cmd_adminexp))
+    app.add_handler(CommandHandler("exp2",              cmd_exp2))
     # ── Расследование ботоводов ───────────────────────────────────────────
     app.add_handler(CommandHandler("admingiftchain", cmd_admingiftchain))
     app.add_handler(CommandHandler("adminrollbackdry", cmd_adminrollbackdry))
@@ -70300,6 +71912,7 @@ def main():
         (r"^(admin|ca_|cs_|nft_approve|nft_reject)", admin_router),
         (r"^gacha",                                  gacha_router),
         (r"^nft_",                                   nft_router),
+        (r"^ex\|",                                  ex_router),
         (r"^(casino|jackpot|menu_jackpot)",          casino_router),
         (r"^(duel|battle_|tournament)",              duel_router),
         (r"^(shop_|buy_|market_|craft_|sub_|stars_)", shop_router),

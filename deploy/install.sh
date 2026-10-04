@@ -92,8 +92,8 @@ say "Ставлю зависимости в venv"
 "${APP_DIR}/venv/bin/python" -c 'import telegram; print("python-telegram-bot", telegram.__version__)'
 
 # Файл должен компилироваться до того, как systemd попробует его запустить
-"${APP_DIR}/venv/bin/python" -m py_compile "${APP_DIR}/bot.py" \
-    || die "bot.py не компилируется — смотри ошибку выше"
+"${APP_DIR}/venv/bin/python" -m py_compile "${APP_DIR}/bot.py" "${APP_DIR}/exp_routes.py" \
+    || die "bot.py или exp_routes.py не компилируется — смотри ошибку выше"
 
 # ── 5. Настройки ──────────────────────────────────────────────────────────────
 if [[ ! -f "${APP_DIR}/.env" ]]; then
