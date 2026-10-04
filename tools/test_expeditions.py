@@ -9,7 +9,7 @@
 Боевую базу не трогает: работает во временном каталоге. Часы подменены —
 двухчасовая экспедиция проходит за секунды.
 """
-import os, sys, asyncio, sqlite3, types, json, re, random, time as _time
+import os, sys, asyncio, sqlite3, types, json, re, time as _time
 
 import tempfile
 ROOT = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
@@ -119,6 +119,10 @@ async def add_frog(uid, name, level=5, coins=100):
                 "VALUES(?,?,?,?,?,1,0)", (uid, name, name, level, coins))
     con.commit(); con.close()
 
+def q_(sql, *a):
+    return q(sql, *a)
+
+
 def q(sql, *a):
     con = sqlite3.connect(DB)
     r = con.execute(sql, a).fetchall()
@@ -145,13 +149,17 @@ async def suite_engine():
     # ── 0. Данные маршрутов ──────────────────────────────────────────────────
     errs = B.ex_validate_content()
     assert not errs, errs
-    for c in R["cards"] + [R["finale"]]:
-        head = f"{R['emoji']} {c['title']} · 6/6"
-        assert width_w(head) <= 19, (head, width_w(head))
-        for o in c["options"]:
-            assert width_w(o["label"]) <= 19, (o["label"], width_w(o["label"]))
-            hint = f"{B._ex_opt_emoji(o)} {B.ex_option_hint(o, html=False)}"
-            assert width_w(hint) <= 21, (hint, width_w(hint))
+    assert set(B.EX_ROUTES) == {"reeds", "bog", "mill"}
+    for route in B.EX_ROUTES.values():
+        n = route["stops"]
+        assert route["skin"] in B.SKINS and B.SKINS[route["skin"]].get("chance") == 0
+        for c in route["cards"] + [route["finale"]]:
+            head = f"{route['emoji']} {c['title']} · {n}/{n}"
+            assert width_w(head) <= 19, (head, width_w(head))
+            for o in c["options"]:
+                assert width_w(o["label"]) <= 19, (o["label"], width_w(o["label"]))
+                hint = f"{B._ex_opt_emoji(o)} {B.ex_option_hint(o, html=False)}"
+                assert width_w(hint) <= 21, (hint, width_w(hint))
     for k, fd in B.EX_FINDS.items():
         line = f"{fd['emoji']} {fd['name']} · новая, 6/6"
         assert width_w(line) <= 21, (line, width_w(line))
@@ -173,7 +181,7 @@ async def suite_engine():
     plan = json.loads(run["plan_json"])
     card0 = B.ex_card("reeds", plan[0]["card"])
     risky = card0["options"][1]["key"]
-    msg = await B.ex_vote(bot, rid, 0, 1, risky)
+    await B.ex_vote(bot, rid, 0, 1, risky)
     run = await B.ex_run_get(rid)
     assert run["resolved"] == 0, run
     ed = bot.msgs[(1, stop0[2])]
@@ -828,12 +836,128 @@ async def suite_edge():
     assert "личке" in t and kb.inline_keyboard[0][0].url.endswith("start=exp"), replies
     dm = types.SimpleNamespace(effective_user=types.SimpleNamespace(id=440), message=GM(),
                                effective_chat=types.SimpleNamespace(type="private"))
+    B.EX_LIVE = False
     assert await B.ex_start_deeplink(dm, types.SimpleNamespace(bot=bot), "exp") is False
     B.EX_LIVE = True
     assert await B.ex_start_deeplink(dm, types.SimpleNamespace(bot=bot), "exp") is True
     assert "Экспедиции" in plain(replies[-1][0])
-    B.EX_LIVE = False
+    # ссылки из анонсов старых экспедиций ведут в раздел
+    assert await B.ex_start_deeplink(dm, types.SimpleNamespace(bot=bot), "exp_join_17") is True
     print("E21 группа и ссылка: ок")
+
+
+# ══ Переключение со старых экспедиций ══
+
+async def suite_switch():
+    # E22. Кнопка «Экспедиция» на площади ведёт в новые экспедиции,
+    # E25. кнопки старых экспедиций из истории — внятный ответ
+    await add_frog(500, "Площадь", level=1)
+    for d, expect in (("plaza_expedition", "Экспедиции"), ("exp_vote_3_1_a", None)):
+        answers = []
+        class PM:
+            message_id = 77
+            chat = types.SimpleNamespace(id=500, type="private")
+            async def edit_text(self, text, parse_mode=None, reply_markup=None, **k):
+                bot.msgs[(500, 77)] = (text, reply_markup)
+        q = types.SimpleNamespace(from_user=types.SimpleNamespace(id=500, username="", first_name="Площадь"),
+                                  data=d, message=PM())
+        async def ans(text=None, show_alert=False, **k): answers.append(text)
+        q.answer = ans
+        f500 = await B.db_get(500)
+        async def guard(update, ctx): return (q, 500, d, f500)
+        B.cb_guard = guard
+        await B.on_callback(types.SimpleNamespace(callback_query=q, effective_user=q.from_user,
+                                                  effective_chat=PM.chat),
+                            types.SimpleNamespace(bot=bot, bot_data={}, user_data={}))
+        if expect:
+            assert expect in plain(bot.msgs[(500, 77)][0]), bot.msgs.get((500, 77))
+        else:
+            assert answers and "обновились" in (answers[-1] or ""), answers
+    print("E22 площадь, E25 старые кнопки: ок")
+
+    # E23. Разовый перенос: шедшие старые экспедиции и припасы
+    con = sqlite3.connect(DB)
+    con.executescript("""
+        CREATE TABLE IF NOT EXISTS expeditions (id INTEGER PRIMARY KEY, biome TEXT, status TEXT,
+            creator_id INTEGER, started_at REAL DEFAULT 0, finished_at REAL DEFAULT 0);
+        CREATE TABLE IF NOT EXISTS expedition_members (expedition_id INTEGER, user_id INTEGER,
+            coins_taken INTEGER DEFAULT 0, supplies_json TEXT DEFAULT '{}', status TEXT DEFAULT 'active');
+    """)
+    for uid, name in ((510, "Создатель"), (511, "Вступил"), (512, "Ушёл"), (513, "Запасливая"),
+                      (514, "Выжила"), (515, "Погибла"), (516, "Давно")):
+        con.close(); await add_frog(uid, name, level=1, coins=0); con = sqlite3.connect(DB)
+    con.execute("INSERT INTO expeditions VALUES (1, 'swamp', 'active', 510, 0, 0)")
+    con.execute("INSERT INTO expedition_members VALUES (1, 510, 100, '{\"food\": 2}', 'active')")
+    con.execute("INSERT INTO expedition_members VALUES (1, 511, 50, '{\"potion\": 1, \"torch\": 2}', 'dead')")
+    con.execute("INSERT INTO expedition_members VALUES (1, 512, 70, '{}', 'left')")
+    con.execute("UPDATE frogs SET adventure_locked_until=? WHERE user_id IN (510, 511)", (CLOCK.t + 3600,))
+    con.execute("UPDATE frogs SET inventory=? WHERE user_id=513",
+                (json.dumps({"food": 3, "amulet": 1, "чужое": 5}),))
+    # для E24: старые завершённые, ставки выживших не вернулись
+    con.execute("INSERT INTO expeditions VALUES (2, 'forest', 'finished', 514, ?, ?)", (CLOCK.t - 100, CLOCK.t - 50))
+    con.execute("INSERT INTO expedition_members VALUES (2, 514, 200, '{}', 'active')")
+    con.execute("INSERT INTO expedition_members VALUES (2, 515, 300, '{}', 'dead')")
+    con.execute("INSERT INTO expeditions VALUES (3, 'forest', 'finished', 516, 10, 20)")
+    con.execute("INSERT INTO expedition_members VALUES (3, 516, 400, '{}', 'active')")
+    con.commit(); con.close()
+    for uid in range(510, 517):
+        B._user_cache.invalidate(uid)
+    await B.ex_migrate_old(bot)
+    assert await coins(510) == 100                       # создателю — только монеты
+    assert await coins(511) == 50 + 60 + 2 * 50          # вступившему — и припасы
+    assert await coins(512) == 0                         # ушедшему уже вернули
+    assert await coins(513) == 3 * 30 + 100              # припасы из инвентаря
+    inv = json.loads((await B.db_get(513))["inventory"])
+    assert inv == {"чужое": 5}, inv
+    assert (await B.db_get(510))["adventure_locked_until"] == 0
+    assert q_("SELECT status FROM expeditions WHERE id=1")[0][0] == "cancelled"
+    assert "обновились" in plain(bot.last_to(511, "send")[3])
+    before = await coins(510)
+    await B.ex_migrate_old(bot)                          # второй раз — ничего
+    assert await coins(510) == before
+    print("E23 перенос: ок")
+
+    # E24. Возврат ставок выживших: за сезон или за всё время, один раз
+    await B.db_setting("season_started_at", str(CLOCK.t - 1000))
+    season = await B.ex_lost_stakes(await B.season_started_at())
+    total = await B.ex_lost_stakes(0)
+    assert season == {514: 200} and total == {514: 200, 516: 400}, (season, total)
+    text, kb = await B.ex_refund_view()
+    assert kb_data(kb)[:2] == ["ex|adm|refund|1", "ex|adm|refund|0"], kb_data(kb)
+    print(plain(text))
+    assert "Вернули 200" in await B.ex_refund_do(bot, season_only=True)
+    assert await coins(514) == 200 and await coins(516) == 0 and await coins(515) == 0
+    assert "уже" in await B.ex_refund_do(bot, season_only=False)
+    assert await coins(516) == 0
+    text, _ = await B.ex_admin_view()
+    assert "Старые ставки" not in plain(text)
+    print("E24 возврат ставок: ок")
+
+    # E26. Топь и мельница целиком: своё число стоянок и свой запас
+    for rk, lvl in (("bog", 5), ("mill", 10)):
+        route = B.EX_ROUTES[rk]
+        uid = 600 + lvl
+        await add_frog(uid, f"Тест{rk}", level=lvl)
+        assert "уровня" in await B.ex_cant_go(await B.db_get(uid) | {"level": lvl - 1}, rk)
+        rid, why = await B.ex_lobby_create(await B.db_get(uid), rk, 0)
+        assert rid, why
+        await B.ex_start(bot, rid)
+        run = await B.ex_run_get(rid)
+        assert run["supply"] == route["supply"] and len(json.loads(run["plan_json"])) == route["stops"]
+        assert f"{route['supply']}/{route['supply']}" in plain(bot.last_to(uid, "send")[3])
+        for _ in range(route["stops"] + 2):
+            run = await B.ex_run_get(rid)
+            if run["status"] != "active":
+                break
+            CLOCK.t = max(CLOCK.t, run["closes_at"]) + 1
+            await tick_job()
+        run = await B.ex_run_get(rid)
+        assert run["status"] == "finished" and run["outcome"] == "done", run
+        final = plain(bot.last_to(uid, "send")[3])
+        assert route["name"] in final and "итог" in final
+        m = (await B.ex_members_get(rid))[0]
+        assert m["xp"] == route["xp"]
+    print("E26 топь и мельница: ок")
 
 
 if __name__ == "__main__":
@@ -843,5 +967,6 @@ if __name__ == "__main__":
     loop.run_until_complete(suite_engine())
     loop.run_until_complete(suite_router())
     loop.run_until_complete(suite_edge())
+    loop.run_until_complete(suite_switch())
     loop.run_until_complete(settle())   # журнал действий пишется фоновыми задачами
     print("ВСЁ ОК")
