@@ -959,6 +959,23 @@ async def suite_switch():
         assert m["xp"] == route["xp"]
     print("E26 топь и мельница: ок")
 
+    # E27. «Позвать соседей»: приглашение уходит соседям, кто может пойти, один раз
+    for uid, lvl in ((800, 5), (801, 5), (802, 5), (803, 1)):
+        await add_frog(uid, f"Сосед{uid}", level=lvl)
+    con = sqlite3.connect(DB)
+    for nb in (801, 802, 803):
+        con.execute("INSERT INTO friendships(user_id, friend_id, level, xp, pending, created_at) VALUES(800,?,1,0,0,0)", (nb,))
+    con.commit(); con.close()
+    rid, _ = await B.ex_lobby_create(await B.db_get(800), "bog", 10)
+    assert "ex|invite|%d" % rid in kb_data(B.ex_lobby_kb(await B.ex_run_get(rid), 800, "frogbot"))
+    sent = await B.ex_invite_neighbours(bot, await B.ex_run_get(rid), await B.db_get(800))
+    assert sent == 2, sent                                   # 803 — не тот уровень
+    inv = bot.last_to(801, "send")
+    assert kb_data(inv[4]) == [f"ex|join|{rid}"] and "зовёт" in plain(inv[3])
+    assert not bot.last_to(803, "send")
+    await B.ex_lobby_cancel(bot, rid)
+    print("E27 позвать соседей: ок")
+
 
 if __name__ == "__main__":
     setup_db()

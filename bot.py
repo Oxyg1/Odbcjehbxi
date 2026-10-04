@@ -59699,6 +59699,7 @@ def ex_sync_migration(conn):
             created_at    REAL    NOT NULL,
             gather_until  REAL    NOT NULL DEFAULT 0,
             announced     INTEGER NOT NULL DEFAULT 0,
+            invited       INTEGER NOT NULL DEFAULT 0,  -- соседей уже позвали
             started_at    REAL    NOT NULL DEFAULT 0,
             finished_at   REAL    NOT NULL DEFAULT 0,
             plan_json     TEXT    NOT NULL DEFAULT '[]',     -- [{"card", "at"}]
@@ -59739,6 +59740,9 @@ def ex_sync_migration(conn):
             PRIMARY KEY (user_id, find_key)
         );
     """)
+    cur.execute("PRAGMA table_info(ex_runs)")
+    if "invited" not in {r[1] for r in cur.fetchall()}:
+        cur.execute("ALTER TABLE ex_runs ADD COLUMN invited INTEGER NOT NULL DEFAULT 0")
     cur.execute("PRAGMA table_info(ex_members)")
     if "paid" not in {r[1] for r in cur.fetchall()}:
         cur.execute("ALTER TABLE ex_members ADD COLUMN paid INTEGER NOT NULL DEFAULT 0")
@@ -60067,6 +60071,8 @@ def ex_lobby_kb(run: dict, uid: int, bot_username: str) -> InlineKeyboardMarkup:
         if bot_username:
             link = _urlquote(f"https://t.me/{bot_username}?start=ex_{rid}", safe="")
             rows.append([btn("🔗 Позвать друга", url=f"https://t.me/share/url?url={link}")])
+        if not run.get("invited"):
+            rows.append([btn("💌 Позвать соседей", callback_data=f"ex|invite|{rid}")])
         if not run.get("announced"):
             rows.append([btn("📣 Позвать в чат", callback_data=f"ex|call|{rid}")])
         rows.append([btn("✖️ Отменить сбор", callback_data=f"ex|cancel|{rid}")])
@@ -61101,6 +61107,28 @@ async def ex_open_section(q, f: dict, bot, back: str = "plaza"):
     await _ex_show(q, text, kb)
 
 
+async def ex_invite_neighbours(bot, run: dict, f: dict) -> int:
+    """Позвать в сбор всех соседей, кто может пойти. Возвращает, скольким дошло."""
+    r = EX_ROUTES[run["route"]]
+    text = ui_card(
+        ui_title(r["emoji"], r["name"]),
+        f"<b>{fname(f)}</b> зовёт в экспедицию. Выход через {_ex_left(run['gather_until'])}.",
+    )
+    kb = InlineKeyboardMarkup([[btn("✅ Вступить", callback_data=f"ex|join|{run['id']}",
+                                    style="success")]])
+    sent = 0
+    for nb in await friend_list(f["user_id"], accepted_only=True):
+        if await ex_cant_go(nb, run["route"]):
+            continue
+        try:
+            await bot.send_message(nb["user_id"], text, parse_mode=ParseMode.HTML, reply_markup=kb)
+            sent += 1
+        except _TgError:
+            pass
+        await asyncio.sleep(0.05)
+    return sent
+
+
 async def ex_router(update: Update, ctx: ContextTypes.DEFAULT_TYPE):
     _g = await cb_guard(update, ctx)
     if _g is None:
@@ -61175,6 +61203,31 @@ async def ex_router(update: Update, ctx: ContextTypes.DEFAULT_TYPE):
         text, kb = await ex_menu_view(f)
         await _ex_show(q, text, kb)
         await q.answer("Ты больше не в команде")
+        return
+
+    if act == "invite":
+        run_id = _int(2)
+        run = await ex_run_get(run_id)
+        if not run or run["status"] != "lobby":
+            await q.answer("Сбор уже закрыт", show_alert=True); return
+        if run["creator_id"] != uid:
+            await q.answer("Это решает создатель сбора", show_alert=True); return
+        async with aiosqlite.connect(DB_PATH) as db:
+            cur = await db.execute(
+                "UPDATE ex_runs SET invited=1 WHERE id=? AND invited=0", (run_id,))
+            await db.commit()
+            claimed = cur.rowcount
+        if not claimed:
+            await q.answer("Соседей уже позвали"); return
+        await q.answer("Зову соседей…")
+        sent = await ex_invite_neighbours(bot, run, f)
+        await ex_lobby_refresh(bot, run_id)
+        try:
+            await bot.send_message(uid, f"💌 Приглашение ушло соседям: {sent}." if sent
+                                   else "Соседей, которых можно позвать, нет: у них не тот "
+                                        "уровень, они уже в пути или сегодня уже ходили.")
+        except _TgError:
+            pass
         return
 
     if act in ("go", "cancel", "call"):
