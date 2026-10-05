@@ -45,7 +45,7 @@ from telegram import (
     InlineQueryResultArticle,
     InputTextMessageContent,
 )
-from telegram import ReactionTypeEmoji
+from telegram import ReactionTypeEmoji, InputSticker
 from telegram.ext import (
     Application,
     CommandHandler,
@@ -58,7 +58,7 @@ from telegram.ext import (
     InlineQueryHandler,
     TypeHandler,
 )
-from telegram.constants import ChatAction, ParseMode
+from telegram.constants import ChatAction, ParseMode, StickerFormat, StickerType
 from telegram.error import BadRequest, Forbidden, TimedOut
 
 # Ограничитель темпа запросов. Ставится вместе с aiolimiter; если пакета нет,
@@ -17481,6 +17481,167 @@ def bar(v: int) -> str:
     return "█" * filled + "░" * (10 - filled)
 
 
+# ── Полоски статов из премиум-эмодзи ─────────────────────────────────────────
+# Каждая полоска — 8 эмодзи 100×100, нарезанных из одной картинки
+# (tools/make_bars.py → assets/bars/<ключ>/<позиция><вид>.png). У каждой
+# позиции три вида: f — полный, h — наполовину, e — пустой. Шаг — 1/16.
+#
+# Пак создаёт сам бот командой /adminbars, номера эмодзи хранятся в settings
+# (bars_pack). Пока пака нет или он выключен — обычная полоска █░ в <code>.
+
+BAR_KEYS = ("xp", "food", "happy", "health", "clean", "energy")
+BAR_TILES = 8
+BAR_STATES = ("f", "h", "e")
+BAR_DIR = os.path.join(os.path.dirname(os.path.abspath(__file__)), "assets", "bars")
+# Эмодзи, к которому привязан кусочек в паке, и замена там, где премиум-эмодзи
+# не рисуются (уведомления, превью чата)
+BAR_EMOJI_OF = {"xp": "💎", "food": "🍖", "happy": "🐸", "health": "❤️", "clean": "🧼", "energy": "⚡"}
+BAR_FALLBACK = {"xp": "🟦", "food": "🟫", "happy": "🟩", "health": "🟥", "clean": "🟦", "energy": "🟧"}
+BAR_EMOJI: dict[str, dict[str, str]] = {}      # ключ -> {"0f": custom_emoji_id, …}
+
+
+def bar_states(value: int) -> list[str]:
+    """
+    Кусочки для value%: «0f», «1h», «2e»… Ненулевое значение не рисуется
+    пустой полоской, неполное — полной: 3% и 97% должны отличаться от 0 и 100.
+    """
+    steps = round(max(0, min(100, value)) / 100 * BAR_TILES * 2)
+    if value > 0 and steps == 0:
+        steps = 1
+    if value < 100 and steps == BAR_TILES * 2:
+        steps -= 1
+    return [f"{i}{'f' if steps >= 2 * (i + 1) else 'h' if steps == 2 * i + 1 else 'e'}"
+            for i in range(BAR_TILES)]
+
+
+def stat_bar(key: str, value: int) -> str:
+    """Полоска стата: из премиум-эмодзи, если пак есть, иначе █░ в <code>."""
+    ids = BAR_EMOJI.get(key)
+    if ids:
+        parts = []
+        for st in bar_states(value):
+            cid = ids.get(st)
+            if not cid:
+                break
+            fb = "⬛" if st.endswith("e") else BAR_FALLBACK.get(key, "🟩")
+            parts.append(f'<tg-emoji emoji-id="{cid}">{fb}</tg-emoji>')
+        else:
+            return "".join(parts)
+    return f"<code>{bar(value)}</code>"
+
+
+def _bars_order() -> list[tuple[str, str]]:
+    """Порядок кусочков в паке: по нему номера эмодзи сопоставляются файлам."""
+    return [(k, f"{i}{s}") for k in BAR_KEYS for i in range(BAR_TILES) for s in BAR_STATES]
+
+
+async def bars_load() -> None:
+    """Подтянуть номера эмодзи из settings при старте."""
+    global BAR_EMOJI
+    raw = await db_setting("bars_pack")
+    try:
+        data = json.loads(raw) if raw else {}
+    except ValueError:
+        data = {}
+    BAR_EMOJI = data.get("ids", {}) if data.get("on", True) else {}
+
+
+async def bars_build(bot, owner_id: int, rebuild: bool = False, progress=None) -> str:
+    """
+    Создать пак полосок от имени бота и запомнить номера эмодзи.
+
+    Пак уже есть — дозагружает недостающее (если прошлый раз оборвался) и
+    перечитывает номера. rebuild=True — удалить и собрать заново (после
+    перенарезки картинок). Возвращает имя пака.
+    """
+    order = _bars_order()
+    files = [os.path.join(BAR_DIR, k, f"{t}.png") for k, t in order]
+    missing = [p for p in files if not os.path.isfile(p)]
+    if missing:
+        raise FileNotFoundError(f"нет {len(missing)} файлов, например {missing[0]}")
+    name = f"frogbars_by_{bot.username}"
+    have = 0
+    try:
+        have = len((await bot.get_sticker_set(name)).stickers)
+    except BadRequest:
+        have = -1                                   # пака нет
+    if rebuild and have >= 0:
+        await bot.delete_sticker_set(name)
+        have = -1
+
+    def sticker(i: int) -> InputSticker:
+        with open(files[i], "rb") as fh:
+            data = fh.read()
+        return InputSticker(data, [BAR_EMOJI_OF[order[i][0]]], StickerFormat.STATIC)
+
+    if have < 0:
+        first = [sticker(i) for i in range(min(50, len(order)))]
+        await bot.create_new_sticker_set(
+            owner_id, name, "Frog bars", first,
+            sticker_type=StickerType.CUSTOM_EMOJI, needs_repainting=False)
+        have = len(first)
+    for i in range(have, len(order)):
+        await bot.add_sticker_to_set(owner_id, name, sticker(i))
+        if progress and (i + 1) % 24 == 0:
+            await progress(i + 1, len(order))
+    stickers = (await bot.get_sticker_set(name)).stickers
+    if len(stickers) != len(order):
+        raise RuntimeError(f"в паке {len(stickers)} эмодзи, а нужно {len(order)}")
+    ids: dict[str, dict[str, str]] = {}
+    for (key, tile), st in zip(order, stickers):
+        ids.setdefault(key, {})[tile] = st.custom_emoji_id
+    await db_setting("bars_pack", json.dumps({"name": name, "on": True, "ids": ids}))
+    await bars_load()
+    return name
+
+
+async def cmd_adminbars(update: Update, ctx: ContextTypes.DEFAULT_TYPE) -> None:
+    """
+    /adminbars — собрать пак полосок и включить их в карточке лягушки.
+    /adminbars заново — пересобрать пак (после новой нарезки картинок).
+    /adminbars выкл | вкл — вернуть обычные полоски █░ или снова включить.
+    """
+    if update.effective_user.id not in ADMIN_IDS:
+        return
+    arg = (ctx.args[0].lower() if ctx.args else "")
+    if arg in ("выкл", "off", "вкл", "on"):
+        raw = await db_setting("bars_pack")
+        data = json.loads(raw) if raw else {}
+        if not data.get("ids"):
+            await update.message.reply_text("Пака ещё нет — сначала /adminbars")
+            return
+        data["on"] = arg in ("вкл", "on")
+        await db_setting("bars_pack", json.dumps(data))
+        await bars_load()
+        await update.message.reply_text("Полоски из эмодзи включены." if data["on"]
+                                        else "Вернул обычные полоски.")
+        return
+    msg = await update.message.reply_text("Собираю пак полосок…")
+
+    async def progress(done: int, total: int) -> None:
+        try:
+            await msg.edit_text(f"Собираю пак полосок: {done} из {total}")
+        except (BadRequest, TimedOut):
+            pass
+
+    try:
+        name = await bars_build(ctx.bot, update.effective_user.id,
+                                rebuild=arg in ("заново", "rebuild"), progress=progress)
+    except Exception as e:
+        logger.exception("adminbars: %s", e)
+        await msg.edit_text(f"Не вышло: <code>{he(type(e).__name__)}: {he(str(e)[:300])}</code>\n"
+                            f"Можно повторить /adminbars — продолжит с того же места.",
+                            parse_mode=ParseMode.HTML)
+        return
+    demo = "\n".join(f"{stat_bar(k, v)} {v}%" for k, v in
+                     (("xp", 87), ("food", 83), ("happy", 50), ("health", 100), ("clean", 19), ("energy", 4)))
+    await msg.edit_text(
+        f"{_E_CHECK} Пак <a href=\"https://t.me/addemoji/{name}\">{name}</a> готов, "
+        f"полоски в карточке лягушки включены.\n\n{demo}\n\n"
+        f"<i>Выключить: /adminbars выкл</i>",
+        parse_mode=ParseMode.HTML, link_preview_options=LinkPreviewOptions(is_disabled=True))
+
+
 def fname(f: dict) -> str:
     """Имя лягушки, всегда HTML-экранированное для безопасной вставки в сообщения."""
     frog_name = f.get("frog_name") or ""
@@ -17555,11 +17716,11 @@ def status_text(f: dict) -> str:
         _s_use_st = bool(f.get("use_static", 0))
         _nft = f.get("equipped_nft_url", "") or ""
         frozen_stats = "\n".join(
-            f"{icon} <code>{bar(val)}</code> {val}%"
-            for icon, val in (
-                (_E_FOOD,  f["hunger"]),
-                (_E_HAPPY, f["happiness"]),
-                (_E_HEART, f["health"]),
+            f"{icon} {stat_bar(key, val)} {val}%"
+            for icon, key, val in (
+                (_E_FOOD,  "food",   f["hunger"]),
+                (_E_HAPPY, "happy",  f["happiness"]),
+                (_E_HEART, "health", f["health"]),
             )
         )
         return ui_card(
@@ -17584,13 +17745,13 @@ def status_text(f: dict) -> str:
     # Иконка вместо подписи: сами эмодзи одинаковой ширины, поэтому колонка
     # выравнивается без хрупких пробельных отступов, а строка короче.
     stats = "\n".join(
-        f"{icon} <code>{bar(val)}</code> {val}%"
-        for icon, val in (
-            (_E_FOOD,  f["hunger"]),
-            (_E_HAPPY, f["happiness"]),
-            (_E_HEART, f["health"]),
-            (_E_SOAP,  clean),
-            (_E_BOLT,  energy),
+        f"{icon} {stat_bar(key, val)} {val}%"
+        for icon, key, val in (
+            (_E_FOOD,  "food",   f["hunger"]),
+            (_E_HAPPY, "happy",  f["happiness"]),
+            (_E_HEART, "health", f["health"]),
+            (_E_SOAP,  "clean",  clean),
+            (_E_BOLT,  "energy", energy),
         )
     )
 
@@ -17607,7 +17768,7 @@ def status_text(f: dict) -> str:
         # есть то, что ветеран показывает вместо потерянных цифр.
         legacy_badge(f.get("user_id", 0)),
         f"{_E_STAR} {ui_kv('Уровень', f['level'])}\n"
-        f"{_E_XP} <code>{bar(xp_pct)}</code> {f['xp']}/{need}",
+        f"{_E_XP} {stat_bar('xp', xp_pct)} {f['xp']}/{need}",
         stats,
         wallet,
         t("stat_boost", lg) if f.get("_boost_active") else "",
@@ -55583,6 +55744,7 @@ async def post_init(app: Application):
     # ⚡ Инициализируем пул соединений ПОСЛЕ создания БД
     _db_pool.init(size=10)
     await load_nft_skins()  # загружаем NFT-облики в память
+    await bars_load()       # полоски статов из премиум-эмодзи, если пак собран
     logger.info("🪸 Редкость гифтов в памяти: %d", await nft_attrs_warm())
     logger.info("🏅 Итоги прошлых сезонов в памяти: %d", await season_legacy_warm())
     asyncio.create_task(nft_attrs_backfill())  # старые холдеры — в фоне
@@ -66717,6 +66879,7 @@ def main():
     app.add_handler(CommandHandler("adminexp",          cmd_adminexp))
     app.add_handler(CommandHandler("adminstats",        cmd_adminstats))
     app.add_handler(CommandHandler("adminreport",       cmd_adminreport))
+    app.add_handler(CommandHandler("adminbars",         cmd_adminbars))
     # ── Расследование ботоводов ───────────────────────────────────────────
     app.add_handler(CommandHandler("admingiftchain", cmd_admingiftchain))
     app.add_handler(CommandHandler("adminrollbackdry", cmd_adminrollbackdry))
