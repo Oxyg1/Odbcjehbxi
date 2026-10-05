@@ -348,18 +348,19 @@ async def main():
     open(os.path.join(os.path.dirname(DB), "report.txt"), "w").write(rep)
     print("  отчёт:", len(rep), "символов,", rep.count("\n"), "строк →", os.path.join(os.path.dirname(DB), "report.txt"))
 
-    print("10. Фоновые задачи подписываются своим именем")
-    class JQ:
-        def __init__(self): self.cbs = []
-        def run_once(self, callback, when=0, **kw): self.cbs.append(callback)
-    jq = JQ()
-    B.st_wrap_jobs(jq)
+    print("10. Фоновые задачи подписываются своим именем (настоящая JobQueue PTB)")
+    from telegram.ext import Application
+    app = Application.builder().token("1:x").build()
+    B.st_wrap_jobs(app.job_queue)          # у JobQueue __slots__ — так бот упал 5 октября
+    B.st_wrap_jobs(app.job_queue)          # повторно — без двойной обёртки
     async def job_auto_farm(ctx):
         f = await B.db_get(101)
         f["coins"] += 5
         await B.db_save(f)
-    jq.run_once(job_auto_farm, when=1)
-    await asyncio.create_task(jq.cbs[0](types.SimpleNamespace(bot=bot)))
+    job = app.job_queue.run_once(job_auto_farm, 3600)
+    ok(job.callback is not job_auto_farm and job.name == "job_auto_farm", "задача обёрнута, имя прежнее")
+    await asyncio.create_task(job.callback(types.SimpleNamespace(bot=bot)))
+    job.schedule_removal()
     await B.st_flush()
     ok(q("SELECT amount FROM st_cnt WHERE key='coin+:job:auto_farm'") == [(5,)], "Трудяга: +5 под своим именем")
 

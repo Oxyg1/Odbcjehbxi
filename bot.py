@@ -14962,7 +14962,15 @@ def st_wrap_jobs(jq) -> None:
     Фоновые задачи тоже начисляют и списывают монеты (Трудяга, котёл стаи,
     лотерея). Чтобы в экономике они были видны под своим именем, а не общим
     «фон», каждая задача перед запуском называет себя.
+
+    Подменяем методы КЛАССА: у JobQueue в PTB есть __slots__, и методы
+    экземпляра переписать нельзя (так бот и упал при первой выкатке).
+    Что бы ни случилось, запуск бота от этого не зависит.
     """
+    cls = type(jq)
+    if getattr(cls, "_st_wrapped", False):
+        return
+
     def wrap(cb):
         name = getattr(cb, "__name__", "job").lstrip("_")
         name = "job:" + (name[4:] if name.startswith("job_") else name)
@@ -14973,14 +14981,20 @@ def st_wrap_jobs(jq) -> None:
         run.__name__ = getattr(cb, "__name__", "job")
         return run
 
-    for meth in ("run_repeating", "run_daily", "run_once", "run_monthly", "run_custom"):
-        orig = getattr(jq, meth, None)
-        if orig is None:
-            continue
+    try:
+        for meth in ("run_repeating", "run_daily", "run_once", "run_monthly", "run_custom"):
+            orig = getattr(cls, meth, None)
+            if orig is None:
+                continue
 
-        def patched(callback, *a, _orig=orig, **kw):
-            return _orig(wrap(callback), *a, **kw)
-        setattr(jq, meth, patched)
+            def patched(self, callback, *a, _orig=orig, **kw):
+                return _orig(self, wrap(callback), *a, **kw)
+            patched.__name__ = meth
+            patched.__doc__ = orig.__doc__
+            setattr(cls, meth, patched)
+        cls._st_wrapped = True
+    except Exception as e:
+        logger.warning("st_wrap_jobs: задачи без подписи, %s", e)
 
 
 # Базовое состояние строки кладётся в сам словарь под ключом _orig: db_save()
@@ -55799,7 +55813,10 @@ async def post_init(app: Application):
         scope=BotCommandScopeDefault(),
     )
     # Фоновые задачи подписываются своим именем — для статистики монет
-    st_wrap_jobs(app.job_queue)
+    try:
+        st_wrap_jobs(app.job_queue)
+    except Exception as _e:
+        logger.warning("st_wrap_jobs: %s", _e)
     app.job_queue.run_repeating(job_st_flush, interval=ST_FLUSH_S, first=ST_FLUSH_S)
     app.job_queue.run_repeating(job_st_hourly, interval=3600, first=120)
     app.job_queue.run_repeating(job_events, interval=4 * 3600, first=300)
