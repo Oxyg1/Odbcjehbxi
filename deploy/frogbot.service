@@ -1,0 +1,33 @@
+[Unit]
+Description=Frog Tamagotchi Telegram bot
+After=network-online.target
+Wants=network-online.target
+
+[Service]
+Type=simple
+User=frogbot
+Group=frogbot
+WorkingDirectory=/opt/frogbot
+EnvironmentFile=/opt/frogbot/.env
+ExecStart=/opt/frogbot/venv/bin/python /opt/frogbot/bot.py
+
+# Телеграм отваливается, сеть моргает, VDS перезагружается — бот должен
+# подниматься сам. StartLimit не ставим: лучше бесконечные попытки, чем
+# заглохший на ночь бот.
+Restart=always
+RestartSec=5
+
+# Логи идут в journald, читать через journalctl -u frogbot
+StandardOutput=journal
+StandardError=journal
+SyslogIdentifier=frogbot
+
+# База и логи лежат в WorkingDirectory, больше писать никуда не нужно
+NoNewPrivileges=true
+PrivateTmp=true
+ProtectSystem=strict
+ProtectHome=true
+ReadWritePaths=/opt/frogbot
+
+[Install]
+WantedBy=multi-user.target
