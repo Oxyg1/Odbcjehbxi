@@ -56,6 +56,7 @@ from telegram.ext import (
     filters,
     PreCheckoutQueryHandler,
     InlineQueryHandler,
+    TypeHandler,
 )
 from telegram.constants import ChatAction, ParseMode
 from telegram.error import BadRequest, Forbidden, TimedOut
@@ -797,6 +798,7 @@ async def _fz_handle_payment(update, ctx) -> None:
         f["stars_spent"]    = f.get("stars_spent", 0) + stars_paid
         f["fz_stars_spent"] = f.get("fz_stars_spent", 0) + stars_paid
         await db_save(f)
+    await purchase_log(uid, f"fz_{pkg['stars']}", stars_paid)
 
     # Реферальная комиссия (используем внутреннюю копию логики)
     await _fz_ref_commission(uid, stars_paid, ctx)
@@ -4990,6 +4992,10 @@ def run_sync_migration():
         ex_sync_migration(conn)
     except Exception as _e:
         logger.exception("ex_sync_migration: %s", _e)
+    try:
+        st_sync_migration(conn)
+    except Exception as _e:
+        logger.exception("st_sync_migration: %s", _e)
 
     # ── Фриз-ивент ───────────────────────────────────────────────────────────
     freeze_run_sync_migration(conn, cur)
@@ -14526,6 +14532,8 @@ async def offer_shown(sku: str) -> None:
 
 async def purchase_log(uid: int, sku: str, stars: int) -> None:
     """Покупка состоялась: в дневной счётчик и в личный лог игрока."""
+    st_count("stars", 1, stars)
+    st_count("stars:" + sku, 1, stars)
     await sales_bump(sku, 1, stars)
     asyncio.create_task(plog(uid, "buy", f"{sku} за {stars}⭐"))
 
@@ -14617,6 +14625,362 @@ async def plog_get(uid: int, days: int = 3, limit: int = 500) -> list[dict]:
     except Exception as _e:
         logger.warning("plog_get: %s", _e)
         return []
+
+
+# ══════════════════════════════════════════════════════════════════════════════
+# 📊  СТАТИСТИКА: СБОР
+# ══════════════════════════════════════════════════════════════════════════════
+# Из одних счётчиков в frogs и журнала действий, который живёт неделю, не
+# получить ни заходов по дням, ни удержания, ни того, откуда берутся и куда
+# уходят монеты. Поэтому бот копит это сам, сутки — по Москве:
+#
+#   st_active — кто заходил в бота: сколько нажатий и в какие часы;
+#   st_use    — какой функцией пользовался: кнопка, команда, оплата;
+#   st_cnt    — счётчики дня: монеты по источникам, звёзды, смерти,
+#               блокировки бота, ошибки в логе;
+#   st_daily  — снимок состояния раз в час, последний за сутки — итог дня.
+#
+# Всё копится в памяти и уходит в базу раз в 5 минут и при остановке: на
+# каждое нажатие лишней записи в базу нет. Упасть сбор не может — любая
+# ошибка внутри глушится, игра от него не зависит.
+
+import contextvars as _cv
+
+ST_TZ = timezone(timedelta(hours=3))
+ST_FLUSH_S = 300
+ST_KEEP_USE_DAYS = 60          # подробности «кто чем пользовался» — два месяца
+ST_KEEP_DAYS = 400             # заходы, счётчики, снимки — больше года
+
+# Откуда пришло текущее изменение: имя функции из кнопки или команды, для
+# фоновых задач — имя задачи. Переменная контекста, поэтому у каждого апдейта
+# своя, и задачи, запущенные из обработчика, наследуют её.
+_ST_SRC: _cv.ContextVar[str] = _cv.ContextVar("st_src", default="фон")
+
+_st_lock = threading.Lock()    # счётчики трогает и поток логов
+_st_active: dict = {}          # (день, uid) -> [нажатий, маска часов]
+_st_use: dict = {}             # (день, функция, uid) -> раз
+_st_cnt: dict = {}             # (день, ключ) -> [раз, сумма]
+_st_errors: dict = {}          # шаблон ошибки -> [раз, последний ts, пример]
+_ST_CMDS: set = set()          # команды бота: чужие /команды в группах не считаем
+ST_STARTED = time.time()
+
+
+def st_day(ts: float | None = None) -> str:
+    """Дата по Москве: YYYY-MM-DD."""
+    return datetime.fromtimestamp(time.time() if ts is None else ts, ST_TZ).strftime("%Y-%m-%d")
+
+
+def st_count(key: str, n: int = 1, amount: int = 0) -> None:
+    """Прибавить к счётчику дня."""
+    k = (st_day(), key[:64])
+    with _st_lock:
+        row = _st_cnt.get(k)
+        if row is None:
+            _st_cnt[k] = [n, amount]
+        else:
+            row[0] += n
+            row[1] += amount
+
+
+def st_coins(delta: int, src: str | None = None) -> None:
+    """Монеты появились (+) или ушли (−). Источник — текущая функция."""
+    if not delta:
+        return
+    src = src or _ST_SRC.get()
+    st_count(("coin+:" if delta > 0 else "coin-:") + src, 1, abs(int(delta)))
+
+
+# Навигационные префиксы: само слово «menu» ничего не говорит, важно куда
+_ST_NAV = frozenset({"menu", "plaza", "refresh", "back", "open", "show", "tab"})
+
+
+def st_feature(data: str) -> str:
+    """Имя функции из callback_data: ex|v|12|a → ex, menu_games → menu_games."""
+    toks = [t for t in re.split(r"[_|:\-\s\d.]+", (data or "").lower()) if t]
+    if not toks:
+        return "?"
+    if toks[0] in _ST_NAV and len(toks) > 1:
+        return f"{toks[0]}_{toks[1]}"[:32]
+    return toks[0][:32]
+
+
+def st_start_tag(arg: str) -> str:
+    """Метка ссылки /start без личной части: ref_123 → ref, 123 → число."""
+    if not arg:
+        return "без метки"
+    m = re.match(r"[A-Za-z]+", arg)
+    if m:
+        return m.group().lower()[:24]
+    return "число" if arg.isdigit() else "другое"
+
+
+def _st_touch(uid: int, feat: str | None, active: bool) -> None:
+    day = st_day()
+    with _st_lock:
+        if active:
+            hour = datetime.now(ST_TZ).hour
+            row = _st_active.get((day, uid))
+            if row is None:
+                _st_active[(day, uid)] = [1, 1 << hour]
+            else:
+                row[0] += 1
+                row[1] |= 1 << hour
+        if feat:
+            k = (day, feat, uid)
+            _st_use[k] = _st_use.get(k, 0) + 1
+
+
+def _st_on_update(update: Update, bot_username: str) -> None:
+    mcm = update.my_chat_member
+    if mcm is not None:
+        old, new = mcm.old_chat_member.status, mcm.new_chat_member.status
+        if mcm.chat.type == "private":
+            if new == "kicked":
+                st_count("bot_blocked")
+            elif old == "kicked":
+                st_count("bot_unblocked")
+        elif new in ("member", "administrator") and old in ("left", "kicked"):
+            st_count("group_added")
+        elif new in ("left", "kicked") and old in ("member", "administrator"):
+            st_count("group_removed")
+        return
+
+    user = update.effective_user
+    if user is None or user.is_bot:
+        return
+    feat, active = None, True
+    if update.callback_query is not None:
+        feat = st_feature(update.callback_query.data or "")
+    elif update.message is not None:
+        m = update.message
+        private = m.chat.type == "private"
+        text = m.text or ""
+        if m.successful_payment is not None:
+            feat = "оплата"
+        elif text.startswith("/"):
+            word = text.split()[0][1:]
+            cmd, _, to = word.partition("@")
+            cmd = cmd.lower()
+            if (to and to.lower() != bot_username.lower()) or (not private and cmd not in _ST_CMDS):
+                feat, active = None, False      # команда другому боту в группе
+            else:
+                feat = "/" + (cmd if cmd in _ST_CMDS else "?")[:32]
+                if cmd == "start":
+                    st_count("start:" + st_start_tag(text.split()[1] if len(text.split()) > 1 else ""))
+        elif private:
+            feat = "личка"
+        else:
+            # Переписка в группе: человек мог вообще не играть. Заходом в бота
+            # не считаем — только общим счётчиком.
+            st_count("group_msg")
+            feat, active = None, False
+    elif update.inline_query is not None:
+        feat = "inline"
+    elif update.pre_checkout_query is not None:
+        feat = "счёт"
+    else:
+        return
+    _ST_SRC.set(feat or "чат")
+    if not active and not feat:
+        return
+    # Свои нажатия админов в списке функций не нужны — заход считаем
+    _st_touch(user.id, None if user.id in ADMIN_IDS else feat, active)
+
+
+async def st_on_update(update: Update, ctx: ContextTypes.DEFAULT_TYPE) -> None:
+    """Самый первый обработчик (группа −100): отметить заход и функцию."""
+    try:
+        _st_on_update(update, ctx.bot.username or "")
+    except Exception as e:
+        logger.debug("st_on_update: %s", e)
+
+
+_ST_ACTS = (
+    "total_feeds", "total_plays", "total_washes", "total_sleeps", "total_heals",
+    "total_gacha", "total_casino", "total_duels", "total_battles",
+    "total_mosquitoes", "total_crafts", "total_social",
+)
+
+
+def st_on_save(old: dict, new: dict, full: dict) -> None:
+    """
+    Вызывается из db_save: что изменилось у игрока. Монеты — по источнику,
+    уход за лягушкой и игры — по счётчикам total_*, смерть и воскрешение —
+    по переходу alive. Так всё видно без правки каждого обработчика.
+    """
+    try:
+        if full.get("is_bot") or full.get("banned"):
+            return
+        if "coins" in new:
+            st_coins(int(new["coins"] or 0) - int(old.get("coins") or 0))
+        for k in _ST_ACTS:
+            if k in new:
+                d = int(new[k] or 0) - int(old.get(k) or 0)
+                if d > 0:
+                    st_count("act:" + k[6:], d)
+        if "alive" in new:
+            if old.get("alive") and not new["alive"]:
+                st_count("death:" + ((full.get("death_reason") or "health").split()[0][:20]))
+            elif not old.get("alive") and new["alive"]:
+                st_count("revive")
+        if "level" in new:
+            d = int(new["level"] or 0) - int(old.get("level") or 0)
+            if d > 0:
+                st_count("levelup", d)
+    except Exception:
+        pass
+
+
+class _StLogHandler(logging.Handler):
+    """Считает предупреждения и ошибки в логе — по дням и по месту."""
+
+    def emit(self, record: logging.LogRecord) -> None:
+        try:
+            if record.levelno < logging.WARNING:
+                return
+            if record.levelno < logging.ERROR:
+                st_count("log:warning")
+                return
+            st_count("log:error")
+            where = f"{record.module}.{record.funcName}"
+            st_count("err:" + where)
+            msg = str(record.msg).split("\n")[0][:70]
+            key = f"{where}: {msg}"
+            sample = record.getMessage().split("\n")[0][:240]
+            if record.exc_info and record.exc_info[1] is not None:
+                sample += f" [{type(record.exc_info[1]).__name__}: {str(record.exc_info[1])[:120]}]"
+            with _st_lock:
+                e = _st_errors.get(key)
+                if e is None:
+                    if len(_st_errors) >= 300:
+                        return
+                    _st_errors[key] = [1, record.created, sample]
+                else:
+                    e[0] += 1
+                    e[1] = record.created
+                    e[2] = sample
+        except Exception:
+            pass
+
+
+logging.getLogger().addHandler(_StLogHandler(level=logging.WARNING))
+
+
+def st_sync_migration(conn) -> None:
+    conn.executescript(
+        """
+        CREATE TABLE IF NOT EXISTS st_active (
+            day     TEXT    NOT NULL,
+            user_id INTEGER NOT NULL,
+            hits    INTEGER DEFAULT 0,
+            hours   INTEGER DEFAULT 0,
+            PRIMARY KEY (day, user_id)
+        );
+        CREATE INDEX IF NOT EXISTS idx_st_active_user ON st_active(user_id, day);
+        CREATE TABLE IF NOT EXISTS st_use (
+            day     TEXT    NOT NULL,
+            feat    TEXT    NOT NULL,
+            user_id INTEGER NOT NULL,
+            n       INTEGER DEFAULT 0,
+            PRIMARY KEY (day, feat, user_id)
+        );
+        CREATE TABLE IF NOT EXISTS st_cnt (
+            day     TEXT    NOT NULL,
+            key     TEXT    NOT NULL,
+            n       INTEGER DEFAULT 0,
+            amount  INTEGER DEFAULT 0,
+            PRIMARY KEY (day, key)
+        );
+        CREATE TABLE IF NOT EXISTS st_daily (
+            day     TEXT    PRIMARY KEY,
+            data    TEXT    NOT NULL,
+            ts      REAL    NOT NULL
+        );
+        """
+    )
+    conn.commit()
+
+
+_ST_FLUSH_LOCK = asyncio.Lock()
+
+
+async def st_flush() -> None:
+    """Сбросить накопленное в базу. Не вышло — вернуть в память до следующего раза."""
+    global _st_active, _st_use, _st_cnt
+    async with _ST_FLUSH_LOCK:
+        with _st_lock:
+            act, use, cnt = _st_active, _st_use, _st_cnt
+            _st_active, _st_use, _st_cnt = {}, {}, {}
+        if not (act or use or cnt):
+            return
+        try:
+            async with aiosqlite.connect(DB_PATH) as db:
+                await db.executemany(
+                    "INSERT INTO st_active(day, user_id, hits, hours) VALUES(?,?,?,?) "
+                    "ON CONFLICT(day, user_id) DO UPDATE SET "
+                    "hits = hits + excluded.hits, hours = hours | excluded.hours",
+                    [(d, u, h, m) for (d, u), (h, m) in act.items()],
+                )
+                await db.executemany(
+                    "INSERT INTO st_use(day, feat, user_id, n) VALUES(?,?,?,?) "
+                    "ON CONFLICT(day, feat, user_id) DO UPDATE SET n = n + excluded.n",
+                    [(d, f, u, n) for (d, f, u), n in use.items()],
+                )
+                await db.executemany(
+                    "INSERT INTO st_cnt(day, key, n, amount) VALUES(?,?,?,?) "
+                    "ON CONFLICT(day, key) DO UPDATE SET "
+                    "n = n + excluded.n, amount = amount + excluded.amount",
+                    [(d, k, n, a) for (d, k), (n, a) in cnt.items()],
+                )
+                await db.commit()
+        except Exception as e:
+            with _st_lock:
+                for k, (h, m) in act.items():
+                    row = _st_active.setdefault(k, [0, 0])
+                    row[0] += h
+                    row[1] |= m
+                for k, n in use.items():
+                    _st_use[k] = _st_use.get(k, 0) + n
+                for k, (n, a) in cnt.items():
+                    row = _st_cnt.setdefault(k, [0, 0])
+                    row[0] += n
+                    row[1] += a
+            logger.warning("st_flush: %s", e)
+
+
+async def job_st_flush(ctx) -> None:
+    await st_flush()
+
+
+async def st_on_shutdown(app) -> None:
+    """При остановке бота — дописать накопленное, чтобы не потерять последние минуты."""
+    await st_flush()
+
+
+def st_wrap_jobs(jq) -> None:
+    """
+    Фоновые задачи тоже начисляют и списывают монеты (Трудяга, котёл стаи,
+    лотерея). Чтобы в экономике они были видны под своим именем, а не общим
+    «фон», каждая задача перед запуском называет себя.
+    """
+    def wrap(cb):
+        name = getattr(cb, "__name__", "job").lstrip("_")
+        name = "job:" + (name[4:] if name.startswith("job_") else name)
+
+        async def run(ctx):
+            _ST_SRC.set(name[:32])
+            return await cb(ctx)
+        run.__name__ = getattr(cb, "__name__", "job")
+        return run
+
+    for meth in ("run_repeating", "run_daily", "run_once", "run_monthly", "run_custom"):
+        orig = getattr(jq, meth, None)
+        if orig is None:
+            continue
+
+        def patched(callback, *a, _orig=orig, **kw):
+            return _orig(wrap(callback), *a, **kw)
+        setattr(jq, meth, patched)
 
 
 # Базовое состояние строки кладётся в сам словарь под ключом _orig: db_save()
@@ -15060,6 +15424,7 @@ async def db_save(f: dict):
         if not write:
             return                       # менять нечего
         write["user_id"] = uid                            # нужен для ON CONFLICT
+        st_on_save(snapshot, write, f_clean)
 
     keys = list(write.keys())
     ph = ",".join(["?"] * len(keys))
@@ -15105,11 +15470,15 @@ async def db_save(f: dict):
     await loop.run_in_executor(None, _write)
 
 
-async def db_coins_delta(uid: int, delta: int) -> int | None:
+async def db_coins_delta(uid: int, delta: int, f: dict | None = None) -> int | None:
     """
     Атомарно меняет монеты игрока через SQL UPDATE.
     Возвращает новый баланс или None если монет не хватило (delta < 0).
     Используется вместо f["coins"] += delta; db_save(f) — защита от race condition.
+
+    Если обработчик потом сохранит свой f через db_save, f надо передать сюда.
+    db_save пишет монеты разницей с прочитанным снимком: без правки снимка
+    он видит «было 100, стало 70» и списывает те же 30 второй раз.
     """
     async with aiosqlite.connect(DB_PATH) as db:
         if delta < 0:
@@ -15128,10 +15497,18 @@ async def db_coins_delta(uid: int, delta: int) -> int | None:
         async with db.execute("SELECT coins FROM frogs WHERE user_id=?", (uid,)) as c:
             row = await c.fetchone()
     new_balance = row[0] if row else 0
-    # Обновляем кэш
+    st_coins(delta)
+    # Обновляем кэш вместе со снимком — иначе следующий db_save из кэша
+    # применит ту же разницу ещё раз. Снимок заменяем, а не правим на месте:
+    # кэш отдаёт поверхностные копии, и старый снимок может держать чужой f.
     cached = _user_cache.get(uid)
+    for d in (cached, f):
+        if d is None:
+            continue
+        d["coins"] = new_balance
+        if isinstance(d.get("_orig"), dict):
+            d["_orig"] = {**d["_orig"], "coins": new_balance}
     if cached is not None:
-        cached["coins"] = new_balance
         _user_cache.set(uid, cached)
     return new_balance
 
@@ -20434,6 +20811,7 @@ async def new_frog(user) -> dict:
         "last_tutorial_day": 0,
     }
     await db_save(f)
+    st_coins(f["coins"], "новый игрок")
     await db_add_skin(user.id, "Brownie")
     return f
 
@@ -31962,200 +32340,12 @@ async def admin_router(update: Update, ctx: ContextTypes.DEFAULT_TYPE):
         await q.answer()
         return
     if d == "admin_stats":
+        # Старый вход в статистику: ведёт на новую сводку (adst|…)
         if uid not in ADMIN_IDS:
             await q.answer("⛔", show_alert=True)
             return
-        now_ts = time.time()
-        day_ago = now_ts - 86400
-        week_ago = now_ts - 7 * 86400
-
-        # Обновляем пиковый онлайн при просмотре статистики
-        _update_peak_online(0)  # текущий подсчёт идёт ниже, пока 0
-
-        async with aiosqlite.connect(DB_PATH) as db:
-            # Везде исключаем забаненых и ботов — они считаются только в своём пункте
-            _REAL = "banned=0 AND is_bot=0"
-            async with db.execute(f"SELECT COUNT(*) FROM frogs WHERE {_REAL}") as c:
-                total = (await c.fetchone())[0]
-            async with db.execute(f"SELECT COUNT(*) FROM frogs WHERE alive=1 AND {_REAL}") as c:
-                alive = (await c.fetchone())[0]
-            async with db.execute(f"SELECT COUNT(*) FROM frogs WHERE alive=0 AND {_REAL}") as c:
-                dead = (await c.fetchone())[0]
-            async with db.execute("SELECT COUNT(*) FROM frogs WHERE banned=1") as c:
-                banned_cnt = (await c.fetchone())[0] or 0
-            async with db.execute(f"SELECT COUNT(*) FROM frogs WHERE born_at>? AND {_REAL}", (day_ago,)) as c:
-                new_24h = (await c.fetchone())[0] or 0
-            async with db.execute(f"SELECT COUNT(*) FROM frogs WHERE born_at>? AND {_REAL}", (week_ago,)) as c:
-                new_7d = (await c.fetchone())[0] or 0
-            async with db.execute(f"SELECT COUNT(*) FROM frogs WHERE (last_feed>? OR last_play>?) AND {_REAL}", (day_ago, day_ago)) as c:
-                active_24h = (await c.fetchone())[0] or 0
-            async with db.execute(f"SELECT COUNT(*) FROM frogs WHERE (last_feed>? OR last_play>?) AND {_REAL}", (week_ago, week_ago)) as c:
-                active_7d = (await c.fetchone())[0] or 0
-            async with db.execute(f"SELECT SUM(coins) FROM frogs WHERE {_REAL}") as c:
-                total_coins = (await c.fetchone())[0] or 0
-            async with db.execute(f"SELECT AVG(coins) FROM frogs WHERE alive=1 AND {_REAL}") as c:
-                avg_coins = (await c.fetchone())[0] or 0
-            async with db.execute(f"SELECT SUM(coins_spent) FROM frogs WHERE {_REAL}") as c:
-                total_spent = (await c.fetchone())[0] or 0
-            async with db.execute(f"SELECT SUM(total_feeds) FROM frogs WHERE {_REAL}") as c:
-                total_feeds = (await c.fetchone())[0] or 0
-            async with db.execute(f"SELECT SUM(total_casino) FROM frogs WHERE {_REAL}") as c:
-                total_casino = (await c.fetchone())[0] or 0
-            async with db.execute(f"SELECT SUM(total_casino_wins) FROM frogs WHERE {_REAL}") as c:
-                total_casino_wins = (await c.fetchone())[0] or 0
-            async with db.execute(f"SELECT SUM(total_duels) FROM frogs WHERE {_REAL}") as c:
-                total_duels = (await c.fetchone())[0] or 0
-            async with db.execute(f"SELECT SUM(total_duel_wins) FROM frogs WHERE {_REAL}") as c:
-                total_duel_wins = (await c.fetchone())[0] or 0
-            async with db.execute(f"SELECT SUM(total_gacha) FROM frogs WHERE {_REAL}") as c:
-                total_gacha = (await c.fetchone())[0] or 0
-            async with db.execute(f"SELECT SUM(total_mosquitoes) FROM frogs WHERE {_REAL}") as c:
-                total_mosquitoes = (await c.fetchone())[0] or 0
-            async with db.execute(f"SELECT SUM(stars_spent) FROM frogs WHERE {_REAL}") as c:
-                total_stars = (await c.fetchone())[0] or 0
-            async with db.execute(f"SELECT MAX(level) FROM frogs WHERE {_REAL}") as c:
-                max_level = (await c.fetchone())[0] or 0
-            async with db.execute(f"SELECT AVG(level) FROM frogs WHERE alive=1 AND {_REAL}") as c:
-                avg_level = (await c.fetchone())[0] or 0
-            async with db.execute("SELECT COUNT(*) FROM nft_frogs WHERE verified=1") as c:
-                nft_ok = (await c.fetchone())[0]
-            async with db.execute("SELECT COUNT(*) FROM nft_frogs WHERE verified=0") as c:
-                nft_pending = (await c.fetchone())[0]
-            async with db.execute("SELECT COUNT(*) FROM gift_log WHERE ts>?", (day_ago,)) as c:
-                gifts_24h = (await c.fetchone())[0] or 0
-            async with db.execute("SELECT SUM(amount) FROM gift_log WHERE ts>?", (day_ago,)) as c:
-                gifts_vol_24h = (await c.fetchone())[0] or 0
-            async with db.execute("SELECT COUNT(*) FROM referrals WHERE joined_at>?", (day_ago,)) as c:
-                refs_24h = (await c.fetchone())[0] or 0
-            async with db.execute("SELECT COUNT(*) FROM referrals") as c:
-                refs_total = (await c.fetchone())[0] or 0
-            async with db.execute("SELECT COUNT(*) FROM lottery_tickets WHERE purchased_at>?", (day_ago,)) as c:
-                lottery_24h = (await c.fetchone())[0] or 0
-            async with db.execute("SELECT COUNT(*) FROM mosquito_events WHERE created_at>?", (day_ago,)) as c:
-                mosquito_events_24h = (await c.fetchone())[0] or 0
-            async with db.execute("SELECT COUNT(*) FROM mosquito_events WHERE caught_by IS NOT NULL AND caught_by != -1") as c:
-                mosquito_caught = (await c.fetchone())[0] or 0
-            async with db.execute(
-                f"SELECT first_name, level FROM frogs WHERE {_REAL} ORDER BY level DESC LIMIT 5"
-            ) as c:
-                top5 = await c.fetchall()
-            async with db.execute(
-                f"SELECT first_name, coins FROM frogs WHERE alive=1 AND {_REAL} ORDER BY coins DESC LIMIT 3"
-            ) as c:
-                top3_rich = await c.fetchall()
-            async with db.execute(
-                f"SELECT first_name, total_gacha FROM frogs WHERE {_REAL} ORDER BY total_gacha DESC LIMIT 3"
-            ) as c:
-                top3_gacha = await c.fetchall()
-            # Топ скинов в коллекциях (только реальные игроки)
-            async with db.execute(
-                f"SELECT c.skin, COUNT(*) as cnt FROM collections c "
-                f"JOIN frogs f ON f.user_id=c.user_id WHERE f.{_REAL} "
-                f"GROUP BY c.skin ORDER BY cnt DESC LIMIT 5"
-            ) as c:
-                top5_skins = await c.fetchall()
-            # ── Статистика языков (без банов и ботов) ──
-            async with db.execute(f"SELECT COUNT(*) FROM frogs WHERE (lang='ru' OR lang IS NULL OR lang='') AND {_REAL}") as c:
-                lang_ru = (await c.fetchone())[0] or 0
-            async with db.execute(f"SELECT COUNT(*) FROM frogs WHERE lang='en' AND {_REAL}") as c:
-                lang_en = (await c.fetchone())[0] or 0
-            async with db.execute(f"SELECT COUNT(*) FROM frogs WHERE lang='zh' AND {_REAL}") as c:
-                lang_zh = (await c.fetchone())[0] or 0
-            # Активные за 7д по языкам
-            async with db.execute(f"SELECT COUNT(*) FROM frogs WHERE (lang='ru' OR lang IS NULL OR lang='') AND (last_feed>? OR last_play>?) AND {_REAL}", (week_ago, week_ago)) as c:
-                lang_ru_active = (await c.fetchone())[0] or 0
-            async with db.execute(f"SELECT COUNT(*) FROM frogs WHERE lang='en' AND (last_feed>? OR last_play>?) AND {_REAL}", (week_ago, week_ago)) as c:
-                lang_en_active = (await c.fetchone())[0] or 0
-            async with db.execute(f"SELECT COUNT(*) FROM frogs WHERE lang='zh' AND (last_feed>? OR last_play>?) AND {_REAL}", (week_ago, week_ago)) as c:
-                lang_zh_active = (await c.fetchone())[0] or 0
-            # ── Статистика застрявших на воскрешении (без банов и ботов) ──
-            async with db.execute(f"SELECT COUNT(*) FROM frogs WHERE alive=0 AND trial_active=0 AND {_REAL}") as c:
-                stuck_dead_notrial = (await c.fetchone())[0] or 0
-            async with db.execute(f"SELECT COUNT(*) FROM frogs WHERE alive=0 AND trial_active=1 AND {_REAL}") as c:
-                stuck_trial = (await c.fetchone())[0] or 0
-            async with db.execute(f"SELECT COUNT(*) FROM frogs WHERE alive=0 AND {_REAL}") as c:
-                total_dead_for_stuck = (await c.fetchone())[0] or 0
-            # Зарегистрировались но никогда не кормили (last_feed=0 и мертвы)
-            async with db.execute(f"SELECT COUNT(*) FROM frogs WHERE alive=0 AND (last_feed IS NULL OR last_feed=0) AND {_REAL}") as c:
-                stuck_never_fed = (await c.fetchone())[0] or 0
-            # Последний раз заходили > 7 дней назад и мертвы
-            async with db.execute(f"SELECT COUNT(*) FROM frogs WHERE alive=0 AND last_seen < ? AND {_REAL}", (week_ago,)) as c:
-                stuck_inactive_7d = (await c.fetchone())[0] or 0
-
-        top_txt = "\n".join(f"  {i+1}. {r[0]} — ур.{r[1]}" for i, r in enumerate(top5))
-        top_rich_txt = "\n".join(f"  {i+1}. {r[0]} — {r[1]:,}🪙" for i, r in enumerate(top3_rich))
-        top_gacha_txt = "\n".join(f"  {i+1}. {r[0]} — {r[1]} круток" for i, r in enumerate(top3_gacha))
-        top_skins_txt = "\n".join(f"  {s[0]}: {s[1]} владельцев" for s in top5_skins)
-        casino_wr = f"{total_casino_wins*100//total_casino}%" if total_casino > 0 else "—"
-        duel_wr = f"{total_duel_wins*100//total_duels}%" if total_duels > 0 else "—"
-
-        def _fmt_peak_stat(period: str) -> str:
-            count, ts = _peak_online.get(period, (0, 0))
-            return str(count) if count > 0 else "—"
-
-        # Язык: визуальный прогресс-бар
-        _lang_total = max(lang_ru + lang_en + lang_zh, 1)
-        def _lang_pct(n): return f"{n*100//_lang_total}%"
-        def _lang_bar(n):
-            filled = round(n / _lang_total * 10)
-            return "█" * filled + "░" * (10 - filled)
-
-        text = (
-            f"{_E_CHART} <b>Статистика бота</b>\n\n"
-            f"<b>{_E_USERS} Игроки</b> <i>(без банов и ботов)</i>\n"
-            f"Всего: <b>{total}</b> · 🐸 Живых: <b>{alive}</b> · 💀 Мёртвых: <b>{dead}</b>\n"
-            f"{_E_BAN} Забанено (отдельно, не в счёт): <b>{banned_cnt}</b>\n"
-            f"Новых за 24ч: <b>{new_24h}</b> · за 7д: <b>{new_7d}</b>\n"
-            f"Активных за 24ч: <b>{active_24h}</b> · за 7д: <b>{active_7d}</b>\n"
-            f"Макс. уровень: <b>{max_level}</b> · Средний: <b>{avg_level:.1f}</b>\n\n"
-            f"<b>🌐 Языки интерфейса</b>\n"
-            f"🇷🇺 Русский: <code>{_lang_bar(lang_ru)}</code> <b>{lang_ru}</b> ({_lang_pct(lang_ru)}) активных 7д: {lang_ru_active}\n"
-            f"🇬🇧 English: <code>{_lang_bar(lang_en)}</code> <b>{lang_en}</b> ({_lang_pct(lang_en)}) активных 7д: {lang_en_active}\n"
-            f"🇨🇳 中文: <code>{_lang_bar(lang_zh)}</code> <b>{lang_zh}</b> ({_lang_pct(lang_zh)}) активных 7д: {lang_zh_active}\n\n"
-            f"<b>📈 Пиковый онлайн (10 мин окно):</b>\n"
-            f"  Сутки: <b>{_fmt_peak_stat('day')}</b> · Неделя: <b>{_fmt_peak_stat('week')}</b> · Месяц: <b>{_fmt_peak_stat('month')}</b>\n\n"
-            f"<b>🪙 Экономика</b>\n"
-            f"КваКоинов в обороте: <b>{total_coins:,}</b>\n"
-            f"Среднее у живого: <b>{avg_coins:.0f}🪙</b>\n"
-            f"Всего потрачено: <b>{total_spent:,}🪙</b>\n"
-            f"{_E_STARS} Stars: <b>{total_stars}</b>\n\n"
-            f"<b>{_E_GAMES} Активность</b>\n"
-            f"🍎 Кормлений: <b>{total_feeds:,}</b>\n"
-            f"{_E_CASINO} Гача: <b>{total_gacha:,}</b>\n"
-            f"🎲 Казино: <b>{total_casino:,}</b> (побед: {total_casino_wins:,} / {casino_wr})\n"
-            f"{_E_SWORDS} Дуэлей: <b>{total_duels:,}</b> (побед: {total_duel_wins:,} / {duel_wr})\n"
-            f"🦟 Комаров поймано: <b>{total_mosquitoes:,}</b> · событий 24ч: {mosquito_events_24h} · поймано событий: {mosquito_caught}\n"
-            f"🎟 Лотерея за 24ч: <b>{lottery_24h}</b> билетов\n\n"
-            f"<b>🔗 Прочее</b>\n"
-            f"Рефералов: <b>{refs_total}</b> (за 24ч: {refs_24h})\n"
-            f"{_E_GIFT} Переводов за 24ч: <b>{gifts_24h}</b> ({gifts_vol_24h:,}🪙)\n"
-            f"{_E_CORAL} NFT: подтверждено {nft_ok}, на проверке {nft_pending}\n\n"
-            f"<b>💀 Застрявшие на воскрешении</b>\n"
-            f"Всего мёртвых: <b>{total_dead_for_stuck}</b>\n"
-            f"  ├ Ждут выбора (без испытания): <b>{stuck_dead_notrial}</b>\n"
-            f"  ├ В испытании (не завершили): <b>{stuck_trial}</b>\n"
-            f"  ├ Никогда не кормили (брошены): <b>{stuck_never_fed}</b>\n"
-            f"  └ Неактивны > 7д (вероятно ушли): <b>{stuck_inactive_7d}</b>\n"
-            f"% от всех игроков: <b>{total_dead_for_stuck*100//max(total,1)}%</b>\n\n"
-            f"<b>{_E_TROPHY} Топ-5 по уровню:</b>\n{top_txt}\n\n"
-            f"<b>💰 Топ-3 богатейших:</b>\n{top_rich_txt}\n\n"
-            f"<b>{_E_CASINO} Топ-3 по гаче:</b>\n{top_gacha_txt}\n\n"
-            f"<b>👗 Топ-5 популярных скинов:</b>\n{top_skins_txt}"
-        )
-        try:
-            await q.message.edit_text(
-                text,
-                parse_mode=ParseMode.HTML,
-                reply_markup=InlineKeyboardMarkup([
-                    [btn("👗 Статистика обликов", callback_data="admin_skin_stats")],
-                    [btn("🔍 Поиск по облику", callback_data="admin_skin_browse_")],
-                    [btn("💀 Детали застрявших", callback_data="admin_stuck_stats")],
-                    [btn("◀️ Назад", callback_data="admin_refresh")],
-                ]),
-            )
-        except (BadRequest, Forbidden, TimedOut):
-            pass
         await q.answer()
+        await st_show(q, "home")
         return
     # ── Просмотр обликов по редкости → облик → владельцы ──────────────
     if d.startswith("admin_skin_browse_"):
@@ -40465,11 +40655,11 @@ async def on_callback(update: Update, ctx: ContextTypes.DEFAULT_TYPE):
             )
             return
         # Атомарно списываем монеты
-        new_bal = await db_coins_delta(uid, -cost)
+        # f передаём, чтобы db_save ниже не списал ту же сумму второй раз
+        new_bal = await db_coins_delta(uid, -cost, f)
         if new_bal is None:
             await q.answer((f"Нужно {cost} 🪙. Недостаточно монет.")[:200], show_alert=True)
             return
-        f["coins"] = new_bal
         await send_action_sticker(ctx.bot, q.message.chat.id, "heal")
         await animate(q, f"{_E_PILL} <b>Лечим лягушку...</b>\n<i>Пьёт болотное зелье 🌿</i>")
         f["health"] = min(100, f["health"] + 40)
@@ -49690,13 +49880,12 @@ async def on_callback(update: Update, ctx: ContextTypes.DEFAULT_TYPE):
             # Атомарное списание через db_coins_delta — защита от двойного нажатия.
             # UPDATE ... WHERE coins >= cost в одной транзакции, кеш обновляется внутри.
             # Лок COIN_OPS выше обеспечивает дополнительный барьер на уровне asyncio.
-            coins_after = await db_coins_delta(uid, -cost)
+            coins_after = await db_coins_delta(uid, -cost, f)
             if coins_after is None:
                 f_fresh = await db_get(uid)
                 have = f_fresh.get("coins", 0) if f_fresh else 0
                 await q.answer((f"❌ Нужно {cost}🪙, а у тебя {have}🪙")[:200], show_alert=True)
                 return
-            f["coins"] = coins_after  # синхронизируем локальный кеш
             await q.answer()
             logger.info("kva_retry_coins: uid=%s списано %s монет, остаток %s", uid, cost, coins_after)
         else:
@@ -49818,6 +50007,8 @@ async def successful_payment(update: Update, ctx: ContextTypes.DEFAULT_TYPE):
     f = await db_get(user.id)
     if not f:
         return
+    if not f.get("stars_spent"):
+        st_count("payer_new")
 
     # ── Реферальная комиссия 10% Stars → ref_stars_balance ─
     async def _pay_ref_commission(buyer_id: int, stars: int):
@@ -49882,6 +50073,7 @@ async def successful_payment(update: Update, ctx: ContextTypes.DEFAULT_TYPE):
         _X10_TOTAL = int(NFT_KVA_TOTAL * 1.5)  # 1500 вместо 1000
         f["stars_spent"] = f.get("stars_spent", 0) + stars_paid
         await db_save(f)
+        await purchase_log(user.id, "kva_retry_10", stars_paid)
         _rolls_10  = [random.randint(1, _X10_TOTAL) for _ in range(10)]
         # Победа — попадание ровно в _X10_TOTAL (1500)
         _won_10    = any(r == _X10_TOTAL for r in _rolls_10)
@@ -49967,6 +50159,7 @@ async def successful_payment(update: Update, ctx: ContextTypes.DEFAULT_TYPE):
         # Повторный ква за Stars 1×
         f["stars_spent"] = f.get("stars_spent", 0) + stars_paid
         await db_save(f)
+        await purchase_log(user.id, "kva_retry", stars_paid)
         _nft_result = ""
         _roll = random.randint(1, NFT_KVA_TOTAL)
         _won_s1 = (_roll == NFT_KVA_TOTAL)
@@ -50053,8 +50246,6 @@ async def successful_payment(update: Update, ctx: ContextTypes.DEFAULT_TYPE):
         f["stars_spent"] = f.get("stars_spent", 0) + stars_paid
         await db_save(f)
         await _pay_ref_commission(user.id, stars_paid)
-        await purchase_log(user.id, "kva_retry", stars_paid)
-        await purchase_log(user.id, "kva_retry_10", stars_paid)
         await purchase_log(user.id, "adv_extra_slot", stars_paid)
         await update.message.reply_text(
             f"{_E_SWORDS} <b>Дополнительный слот похода открыт!</b>\n\n"
@@ -55607,6 +55798,10 @@ async def post_init(app: Application):
         _private_commands,
         scope=BotCommandScopeDefault(),
     )
+    # Фоновые задачи подписываются своим именем — для статистики монет
+    st_wrap_jobs(app.job_queue)
+    app.job_queue.run_repeating(job_st_flush, interval=ST_FLUSH_S, first=ST_FLUSH_S)
+    app.job_queue.run_repeating(job_st_hourly, interval=3600, first=120)
     app.job_queue.run_repeating(job_events, interval=4 * 3600, first=300)
     app.job_queue.run_repeating(job_reminders, interval=6 * 3600, first=600)
     app.job_queue.run_repeating(job_tutorial_nudge, interval=3600, first=120)  # раз в час
@@ -59626,6 +59821,1283 @@ async def handle_checkers_callback(q, d, uid, ctx):
 
 
 
+
+
+# ══════════════════════════════════════════════════════════════════════════════
+# 📊  СТАТИСТИКА: ПАНЕЛЬ И ОТЧЁТ
+# ══════════════════════════════════════════════════════════════════════════════
+# Сводка и десять разделов. Каждый раздел — один набор цифр (_StSec), из
+# которого рисуется и экран в Telegram, и текст для отчёта: цифры на экране и
+# в файле не могут разойтись. «📋 Текстом» присылает раздел моноширинным
+# блоком (копируется одним нажатием), «📄 Отчёт файлом» — всё сразу с
+# таблицей по дням и пояснениями, чтобы отдать на разбор.
+#
+# Сутки — по Москве. Заходы, функции, потоки монет и ошибки считаются с
+# выкатки этой версии; новые игроки, удержание по last_seen, коллекции и всё,
+# что лежит в своих таблицах, видны сразу и за всё время.
+
+_ST_REAL = "f.banned=0 AND f.is_bot=0"
+
+# Подписи функций. Ключ — первое слово callback_data (см. st_feature) или /команда.
+ST_FEAT_LABELS = {
+    "ex": "Экспедиции", "adv": "Поход", "staya": "Стая", "canteen": "Столовая стаи",
+    "raid": "Набег стаи", "skirmish": "Стычка стай", "skd": "Стычка: ход",
+    "war": "Война", "casino": "Казино", "double": "Казино: риск", "bet": "Ставки",
+    "guess": "Угадайка", "sapper": "Сапёр", "ttt": "Крестики-нолики", "ck": "Шашки",
+    "ckg": "Шашки: сдаться", "ckj": "Шашки: вход", "ckd": "Шашки: ход",
+    "hm": "Виселица", "memo": "Память", "bluff": "Блеф", "bluffr": "Блеф: ответ",
+    "react": "Реакция", "pattern": "Узор", "funnel": "Воронка", "gacha": "Гача",
+    "catalog": "Гача: что выпадает", "craft": "Крафт", "market": "Рынок",
+    "lottery": "Лотерея", "giveaway": "Розыгрыш", "tournament": "Турнир",
+    "duel": "Дуэль", "battle": "Битва", "social": "Соседи: забота",
+    "friend": "Соседи: заявки", "add": "Добавить соседа", "sosedi": "Соседи",
+    "bond": "Связь", "letopis": "Летопись", "feed": "Кормить", "play": "Играть",
+    "wash": "Купать", "sleep": "Сон", "heal": "Лечить", "revive": "Воскрешение",
+    "return": "Воскрешение", "trial": "Испытание", "hibernation": "Спячка",
+    "sacrifice": "Ивент", "kva": "Ква", "fz": "Фриз-ивент", "fzquiz": "Фриз: викторина",
+    "sub": "Подписки", "buy": "Покупка", "stars": "Звёзды", "shop": "Магазин",
+    "skin": "Облики", "skins": "Облики", "equip": "Надеть облик", "inv": "Инвентарь",
+    "nft": "NFT", "ach": "Достижения", "achievements": "Достижения",
+    "quest": "Задания", "quests": "Задания", "daily": "Ежедневный бонус",
+    "bonus": "Бонусы", "top": "Топы", "topsponsors": "Топ спонсоров",
+    "season": "Сезон", "settings": "Настройки", "lang": "Язык", "toggle": "Настройки",
+    "ob": "Знакомство", "tip": "Таверна", "iev": "Событие", "mosquito": "Комар",
+    "diary": "Дневник", "personality": "Характер", "horoscope": "Гороскоп",
+    "farewell": "Прощание", "memory": "Память", "ref": "Рефералка",
+    "referral": "Рефералка", "contest": "Конкурс", "ca": "Настройки чата",
+    "pi": "Партнёрский чат", "fish": "Рыбалка", "sgift": "Тайный подарок",
+    "gift": "Подарок", "speedup": "Ускорение", "games": "Игры", "game": "Игры",
+    "feedblock": "Чужое кормление", "feedunblock": "Чужое кормление",
+    "menu_games": "Меню: игры", "menu_care": "Меню: уход", "menu_more": "Меню: ещё",
+    "menu_shop": "Меню: магазин", "menu_jackpot": "Меню: джекпот",
+    "plaza_staya": "Площадь: стая", "plaza_sosedi": "Площадь: соседи",
+    "plaza_bond": "Площадь: связь", "plaza_expedition": "Площадь: экспедиция",
+    "plaza_pohod": "Площадь: поход", "plaza_invite": "Площадь: позвать",
+    "plaza_find": "Площадь: найти", "plaza_friend": "Площадь: сосед",
+    "refresh": "Обновить экран", "noop": "Пустая кнопка", "ignore": "Пустая кнопка",
+    "личка": "Сообщение в личке", "оплата": "Оплата звёздами", "счёт": "Счёт на оплату",
+    "inline": "Инлайн", "фон": "Фон без имени", "чат": "Переписка в группе",
+    "новый игрок": "Стартовые монеты",
+    "/start": "/start", "/?": "Неизвестная команда",
+    "job:auto_farm": "Трудяга", "job:auto_care": "Няня",
+    "job:staya_passive_income": "Доход котла стаи", "job:lottery_draw": "Розыгрыш лотереи",
+    "job:ex_tick": "Экспедиции (ход)", "job:adventure_tick": "Поход (ход)",
+    "job:background_decay": "Угасание статов", "job:events": "Случайные события",
+    "job:mosquito": "Комар", "job:canteen_tick": "Столовая (ход)",
+    "job:weekly_top": "Итоги недели", "job:dragon_autovictory": "Дракон стаи",
+    "job:staya_resolve": "События стай", "job:legend_update": "Легенда",
+    "job:winback": "Возврат ушедших", "job:birthday_check": "Дни рождения",
+}
+
+ST_SKU_LABELS = {
+    "subscription": "Подписка", "revive_instant": "Воскрешение", "gacha_ticket": "Билет гачи",
+    "seasonal_skin": "Облик сезона", "secretgift": "Тайный подарок",
+    "exp_extra_slot": "Ещё экспедиция", "adv_extra_slot": "Ещё поход",
+    "kva_retry": "Ква ×1", "kva_retry_10": "Ква ×10",
+}
+
+ST_ACT_LABELS = (
+    ("feeds", "кормлений"), ("plays", "игр с лягушкой"), ("washes", "купаний"),
+    ("sleeps", "снов"), ("heals", "лечений"), ("gacha", "круток гачи"),
+    ("casino", "игр в казино"), ("duels", "дуэлей"), ("battles", "битв"),
+    ("mosquitoes", "комаров"), ("crafts", "крафтов"), ("social", "забот о соседях"),
+)
+
+
+def st_label(feat: str) -> str:
+    if feat in ST_FEAT_LABELS:
+        return ST_FEAT_LABELS[feat]
+    if feat.startswith("job:"):
+        return "Фон: " + feat[4:]
+    return feat
+
+
+def st_sku_label(sku: str) -> str:
+    if sku in ST_SKU_LABELS:
+        return ST_SKU_LABELS[sku]
+    for pre, lab in (("coins_", "Монеты за "), ("speedup_", "Ускорение: "), ("fz_", "Фриз за ")):
+        if sku.startswith(pre):
+            rest = sku[len(pre):]
+            return lab + (rest + "⭐" if rest.isdigit() else rest)
+    return sku
+
+
+# ── Числа ────────────────────────────────────────────────────────────────────
+def _stn(n) -> str:
+    """12 345, −7."""
+    try:
+        n = int(round(n))
+    except (TypeError, ValueError):
+        return str(n)
+    return ("−" if n < 0 else "") + f"{abs(n):,}".replace(",", " ")
+
+
+def _stk(n) -> str:
+    """Коротко: 1,2 млн, 45 тыс, 9 876."""
+    n = int(n or 0)
+    a = abs(n)
+    if a >= 1_000_000:
+        s = f"{a / 1e6:.1f}".replace(".", ",").removesuffix(",0") + " млн"
+    elif a >= 100_000:
+        s = f"{a / 1e3:.0f} тыс"
+    else:
+        s = _stn(a)
+    return ("−" if n < 0 else "") + s
+
+
+def _stp(a, b, digits: int = 0) -> str:
+    """Доля a от b в процентах."""
+    if not b:
+        return "—"
+    v = a * 100 / b
+    if digits == 0 and 0 < v < 10:
+        digits = 1
+    return f"{v:.{digits}f}".replace(".", ",") + "%"
+
+
+def _std(cur, prev) -> str:
+    """Изменение к прошлому: +12%, −5%. Пусто, если сравнивать не с чем."""
+    if not prev:
+        return ""
+    d = (cur - prev) * 100 / prev
+    return f"{'+' if d >= 0 else '−'}{abs(d):.0f}%"
+
+
+def _st_dm(day: str) -> str:
+    """2026-10-05 → 05.10"""
+    return f"{day[8:10]}.{day[5:7]}"
+
+
+def _st_ago(ts: float, now: float) -> str:
+    d = now - ts
+    if d < 3600:
+        return f"{int(d // 60)} мин назад"
+    if d < 86400:
+        return f"{int(d // 3600)} ч назад"
+    return f"{int(d // 86400)} дн назад"
+
+
+# ── Раздел ───────────────────────────────────────────────────────────────────
+class _StSec:
+    """
+    Раздел статистики: заголовок и блоки. Из него рисуются и экран
+    (_st_screen), и текст отчёта (_st_text).
+
+    kv     — пары «подпись — значение», к значению можно приписать пояснение;
+    table  — таблица: в отчёте все колонки, на экране — строка из screen(row);
+    note   — пояснение, как читать цифры.
+    """
+
+    def __init__(self, key: str, icon: str, title: str):
+        self.key, self.icon, self.title = key, icon, title
+        self.at = time.time()
+        self.blocks: list = []
+
+    def kv(self, head: str, *rows) -> None:
+        rows = [r for r in rows if r]
+        if rows:
+            self.blocks.append(("kv", head, rows))
+
+    def table(self, head: str, cols: list, rows: list, screen=None, empty: str = "") -> None:
+        self.blocks.append(("table", head, cols, rows, screen, empty))
+
+    def note(self, text: str) -> None:
+        self.blocks.append(("note", text))
+
+
+def _st_kv_html(row) -> str:
+    label, value = row[0], row[1]
+    extra = row[2] if len(row) > 2 else ""
+    s = f"{he(label)} <b>{he(value)}</b>" if value != "" else he(label)
+    return s + (f"{SEP}{he(extra)}" if extra else "")
+
+
+def _st_screen(sec: _StSec, limit: int = 3900) -> str:
+    """Экран раздела. Длинные таблицы сворачиваются, не влезает — режутся."""
+    cut: dict[int, int] = {}            # индекс блока -> сколько строк таблицы оставить
+
+    def render() -> str:
+        parts = [f"{sec.icon} <b>{he(sec.title)}</b>{SEP}"
+                 f"{datetime.fromtimestamp(sec.at, ST_TZ).strftime('%d.%m %H:%M')}"]
+        notes = []
+        for i, b in enumerate(sec.blocks):
+            if b[0] == "kv":
+                lines = [f"<b>{he(b[1])}</b>"] if b[1] else []
+                parts.append("\n".join(lines + [_st_kv_html(r) for r in b[2]]))
+            elif b[0] == "table":
+                _, head, cols, rows, screen, empty = b
+                if not rows:
+                    if empty:
+                        parts.append(f"<b>{he(head)}</b>\n<i>{he(empty)}</i>")
+                    continue
+                if screen is None:
+                    continue
+                keep = cut.get(i, len(rows))
+                lines = [he(screen(r)) for r in rows[:keep]]
+                if keep < len(rows):
+                    lines.append(f"…и ещё {len(rows) - keep} — в отчёте файлом")
+                parts.append(f"<b>{he(head)}</b>\n" + ui_quote(*lines, expandable=len(lines) > 6))
+            elif b[0] == "note":
+                notes.append(he(b[1]))
+        if notes:
+            parts.append("<i>" + "\n".join(notes) + "</i>")
+        return "\n\n".join(parts)
+
+    text = render()
+    while len(text) > limit:
+        tables = [(i, cut.get(i, len(b[3]))) for i, b in enumerate(sec.blocks)
+                  if b[0] == "table" and b[4] is not None and cut.get(i, len(b[3])) > 3]
+        if not tables:
+            break
+        i, keep = max(tables, key=lambda t: t[1])
+        cut[i] = max(3, keep - max(2, keep // 4))
+        text = render()
+    return text
+
+
+def _st_text(sec: _StSec) -> str:
+    """Раздел обычным текстом: таблицы выровнены пробелами."""
+    out = [f"## {sec.title} · {datetime.fromtimestamp(sec.at, ST_TZ).strftime('%d.%m.%Y %H:%M')} МСК"]
+    for b in sec.blocks:
+        if b[0] == "kv":
+            if b[1]:
+                out.append(f"\n### {b[1]}")
+            w = max(len(r[0]) for r in b[2])
+            for r in b[2]:
+                extra = r[2] if len(r) > 2 and r[2] else ""
+                val = f"{r[1]}" + (f" · {extra}" if extra else "")
+                out.append(f"{r[0]:<{w}}  {val}".rstrip())
+        elif b[0] == "table":
+            _, head, cols, rows, _screen, empty = b
+            out.append(f"\n### {head}")
+            if not rows:
+                out.append(empty or "нет данных")
+                continue
+            n = len(cols)
+            cells = [[str(c) for c in cols]] + [
+                ([str(c) for c in r] + [""] * n)[:n] for r in rows]
+            ws = [max(len(row[j]) for row in cells) for j in range(len(cols))]
+            for k, row in enumerate(cells):
+                line = "  ".join(
+                    (c.ljust(ws[j]) if j == 0 else c.rjust(ws[j])) for j, c in enumerate(row)
+                )
+                out.append(line.rstrip())
+                if k == 0:
+                    out.append("  ".join("-" * w for w in ws))
+        elif b[0] == "note":
+            out.append(f"\n* {b[1]}")
+    return "\n".join(out)
+
+
+# ── Данные ───────────────────────────────────────────────────────────────────
+class _StCtx:
+    """Одно соединение и общие выборки на время сборки экрана или отчёта."""
+
+    def __init__(self, db):
+        self.db = db
+        self.now = time.time()
+        self.today = st_day(self.now)
+        self._cache: dict = {}
+
+    async def one(self, sql: str, *a):
+        async with self.db.execute(sql, a) as c:
+            r = await c.fetchone()
+        return r[0] if r and r[0] is not None else 0
+
+    async def rows(self, sql: str, *a) -> list:
+        async with self.db.execute(sql, a) as c:
+            return await c.fetchall()
+
+    def day(self, back: int) -> str:
+        """День N суток назад по Москве (0 — сегодня)."""
+        return st_day(self.now - back * 86400)
+
+    def days(self, n: int) -> list[str]:
+        """Последние n дней, от старых к сегодняшнему."""
+        return [self.day(b) for b in range(n - 1, -1, -1)]
+
+    def day_ts(self, day: str) -> float:
+        """Начало суток day по Москве."""
+        return datetime.strptime(day, "%Y-%m-%d").replace(tzinfo=ST_TZ).timestamp()
+
+    async def _memo(self, key, make):
+        if key not in self._cache:
+            self._cache[key] = await make()
+        return self._cache[key]
+
+    async def since(self) -> str | None:
+        """С какого дня копятся заходы (None — ещё ни одного сброса)."""
+        async def make():
+            r = await self.rows("SELECT MIN(day) FROM st_active")
+            return r[0][0] if r and r[0][0] else None
+        return await self._memo("since", make)
+
+    async def dau(self) -> dict:
+        """Заходили по дням (только игроки с лягушкой), 90 дней."""
+        async def make():
+            rows = await self.rows(
+                "SELECT a.day, COUNT(*) FROM st_active a JOIN frogs f ON f.user_id=a.user_id "
+                f"WHERE a.day>=? AND {_ST_REAL} GROUP BY a.day", self.day(90))
+            return dict(rows)
+        return await self._memo("dau", make)
+
+    async def uniq(self, back: int) -> int:
+        """Разных игроков за последние back дней, включая сегодня."""
+        return await self._memo(("uniq", back), lambda: self.one(
+            "SELECT COUNT(DISTINCT a.user_id) FROM st_active a JOIN frogs f ON f.user_id=a.user_id "
+            f"WHERE a.day>=? AND {_ST_REAL}", self.day(back - 1)))
+
+    async def born(self) -> dict:
+        """Новые игроки по дням (по Москве), 120 дней."""
+        async def make():
+            rows = await self.rows(
+                "SELECT date(born_at + 10800, 'unixepoch'), COUNT(*) FROM frogs f "
+                f"WHERE born_at>=? AND {_ST_REAL} GROUP BY 1", self.day_ts(self.day(120)))
+            return dict(rows)
+        return await self._memo("born", make)
+
+    async def cnt(self) -> dict:
+        """Счётчики по дням: {(день, ключ): (раз, сумма)}, 90 дней + несброшенное."""
+        async def make():
+            rows = await self.rows("SELECT day, key, n, amount FROM st_cnt WHERE day>=?", self.day(90))
+            out = {(d, k): [n, a] for d, k, n, a in rows}
+            with _st_lock:
+                pending = list(_st_cnt.items())
+            for k, (n, a) in pending:
+                row = out.setdefault(k, [0, 0])
+                row[0] += n
+                row[1] += a
+            return out
+        return await self._memo("cnt", make)
+
+    async def c(self, key: str, days: list[str], amount: bool = False) -> int:
+        """Сумма счётчика key за дни (раз или сумму)."""
+        data = await self.cnt()
+        return sum(data.get((d, key), (0, 0))[1 if amount else 0] for d in days)
+
+    async def c_prefix(self, prefix: str, days: list[str]) -> dict:
+        """Все счётчики с префиксом за дни: {ключ без префикса: [раз, сумма]}."""
+        data = await self.cnt()
+        ds = set(days)
+        out: dict = {}
+        for (d, k), (n, a) in data.items():
+            if d in ds and k.startswith(prefix):
+                row = out.setdefault(k[len(prefix):], [0, 0])
+                row[0] += n
+                row[1] += a
+        return out
+
+    async def snaps(self) -> dict:
+        """Снимки по дням: {день: dict}, 120 дней."""
+        async def make():
+            rows = await self.rows("SELECT day, data FROM st_daily WHERE day>=?", self.day(120))
+            out = {}
+            for d, raw in rows:
+                try:
+                    out[d] = json.loads(raw)
+                except ValueError:
+                    pass
+            return out
+        return await self._memo("snaps", make)
+
+    async def stars_by_day(self) -> dict:
+        """
+        Звёзды по дням. Со дня, когда заработал новый счётчик, — он (сутки по
+        Москве); раньше — старый счётчик продаж (сутки по UTC).
+        """
+        async def make():
+            data = await self.cnt()
+            out = {d: [n, a] for (d, k), (n, a) in data.items() if k == "stars"}
+            first = min(out) if out else None
+            old = await self.rows("SELECT key, value FROM settings WHERE key>=? AND key<=?",
+                                  "sales_" + self.day(90), "sales_9999")
+            for key, raw in old:
+                d = key[6:]
+                if first and d >= first:
+                    continue
+                try:
+                    rows = json.loads(raw).values()
+                    out[d] = [sum(r[1] for r in rows), sum(r[2] for r in rows)]
+                except (ValueError, TypeError, IndexError):
+                    continue
+            return out
+        return await self._memo("stars", make)
+
+    async def stars(self, days: list[str]) -> tuple[int, int]:
+        data = await self.stars_by_day()
+        return (sum(data.get(d, (0, 0))[0] for d in days),
+                sum(data.get(d, (0, 0))[1] for d in days))
+
+
+async def st_snapshot_data(db) -> dict:
+    """Состояние на сейчас — то, что потом не восстановить: сколько чего на руках."""
+    x = _StCtx(db)
+    now = x.now
+    real = "banned=0 AND is_bot=0"
+    s = {
+        "players": await x.one(f"SELECT COUNT(*) FROM frogs WHERE {real}"),
+        "alive": await x.one(f"SELECT COUNT(*) FROM frogs WHERE alive=1 AND {real}"),
+        "hib": await x.one(f"SELECT COUNT(*) FROM frogs WHERE alive=1 AND hibernation_until>? AND {real}", now),
+        "banned": await x.one("SELECT COUNT(*) FROM frogs WHERE banned=1"),
+        "bots": await x.one("SELECT COUNT(*) FROM frogs WHERE is_bot=1"),
+        "coins": await x.one(f"SELECT SUM(coins) FROM frogs WHERE {real}"),
+        "coins_alive": await x.one(f"SELECT SUM(coins) FROM frogs WHERE alive=1 AND {real}"),
+        "coins_act7": await x.one(f"SELECT SUM(coins) FROM frogs WHERE last_seen>=? AND {real}", now - 7 * 86400),
+        "payers": await x.one(f"SELECT COUNT(*) FROM frogs WHERE stars_spent>0 AND {real}"),
+        "stars_total": await x.one(f"SELECT SUM(stars_spent) FROM frogs WHERE {real}"),
+        "sub_nanny": await x.one(f"SELECT COUNT(*) FROM frogs WHERE subscription_type=1 AND subscription_until>? AND {real}", now),
+        "sub_worker": await x.one(f"SELECT COUNT(*) FROM frogs WHERE subscription_type=2 AND subscription_until>? AND {real}", now),
+        "in_staya": await x.one(f"SELECT COUNT(*) FROM frogs WHERE staya_id>0 AND {real}"),
+        "stayas": await x.one("SELECT COUNT(*) FROM stayas"),
+        "lvl_avg": round(await x.one(f"SELECT AVG(level) FROM frogs WHERE alive=1 AND {real}") or 0, 2),
+        "nft": await x.one("SELECT COUNT(*) FROM nft_frogs WHERE verified=1"),
+    }
+    return s
+
+
+async def st_snapshot() -> None:
+    """Записать снимок за сегодня (перезаписывается до конца суток)."""
+    async with aiosqlite.connect(DB_PATH) as db:
+        data = await st_snapshot_data(db)
+        await db.execute(
+            "INSERT INTO st_daily(day, data, ts) VALUES(?,?,?) "
+            "ON CONFLICT(day) DO UPDATE SET data=excluded.data, ts=excluded.ts",
+            (st_day(), json.dumps(data), time.time()),
+        )
+        await db.commit()
+
+
+_st_pruned_day = ""
+
+
+async def job_st_hourly(ctx) -> None:
+    """Раз в час: снимок состояния и раз в сутки — чистка старых подробностей."""
+    global _st_pruned_day
+    await st_flush()
+    try:
+        await st_snapshot()
+    except Exception as e:
+        logger.warning("st_snapshot: %s", e)
+    if _st_pruned_day != st_day():
+        _st_pruned_day = st_day()
+        try:
+            async with aiosqlite.connect(DB_PATH) as db:
+                await db.execute("DELETE FROM st_use WHERE day<?", (st_day(time.time() - ST_KEEP_USE_DAYS * 86400),))
+                old = st_day(time.time() - ST_KEEP_DAYS * 86400)
+                for t in ("st_active", "st_cnt", "st_daily"):
+                    await db.execute(f"DELETE FROM {t} WHERE day<?", (old,))
+                await db.commit()
+        except Exception as e:
+            logger.warning("st prune: %s", e)
+
+
+# ── Разделы ──────────────────────────────────────────────────────────────────
+async def _sts_home(x: _StCtx) -> _StSec:
+    s = _StSec("home", _E_CHART, "Статистика")
+    t, y = x.today, x.day(1)
+    d7, d30 = x.days(7), x.days(30)
+    since = await x.since()
+    dau = await x.dau()
+    if since:
+        w7, m30 = await x.uniq(7), await x.uniq(30)
+        avg7 = sum(dau.get(d, 0) for d in d7) / 7
+        s.kv("Заходили в бота",
+             ("сегодня", _stn(dau.get(t, 0)), f"вчера {_stn(dau.get(y, 0))}"),
+             ("за 7 дн", _stn(w7), f"в день {_stn(avg7)}"),
+             ("за 30 дн", _stn(m30), f"липкость {_stp(avg7, m30)}"))
+    live24 = await x.one(f"SELECT COUNT(*) FROM frogs f WHERE last_seen>=? AND {_ST_REAL}", x.now - 86400)
+    born = await x.born()
+    s.kv("Новые игроки",
+         ("сегодня", _stn(born.get(t, 0)), f"вчера {_stn(born.get(y, 0))}"),
+         ("за 7 дн", _stn(sum(born.get(d, 0) for d in d7)),
+          f"за 30 дн {_stn(sum(born.get(d, 0) for d in d30))}"))
+    deaths_t = sum(v[0] for v in (await x.c_prefix("death:", [t])).values())
+    deaths_y = sum(v[0] for v in (await x.c_prefix("death:", [y])).values())
+    s.kv("Потери",
+         ("умерло сегодня", _stn(deaths_t), f"вчера {_stn(deaths_y)}"),
+         ("воскресло сегодня", _stn(await x.c("revive", [t]))),
+         ("заблокировали бота", _stn(await x.c("bot_blocked", [t])),
+          f"за 7 дн {_stn(await x.c('bot_blocked', d7))}"))
+    st_t, st_y = await x.stars([t]), await x.stars([y])
+    st_7, st_30 = await x.stars(d7), await x.stars(d30)
+    s.kv("Звёзды",
+         ("сегодня", f"{_stn(st_t[1])}⭐", f"вчера {_stn(st_y[1])}⭐"),
+         ("за 7 дн", f"{_stn(st_7[1])}⭐", f"за 30 дн {_stn(st_30[1])}⭐"))
+    snaps = await x.snaps()
+    coins_now = await x.one(f"SELECT SUM(coins) FROM frogs f WHERE {_ST_REAL}")
+    prev = snaps.get(y, {}).get("coins")
+    inflow = sum(v[1] for v in (await x.c_prefix("coin+:", [t])).values())
+    outflow = sum(v[1] for v in (await x.c_prefix("coin-:", [t])).values())
+    s.kv("Монеты",
+         ("у игроков", _stk(coins_now), f"к вчера {_std(coins_now, prev)}" if prev else ""),
+         ("сегодня пришло", _stk(inflow), f"ушло {_stk(outflow)}") if since else None)
+    online = await x.one(f"SELECT COUNT(*) FROM frogs f WHERE last_seen>=? AND {_ST_REAL}", x.now - 600)
+    _update_peak_online(online)
+    s.kv("Сейчас",
+         ("в боте за 10 мин", _stn(online), f"пик за сутки {_stn(_peak_online['day'][0])}"),
+         ("за последние 24 ч", _stn(live24)),
+         ("ошибок в логе сегодня", _stn(await x.c("log:error", [t]))))
+    if not since:
+        s.note("Заходы, функции и потоки монет начнут считаться с первого сброса — через 5 минут после выкатки.")
+    elif since > x.day(29):
+        s.note(f"Заходы и функции считаются с {_st_dm(since)}. Сутки — по Москве.")
+    else:
+        s.note("Сутки — по Москве.")
+    return s
+
+
+async def _sts_players(x: _StCtx) -> _StSec:
+    s = _StSec("players", _E_USERS, "Игроки")
+    snap = await st_snapshot_data(x.db)
+    dead = snap["players"] - snap["alive"]
+    since = await x.since()
+    nofrog = 0
+    if since:
+        nofrog = await x.one(
+            "SELECT COUNT(DISTINCT a.user_id) FROM st_active a LEFT JOIN frogs f ON f.user_id=a.user_id "
+            "WHERE a.day>=? AND f.user_id IS NULL", x.day(6))
+    s.kv("Сейчас",
+         ("всего", _stn(snap["players"])),
+         ("живых", _stn(snap["alive"]), _stp(snap["alive"], snap["players"])),
+         ("мёртвых", _stn(dead), _stp(dead, snap["players"])),
+         ("в спячке", _stn(snap["hib"])),
+         ("забанено", _stn(snap["banned"]), f"ботов {_stn(snap['bots'])}"),
+         ("заходили без лягушки (7 дн)", _stn(nofrog)) if since else None)
+
+    born = await x.born()
+    d7, p7 = x.days(7), [x.day(b) for b in range(7, 14)]
+    n7, np7 = sum(born.get(d, 0) for d in d7), sum(born.get(d, 0) for d in p7)
+    t30 = x.day_ts(x.day(29))
+    new30 = await x.one(f"SELECT COUNT(*) FROM frogs f WHERE born_at>=? AND {_ST_REAL}", t30)
+    by_ref = await x.one(
+        f"SELECT COUNT(*) FROM frogs f JOIN referrals r ON r.referred_id=f.user_id "
+        f"WHERE f.born_at>=? AND {_ST_REAL}", t30)
+    by_chat = await x.one(
+        f"SELECT COUNT(*) FROM frogs f WHERE f.born_at>=? AND f.source_chat_id!=0 AND {_ST_REAL} "
+        "AND f.user_id NOT IN (SELECT referred_id FROM referrals)", t30)
+    s.kv("Приток",
+         ("за 7 дн", _stn(n7), f"неделей раньше {_stn(np7)} {_std(n7, np7)}".rstrip()),
+         ("за 30 дн", _stn(new30)),
+         ("по приглашению", _stn(by_ref), _stp(by_ref, new30)),
+         ("из групп", _stn(by_chat), _stp(by_chat, new30)),
+         ("сами", _stn(new30 - by_ref - by_chat), _stp(new30 - by_ref - by_chat, new30)))
+
+    starts = await x.c_prefix("start:", x.days(7))
+    if starts:
+        rows = sorted(((k, v[0]) for k, v in starts.items()), key=lambda r: -r[1])[:12]
+        s.table("Ссылки /start за 7 дн", ["метка", "раз"],
+                [(k, _stn(n)) for k, n in rows],
+                screen=lambda r: f"{r[0]} · {r[1]}")
+
+    rows = []
+    for d in x.days(14)[::-1]:
+        rows.append((_st_dm(d), _stn(born.get(d, 0))))
+    s.table("Новые по дням", ["день", "новых"], rows, screen=lambda r: f"{r[0]} · {r[1]}")
+
+    now = x.now
+    buckets = [("до суток", 0, 1), ("1–3 дня", 1, 3), ("3–7 дней", 3, 7),
+               ("7–30 дней", 7, 30), ("больше 30", 30, 100000)]
+    seen_rows = []
+    for name, a, b in buckets:
+        n = await x.one(
+            f"SELECT COUNT(*) FROM frogs f WHERE alive=1 AND {_ST_REAL} AND last_seen<=? AND last_seen>?",
+            now - a * 86400, now - b * 86400)
+        seen_rows.append((name, _stn(n), _stp(n, snap["alive"])))
+    s.table("Живые: когда заходили последний раз", ["давность", "игроков", "доля"], seen_rows,
+            screen=lambda r: f"{r[0]} · {r[1]} · {r[2]}")
+
+    lv = await x.rows(
+        "SELECT CASE WHEN level<2 THEN '1' WHEN level<5 THEN '2–4' WHEN level<10 THEN '5–9' "
+        "WHEN level<15 THEN '10–14' WHEN level<20 THEN '15–19' WHEN level<30 THEN '20–29' "
+        "ELSE '30+' END AS b, COUNT(*), MIN(level) FROM frogs f "
+        f"WHERE alive=1 AND {_ST_REAL} GROUP BY b ORDER BY MIN(level)")
+    s.table("Уровни живых", ["уровень", "игроков", "доля"],
+            [(b, _stn(n), _stp(n, snap["alive"])) for b, n, _ in lv],
+            screen=lambda r: f"ур. {r[0]} · {r[1]} · {r[2]}")
+
+    langs = await x.rows(
+        "SELECT CASE WHEN lang IN ('en','zh') THEN lang ELSE 'ru' END AS l, COUNT(*), "
+        "SUM(CASE WHEN last_seen>=? THEN 1 ELSE 0 END) FROM frogs f "
+        f"WHERE {_ST_REAL} GROUP BY l ORDER BY 2 DESC", now - 7 * 86400)
+    s.table("Языки", ["язык", "всего", "заходили 7 дн"],
+            [(l, _stn(n), _stn(a)) for l, n, a in langs],
+            screen=lambda r: f"{r[0]} · {r[1]} · за 7 дн {r[2]}")
+    s.kv("Подписки",
+         ("Няня", _stn(snap["sub_nanny"])), ("Трудяга", _stn(snap["sub_worker"])))
+    s.note("«Заходили» — по last_seen: обновляется при нажатии кнопок и сообщениях боту.")
+    return s
+
+
+async def _sts_retention(x: _StCtx) -> _StSec:
+    s = _StSec("retention", "🔁", "Удержание")
+    fun = await funnel_report(7)
+    started = fun.get("1", 0)
+    if started:
+        names = (("1", "открыли бота"), ("2", "покормили"), ("3", "поиграли"),
+                 ("4", "искупали"), ("done", "назвали и дошли"))
+        s.kv("Знакомство за 7 дн",
+             *[(lab, _stn(fun.get(k, 0)), _stp(fun.get(k, 0), started)) for k, lab in names])
+
+    # Удержание по last_seen: доля когорты, что заходила через N дней и позже
+    rows = []
+    for w in range(10):
+        end = x.day_ts(x.day(w * 7)) + 86400
+        start = end - 7 * 86400
+        r = await x.rows(
+            "SELECT COUNT(*), "
+            "SUM(last_seen>=born_at+86400), SUM(last_seen>=born_at+3*86400), "
+            "SUM(last_seen>=born_at+7*86400), SUM(last_seen>=born_at+14*86400), "
+            "SUM(last_seen>=born_at+30*86400) "
+            f"FROM frogs f WHERE born_at>=? AND born_at<? AND {_ST_REAL}", start, end)
+        n, *ks = r[0]
+        if not n:
+            continue
+        age = (x.now - end) / 86400            # сколько прошло с конца недели
+        cells = []
+        for k, days in zip(ks, (1, 3, 7, 14, 30)):
+            cells.append(_stp(k or 0, n) if age >= days else "…")
+        rows.append((_st_dm(st_day(start)), _stn(n), *cells))
+    s.table("Возвращаются: недели регистрации", ["неделя с", "новых", "1 дн", "3 дн", "7 дн", "14 дн", "30 дн"],
+            rows, screen=lambda r: f"{r[0]} · {r[1]} · {r[2]} · {r[4]} · {r[6]}",
+            empty="Нет новых игроков за 10 недель.")
+
+    since = await x.since()
+    exact = []
+    if since:
+        for back in range(1, 22):
+            d = x.day(back)
+            if d < since:
+                break
+            t0 = x.day_ts(d)
+            ids = await x.rows(f"SELECT user_id FROM frogs f WHERE born_at>=? AND born_at<? AND {_ST_REAL}",
+                               t0, t0 + 86400)
+            if not ids:
+                continue
+            n = len(ids)
+            cells = []
+            for k in (1, 3, 7):
+                if back < k:
+                    cells.append("…")
+                    continue
+                dk = st_day(t0 + k * 86400 + 3600)
+                got = await x.one(
+                    "SELECT COUNT(*) FROM st_active a JOIN frogs f ON f.user_id=a.user_id "
+                    "WHERE a.day=? AND f.born_at>=? AND f.born_at<?", dk, t0, t0 + 86400)
+                cells.append(_stp(got, n))
+            exact.append((_st_dm(d), _stn(n), *cells))
+    s.table("Вернулись ровно на N-й день", ["день рег.", "новых", "D1", "D3", "D7"], exact,
+            screen=lambda r: f"{r[0]} · {r[1]} · D1 {r[2]} · D7 {r[4]}",
+            empty="Появится через пару дней после выкатки: нужны заходы по дням.")
+
+    if since and since <= x.day(13):
+        was = await x.one(
+            "SELECT COUNT(DISTINCT a.user_id) FROM st_active a JOIN frogs f ON f.user_id=a.user_id "
+            f"WHERE a.day>=? AND a.day<=? AND {_ST_REAL}", x.day(13), x.day(7))
+        gone = await x.one(
+            "SELECT COUNT(DISTINCT a.user_id) FROM st_active a JOIN frogs f ON f.user_id=a.user_id "
+            f"WHERE a.day>=? AND a.day<=? AND {_ST_REAL} AND a.user_id NOT IN "
+            "(SELECT user_id FROM st_active WHERE day>=?)", x.day(13), x.day(7), x.day(6))
+        s.kv("Отток", ("заходили 8–14 дн назад", _stn(was)),
+             ("с тех пор ни разу", _stn(gone), _stp(gone, was)))
+    else:
+        quit_ = await x.one(
+            f"SELECT COUNT(*) FROM frogs f WHERE alive=1 AND {_ST_REAL} AND last_seen<? AND last_seen>=?",
+            x.now - 7 * 86400, x.now - 14 * 86400)
+        s.kv("Отток", ("живые, пропали 7–14 дн назад", _stn(quit_)))
+    if since and since <= x.day(21):
+        back = await x.one(
+            "SELECT COUNT(DISTINCT a.user_id) FROM st_active a JOIN frogs f ON f.user_id=a.user_id "
+            f"WHERE a.day>=? AND {_ST_REAL} AND f.born_at<? AND a.user_id NOT IN "
+            "(SELECT user_id FROM st_active WHERE day>=? AND day<?)",
+            x.day(6), x.day_ts(x.day(21)), x.day(21), x.day(6))
+        s.kv("Вернулись за 7 дн", ("после 2+ недель тишины", _stn(back)))
+
+    d7 = x.days(7)
+    deaths = await x.c_prefix("death:", d7)
+    reason = {"health": "здоровье", "overfeed": "переедание"}
+    dead_total = await x.one(f"SELECT COUNT(*) FROM frogs f WHERE alive=0 AND {_ST_REAL}")
+    dead_seen = await x.one(f"SELECT COUNT(*) FROM frogs f WHERE alive=0 AND last_seen>=? AND {_ST_REAL}",
+                            x.now - 7 * 86400)
+    s.kv("Смерти и воскрешения (7 дн)",
+         *[(f"умерло: {reason.get(k, k)}", _stn(v[0])) for k, v in sorted(deaths.items(), key=lambda i: -i[1][0])],
+         ("воскресло", _stn(await x.c("revive", d7))),
+         ("мёртвых сейчас", _stn(dead_total)),
+         ("из них заходили за 7 дн", _stn(dead_seen)))
+    s.kv("Блокировки бота",
+         ("за 7 дн", _stn(await x.c("bot_blocked", d7)),
+          f"разблокировали {_stn(await x.c('bot_unblocked', d7))}"),
+         ("за 30 дн", _stn(await x.c("bot_blocked", x.days(30)))))
+    s.note("«Возвращаются» — доля новых, кто заходил через N дней после регистрации или позже (по last_seen). "
+           "«…» — неделя ещё не дожила до этого срока.")
+    return s
+
+
+async def _sts_economy(x: _StCtx) -> _StSec:
+    s = _StSec("economy", _E_COIN, "Экономика")
+    now = x.now
+    snap = await st_snapshot_data(x.db)
+    old30 = await x.one(f"SELECT SUM(coins) FROM frogs f WHERE last_seen<? AND {_ST_REAL}", now - 30 * 86400)
+    s.kv("Монеты на руках",
+         ("всего", _stn(snap["coins"])),
+         ("у живых", _stn(snap["coins_alive"])),
+         ("у заходивших за 7 дн", _stn(snap["coins_act7"]), _stp(snap["coins_act7"], snap["coins"])),
+         ("у пропавших на 30+ дн", _stn(old30), _stp(old30, snap["coins"])))
+
+    vals = [r[0] for r in await x.rows(f"SELECT coins FROM frogs f WHERE alive=1 AND {_ST_REAL} ORDER BY coins")]
+    if vals:
+        n = len(vals)
+        tot = sum(vals) or 1
+        top1 = sum(vals[-max(1, n // 100):])
+        top10 = sum(vals[-max(1, n // 10):])
+        s.kv("Как распределены (живые)",
+             ("медиана", _stn(vals[n // 2]), f"среднее {_stn(tot / n)}"),
+             ("у 90% меньше", _stn(vals[min(n - 1, n * 9 // 10)])),
+             ("у 99% меньше", _stn(vals[min(n - 1, n * 99 // 100)]), f"максимум {_stn(vals[-1])}"),
+             ("у топ-1% игроков", f"{_stp(top1, tot)} монет"),
+             ("у топ-10% игроков", f"{_stp(top10, tot)} монет"))
+
+    snaps = await x.snaps()
+    hist = []
+    for back, lab in ((1, "вчера"), (7, "неделю назад"), (30, "месяц назад")):
+        d = x.day(back)
+        if d in snaps:
+            v = snaps[d].get("coins", 0)
+            hist.append((f"{lab}, {_st_dm(d)}", _stn(v), _std(snap["coins"], v)))
+    if hist:
+        s.kv("Было на конец дня", *hist)
+
+    since = await x.since()
+    for label, days in (("Сегодня", [x.today]), ("За 7 дн", x.days(7))):
+        inc = await x.c_prefix("coin+:", days)
+        out = await x.c_prefix("coin-:", days)
+        tin, tout = sum(v[1] for v in inc.values()), sum(v[1] for v in out.values())
+        s.kv(f"{label}: движение монет",
+             ("появилось", _stn(tin)), ("ушло", _stn(tout)),
+             ("итого", ("+" if tin >= tout else "") + _stn(tin - tout)))
+        if label == "За 7 дн":
+            for head, data, tot in (("Откуда берутся (7 дн)", inc, tin), ("Куда уходят (7 дн)", out, tout)):
+                rows = sorted(((st_label(k), v[1], v[0]) for k, v in data.items()), key=lambda r: -r[1])
+                s.table(head, ["источник", "монет", "доля", "раз"],
+                        [(l, _stn(a), _stp(a, tot), _stn(n)) for l, a, n in rows],
+                        screen=lambda r: f"{r[0]} · {r[1]} · {r[2]}",
+                        empty="" if since else "Считается с выкатки.")
+
+    y, yy = x.day(1), x.day(2)
+    if y in snaps and yy in snaps:
+        tin = sum(v[1] for v in (await x.c_prefix("coin+:", [y])).values())
+        tout = sum(v[1] for v in (await x.c_prefix("coin-:", [y])).values())
+        expect = snaps[yy].get("coins", 0) + tin - tout
+        real = snaps[y].get("coins", 0)
+        s.kv(f"Сверка за {_st_dm(y)}",
+             ("ждали по потокам", _stn(expect)), ("на деле", _stn(real)),
+             ("мимо учёта", ("+" if real >= expect else "") + _stn(real - expect)))
+
+    g = await x.rows("SELECT COUNT(*), SUM(amount), COUNT(DISTINCT from_id) FROM gift_log WHERE ts>=?", now - 86400)
+    g7 = await x.rows("SELECT COUNT(*), SUM(amount), COUNT(DISTINCT from_id) FROM gift_log WHERE ts>=?", now - 7 * 86400)
+    s.kv("Переводы /gift",
+         ("за сутки", _stn(g[0][0]), f"на {_stn(g[0][1] or 0)}"),
+         ("за 7 дн", _stn(g7[0][0]), f"на {_stn(g7[0][1] or 0)}, отправителей {_stn(g7[0][2])}"))
+
+    games = await x.rows(
+        "SELECT game_type, COUNT(*), COUNT(DISTINCT user_id), SUM(bet_amount), SUM(win_amount) "
+        "FROM game_logs WHERE ts>=? GROUP BY game_type ORDER BY 4 DESC", now - 7 * 86400)
+    s.table("Игры на монеты (7 дн)", ["игра", "игр", "игроков", "ставки", "выплаты", "отдача"],
+            [(gt, _stn(n), _stn(u), _stn(b or 0), _stn(w or 0), _stp(w or 0, b or 0)) for gt, n, u, b, w in games],
+            screen=lambda r: f"{r[0]} · {r[1]} игр · отдача {r[5]}", empty="Игр не было.")
+
+    ga = await x.rows("SELECT source, COUNT(*), SUM(cost) FROM gacha_log WHERE ts>=? GROUP BY source", now - 7 * 86400)
+    if ga:
+        s.kv("Гача (7 дн)", *[(f"круток за {src}", _stn(n), f"потрачено {_stn(c or 0)}") for src, n, c in ga])
+    m_act = await x.one("SELECT COUNT(*) FROM market_listings WHERE status='active'")
+    m_sold = await x.rows("SELECT COUNT(*), SUM(price) FROM market_listings WHERE status='sold'")
+    lot = await x.one("SELECT COUNT(*) FROM lottery_tickets WHERE purchased_at>=?", now - 7 * 86400)
+    s.kv("Рынок и лотерея",
+         ("на рынке лотов", _stn(m_act), f"продано всего {_stn(m_sold[0][0])} на {_stn(m_sold[0][1] or 0)}"),
+         ("билетов лотереи за 7 дн", _stn(lot)))
+    s.note("Потоки — изменения баланса, сохранённые через db_save, по кнопке или команде, "
+           "с которой всё началось. «Мимо учёта» — правки базы напрямую (переводы, массовые сбросы).")
+    return s
+
+
+async def _sts_money(x: _StCtx) -> _StSec:
+    s = _StSec("money", _E_STARS, "Доходы")
+    d7, d30 = x.days(7), x.days(30)
+    snap = await st_snapshot_data(x.db)
+    t, y = await x.stars([x.today]), await x.stars([x.day(1)])
+    w, m = await x.stars(d7), await x.stars(d30)
+    s.kv("Звёзды",
+         ("сегодня", f"{_stn(t[1])}⭐", f"покупок {_stn(t[0])}"),
+         ("вчера", f"{_stn(y[1])}⭐", f"покупок {_stn(y[0])}"),
+         ("за 7 дн", f"{_stn(w[1])}⭐", f"покупок {_stn(w[0])}"),
+         ("за 30 дн", f"{_stn(m[1])}⭐", f"покупок {_stn(m[0])}"),
+         ("за всё время", f"{_stn(snap['stars_total'])}⭐"))
+    since = await x.since()
+    payers7 = await x.one("SELECT COUNT(DISTINCT user_id) FROM st_use WHERE feat='оплата' AND day>=?", x.day(6))
+    payers30 = await x.one("SELECT COUNT(DISTINCT user_id) FROM st_use WHERE feat='оплата' AND day>=?", x.day(29))
+    dau = await x.dau()
+    dau7 = sum(dau.get(d, 0) for d in d7)
+    s.kv("Покупатели",
+         ("платили хоть раз", _stn(snap["payers"]), f"{_stp(snap['payers'], snap['players'])} игроков"),
+         ("впервые за 7 дн", _stn(await x.c("payer_new", d7)), f"за 30 дн {_stn(await x.c('payer_new', d30))}") if since else None,
+         ("платили за 7 дн", _stn(payers7), f"за 30 дн {_stn(payers30)}") if since else None,
+         ("средний чек 30 дн", f"{_stn(m[1] / m[0])}⭐" if m[0] else "—"),
+         ("на платящего за всё время", f"{_stn(snap['stars_total'] / snap['payers'])}⭐" if snap["payers"] else "—"),
+         ("на заходившего в день (7 дн)", f"{w[1] / dau7:.2f}⭐".replace(".", ",") if dau7 else "—") if since else None)
+
+    rows = await sales_report(30)
+    s.table("Что покупают (30 дн)", ["позиция", "покупок", "звёзд", "показов", "конверсия"],
+            [(st_sku_label(k), _stn(b), _stn(st_), _stn(sh) if sh else "—", _stp(b, sh) if sh else "—")
+             for k, sh, b, st_ in rows],
+            screen=lambda r: f"{r[0]} · {r[1]} шт · {r[2]}⭐", empty="Продаж не было.")
+
+    byday = await x.stars_by_day()
+    s.table("По дням", ["день", "звёзд", "покупок"],
+            [(_st_dm(d), _stn(byday.get(d, (0, 0))[1]), _stn(byday.get(d, (0, 0))[0])) for d in x.days(14)[::-1]],
+            screen=lambda r: f"{r[0]} · {r[1]}⭐ · {r[2]} пок.")
+
+    soon = await x.one(f"SELECT COUNT(*) FROM frogs f WHERE subscription_type>0 AND subscription_until>? "
+                       f"AND subscription_until<? AND {_ST_REAL}", x.now, x.now + 3 * 86400)
+    auto = await x.one(f"SELECT COUNT(*) FROM frogs f WHERE subscription_type>0 AND subscription_until>? "
+                       f"AND subscription_auto=1 AND {_ST_REAL}", x.now)
+    s.kv("Подписки сейчас",
+         ("Няня", _stn(snap["sub_nanny"])), ("Трудяга", _stn(snap["sub_worker"])),
+         ("кончаются за 3 дня", _stn(soon)), ("с автопродлением", _stn(auto)))
+    top = await x.rows(f"SELECT frog_name, first_name, stars_spent FROM frogs f WHERE stars_spent>0 AND {_ST_REAL} "
+                       "ORDER BY stars_spent DESC LIMIT 10")
+    s.table("Больше всех за всё время", ["игрок", "звёзд"],
+            [((fn or nm or "?")[:24], _stn(st_)) for fn, nm, st_ in top],
+            screen=lambda r: f"{r[0]} · {r[1]}⭐")
+    s.note("До выкатки этой версии звёзды по дням — из старого счётчика продаж (сутки по UTC). "
+           "Конверсия — только там, где считаются показы предложения.")
+    return s
+
+
+async def _sts_features(x: _StCtx) -> _StSec:
+    s = _StSec("features", "🎮", "Функции")
+    since = await x.since()
+    if not since:
+        s.note("Считается с выкатки этой версии — загляни через час.")
+        return s
+    dau = await x.dau()
+    for head, start, base in (("Сегодня", x.today, dau.get(x.today, 0)),
+                              ("За 7 дн", x.day(6), await x.uniq(7))):
+        rows = await x.rows(
+            "SELECT u.feat, COUNT(DISTINCT u.user_id), SUM(u.n) FROM st_use u "
+            f"JOIN frogs f ON f.user_id=u.user_id WHERE u.day>=? AND {_ST_REAL} "
+            "GROUP BY u.feat ORDER BY 2 DESC, 3 DESC", start)
+        s.table(f"{head}: чем пользуются", ["функция", "игроков", "доля", "нажатий"],
+                [(st_label(f), _stn(u), _stp(u, base), _stn(n)) for f, u, n in rows],
+                screen=lambda r: f"{r[0]} · {r[1]} · {r[2]}")
+    acts = await x.c_prefix("act:", x.days(7))
+    s.kv("Уход и игры за 7 дн",
+         *[(lab, _stn(acts[k][0])) for k, lab in ST_ACT_LABELS if k in acts])
+
+    rows = await x.rows("SELECT hours FROM st_active a JOIN frogs f ON f.user_id=a.user_id "
+                        f"WHERE a.day>=? AND {_ST_REAL}", x.day(6))
+    days_n = min(7, max(1, (x.day_ts(x.today) - x.day_ts(max(since, x.day(6)))) / 86400 + 1))
+    per = [0] * 24
+    for (mask,) in rows:
+        for h in range(24):
+            if mask >> h & 1:
+                per[h] += 1
+    peak = max(per) or 1
+    s.table("Когда заходят (МСК, в среднем за день)", ["час", "игроков", ""],
+            [(f"{h:02d}", _stn(per[h] / days_n), "▇" * max(0, round(per[h] / peak * 8))) for h in range(24)],
+            screen=lambda r: f"{r[0]} {r[2]} {r[1]}")
+    hits_sql = f"SELECT SUM(a.hits) FROM st_active a JOIN frogs f ON f.user_id=a.user_id WHERE {_ST_REAL} AND "
+    hits_t = await x.one(hits_sql + "a.day=?", x.today)
+    hits_7 = await x.one(hits_sql + "a.day>=?", x.day(6))
+    tot7 = sum(dau.get(d, 0) for d in x.days(7))
+    s.kv("Нажатий на игрока за день",
+         ("сегодня", f"{hits_t / dau[x.today]:.0f}" if dau.get(x.today) else "—"),
+         ("в среднем за 7 дн", f"{hits_7 / tot7:.0f}" if tot7 else "—"))
+    s.note("Функция — первое слово кнопки или команда. Доля — от заходивших за тот же срок.")
+    return s
+
+
+async def _sts_modes(x: _StCtx) -> _StSec:
+    s = _StSec("modes", "🗺", "Режимы")
+    now = x.now
+    w = now - 7 * 86400
+    runs = await x.rows(
+        "SELECT r.id, r.route, r.status, r.outcome, COUNT(m.user_id) FROM ex_runs r "
+        "LEFT JOIN ex_members m ON m.run_id=r.id WHERE r.started_at>=? AND r.status!='cancelled' GROUP BY r.id", w)
+    solo = sum(1 for r in runs if r[4] == 1)
+    outc = {}
+    for r in runs:
+        outc[r[3] or "в пути"] = outc.get(r[3] or "в пути", 0) + 1
+    people = await x.one("SELECT COUNT(DISTINCT m.user_id) FROM ex_members m JOIN ex_runs r ON r.id=m.run_id "
+                         "WHERE r.started_at>=? AND r.status!='cancelled'", w)
+    paid = await x.rows("SELECT SUM(m.coins), COUNT(*) FROM ex_members m JOIN ex_runs r ON r.id=m.run_id "
+                        "WHERE r.status='finished' AND r.finished_at>=?", w)
+    cancelled = await x.one("SELECT COUNT(*) FROM ex_runs WHERE status='cancelled' AND created_at>=?", w)
+    sets = await x.one("SELECT COUNT(*) FROM ex_finds WHERE find_key LIKE 'set:%' AND first_at>=?", w)
+    finds = await x.one("SELECT COUNT(*) FROM ex_finds WHERE find_key NOT LIKE 'set:%' AND first_at>=?", w)
+    names = {"done": "дошли", "turned_back": "повернули", "stopped": "остановлены", "в пути": "в пути"}
+    s.kv("Экспедиции за 7 дн",
+         ("вышли", _stn(len(runs)), f"соло {_stn(solo)}, командой {_stn(len(runs) - solo)}"),
+         *[(names.get(k, k), _stn(v)) for k, v in outc.items()],
+         ("сборов отменено", _stn(cancelled)),
+         ("игроков", _stn(people),
+          f"команда в среднем {sum(r[4] for r in runs) / len(runs):.1f}".replace(".", ",") if runs else ""),
+         ("монет выдано", _stn(paid[0][0] or 0),
+          f"в среднем {_stn((paid[0][0] or 0) / paid[0][1])}" if paid[0][1] else ""),
+         ("новых находок", _stn(finds), f"собрано наборов {_stn(sets)}"))
+    by_route = {}
+    for r in runs:
+        b = by_route.setdefault(r[1], [0, 0, 0])
+        b[0] += 1
+        b[1] += r[4]
+        b[2] += 1 if r[3] == "turned_back" else 0
+    s.table("По маршрутам (7 дн)", ["маршрут", "выходов", "участий", "повернули"],
+            [((EX_ROUTES.get(k) or {}).get("name", k), _stn(a), _stn(b), _stp(c, a)) for k, (a, b, c) in
+             sorted(by_route.items(), key=lambda i: -i[1][0])],
+            screen=lambda r: f"{r[0]} · {r[1]} · повернули {r[3]}", empty="Выходов не было.")
+
+    adv = await x.rows("SELECT COUNT(*), SUM(finished), COUNT(DISTINCT user1_id) FROM adventures WHERE started_at>=?", w)
+    s.kv("Походы за 7 дн", ("начато", _stn(adv[0][0])), ("закончено", _stn(adv[0][1] or 0)))
+
+    st_act = await x.one("SELECT COUNT(*) FROM stayas WHERE weekly_activity>0")
+    snap = await st_snapshot_data(x.db)
+    raids = await x.one("SELECT COUNT(*) FROM staya_raids WHERE ts>=?", w)
+    sk = await x.one("SELECT COUNT(*) FROM staya_skirmishes WHERE started_at>=?", w)
+    s.kv("Стаи",
+         ("стай", _stn(snap["stayas"]), f"активны на неделе {_stn(st_act)}"),
+         ("игроков в стаях", _stn(snap["in_staya"]), _stp(snap["in_staya"], snap["players"])),
+         ("набегов за 7 дн", _stn(raids), f"стычек {_stn(sk)}"))
+    fr = await x.one("SELECT COUNT(*) FROM friendships WHERE pending=0")
+    frp = await x.one("SELECT COUNT(*) FROM friendships WHERE pending=1")
+    fr7 = await x.one("SELECT COUNT(*) FROM friendships WHERE pending=0 AND created_at>=?", w)
+    bonds = await x.one("SELECT COUNT(*) FROM user_bonds")
+    s.kv("Соседи и связь",
+         ("записей соседства", _stn(fr), f"новых за 7 дн {_stn(fr7)}"),
+         ("заявок ждут ответа", _stn(frp)),
+         ("связей", _stn(bonds)))
+    gl = await x.rows("SELECT game_type, COUNT(*) FROM game_logs WHERE ts>=? AND game_type IN "
+                      "('duel','battle','tournament') GROUP BY game_type", w)
+    gl = dict(gl)
+    mq = await x.rows("SELECT COUNT(*), SUM(CASE WHEN caught_by IS NOT NULL AND caught_by!=-1 THEN 1 ELSE 0 END) "
+                      "FROM mosquito_events WHERE created_at>=?", w)
+    let = await x.rows("SELECT COUNT(*), SUM(likes) FROM letopis WHERE created_at>=?", w)
+    ach = await x.one("SELECT COUNT(*) FROM achievements WHERE earned_at>=?", w)
+    dq = await x.rows("SELECT COUNT(*), SUM(claimed!='[]') FROM daily_quests WHERE quest_date=?", today_str())
+    s.kv("Прочее за 7 дн",
+         ("дуэлей", _stn(gl.get("duel", 0) // 2), f"битв {_stn(gl.get('battle', 0) // 2)}"),
+         ("комаров", _stn(mq[0][0]), f"поймано {_stn(mq[0][1] or 0)}"),
+         ("записей в летописи", _stn(let[0][0]), f"лайков {_stn(let[0][1] or 0)}"),
+         ("выдано достижений", _stn(ach)),
+         ("задания сегодня получили", _stn(dq[0][0]), f"сдали хоть одно {_stn(dq[0][1] or 0)}"))
+    return s
+
+
+async def _sts_skins(x: _StCtx) -> _StSec:
+    s = _StSec("skins", "👗", "Облики и NFT")
+    owned = await x.rows(
+        "SELECT c.skin, COUNT(DISTINCT c.user_id), SUM(c.qty) FROM collections c JOIN frogs f ON f.user_id=c.user_id "
+        f"WHERE c.qty>0 AND {_ST_REAL} GROUP BY c.skin")
+    by_r: dict = {}
+    for skin, owners, qty in owned:
+        r = (SKINS.get(skin) or {}).get("rarity", "?")
+        b = by_r.setdefault(r, [0, 0, 0])
+        b[0] += 1
+        b[1] += qty or 0
+        b[2] += owners
+    order = ["secret", "mythic", "legendary", "epic", "rare", "uncommon", "common", "?"]
+    total_r = {}
+    for sk in SKINS.values():
+        total_r[sk.get("rarity", "?")] = total_r.get(sk.get("rarity", "?"), 0) + 1
+    s.table("По редкости", ["редкость", "обликов есть у игроков", "из", "штук на руках"],
+            [(R_NAME.get(r, r), _stn(by_r[r][0]), _stn(total_r.get(r, 0)), _stn(by_r[r][1]))
+             for r in order if r in by_r],
+            screen=lambda r: f"{r[0]} · {r[1]} из {r[2]} · {r[3]} шт")
+    top = sorted(owned, key=lambda r: -r[1])[:15]
+    s.table("Самые частые", ["облик", "владельцев"], [(k, _stn(o)) for k, o, _ in top],
+            screen=lambda r: f"{r[0]} · {r[1]}")
+    rare = sorted((r for r in owned if (SKINS.get(r[0]) or {}).get("rarity") in ("secret", "mythic", "legendary")),
+                  key=lambda r: r[1])[:10]
+    s.table("Самые редкие на руках", ["облик", "владельцев"], [(k, _stn(o)) for k, o, _ in rare],
+            screen=lambda r: f"{r[0]} · {r[1]}")
+    g = await x.rows("SELECT rarity, COUNT(*) FROM gacha_log WHERE ts>=? GROUP BY rarity", x.now - 7 * 86400)
+    gt = sum(n for _, n in g)
+    s.table("Гача за 7 дн: что выпадало", ["редкость", "раз", "доля"],
+            [(R_NAME.get(r, r), _stn(n), _stp(n, gt)) for r, n in sorted(g, key=lambda i: order.index(i[0]) if i[0] in order else 99)],
+            screen=lambda r: f"{r[0]} · {r[1]} · {r[2]}", empty="Круток не было.")
+    nft = dict(await x.rows("SELECT verified, COUNT(*) FROM nft_frogs GROUP BY verified"))
+    worn = await x.one(f"SELECT COUNT(*) FROM frogs f WHERE equipped_nft_url!='' AND {_ST_REAL}")
+    s.kv("NFT",
+         ("подтверждено", _stn(nft.get(1, 0))), ("на проверке", _stn(nft.get(0, 0))),
+         ("отклонено", _stn(nft.get(-1, 0))), ("надето", _stn(worn)))
+    return s
+
+
+async def _sts_chats(x: _StCtx) -> _StSec:
+    s = _StSec("chats", "💬", "Чаты")
+    d7 = x.days(7)
+    partners = await x.one("SELECT COUNT(*) FROM partner_chats WHERE active=1")
+    settings = await x.one("SELECT COUNT(*) FROM chat_settings")
+    src = await x.one(f"SELECT COUNT(DISTINCT source_chat_id) FROM frogs f WHERE source_chat_id!=0 AND {_ST_REAL}")
+    s.kv("Группы",
+         ("партнёрских", _stn(partners)),
+         ("с настройками бота", _stn(settings)),
+         ("из скольких пришли игроки", _stn(src)),
+         ("бота добавили за 7 дн", _stn(await x.c("group_added", d7)),
+          f"удалили {_stn(await x.c('group_removed', d7))}"),
+         ("сообщений в группах сегодня", _stn(await x.c("group_msg", [x.today])),
+          f"за 7 дн {_stn(await x.c('group_msg', d7))}"))
+    rows = await x.rows(
+        "SELECT f.source_chat_id, COALESCE(p.chat_title, ''), COUNT(*), "
+        "SUM(CASE WHEN f.born_at>=? THEN 1 ELSE 0 END), SUM(CASE WHEN f.last_seen>=? THEN 1 ELSE 0 END) "
+        "FROM frogs f LEFT JOIN partner_chats p ON p.chat_id=f.source_chat_id "
+        f"WHERE f.source_chat_id!=0 AND {_ST_REAL} GROUP BY f.source_chat_id ORDER BY 4 DESC, 3 DESC LIMIT 20",
+        x.now - 30 * 86400, x.now - 7 * 86400)
+    s.table("Откуда приходят игроки", ["чат", "всего", "за 30 дн", "заходили 7 дн"],
+            [((t or str(cid))[:28], _stn(n), _stn(n30), _stn(a7)) for cid, t, n, n30, a7 in rows],
+            screen=lambda r: f"{r[0]} · {r[1]} · +{r[2]} за 30 дн", empty="Нет игроков из групп.")
+    acts = await x.rows("SELECT action, COUNT(*), COUNT(DISTINCT chat_id) FROM chat_activity_log WHERE ts>=? "
+                        "GROUP BY action ORDER BY 2 DESC LIMIT 15", x.now - 7 * 86400)
+    s.table("Действия в группах (7 дн)", ["действие", "раз", "чатов"],
+            [(a, _stn(n), _stn(c)) for a, n, c in acts],
+            screen=lambda r: f"{r[0]} · {r[1]} · в {r[2]} чатах", empty="Нет записей.")
+    return s
+
+
+async def _st_days_rows(x: _StCtx, n: int) -> list:
+    dau = await x.dau()
+    born = await x.born()
+    snaps = await x.snaps()
+    stars = await x.stars_by_day()
+    since = await x.since()
+    out = []
+    for d in x.days(n)[::-1]:
+        tracked = bool(since and d >= since)
+        deaths = sum(v[0] for v in (await x.c_prefix("death:", [d])).values())
+        cin = sum(v[1] for v in (await x.c_prefix("coin+:", [d])).values())
+        cout = sum(v[1] for v in (await x.c_prefix("coin-:", [d])).values())
+        out.append((
+            _st_dm(d) if n <= 31 else d,
+            _stn(dau.get(d, 0)) if tracked else "—",
+            _stn(born.get(d, 0)),
+            _stn(deaths) if tracked else "—",
+            _stn(await x.c("bot_blocked", [d])) if tracked else "—",
+            _stn(stars.get(d, (0, 0))[1]),
+            _stn(cin) if tracked else "—",
+            _stn(cout) if tracked else "—",
+            _stn(snaps[d]["coins"]) if d in snaps else "—",
+            _stn(await x.c("log:error", [d])) if tracked else "—",
+        ))
+    return out
+
+
+async def _sts_days(x: _StCtx, n: int = 30) -> _StSec:
+    s = _StSec("days", "📅", "По дням")
+    rows = await _st_days_rows(x, n)
+    s.table(f"Последние {n} дн", ["день", "заходили", "новых", "умерло", "блок", "звёзд",
+                                 "монет +", "монет −", "монет всего", "ошибок"],
+            rows, screen=lambda r: f"{r[0]} · {r[1]} · +{r[2]} · {r[5]}⭐")
+    s.note("На экране: день · заходили · новых · звёзд. Все колонки — в «Текстом» и в отчёте файлом.")
+    return s
+
+
+async def _sts_system(x: _StCtx) -> _StSec:
+    s = _StSec("system", "⚙️", "Система")
+    up = x.now - ST_STARTED
+    size = os.path.getsize(DB_PATH) if os.path.exists(DB_PATH) else 0
+    wal = os.path.getsize(DB_PATH + "-wal") if os.path.exists(DB_PATH + "-wal") else 0
+    online = await x.one(f"SELECT COUNT(*) FROM frogs f WHERE last_seen>=? AND {_ST_REAL}", x.now - 600)
+    s.kv("Бот",
+         ("работает", f"{int(up // 86400)} дн {int(up % 86400 // 3600)} ч"),
+         ("база", f"{size / 1024 / 1024:.1f} МБ".replace(".", ","), f"журнал {wal / 1024 / 1024:.1f} МБ".replace(".", ",")),
+         ("в боте за 10 мин", _stn(online)),
+         ("пик: сутки", _stn(_peak_online["day"][0]),
+          f"неделя {_stn(_peak_online['week'][0])}, месяц {_stn(_peak_online['month'][0])}"))
+    d7 = x.days(7)
+    s.kv("Лог",
+         ("ошибок сегодня", _stn(await x.c("log:error", [x.today])), f"вчера {_stn(await x.c('log:error', [x.day(1)]))}"),
+         ("ошибок за 7 дн", _stn(await x.c("log:error", d7))),
+         ("предупреждений сегодня", _stn(await x.c("log:warning", [x.today]))))
+    where = await x.c_prefix("err:", d7)
+    s.table("Где ошибки (7 дн)", ["место", "раз"],
+            [(k, _stn(v[0])) for k, v in sorted(where.items(), key=lambda i: -i[1][0])[:20]],
+            screen=lambda r: f"{r[0]} · {r[1]}", empty="Ошибок не было.")
+    with _st_lock:
+        errs = sorted(_st_errors.items(), key=lambda i: -i[1][0])[:15]
+    s.table("С последнего запуска", ["ошибка", "раз", "последняя", "пример"],
+            [(k[:60], _stn(n), _st_ago(ts, x.now), sample) for k, (n, ts, sample) in errs],
+            screen=lambda r: f"{r[1]}× {r[0][:40]} · {r[2]}", empty="Ошибок не было.")
+    tables = ("frogs", "collections", "st_active", "st_use", "st_cnt", "game_logs", "gacha_log",
+              "player_action_log", "coin_log", "gift_log", "chat_activity_log", "letopis", "ex_runs", "ex_members")
+    rows = []
+    for t in tables:
+        try:
+            rows.append((t, _stn(await x.one(f"SELECT COUNT(*) FROM {t}"))))
+        except Exception:
+            pass
+    s.table("Строк в таблицах", ["таблица", "строк"], rows, screen=lambda r: f"{r[0]} · {r[1]}")
+    return s
+
+
+ST_SECTIONS = {
+    "players": ("👥 Игроки", _sts_players),
+    "retention": ("🔁 Удержание", _sts_retention),
+    "economy": ("🪙 Экономика", _sts_economy),
+    "money": ("⭐ Доходы", _sts_money),
+    "features": ("🎮 Функции", _sts_features),
+    "modes": ("🗺 Режимы", _sts_modes),
+    "skins": ("👗 Облики", _sts_skins),
+    "chats": ("💬 Чаты", _sts_chats),
+    "days": ("📅 По дням", _sts_days),
+    "system": ("⚙️ Система", _sts_system),
+}
+
+
+async def st_build(key: str) -> _StSec:
+    await st_flush()
+    async with aiosqlite.connect(DB_PATH) as db:
+        x = _StCtx(db)
+        if key == "home":
+            return await _sts_home(x)
+        return await ST_SECTIONS[key][1](x)
+
+
+def st_kb(key: str) -> InlineKeyboardMarkup:
+    if key == "home":
+        keys = list(ST_SECTIONS)
+        rows = [[btn(ST_SECTIONS[a][0], callback_data=f"adst|s|{a}"),
+                 btn(ST_SECTIONS[b][0], callback_data=f"adst|s|{b}")]
+                for a, b in zip(keys[::2], keys[1::2])]
+        rows.append([btn("📄 Отчёт файлом", callback_data="adst|file", style="primary")])
+        rows.append([btn("🔄 Обновить", callback_data="adst|home"),
+                     btn("◀️ Админка", callback_data="admin_refresh")])
+        return InlineKeyboardMarkup(rows)
+    rows = []
+    if key == "skins":
+        rows.append([btn("👗 По обликам", callback_data="admin_skin_stats"),
+                     btn("🔍 Поиск", callback_data="admin_skin_browse_")])
+    if key == "retention":
+        rows.append([btn("💀 Застрявшие", callback_data="admin_stuck_stats")])
+    rows.append([btn("📋 Текстом", callback_data=f"adst|txt|{key}"),
+                 btn("🔄 Обновить", callback_data=f"adst|s|{key}")])
+    rows.append([btn("◀️ Сводка", callback_data="adst|home")])
+    return InlineKeyboardMarkup(rows)
+
+
+async def st_report_text(days: int = 30, bot_name: str = "") -> str:
+    """Полный отчёт обычным текстом: пояснения, все разделы, таблица по дням."""
+    await st_flush()
+    now = time.time()
+    parts = [
+        f"# Отчёт по боту @{bot_name or 'bot'}",
+        f"Собран {datetime.fromtimestamp(now, ST_TZ).strftime('%d.%m.%Y %H:%M')} МСК.",
+        "",
+        "Как читать:",
+        "- Сутки — по Москве. «Сегодня» — с полуночи МСК до момента сборки.",
+        "- Игроки — все, у кого есть лягушка, кроме забаненных и помеченных ботами.",
+        "- «Заходили» — нажимали кнопки, писали боту, вводили команды (не просто переписка в группе).",
+        "- Липкость — средние заходы в день, делённые на разных игроков за 30 дней.",
+        "- «Возвращаются» по неделям — доля новых, у кого last_seen через N дней после регистрации или позже.",
+        "- D1/D3/D7 — доля новых, кто заходил ровно на 1-й/3-й/7-й день.",
+        "- Монеты +/− — изменения баланса по источнику: кнопка/команда (/name), job:* — фоновые задачи,",
+        "  «Фон без имени» — задачи без подписи. «Мимо учёта» — правки базы напрямую.",
+        "- Отдача в играх — выплаты делённые на ставки (больше 100% — игра в минус боту).",
+        "- «—» — для этого дня данных ещё нет (счёт начат с выкатки).",
+    ]
+    async with aiosqlite.connect(DB_PATH) as db:
+        x = _StCtx(db)
+        since = await x.since()
+        parts.append(f"- Заходы и функции копятся с {since or 'выкатки (пока пусто)'}.")
+        secs = [await _sts_home(x)]
+        for key, (_, make) in ST_SECTIONS.items():
+            try:
+                secs.append(await (make(x, days) if key == "days" else make(x)))
+            except Exception as e:
+                logger.exception("st report %s: %s", key, e)
+                bad = _StSec(key, "", ST_SECTIONS[key][0])
+                bad.note(f"Раздел не собрался: {type(e).__name__}: {e}")
+                secs.append(bad)
+    for sec in secs:
+        parts += ["", "", _st_text(sec)]
+    return "\n".join(parts) + "\n"
+
+
+async def st_send_text(bot, chat_id: int, text: str) -> None:
+    """Прислать текст моноширинными блоками: в Telegram копируется нажатием."""
+    chunk, size = [], 0
+    for line in text.split("\n"):
+        line = line[:3500]
+        if size + len(line) + 1 > 3500 and chunk:
+            await bot.send_message(chat_id, f"<pre>{he(chr(10).join(chunk))}</pre>", parse_mode=ParseMode.HTML)
+            chunk, size = [], 0
+        chunk.append(line)
+        size += len(line) + 1
+    if chunk:
+        await bot.send_message(chat_id, f"<pre>{he(chr(10).join(chunk))}</pre>", parse_mode=ParseMode.HTML)
+
+
+async def st_send_file(bot, chat_id: int, days: int = 30) -> None:
+    text = await st_report_text(days, bot.username or "")
+    name = f"frogbot_stats_{datetime.now(ST_TZ).strftime('%Y-%m-%d_%H%M')}.txt"
+    await bot.send_document(
+        chat_id, document=io.BytesIO(text.encode("utf-8")), filename=name,
+        caption="Полная статистика. Файл можно переслать на разбор как есть.",
+    )
+
+
+async def st_show(q, key: str) -> None:
+    try:
+        sec = await st_build(key)
+        text = _st_screen(sec)
+    except Exception as e:
+        logger.exception("st_show %s: %s", key, e)
+        text = f"{_E_CHART} Раздел не собрался: <code>{he(type(e).__name__)}: {he(str(e)[:200])}</code>"
+    try:
+        await q.message.edit_text(text, parse_mode=ParseMode.HTML, reply_markup=st_kb(key))
+    except BadRequest as e:
+        if "not modified" not in str(e).lower():
+            raise
+
+
+async def st_router(update: Update, ctx: ContextTypes.DEFAULT_TYPE) -> None:
+    q = update.callback_query
+    if q.from_user.id not in ADMIN_IDS:
+        await q.answer("⛔", show_alert=True)
+        return
+    parts = q.data.split("|")
+    act = parts[1] if len(parts) > 1 else "home"
+    if act == "home":
+        await q.answer()
+        await st_show(q, "home")
+    elif act == "s" and len(parts) > 2 and parts[2] in ST_SECTIONS:
+        await q.answer()
+        await st_show(q, parts[2])
+    elif act == "txt" and len(parts) > 2 and (parts[2] in ST_SECTIONS or parts[2] == "home"):
+        await q.answer("Собираю…")
+        sec = await st_build(parts[2])
+        await st_send_text(ctx.bot, q.message.chat.id, _st_text(sec))
+    elif act == "file":
+        await q.answer("Собираю отчёт…")
+        await st_send_file(ctx.bot, q.message.chat.id)
+    else:
+        await q.answer()
+
+
+async def cmd_adminstats(update: Update, ctx: ContextTypes.DEFAULT_TYPE) -> None:
+    """/adminstats — сводка статистики с разделами."""
+    if update.effective_user.id not in ADMIN_IDS:
+        return
+    sec = await st_build("home")
+    await update.message.reply_text(_st_screen(sec), parse_mode=ParseMode.HTML, reply_markup=st_kb("home"))
+
+
+async def cmd_adminreport(update: Update, ctx: ContextTypes.DEFAULT_TYPE) -> None:
+    """/adminreport [дней] — полный отчёт файлом (по дням — за N дней, по умолчанию 30)."""
+    if update.effective_user.id not in ADMIN_IDS:
+        return
+    try:
+        days = max(7, min(int(ctx.args[0]), 90)) if ctx.args else 30
+    except (ValueError, IndexError):
+        days = 30
+    await update.message.reply_text("Собираю отчёт…")
+    await st_send_file(ctx.bot, update.effective_chat.id, days)
 
 
 # ══════════════════════════════════════════════════════════════════════════════
@@ -65025,6 +66497,7 @@ def main():
         Application.builder()
         .token(BOT_TOKEN)
         .post_init(post_init)
+        .post_shutdown(st_on_shutdown)
         .concurrent_updates(True)
         .connection_pool_size(128)
         .pool_timeout(30)
@@ -65042,6 +66515,8 @@ def main():
         print("⚠️  Без ограничителя запросов — pip install aiolimiter")
 
     app = builder.build()
+    # Статистика: самый первый обработчик видит каждый апдейт и ничего не блокирует
+    app.add_handler(TypeHandler(Update, st_on_update), group=-100)
 
     cmds = [
         ("start", cmd_start),
@@ -65223,6 +66698,8 @@ def main():
     app.add_handler(CommandHandler("admin_nft_invite",  cmd_admin_nft_invite))
     app.add_handler(CommandHandler("nft_unlink",        cmd_nft_unlink))
     app.add_handler(CommandHandler("adminexp",          cmd_adminexp))
+    app.add_handler(CommandHandler("adminstats",        cmd_adminstats))
+    app.add_handler(CommandHandler("adminreport",       cmd_adminreport))
     # ── Расследование ботоводов ───────────────────────────────────────────
     app.add_handler(CommandHandler("admingiftchain", cmd_admingiftchain))
     app.add_handler(CommandHandler("adminrollbackdry", cmd_adminrollbackdry))
@@ -65250,6 +66727,7 @@ def main():
         (r"^gacha",                                  gacha_router),
         (r"^nft_",                                   nft_router),
         (r"^ex\|",                                  ex_router),
+        (r"^adst\|",                                st_router),
         (r"^(casino|jackpot|menu_jackpot)",          casino_router),
         (r"^(duel|battle_|tournament)",              duel_router),
         (r"^(shop_|buy_|market_|craft_|sub_|stars_)", shop_router),
@@ -65298,6 +66776,12 @@ def main():
     # ── Фриз-ивент ───────────────────────────────────────────────────────────
     _fz_register_handlers(app)
     asyncio.get_event_loop().create_task(_fz_start_jobs(app.bot))
+
+    # Команды бота — чтобы в группах не считать чужие /команды
+    for _hs in app.handlers.values():
+        for _h in _hs:
+            if isinstance(_h, CommandHandler):
+                _ST_CMDS.update(_h.commands)
 
     app.run_polling(drop_pending_updates=True)
 
