@@ -1025,6 +1025,37 @@ async def suite_switch():
     B.EMOJI_STYLE = saved
     print("E28 премиум-эмодзи экспедиций: ок")
 
+    # E29. Копия разговора команды в админ-чат: /m и медиа
+    B.ADMIN_CHAT_ID = -1009
+    await add_frog(950, "Говорит", level=1); await add_frog(951, "Слушает", level=1)
+    rid, _ = await B.ex_lobby_create(await B.db_get(950), "reeds", 10)
+    await B.ex_lobby_join(await B.db_get(951), rid)
+    replies = []
+    class M2:
+        text = "/m привет команде"
+        async def reply_text(self, t, **k): replies.append(t)
+    upd = types.SimpleNamespace(effective_user=types.SimpleNamespace(id=950, username="govorit"), message=M2())
+    await B.cmd_m_new(upd, types.SimpleNamespace(bot=bot))
+    adm = bot.last_to(-1009, "send")
+    assert adm and "привет команде" in adm[3] and "@govorit" in adm[3], adm
+    copied, fwd = [], []
+    class Media:
+        chat = types.SimpleNamespace(type="private"); sticker = object(); caption = None
+        async def copy(self, chat_id): copied.append(chat_id)
+        async def forward(self, chat_id): fwd.append(chat_id)
+    mu = types.SimpleNamespace(effective_user=types.SimpleNamespace(id=950, username="govorit", first_name="Г"),
+                               message=Media())
+    await B.on_ex_media(mu, types.SimpleNamespace(bot=bot))
+    assert copied == [951] and fwd == [-1009], (copied, fwd)
+    # не в экспедиции — ничего не пересылается
+    copied.clear(); fwd.clear()
+    await add_frog(952, "Вне", level=1)
+    mu.effective_user = types.SimpleNamespace(id=952, username="", first_name="В")
+    await B.on_ex_media(mu, types.SimpleNamespace(bot=bot))
+    assert not copied and not fwd
+    await B.ex_lobby_cancel(bot, rid)
+    print("E29 копия в админ-чат: ок")
+
 
 if __name__ == "__main__":
     setup_db()

@@ -61739,6 +61739,56 @@ async def ex_refund_do(bot, season_only: bool) -> str:
     return f"Вернули {sum(stakes.values())}🪙 {len(stakes)} игр."
 
 
+async def ex_mirror_admin(bot, user, name: str, run: dict, body_html: str):
+    """Копия сообщения команды в админ-чат."""
+    if not ADMIN_CHAT_ID:
+        return
+    r = EX_ROUTES.get(run["route"], {"name": run["route"]})
+    who = f"@{he(user.username)}" if user.username else f"id {user.id}"
+    try:
+        await bot.send_message(
+            ADMIN_CHAT_ID,
+            f"🗺 <b>Экспедиция #{run['id']}</b> · {he(r['name'])}\n"
+            f"{he(name)} ({who}):\n{body_html}",
+            parse_mode=ParseMode.HTML,
+        )
+    except _TgError as e:
+        logger.warning("ex mirror admin: %s", e)
+
+
+async def on_ex_media(update: Update, ctx: ContextTypes.DEFAULT_TYPE):
+    """
+    Фото, гифка, стикер или видео в личке от участника экспедиции — команде
+    и копией в админ-чат. Зарегистрирован в отдельной группе обработчиков:
+    старый вариант стоял в общей и не пускал стикеры дальше, к on_message.
+    """
+    msg, user = update.message, update.effective_user
+    if not msg or not user or msg.chat.type != "private":
+        return
+    run = await ex_user_run(user.id)
+    if not run:
+        return
+    f = await db_get(user.id)
+    name = (f.get("frog_name") or f.get("first_name") if f else "") or user.first_name or "Лягушка"
+    for m in await ex_members_get(run["id"]):
+        if m["user_id"] == user.id:
+            continue
+        try:
+            await ctx.bot.send_message(m["user_id"], f"💬 <b>{he(name)}</b> прислала:",
+                                       parse_mode=ParseMode.HTML)
+            await msg.copy(m["user_id"])
+        except _TgError:
+            pass
+    if ADMIN_CHAT_ID:
+        await ex_mirror_admin(ctx.bot, user, name, run,
+                              f"<i>{'стикер' if msg.sticker else 'медиа'}</i>"
+                              + (f": {he(msg.caption)}" if msg.caption else ""))
+        try:
+            await msg.forward(ADMIN_CHAT_ID)
+        except _TgError as e:
+            logger.warning("ex media forward: %s", e)
+
+
 async def ex_start_deeplink(update: Update, ctx: ContextTypes.DEFAULT_TYPE, arg: str) -> bool:
     """/start ex_<id> — приглашение в сбор, /start exp — сам раздел. True, если ссылка наша."""
     # exp_join_/exp_mid_join_ — ссылки из анонсов старых экспедиций: их сборов
@@ -64777,8 +64827,8 @@ async def cmd_m_new(update: Update, ctx: ContextTypes.DEFAULT_TYPE):
             )
             return
 
-        # Команда экспедиции (или её сбора): текст как есть, без разметки и без
-        # копии в админ-чат — это разговор команды.
+        # Команда экспедиции (или её сбора): текст как есть, без разметки,
+        # копия — в админ-чат, как было в старых экспедициях.
         ex_run = await ex_user_run(user.id)
         if ex_run:
             ex_members = await ex_members_get(ex_run["id"])
@@ -64795,6 +64845,7 @@ async def cmd_m_new(update: Update, ctx: ContextTypes.DEFAULT_TYPE):
                     delivered += 1
                 except _TgError:
                     pass
+            await ex_mirror_admin(ctx.bot, user, my_name, ex_run, f"💬 {he(msg_text)}")
             if len(ex_members) == 1:
                 reply = "В команде только ты."
             else:
@@ -65216,6 +65267,15 @@ def main():
         ) & filters.CaptionRegex(r"^/s(\s|$)"),
         cmd_s,
     ))
+
+    # Медиа участников экспедиции — команде и в админ-чат. Группа 1: так
+    # обработчик не перекрывает on_message и стикеры в личке доходят до него.
+    app.add_handler(MessageHandler(
+        filters.ChatType.PRIVATE & (
+            filters.PHOTO | filters.ANIMATION | filters.Sticker.ALL | filters.VIDEO
+        ) & ~filters.CaptionRegex(r"^/s(\s|$)"),
+        on_ex_media,
+    ), group=1)
 
     app.add_handler(
         MessageHandler(
