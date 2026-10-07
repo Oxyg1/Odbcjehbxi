@@ -57,9 +57,10 @@ from telegram.ext import (
     PreCheckoutQueryHandler,
     InlineQueryHandler,
     TypeHandler,
+    ApplicationHandlerStop,
 )
 from telegram.constants import ChatAction, ParseMode, StickerFormat, StickerType
-from telegram.error import BadRequest, Forbidden, TimedOut
+from telegram.error import BadRequest, Forbidden, TimedOut, NetworkError, RetryAfter, TelegramError
 
 # Ограничитель темпа запросов. Ставится вместе с aiolimiter; если пакета нет,
 # бот работает как раньше — просто без защиты от флуд-лимита.
@@ -4996,6 +4997,10 @@ def run_sync_migration():
         st_sync_migration(conn)
     except Exception as _e:
         logger.exception("st_sync_migration: %s", _e)
+    try:
+        poll_sync_migration(conn)
+    except Exception as _e:
+        logger.exception("poll_sync_migration: %s", _e)
 
     # ── Фриз-ивент ───────────────────────────────────────────────────────────
     freeze_run_sync_migration(conn, cur)
@@ -27239,6 +27244,9 @@ async def show_admin_panel(message, edit=False, bot_data=None):
             [
                 btn("💎 Топ богачи", callback_data="admin_rich"),
                 btn("🎁 Переводы /gift", callback_data="admin_gifts_0"),
+            ],
+            [
+                btn("🗳 Опросы", callback_data="pla|list"),
             ],
             [
                 btn("🏘 Партнёрские чаты", callback_data="admin_partner_chats"),
@@ -55981,6 +55989,8 @@ async def post_init(app: Application):
         logger.warning("st_wrap_jobs: %s", _e)
     app.job_queue.run_repeating(job_st_flush, interval=ST_FLUSH_S, first=ST_FLUSH_S)
     app.job_queue.run_repeating(job_st_hourly, interval=3600, first=120)
+    app.job_queue.run_repeating(job_poll_tick, interval=60, first=45)
+    asyncio.create_task(poll_resume(app.bot))   # дослать опросы, начатые до перезапуска
     app.job_queue.run_repeating(job_events, interval=4 * 3600, first=300)
     app.job_queue.run_repeating(job_reminders, interval=6 * 3600, first=600)
     app.job_queue.run_repeating(job_tutorial_nudge, interval=3600, first=120)  # раз в час
@@ -60057,6 +60067,7 @@ ST_FEAT_LABELS = {
     "личка": "Сообщение в личке", "оплата": "Оплата звёздами", "счёт": "Счёт на оплату",
     "inline": "Инлайн", "фон": "Фон без имени", "чат": "Переписка в группе",
     "новый игрок": "Стартовые монеты",
+    "plv": "Опрос: голос",
     "/start": "/start", "/?": "Неизвестная команда",
     "job:auto_farm": "Трудяга", "job:auto_care": "Няня",
     "job:staya_passive_income": "Доход котла стаи", "job:lottery_draw": "Розыгрыш лотереи",
@@ -61277,6 +61288,1171 @@ async def cmd_adminreport(update: Update, ctx: ContextTypes.DEFAULT_TYPE) -> Non
         days = 30
     await update.message.reply_text("Собираю отчёт…")
     await st_send_file(ctx.bot, update.effective_chat.id, days)
+
+
+# ══════════════════════════════════════════════════════════════════════════════
+# 🗳  ОПРОСЫ-РАССЫЛКИ
+# ══════════════════════════════════════════════════════════════════════════════
+# Админ собирает опрос в админке (🗳 Опросы или /adminpoll): текст с HTML и
+# премиум-эмодзи, фото, варианты-кнопки с иконками и цветом, настройки и
+# аудиторию. Предпросмотр приходит ему самому ровно таким, каким его увидят
+# игроки, и голос в нём не засчитывается. Потом — отправка.
+#
+# Отправка идёт фоном по снимку получателей (poll_sent): кто получил, кто
+# заблокировал бота, кому ещё не ушло. Перезапуск посреди отправки ничего не
+# теряет и никому не шлёт дважды — бот продолжает с тех, кому ещё не ушло.
+#
+# Голоса — в poll_votes, по строке на выбранный вариант. При закрытии
+# (вручную или по сроку) кнопки у всех получателей меняются на итоги — или
+# убираются, если итоги игрокам не показываем.
+#
+# Текст принимается двумя способами сразу: HTML-тегами, набранными руками
+# (как в /broadcast), и обычным форматированием Telegram — жирный, ссылки,
+# премиум-эмодзи. Telegram отдаёт сообщение как HTML с <tg-emoji>, а набранные
+# руками теги — экранированными; разрешённые теги возвращаем обратно.
+
+POLL_MAX_OPTS = 10
+POLL_LABEL_MAX = 48
+POLL_AUDIENCES = (
+    ("all",   "Все игроки",          None),
+    ("alive", "Живые лягушки",       None),
+    ("d1",    "Заходили за сутки",   1),
+    ("d3",    "Заходили за 3 дня",   3),
+    ("d7",    "Заходили за неделю",  7),
+    ("d30",   "Заходили за месяц",   30),
+)
+POLL_DEFAULTS = {"multi": False, "revote": True, "show": "now", "anon": True,
+                 "reward": 0, "hours": 0, "cols": 1}
+POLL_REWARDS = (0, 10, 25, 50, 100)
+POLL_HOURS = (0, 6, 24, 72, 168)
+POLL_SHOW = {"now": "сразу после голоса", "close": "после закрытия", "never": "не показывать"}
+POLL_STYLES = ("", "primary", "success", "danger")
+POLL_STYLE_NAMES = {"": "обычная", "primary": "синяя", "success": "зелёная", "danger": "красная"}
+POLL_STATUS = {"draft": "черновик", "sending": "отправляется", "open": "идёт", "closed": "закрыт"}
+POLL_STATUS_ICON = {"draft": "📝", "sending": "📤", "open": "🟢", "closed": "⚪"}
+
+
+def poll_sync_migration(conn) -> None:
+    conn.executescript(
+        """
+        CREATE TABLE IF NOT EXISTS polls (
+            id         INTEGER PRIMARY KEY AUTOINCREMENT,
+            status     TEXT    DEFAULT 'draft',
+            text       TEXT    DEFAULT '',
+            photo      TEXT    DEFAULT '',
+            options    TEXT    DEFAULT '[]',
+            settings   TEXT    DEFAULT '{}',
+            audience   TEXT    DEFAULT 'all',
+            created_by INTEGER DEFAULT 0,
+            created_at REAL    DEFAULT 0,
+            sent_at    REAL    DEFAULT 0,
+            closes_at  REAL    DEFAULT 0,
+            closed_at  REAL    DEFAULT 0
+        );
+        CREATE TABLE IF NOT EXISTS poll_sent (
+            poll_id  INTEGER NOT NULL,
+            user_id  INTEGER NOT NULL,
+            state    TEXT    DEFAULT 'wait',
+            msg_id   INTEGER DEFAULT 0,
+            rewarded INTEGER DEFAULT 0,
+            fin      INTEGER DEFAULT 0,
+            PRIMARY KEY (poll_id, user_id)
+        );
+        CREATE INDEX IF NOT EXISTS idx_poll_sent_state ON poll_sent(poll_id, state);
+        CREATE TABLE IF NOT EXISTS poll_votes (
+            poll_id INTEGER NOT NULL,
+            user_id INTEGER NOT NULL,
+            opt     INTEGER NOT NULL,
+            ts      REAL    NOT NULL,
+            PRIMARY KEY (poll_id, user_id, opt)
+        );
+        """
+    )
+    conn.commit()
+
+
+# ── Хранение ─────────────────────────────────────────────────────────────────
+def _poll_row(row) -> dict:
+    p = dict(row)
+    p["options"] = json.loads(p.get("options") or "[]")
+    p["settings"] = {**POLL_DEFAULTS, **json.loads(p.get("settings") or "{}")}
+    return p
+
+
+async def poll_load(pid: int) -> dict | None:
+    async with aiosqlite.connect(DB_PATH) as db:
+        db.row_factory = aiosqlite.Row
+        async with db.execute("SELECT * FROM polls WHERE id=?", (pid,)) as c:
+            row = await c.fetchone()
+    return _poll_row(row) if row else None
+
+
+async def poll_update(pid: int, **fields) -> None:
+    for k in ("options", "settings"):
+        if k in fields:
+            fields[k] = json.dumps(fields[k], ensure_ascii=False)
+    cols = ", ".join(f"{k}=?" for k in fields)
+    async with aiosqlite.connect(DB_PATH) as db:
+        await db.execute(f"UPDATE polls SET {cols} WHERE id=?", (*fields.values(), pid))
+        await db.commit()
+
+
+async def poll_create(admin_id: int, src: dict | None = None) -> int:
+    """Новый черновик; src — опрос, который копируем."""
+    src = src or {}
+    async with aiosqlite.connect(DB_PATH) as db:
+        cur = await db.execute(
+            "INSERT INTO polls(status, text, photo, options, settings, audience, created_by, created_at) "
+            "VALUES('draft',?,?,?,?,?,?,?)",
+            (src.get("text", ""), src.get("photo", ""),
+             json.dumps(src.get("options", []), ensure_ascii=False),
+             json.dumps(src.get("settings", {}), ensure_ascii=False),
+             src.get("audience", "all"), admin_id, time.time()))
+        await db.commit()
+        return cur.lastrowid
+
+
+def _poll_aud_sql(key: str) -> tuple[str, tuple]:
+    """Условие выборки получателей: игроки без банов и ботов + фильтр."""
+    base = "banned=0 AND is_bot=0"
+    if key == "alive":
+        return base + " AND alive=1", ()
+    days = dict((k, d) for k, _, d in POLL_AUDIENCES).get(key)
+    if days:
+        return base + " AND last_seen>=?", (time.time() - days * 86400,)
+    return base, ()
+
+
+async def poll_audience_count(key: str) -> int:
+    where, args = _poll_aud_sql(key)
+    async with aiosqlite.connect(DB_PATH) as db:
+        async with db.execute(f"SELECT COUNT(*) FROM frogs WHERE {where}", args) as c:
+            return (await c.fetchone())[0]
+
+
+async def poll_tally(pid: int) -> tuple[dict[int, int], int]:
+    """Голоса по вариантам и сколько человек ответило."""
+    async with aiosqlite.connect(DB_PATH) as db:
+        async with db.execute("SELECT opt, COUNT(*) FROM poll_votes WHERE poll_id=? GROUP BY opt", (pid,)) as c:
+            counts = {o: n for o, n in await c.fetchall()}
+        async with db.execute("SELECT COUNT(DISTINCT user_id) FROM poll_votes WHERE poll_id=?", (pid,)) as c:
+            voters = (await c.fetchone())[0]
+    return counts, voters
+
+
+async def poll_mine(pid: int, uid: int) -> set[int]:
+    async with aiosqlite.connect(DB_PATH) as db:
+        async with db.execute("SELECT opt FROM poll_votes WHERE poll_id=? AND user_id=?", (pid, uid)) as c:
+            return {r[0] for r in await c.fetchall()}
+
+
+# ── Текст и варианты из сообщений админа ─────────────────────────────────────
+_POLL_ESC_TAG = re.compile(
+    r"&lt;(/?(?:b|strong|i|em|u|ins|s|strike|del|code|pre|tg-spoiler|blockquote(?: expandable)?)"
+    r"|a href=&quot;(?:[^<>&]|&amp;)+?&quot;|/a"
+    r"|tg-emoji emoji-id=&quot;\d+&quot;|/tg-emoji)&gt;")
+_POLL_TAG = re.compile(r"<(/?)([a-z-]+)(?:\s[^>]*)?>")
+_POLL_LEAD_EMOJI = re.compile(r'^\s*<tg-emoji emoji-id="(\d+)">[^<]*</tg-emoji>\s*')
+_POLL_ANY_EMOJI = re.compile(r'<tg-emoji emoji-id="(\d+)">')
+
+
+def poll_html_from(msg) -> str:
+    """
+    HTML текста или подписи. Форматирование Telegram и премиум-эмодзи приходят
+    готовым HTML; теги, набранные руками, — экранированными, и разрешённые
+    возвращаются обратно. Одиночные < > & остаются экранированными — так
+    «5 < 6» не ломает разбор.
+    """
+    raw = (msg.text_html if msg.text else msg.caption_html if msg.caption else "") or ""
+    return _POLL_ESC_TAG.sub(lambda m: "<" + m.group(1).replace("&quot;", '"') + ">", raw).strip()
+
+
+def _poll_plain(html_text: str) -> str:
+    return _html.unescape(re.sub(r"<[^>]+>", "", html_text or ""))
+
+
+def poll_html_problem(text: str, photo: bool) -> str | None:
+    """Что не так с текстом: непарный тег или длина сверх лимита Telegram."""
+    stack: list[str] = []
+    for close, tag in _POLL_TAG.findall(text or ""):
+        if close:
+            if not stack or stack[-1] != tag:
+                return f"тег </{tag}> без открывающего"
+            stack.pop()
+        else:
+            stack.append(tag)
+    if stack:
+        return f"не закрыт тег <{stack[-1]}>"
+    n = len(_poll_plain(text).encode("utf-16-le")) // 2
+    limit = 1024 if photo else 4096
+    if n > limit:
+        return (f"текст длиннее {limit} знаков ({n})"
+                + (": подпись к фото Telegram ограничивает 1024" if photo else ""))
+    return None
+
+
+def poll_options_from(msg) -> list[dict]:
+    """Варианты из сообщения: по одному на строку, премиум-эмодзи в начале — иконка."""
+    out = []
+    for line in (msg.text_html or "").split("\n"):
+        m = _POLL_LEAD_EMOJI.match(line)
+        rest = line[m.end():] if m else line
+        label = _poll_plain(rest).strip()
+        if label:
+            out.append({"t": label[:POLL_LABEL_MAX], "icon": m.group(1) if m else "", "style": ""})
+    return out
+
+
+_POLL_PALETTE: list[str] = []
+
+
+def poll_palette() -> list[str]:
+    """Премиум-эмодзи, которые бот уже знает: все _E_* и роли emoji-style.json."""
+    if not _POLL_PALETTE:
+        seen: set[str] = set()
+        for name, val in sorted(globals().items()):
+            if name.startswith("_E_") and isinstance(val, str):
+                for m in _POLL_ANY_EMOJI.finditer(val):
+                    if m.group(1) not in seen:
+                        seen.add(m.group(1))
+                        _POLL_PALETTE.append(m.group(1))
+        for r in EMOJI_STYLE.values():
+            if r.get("id") and r["id"] not in seen:
+                seen.add(r["id"])
+                _POLL_PALETTE.append(r["id"])
+    return _POLL_PALETTE
+
+
+def _poll_icon_html(icon: str) -> str:
+    return f'<tg-emoji emoji-id="{icon}">🔹</tg-emoji> ' if icon else ""
+
+
+# ── Сообщение игроку ─────────────────────────────────────────────────────────
+def _poll_button(label: str, cb: str, opt: dict) -> InlineKeyboardButton:
+    # Мимо btn(): там ведущая эмодзи сама уезжает в иконку, а здесь что админ
+    # настроил — то игрок и видит
+    if opt.get("icon") or opt.get("style"):
+        return _StyledButton(label, callback_data=cb, _style=opt.get("style") or None,
+                             _icon_id=opt.get("icon") or None)
+    return InlineKeyboardButton(label, callback_data=cb)
+
+
+def poll_kb(p: dict, mine: set, counts: dict | None, voters: int,
+            preview: bool = False, closed: bool = False) -> InlineKeyboardMarkup | None:
+    """
+    Кнопки опроса. counts=None — итогов не показываем; mine — выбор игрока
+    (✅). Закрытый опрос без показа итогов — без кнопок вовсе.
+    """
+    if closed and counts is None:
+        return None
+    tail = "|p" if preview else ""
+    buttons = []
+    for i, o in enumerate(p["options"]):
+        label = ("✅ " if i in mine else "") + o["t"]
+        if counts is not None:
+            pct = round(counts.get(i, 0) * 100 / voters) if voters else 0
+            label += f" · {pct}%"
+        buttons.append(_poll_button(label, f"plv|{p['id']}|{'x' if closed else i}{tail}", o))
+    cols = 2 if p["settings"].get("cols") == 2 else 1
+    rows = [buttons[k:k + cols] for k in range(0, len(buttons), cols)]
+    if counts is not None:
+        rows.append([InlineKeyboardButton(
+            f"{'Итог' if closed else 'Ответили'}: {voters}",
+            callback_data=f"plv|{p['id']}|{'x' if closed else 'r'}{tail}")])
+    return InlineKeyboardMarkup(rows)
+
+
+async def poll_send_msg(bot, chat_id: int, p: dict, kb):
+    if p["photo"]:
+        return await bot.send_photo(chat_id, p["photo"], caption=p["text"] or None,
+                                    parse_mode=ParseMode.HTML, reply_markup=kb)
+    return await bot.send_message(chat_id, p["text"], parse_mode=ParseMode.HTML, reply_markup=kb,
+                                  link_preview_options=LinkPreviewOptions(is_disabled=True))
+
+
+# ── Экраны админки ───────────────────────────────────────────────────────────
+def _poll_settings_line(s: dict) -> str:
+    parts = ["несколько ответов" if s["multi"] else "один ответ"]
+    if not s["multi"]:
+        parts.append("менять можно" if s["revote"] else "менять нельзя")
+    parts.append(f"итоги: {POLL_SHOW[s['show']]}")
+    parts.append("кто голосовал — скрыто" if s["anon"] else "кто голосовал — видно тебе")
+    if s["reward"]:
+        parts.append(f"награда {s['reward']}🪙")
+    parts.append(f"закрыть через {_poll_hours_name(s['hours'])}" if s["hours"] else "закрыть вручную")
+    if s.get("cols") == 2:
+        parts.append("кнопки по две")
+    return SEP.join(parts)
+
+
+def _poll_hours_name(h: int) -> str:
+    return {6: "6 ч", 24: "сутки", 72: "3 дня", 168: "неделю"}.get(h, f"{h} ч")
+
+
+def _poll_aud_name(key: str) -> str:
+    return next((n for k, n, _ in POLL_AUDIENCES if k == key), key)
+
+
+def _poll_head(p: dict) -> str:
+    return f"🗳 <b>Опрос #{p['id']}</b>{SEP}{POLL_STATUS.get(p['status'], p['status'])}"
+
+
+async def poll_editor_view(p: dict) -> tuple[str, InlineKeyboardMarkup]:
+    pid = p["id"]
+    plain = _poll_plain(p["text"])
+    text_line = (f"Текст: {len(plain)} знаков" if plain else "Текст: <b>нет</b>") + \
+        SEP + ("фото есть" if p["photo"] else "без фото")
+    preview = he(plain[:160] + ("…" if len(plain) > 160 else "")) if plain else ""
+    opts = "\n".join(f"{i + 1}. {_poll_icon_html(o.get('icon', ''))}{he(o['t'])}"
+                     + (f" <i>({POLL_STYLE_NAMES[o['style']]})</i>" if o.get("style") else "")
+                     for i, o in enumerate(p["options"])) or "<i>пока нет — нужно хотя бы два</i>"
+    n_aud = await poll_audience_count(p["audience"])
+    text = ui_card(
+        _poll_head(p),
+        text_line + (f"\n<blockquote>{preview}</blockquote>" if preview else ""),
+        f"<b>Варианты</b>\n{opts}",
+        _poll_settings_line(p["settings"]),
+        f"Кому: <b>{_poll_aud_name(p['audience'])}</b>{SEP}{_stn(n_aud)}",
+    )
+    kb = InlineKeyboardMarkup([
+        [btn("✏️ Текст", callback_data=f"pla|in|{pid}|text"),
+         btn("🖼 Фото", callback_data=f"pla|in|{pid}|photo")],
+        [btn("➕ Вариант", callback_data=f"pla|in|{pid}|opt"),
+         btn("🔢 Варианты", callback_data=f"pla|opts|{pid}")],
+        [btn("⚙️ Настройки", callback_data=f"pla|set|{pid}"),
+         btn("👥 Кому", callback_data=f"pla|aud|{pid}")],
+        [btn("👁 Предпросмотр", callback_data=f"pla|prev|{pid}")],
+        [btn("🚀 Отправить", callback_data=f"pla|send|{pid}", style="success")],
+        [btn("🗑 Удалить", callback_data=f"pla|del|{pid}", style="danger"),
+         btn("◀️ Опросы", callback_data="pla|list")],
+    ])
+    return text, kb
+
+
+async def poll_results_view(p: dict) -> tuple[str, InlineKeyboardMarkup]:
+    pid = p["id"]
+    counts, voters = await poll_tally(pid)
+    async with aiosqlite.connect(DB_PATH) as db:
+        async with db.execute("SELECT state, COUNT(*) FROM poll_sent WHERE poll_id=? GROUP BY state", (pid,)) as c:
+            st = dict(await c.fetchall())
+    total = sum(st.values())
+    ok_n = st.get("ok", 0)
+    lines = []
+    for i, o in enumerate(p["options"]):
+        n = counts.get(i, 0)
+        pct = round(n * 100 / voters) if voters else 0
+        lines.append(f"{_poll_icon_html(o.get('icon', ''))}{he(o['t'])}\n"
+                     f"<code>{bar(pct)}</code> {pct}%{SEP}{_stn(n)}")
+    when = ""
+    if p["status"] == "open" and p["closes_at"]:
+        when = SEP + "закроется " + datetime.fromtimestamp(p["closes_at"], ST_TZ).strftime("%d.%m %H:%M")
+    elif p["status"] == "closed" and p["closed_at"]:
+        when = SEP + datetime.fromtimestamp(p["closed_at"], ST_TZ).strftime("%d.%m %H:%M")
+    text = ui_card(
+        _poll_head(p) + when,
+        f"Дошло <b>{_stn(ok_n)}</b> из {_stn(total)}"
+        + (f"{SEP}ждут {_stn(st.get('wait', 0))}" if st.get("wait") else "")
+        + (f"\nЗаблокировали бота {_stn(st.get('blocked', 0))}{SEP}ошибок {_stn(st.get('fail', 0))}"
+           if st.get("blocked") or st.get("fail") else ""),
+        f"Ответили <b>{_stn(voters)}</b>{SEP}{_stp(voters, ok_n)} получивших",
+        "\n\n".join(lines),
+    )
+    rows = [[btn("🔄 Обновить", callback_data=f"pla|res|{pid}"),
+             btn("📋 Текстом", callback_data=f"pla|txt|{pid}")]]
+    if not p["settings"]["anon"]:
+        rows.append([btn("👥 Кто как ответил", callback_data=f"pla|who|{pid}")])
+    if p["status"] in ("open", "sending"):
+        rows.append([btn("🔒 Закрыть опрос", callback_data=f"pla|close|{pid}", style="danger")])
+    rows.append([btn("📄 Копировать", callback_data=f"pla|copy|{pid}"),
+                 btn("◀️ Опросы", callback_data="pla|list")])
+    return text, InlineKeyboardMarkup(rows)
+
+
+async def poll_list_view() -> tuple[str, InlineKeyboardMarkup]:
+    async with aiosqlite.connect(DB_PATH) as db:
+        db.row_factory = aiosqlite.Row
+        async with db.execute("SELECT * FROM polls ORDER BY id DESC LIMIT 15") as c:
+            polls = [_poll_row(r) for r in await c.fetchall()]
+        async with db.execute("SELECT poll_id, COUNT(DISTINCT user_id) FROM poll_votes GROUP BY poll_id") as c:
+            votes = dict(await c.fetchall())
+    rows = [[btn("➕ Новый опрос", callback_data="pla|new", style="primary")]]
+    for p in polls:
+        name = _poll_plain(p["text"]).split("\n")[0][:22] or "без текста"
+        tail = f" · {votes.get(p['id'], 0)}" if p["status"] != "draft" else ""
+        rows.append([btn(f"{POLL_STATUS_ICON[p['status']]} #{p['id']} {name}{tail}",
+                         callback_data=f"pla|{'ed' if p['status'] == 'draft' else 'res'}|{p['id']}")])
+    rows.append([btn("◀️ Админка", callback_data="admin_refresh")])
+    text = ui_card(
+        "🗳 <b>Опросы</b>",
+        "📝 черновик · 📤 отправляется · 🟢 идёт · ⚪ закрыт\nЧисло после названия — сколько ответило.",
+    )
+    return text, InlineKeyboardMarkup(rows)
+
+
+def poll_settings_view(p: dict) -> tuple[str, InlineKeyboardMarkup]:
+    pid, s = p["id"], p["settings"]
+    rows = [[btn(f"Ответов: {'несколько' if s['multi'] else 'один'}", callback_data=f"pla|tg|{pid}|multi")]]
+    if not s["multi"]:
+        rows.append([btn(f"Менять ответ: {'можно' if s['revote'] else 'нельзя'}",
+                         callback_data=f"pla|tg|{pid}|revote")])
+    rows += [
+        [btn(f"Итоги игрокам: {POLL_SHOW[s['show']]}", callback_data=f"pla|tg|{pid}|show")],
+        [btn(f"Кто голосовал: {'скрыто' if s['anon'] else 'видно мне'}", callback_data=f"pla|tg|{pid}|anon")],
+        [btn(f"Награда за голос: {s['reward']}🪙" if s["reward"] else "Награда за голос: нет",
+             callback_data=f"pla|tg|{pid}|reward")],
+        [btn(f"Закрыть: через {_poll_hours_name(s['hours'])}" if s["hours"] else "Закрыть: вручную",
+             callback_data=f"pla|tg|{pid}|hours")],
+        [btn(f"Кнопки: {'по две в ряд' if s.get('cols') == 2 else 'в столбик'}", callback_data=f"pla|tg|{pid}|cols")],
+        [btn("◀️ К опросу", callback_data=f"pla|ed|{pid}")],
+    ]
+    text = ui_card(
+        f"{_poll_head(p)}{SEP}настройки",
+        "Нажатие на строку меняет значение по кругу.",
+        hint="Награда — один раз за опрос и только тем, кому он был разослан",
+    )
+    return text, InlineKeyboardMarkup(rows)
+
+
+def _poll_toggle(s: dict, key: str) -> None:
+    if key in ("multi", "revote", "anon"):
+        s[key] = not s[key]
+    elif key == "show":
+        order = list(POLL_SHOW)
+        s["show"] = order[(order.index(s["show"]) + 1) % len(order)]
+    elif key == "reward":
+        s["reward"] = POLL_REWARDS[(POLL_REWARDS.index(s["reward"]) + 1) % len(POLL_REWARDS)] \
+            if s["reward"] in POLL_REWARDS else 0
+    elif key == "hours":
+        s["hours"] = POLL_HOURS[(POLL_HOURS.index(s["hours"]) + 1) % len(POLL_HOURS)] \
+            if s["hours"] in POLL_HOURS else 0
+    elif key == "cols":
+        s["cols"] = 1 if s.get("cols") == 2 else 2
+
+
+async def poll_audience_view(p: dict) -> tuple[str, InlineKeyboardMarkup]:
+    pid = p["id"]
+    rows = []
+    for key, name, _ in POLL_AUDIENCES:
+        mark = "✅ " if p["audience"] == key else ""
+        rows.append([btn(f"{mark}{name} · {_stn(await poll_audience_count(key))}",
+                         callback_data=f"pla|auds|{pid}|{key}")])
+    rows.append([btn("◀️ К опросу", callback_data=f"pla|ed|{pid}")])
+    text = ui_card(
+        f"{_poll_head(p)}{SEP}кому",
+        "Игроки без банов и ботов. «Заходили» — нажимали кнопки или писали боту за этот срок.",
+        hint="Число — сколько получателей сейчас",
+    )
+    return text, InlineKeyboardMarkup(rows)
+
+
+def poll_options_view(p: dict) -> tuple[str, InlineKeyboardMarkup]:
+    pid = p["id"]
+    rows = [[_poll_button(f"{i + 1}. {o['t']}", f"pla|opt|{pid}|{i}", o)] for i, o in enumerate(p["options"])]
+    if len(p["options"]) < POLL_MAX_OPTS:
+        rows.append([btn("➕ Вариант", callback_data=f"pla|in|{pid}|opt")])
+    rows.append([btn("◀️ К опросу", callback_data=f"pla|ed|{pid}")])
+    text = ui_card(f"{_poll_head(p)}{SEP}варианты",
+                   "Кнопки выглядят так, как их увидят игроки. Нажми, чтобы изменить вариант.")
+    return text, InlineKeyboardMarkup(rows)
+
+
+def poll_option_view(p: dict, i: int) -> tuple[str, InlineKeyboardMarkup]:
+    pid, o = p["id"], p["options"][i]
+    rows = [
+        [_poll_button(o["t"], f"pla|opt|{pid}|{i}", o)],
+        [btn("✏️ Текст", callback_data=f"pla|in|{pid}|edit|{i}"),
+         btn("🎨 Иконка", callback_data=f"pla|ico|{pid}|{i}|0")],
+        [btn(f"Цвет: {POLL_STYLE_NAMES[o.get('style', '')]}", callback_data=f"pla|sty|{pid}|{i}")],
+        [btn("⬆️ Выше", callback_data=f"pla|mv|{pid}|{i}|-1"),
+         btn("⬇️ Ниже", callback_data=f"pla|mv|{pid}|{i}|1")],
+        [btn("🗑 Удалить", callback_data=f"pla|rm|{pid}|{i}", style="danger"),
+         btn("◀️ Варианты", callback_data=f"pla|opts|{pid}")],
+    ]
+    text = ui_card(
+        f"{_poll_head(p)}{SEP}вариант {i + 1}",
+        f"{_poll_icon_html(o.get('icon', ''))}<b>{he(o['t'])}</b>",
+        hint="Первая кнопка — как вариант выглядит у игрока",
+    )
+    return text, InlineKeyboardMarkup(rows)
+
+
+def poll_icon_view(p: dict, i: int, page: int) -> tuple[str, InlineKeyboardMarkup]:
+    pid = p["id"]
+    pal = poll_palette()
+    per = 20
+    pages = max(1, (len(pal) + per - 1) // per)
+    page = max(0, min(page, pages - 1))
+    chunk = pal[page * per:(page + 1) * per]
+    rows, row = [], []
+    for k, icon in enumerate(chunk):
+        n = page * per + k
+        row.append(_StyledButton(str(n + 1), callback_data=f"pla|icoset|{pid}|{i}|{n}", _icon_id=icon))
+        if len(row) == 4:
+            rows.append(row)
+            row = []
+    if row:
+        rows.append(row)
+    nav = []
+    if page > 0:
+        nav.append(btn("◀️", callback_data=f"pla|ico|{pid}|{i}|{page - 1}"))
+    nav.append(btn(f"{page + 1} из {pages}", callback_data=f"pla|ico|{pid}|{i}|{page}"))
+    if page < pages - 1:
+        nav.append(btn("▶️", callback_data=f"pla|ico|{pid}|{i}|{page + 1}"))
+    rows.append(nav)
+    rows.append([btn("📩 Прислать свою", callback_data=f"pla|in|{pid}|icon|{i}"),
+                 btn("🚫 Без иконки", callback_data=f"pla|icoset|{pid}|{i}|-1")])
+    rows.append([btn("◀️ К варианту", callback_data=f"pla|opt|{pid}|{i}")])
+    text = ui_card(f"{_poll_head(p)}{SEP}иконка варианта {i + 1}",
+                   "Выбери премиум-эмодзи для кнопки.",
+                   hint="Или пришли любое своё премиум-эмодзи сообщением")
+    return text, InlineKeyboardMarkup(rows)
+
+
+_POLL_PROMPTS = {
+    "text":  ("Пришли текст опроса.\n\nМожно форматирование Telegram и премиум-эмодзи "
+              "или HTML-теги руками: <code>&lt;b&gt;</code>, <code>&lt;i&gt;</code>, "
+              "<code>&lt;a href=\"…\"&gt;</code>, <code>&lt;blockquote&gt;</code>, "
+              "<code>&lt;tg-spoiler&gt;</code>.\n\nФото с подписью — сразу и фото, и текст."),
+    "photo": "Пришли фото для опроса. Подпись к нему, если есть, станет текстом.",
+    "opt":   ("Пришли вариант ответа. Несколько вариантов — каждый с новой строки.\n\n"
+              "Премиум-эмодзи в начале строки станет иконкой кнопки."),
+    "edit":  "Пришли новый текст варианта. Премиум-эмодзи в начале станет иконкой.",
+    "icon":  "Пришли премиум-эмодзи — оно станет иконкой кнопки.",
+}
+
+
+# ── Отправка ─────────────────────────────────────────────────────────────────
+_POLL_TASKS: dict[int, asyncio.Task] = {}
+_POLL_PROGRESS: dict[int, tuple[int, int]] = {}   # опрос -> (чат, сообщение) с ходом отправки
+
+
+def poll_start_task(bot, pid: int, kind: str = "send") -> None:
+    """Запустить отправку (send) или финальную правку кнопок (fin), если ещё не идёт."""
+    key = pid if kind == "send" else -pid
+    t = _POLL_TASKS.get(key)
+    if t and not t.done():
+        return
+    coro = poll_send_run(bot, pid) if kind == "send" else poll_finalize_run(bot, pid)
+    _POLL_TASKS[key] = asyncio.create_task(coro)
+
+
+async def _poll_notify(bot, text: str, pid: int) -> None:
+    kb = InlineKeyboardMarkup([[btn("📊 Итоги", callback_data=f"pla|res|{pid}")]])
+    chats = {_POLL_PROGRESS[pid][0]} if pid in _POLL_PROGRESS else set(ADMIN_IDS)
+    for chat in chats:
+        try:
+            await bot.send_message(chat, text, parse_mode=ParseMode.HTML, reply_markup=kb)
+        except TelegramError:
+            pass
+
+
+async def poll_send_run(bot, pid: int) -> None:
+    """
+    Разослать опрос тем, кому ещё не ушло (poll_sent.state='wait'). Пачками
+    по 200: отметки пишутся после каждой пачки, поэтому после перезапуска
+    отправка продолжается без повторов.
+    """
+    p = await poll_load(pid)
+    if not p or p["status"] != "sending":
+        return
+    kb = poll_kb(p, set(), None, 0)
+    sem = asyncio.Semaphore(20)
+    last_edit = 0.0
+    parse_errors = 0
+
+    async def one(uid: int):
+        nonlocal parse_errors
+        async with sem:
+            for attempt in (1, 2, 3):
+                try:
+                    m = await poll_send_msg(bot, uid, p, kb)
+                    return uid, "ok", m.message_id
+                except Forbidden:
+                    return uid, "blocked", 0
+                except RetryAfter as e:
+                    await asyncio.sleep(float(getattr(e, "retry_after", 5)) + 1)
+                    continue
+                except BadRequest as e:
+                    low = str(e).lower()
+                    if "parse" in low or "entit" in low:
+                        parse_errors += 1
+                    if "chat not found" in low or "user is deactivated" in low:
+                        return uid, "blocked", 0
+                    return uid, "fail", 0
+                except (TimedOut, NetworkError):
+                    if attempt == 3:
+                        return uid, "fail", 0
+                    await asyncio.sleep(2)
+                except Exception as e:
+                    logger.warning("poll_send %s → %s: %s", pid, uid, e)
+                    return uid, "fail", 0
+            return uid, "fail", 0
+
+    while True:
+        async with aiosqlite.connect(DB_PATH) as db:
+            async with db.execute("SELECT user_id FROM poll_sent WHERE poll_id=? AND state='wait' LIMIT 200",
+                                  (pid,)) as c:
+                batch = [r[0] for r in await c.fetchall()]
+        if not batch:
+            break
+        res = await asyncio.gather(*[one(u) for u in batch])
+        async with aiosqlite.connect(DB_PATH) as db:
+            await db.executemany("UPDATE poll_sent SET state=?, msg_id=? WHERE poll_id=? AND user_id=?",
+                                 [(s, mid, pid, u) for u, s, mid in res])
+            await db.commit()
+        # Ни одно не ушло, а ошибки — разбор HTML: дальше слать бессмысленно.
+        # Заблокировавшие бота дают другую ошибку и тут не мешают.
+        fails = sum(1 for _, s_, _ in res if s_ == "fail")
+        if parse_errors and parse_errors >= fails and not any(s_ == "ok" for _, s_, _ in res):
+            async with aiosqlite.connect(DB_PATH) as db:
+                await db.execute("UPDATE poll_sent SET state='wait' WHERE poll_id=? AND state='fail'", (pid,))
+                await db.execute("UPDATE polls SET status='draft' WHERE id=?", (pid,))
+                await db.commit()
+            await _poll_notify(bot, f"{_E_CROSS} Опрос #{pid} не отправился: Telegram не разобрал текст. "
+                                    f"Вернул в черновики — проверь предпросмотр.", pid)
+            return
+        if pid in _POLL_PROGRESS and time.time() - last_edit > 5:
+            last_edit = time.time()
+            async with aiosqlite.connect(DB_PATH) as db:
+                async with db.execute("SELECT state, COUNT(*) FROM poll_sent WHERE poll_id=? GROUP BY state",
+                                      (pid,)) as c:
+                    st = dict(await c.fetchall())
+            chat, mid = _POLL_PROGRESS[pid]
+            try:
+                await bot.edit_message_text(
+                    f"📤 Опрос #{pid}: отправлено {_stn(sum(st.values()) - st.get('wait', 0))} "
+                    f"из {_stn(sum(st.values()))}", chat_id=chat, message_id=mid)
+            except TelegramError:
+                pass
+
+    p = await poll_load(pid)
+    if p and p["status"] == "sending":
+        await poll_update(pid, status="open")
+    elif p and p["status"] == "closed":
+        poll_start_task(bot, pid, "fin")        # закрыли посреди отправки — доправить кнопки
+    async with aiosqlite.connect(DB_PATH) as db:
+        async with db.execute("SELECT state, COUNT(*) FROM poll_sent WHERE poll_id=? GROUP BY state", (pid,)) as c:
+            st = dict(await c.fetchall())
+    await _poll_notify(
+        bot,
+        f"{_E_CHECK} Опрос #{pid} разослан: дошло <b>{_stn(st.get('ok', 0))}</b>"
+        + (f", заблокировали бота {_stn(st.get('blocked', 0))}" if st.get("blocked") else "")
+        + (f", ошибок {_stn(st.get('fail', 0))}" if st.get("fail") else ""), pid)
+    _POLL_PROGRESS.pop(pid, None)
+
+
+async def poll_close(bot, pid: int) -> None:
+    """Закрыть опрос и поменять кнопки у получателей на итоги (или убрать)."""
+    async with aiosqlite.connect(DB_PATH) as db:
+        cur = await db.execute("UPDATE polls SET status='closed', closed_at=? "
+                               "WHERE id=? AND status IN ('open','sending')", (time.time(), pid))
+        await db.execute("UPDATE poll_sent SET state='skip' WHERE poll_id=? AND state='wait'", (pid,))
+        await db.commit()
+        if cur.rowcount == 0:
+            return
+    poll_start_task(bot, pid, "fin")
+
+
+async def poll_finalize_run(bot, pid: int) -> None:
+    """Пройти по всем доставленным сообщениям и поставить итоговые кнопки."""
+    p = await poll_load(pid)
+    if not p or p["status"] != "closed":
+        return
+    counts, voters = await poll_tally(pid)
+    show = p["settings"]["show"] != "never"
+    async with aiosqlite.connect(DB_PATH) as db:
+        async with db.execute("SELECT user_id, opt FROM poll_votes WHERE poll_id=?", (pid,)) as c:
+            votes: dict[int, set] = {}
+            for u, o in await c.fetchall():
+                votes.setdefault(u, set()).add(o)
+    sem = asyncio.Semaphore(20)
+
+    async def one(uid: int, mid: int):
+        async with sem:
+            kb = poll_kb(p, votes.get(uid, set()), counts if show else None, voters, closed=True)
+            try:
+                await bot.edit_message_reply_markup(chat_id=uid, message_id=mid, reply_markup=kb)
+            except TelegramError:
+                pass
+            return uid
+
+    while True:
+        async with aiosqlite.connect(DB_PATH) as db:
+            async with db.execute("SELECT user_id, msg_id FROM poll_sent WHERE poll_id=? AND state='ok' "
+                                  "AND fin=0 AND msg_id>0 LIMIT 200", (pid,)) as c:
+                batch = await c.fetchall()
+        if not batch:
+            break
+        done = await asyncio.gather(*[one(u, m) for u, m in batch])
+        async with aiosqlite.connect(DB_PATH) as db:
+            await db.executemany("UPDATE poll_sent SET fin=1 WHERE poll_id=? AND user_id=?",
+                                 [(pid, u) for u in done])
+            await db.commit()
+    await _poll_notify(bot, f"⚪ Опрос #{pid} закрыт: ответили <b>{_stn(voters)}</b>.", pid)
+    _POLL_PROGRESS.pop(pid, None)
+
+
+async def job_poll_tick(ctx) -> None:
+    """Раз в минуту: закрыть опросы по сроку."""
+    async with aiosqlite.connect(DB_PATH) as db:
+        async with db.execute("SELECT id FROM polls WHERE status='open' AND closes_at>0 AND closes_at<=?",
+                              (time.time(),)) as c:
+            due = [r[0] for r in await c.fetchall()]
+    for pid in due:
+        await poll_close(ctx.bot, pid)
+
+
+async def poll_resume(bot) -> None:
+    """После перезапуска: дослать начатые рассылки и доделать правку кнопок."""
+    async with aiosqlite.connect(DB_PATH) as db:
+        async with db.execute("SELECT id FROM polls WHERE status='sending'") as c:
+            sending = [r[0] for r in await c.fetchall()]
+        async with db.execute("SELECT DISTINCT s.poll_id FROM poll_sent s JOIN polls p ON p.id=s.poll_id "
+                              "WHERE p.status='closed' AND s.state='ok' AND s.fin=0 AND s.msg_id>0") as c:
+            finals = [r[0] for r in await c.fetchall()]
+    for pid in sending:
+        poll_start_task(bot, pid, "send")
+    for pid in finals:
+        poll_start_task(bot, pid, "fin")
+
+
+# ── Голос игрока ─────────────────────────────────────────────────────────────
+async def poll_vote_router(update: Update, ctx: ContextTypes.DEFAULT_TYPE) -> None:
+    q = update.callback_query
+    uid = q.from_user.id
+    parts = q.data.split("|")
+    try:
+        pid = int(parts[1])
+    except (IndexError, ValueError):
+        await q.answer()
+        return
+    what = parts[2] if len(parts) > 2 else "r"
+    preview = parts[-1] == "p"
+    p = await poll_load(pid)
+    if not p:
+        await q.answer("Опрос не найден", show_alert=True)
+        return
+    s = p["settings"]
+
+    async def set_kb(kb) -> None:
+        try:
+            await q.message.edit_reply_markup(reply_markup=kb)
+        except TelegramError:
+            pass
+
+    # ── Предпросмотр: показать, как изменятся кнопки, голос не считать ──
+    if preview:
+        if what in ("r", "x"):
+            await q.answer("Предпросмотр")
+            return
+        i = int(what)
+        mine = {i}
+        if s["show"] == "now":
+            await set_kb(poll_kb(p, mine, {i: 1}, 1, preview=True))
+            await q.answer("Предпросмотр: так выглядит после голоса. Голос не засчитан")
+        else:
+            await set_kb(poll_kb(p, mine, None, 0, preview=True))
+            hint = "итоги игроки увидят после закрытия" if s["show"] == "close" else "итоги игрокам не показываются"
+            await q.answer(f"Предпросмотр: голос не засчитан, {hint}", show_alert=True)
+        return
+
+    if p["status"] not in ("open", "sending"):
+        if s["show"] != "never" and p["status"] == "closed":
+            counts, voters = await poll_tally(pid)
+            await set_kb(poll_kb(p, await poll_mine(pid, uid), counts, voters, closed=True))
+        await q.answer("Опрос закрыт", show_alert=True)
+        return
+
+    if what == "r":
+        mine = await poll_mine(pid, uid)
+        if mine and s["show"] == "now":
+            counts, voters = await poll_tally(pid)
+            await set_kb(poll_kb(p, mine, counts, voters))
+        await q.answer("Обновлено")
+        return
+    try:
+        i = int(what)
+    except ValueError:
+        await q.answer()
+        return
+    if not 0 <= i < len(p["options"]):
+        await q.answer()
+        return
+
+    toast = "Голос принят"
+    pay = 0
+    async with aiosqlite.connect(DB_PATH) as db:
+        await db.execute("BEGIN IMMEDIATE")
+        async with db.execute("SELECT opt FROM poll_votes WHERE poll_id=? AND user_id=?", (pid, uid)) as c:
+            before = {r[0] for r in await c.fetchall()}
+        if s["multi"]:
+            if i in before:
+                await db.execute("DELETE FROM poll_votes WHERE poll_id=? AND user_id=? AND opt=?", (pid, uid, i))
+                toast = "Выбор снят"
+            else:
+                await db.execute("INSERT INTO poll_votes(poll_id, user_id, opt, ts) VALUES(?,?,?,?)",
+                                 (pid, uid, i, time.time()))
+        elif i in before:
+            toast = "Этот вариант уже выбран"
+        elif before and not s["revote"]:
+            await db.rollback()
+            await q.answer("Ответ уже принят, поменять нельзя", show_alert=True)
+            return
+        else:
+            await db.execute("DELETE FROM poll_votes WHERE poll_id=? AND user_id=?", (pid, uid))
+            await db.execute("INSERT INTO poll_votes(poll_id, user_id, opt, ts) VALUES(?,?,?,?)",
+                             (pid, uid, i, time.time()))
+            toast = "Ответ изменён" if before else "Голос принят"
+        if not before and s["reward"]:
+            cur = await db.execute("UPDATE poll_sent SET rewarded=1 WHERE poll_id=? AND user_id=? "
+                                   "AND rewarded=0", (pid, uid))
+            pay = s["reward"] if cur.rowcount == 1 else 0
+        await db.commit()
+    if pay:
+        f = await db_get(uid)
+        if f:
+            f["coins"] = f.get("coins", 0) + pay
+            await db_save(f)
+            toast += f", +{pay}🪙"
+        else:
+            pay = 0
+    mine = await poll_mine(pid, uid)
+    if s["show"] == "now" and mine:
+        counts, voters = await poll_tally(pid)
+        await set_kb(poll_kb(p, mine, counts, voters))
+    else:
+        await set_kb(poll_kb(p, mine, None, 0))
+    await q.answer(toast)
+
+
+# ── Админка ──────────────────────────────────────────────────────────────────
+async def _poll_show(q, view) -> None:
+    text, kb = view
+    try:
+        await q.message.edit_text(text, parse_mode=ParseMode.HTML, reply_markup=kb,
+                                  link_preview_options=LinkPreviewOptions(is_disabled=True))
+    except BadRequest as e:
+        if "not modified" not in str(e).lower():
+            # экран мог быть фото (предпросмотр) — тогда новым сообщением
+            await q.message.reply_text(text, parse_mode=ParseMode.HTML, reply_markup=kb,
+                                       link_preview_options=LinkPreviewOptions(is_disabled=True))
+
+
+async def poll_admin_router(update: Update, ctx: ContextTypes.DEFAULT_TYPE) -> None:
+    q = update.callback_query
+    uid = q.from_user.id
+    if uid not in ADMIN_IDS:
+        await q.answer("⛔", show_alert=True)
+        return
+    parts = q.data.split("|")
+    act = parts[1] if len(parts) > 1 else "list"
+    pid = int(parts[2]) if len(parts) > 2 and parts[2].lstrip("-").isdigit() else 0
+    p = await poll_load(pid) if pid else None
+    if pid and not p:
+        await q.answer("Опрос не найден", show_alert=True)
+        return
+    draft_only = {"in", "opts", "opt", "set", "tg", "aud", "auds", "ico", "icoset", "sty", "mv", "rm", "send", "go", "del"}
+    if p and act in draft_only and p["status"] != "draft":
+        await q.answer("Опрос уже разослан — менять нельзя. Сделай копию в черновик.", show_alert=True)
+        return
+
+    if act == "list":
+        await q.answer()
+        await _poll_show(q, await poll_list_view())
+    elif act == "new":
+        await q.answer()
+        new_id = await poll_create(uid)
+        await _poll_show(q, await poll_editor_view(await poll_load(new_id)))
+    elif act == "copy":
+        new_id = await poll_create(uid, p)
+        await q.answer(f"Черновик #{new_id}")
+        await _poll_show(q, await poll_editor_view(await poll_load(new_id)))
+    elif act == "ed":
+        await q.answer()
+        ctx.user_data.pop("poll_in", None)
+        await _poll_show(q, await poll_editor_view(p))
+    elif act == "in":
+        what = parts[3]
+        if what == "opt" and len(p["options"]) >= POLL_MAX_OPTS:
+            await q.answer(f"Больше {POLL_MAX_OPTS} вариантов нельзя", show_alert=True)
+            return
+        ctx.user_data["poll_in"] = {"id": pid, "what": what, "i": int(parts[4]) if len(parts) > 4 else -1}
+        await q.answer()
+        rows = [[btn("❌ Отмена", callback_data=f"pla|ed|{pid}")]]
+        if what == "photo" and p["photo"]:
+            rows.insert(0, [btn("🗑 Убрать фото", callback_data=f"pla|nophoto|{pid}")])
+        await _poll_show(q, (f"{_poll_head(p)}\n\n{_POLL_PROMPTS[what]}", InlineKeyboardMarkup(rows)))
+    elif act == "nophoto":
+        ctx.user_data.pop("poll_in", None)
+        await poll_update(pid, photo="")
+        await q.answer("Фото убрано")
+        await _poll_show(q, await poll_editor_view(await poll_load(pid)))
+    elif act == "opts":
+        await q.answer()
+        await _poll_show(q, poll_options_view(p))
+    elif act == "opt":
+        i = int(parts[3])
+        if not 0 <= i < len(p["options"]):
+            await q.answer()
+            await _poll_show(q, poll_options_view(p))
+            return
+        await q.answer()
+        ctx.user_data.pop("poll_in", None)
+        await _poll_show(q, poll_option_view(p, i))
+    elif act in ("sty", "mv", "rm", "icoset"):
+        i = int(parts[3])
+        opts = p["options"]
+        if not 0 <= i < len(opts):
+            await q.answer()
+            return
+        if act == "sty":
+            cur = opts[i].get("style", "")
+            opts[i]["style"] = POLL_STYLES[(POLL_STYLES.index(cur) + 1) % len(POLL_STYLES)] if cur in POLL_STYLES else ""
+        elif act == "mv":
+            j = i + int(parts[4])
+            if 0 <= j < len(opts):
+                opts[i], opts[j] = opts[j], opts[i]
+                i = j
+        elif act == "rm":
+            opts.pop(i)
+        elif act == "icoset":
+            n = int(parts[4])
+            pal = poll_palette()
+            opts[i]["icon"] = pal[n] if 0 <= n < len(pal) else ""
+        await poll_update(pid, options=opts)
+        await q.answer()
+        p = await poll_load(pid)
+        await _poll_show(q, poll_options_view(p) if act == "rm" else poll_option_view(p, i))
+    elif act == "ico":
+        await q.answer()
+        await _poll_show(q, poll_icon_view(p, int(parts[3]), int(parts[4])))
+    elif act == "set":
+        await q.answer()
+        await _poll_show(q, poll_settings_view(p))
+    elif act == "tg":
+        s = p["settings"]
+        _poll_toggle(s, parts[3])
+        await poll_update(pid, settings=s)
+        await q.answer()
+        await _poll_show(q, poll_settings_view(await poll_load(pid)))
+    elif act == "aud":
+        await q.answer()
+        await _poll_show(q, await poll_audience_view(p))
+    elif act == "auds":
+        await poll_update(pid, audience=parts[3])
+        await q.answer()
+        await _poll_show(q, await poll_editor_view(await poll_load(pid)))
+    elif act == "prev":
+        problem = _poll_ready_problem(p)
+        if problem:
+            await q.answer(problem, show_alert=True)
+            return
+        await q.answer()
+        try:
+            await poll_send_msg(ctx.bot, q.message.chat.id, p, poll_kb(p, set(), None, 0, preview=True))
+        except BadRequest as e:
+            await q.message.reply_text(f"{_E_CROSS} Telegram не принял опрос: <code>{he(str(e))}</code>",
+                                       parse_mode=ParseMode.HTML)
+            return
+        text, kb = await poll_editor_view(p)
+        await q.message.reply_text("👆 Так опрос увидят игроки. Голос в предпросмотре не засчитывается.\n\n"
+                                   + text, parse_mode=ParseMode.HTML, reply_markup=kb,
+                                   link_preview_options=LinkPreviewOptions(is_disabled=True))
+    elif act == "send":
+        problem = _poll_ready_problem(p)
+        if problem:
+            await q.answer(problem, show_alert=True)
+            return
+        await q.answer()
+        n = await poll_audience_count(p["audience"])
+        await _poll_show(q, (
+            ui_card(_poll_head(p),
+                    f"Отправить <b>{_stn(n)}</b> игрокам ({_poll_aud_name(p['audience'])})?",
+                    _poll_settings_line(p["settings"]),
+                    hint="Сначала глянь предпросмотр. После отправки опрос менять нельзя"),
+            InlineKeyboardMarkup([
+                [btn(f"🚀 Да, отправить {_stn(n)}", callback_data=f"pla|go|{pid}", style="success")],
+                [btn("👁 Предпросмотр", callback_data=f"pla|prev|{pid}"),
+                 btn("◀️ Назад", callback_data=f"pla|ed|{pid}")],
+            ])))
+    elif act == "go":
+        problem = _poll_ready_problem(p)
+        if problem:
+            await q.answer(problem, show_alert=True)
+            return
+        where, args = _poll_aud_sql(p["audience"])
+        now = time.time()
+        hours = p["settings"]["hours"]
+        async with aiosqlite.connect(DB_PATH) as db:
+            cur = await db.execute(
+                "UPDATE polls SET status='sending', sent_at=?, closes_at=? WHERE id=? AND status='draft'",
+                (now, now + hours * 3600 if hours else 0, pid))
+            if cur.rowcount == 0:
+                await q.answer("Уже отправляется", show_alert=True)
+                return
+            # После неудачной попытки (черновик вернулся) список собираем заново —
+            # аудиторию могли поменять
+            await db.execute("DELETE FROM poll_sent WHERE poll_id=? AND state!='ok'", (pid,))
+            await db.execute(f"INSERT OR IGNORE INTO poll_sent(poll_id, user_id) "
+                             f"SELECT ?, user_id FROM frogs WHERE {where}", (pid, *args))
+            await db.commit()
+        await q.answer("Отправляю")
+        await admin_log(uid, "poll_send", details=f"#{pid} {p['audience']}")
+        try:
+            await q.message.edit_text(f"📤 Опрос #{pid}: отправка началась…")
+            _POLL_PROGRESS[pid] = (q.message.chat.id, q.message.message_id)
+        except TelegramError:
+            pass
+        poll_start_task(ctx.bot, pid, "send")
+    elif act == "res":
+        await q.answer()
+        await _poll_show(q, await poll_results_view(p))
+    elif act == "close":
+        await q.answer()
+        await _poll_show(q, (
+            ui_card(_poll_head(p), "Закрыть опрос? Голосовать больше будет нельзя.",
+                    hint="Итоги заменят кнопки у всех получателей" if p["settings"]["show"] != "never"
+                    else "Кнопки у получателей уберутся"),
+            InlineKeyboardMarkup([[btn("🔒 Закрыть", callback_data=f"pla|closego|{pid}", style="danger"),
+                                   btn("◀️ Назад", callback_data=f"pla|res|{pid}")]])))
+    elif act == "closego":
+        await poll_close(ctx.bot, pid)
+        _POLL_PROGRESS[pid] = (q.message.chat.id, 0)
+        await q.answer("Закрыт")
+        await _poll_show(q, await poll_results_view(await poll_load(pid)))
+    elif act == "txt":
+        await q.answer("Собираю…")
+        counts, voters = await poll_tally(pid)
+        lines = [f"Опрос #{pid} · {POLL_STATUS[p['status']]} · ответили {voters}",
+                 _poll_plain(p["text"]), ""]
+        for i, o in enumerate(p["options"]):
+            n = counts.get(i, 0)
+            lines.append(f"{o['t']}: {n} ({_stp(n, voters)})")
+        await st_send_text(ctx.bot, q.message.chat.id, "\n".join(lines))
+    elif act == "who":
+        if p["settings"]["anon"]:
+            await q.answer("Опрос анонимный", show_alert=True)
+            return
+        await q.answer("Собираю…")
+        async with aiosqlite.connect(DB_PATH) as db:
+            async with db.execute(
+                "SELECT v.user_id, v.opt, f.first_name, f.username FROM poll_votes v "
+                "LEFT JOIN frogs f ON f.user_id=v.user_id WHERE v.poll_id=? ORDER BY v.opt, v.ts",
+                (pid,)) as c:
+                rows = await c.fetchall()
+        out = []
+        for i, o in enumerate(p["options"]):
+            who = [f"  {nm or '?'}{' @' + un if un else ''} ({u})" for u, opt, nm, un in rows if opt == i]
+            out.append(f"{o['t']} — {len(who)}")
+            out += who
+            out.append("")
+        await ctx.bot.send_document(q.message.chat.id, document=io.BytesIO("\n".join(out).encode("utf-8")),
+                                    filename=f"poll_{pid}_votes.txt", caption=f"Опрос #{pid}: кто как ответил")
+    elif act == "del":
+        await q.answer()
+        await _poll_show(q, (ui_card(_poll_head(p), "Удалить черновик?"),
+                             InlineKeyboardMarkup([[btn("🗑 Удалить", callback_data=f"pla|delgo|{pid}", style="danger"),
+                                                    btn("◀️ Назад", callback_data=f"pla|ed|{pid}")]])))
+    elif act == "delgo":
+        if p["status"] != "draft":
+            await q.answer("Удалить можно только черновик", show_alert=True)
+            return
+        async with aiosqlite.connect(DB_PATH) as db:
+            await db.execute("DELETE FROM polls WHERE id=? AND status='draft'", (pid,))
+            await db.commit()
+        await q.answer("Удалён")
+        await _poll_show(q, await poll_list_view())
+    else:
+        await q.answer()
+
+
+def _poll_ready_problem(p: dict) -> str | None:
+    if not p["text"] and not p["photo"]:
+        return "Нет ни текста, ни фото"
+    if len(p["options"]) < 2:
+        return "Нужно хотя бы два варианта"
+    problem = poll_html_problem(p["text"], bool(p["photo"]))
+    return f"Текст: {problem}" if problem else None
+
+
+async def poll_input(update: Update, ctx: ContextTypes.DEFAULT_TYPE) -> None:
+    """
+    Ввод для конструктора: текст, фото, варианты, иконка. Стоит раньше общего
+    обработчика сообщений (группа −50) и останавливает его, только если админ
+    сейчас что-то вводит в опрос.
+    """
+    user = update.effective_user
+    st = ctx.user_data.get("poll_in") if user and user.id in ADMIN_IDS else None
+    msg = update.message
+    if not st or not msg or msg.chat.type != "private":
+        return
+    p = await poll_load(st["id"])
+    if not p or p["status"] != "draft":
+        ctx.user_data.pop("poll_in", None)
+        return
+    what, i = st["what"], st["i"]
+    err = None
+    if what in ("text", "photo"):
+        fields = {}
+        if msg.photo:
+            fields["photo"] = msg.photo[-1].file_id
+        if msg.text or msg.caption:
+            fields["text"] = poll_html_from(msg)
+        elif what == "text" and not msg.photo:
+            err = "Пришли текст или фото с подписью"
+        if what == "photo" and not msg.photo:
+            err = "Пришли фото"
+        if not err:
+            problem = poll_html_problem(fields.get("text", p["text"]), bool(fields.get("photo", p["photo"])))
+            if problem:
+                err = f"Текст не принят: {problem}"
+            else:
+                await poll_update(p["id"], **fields)
+    elif what in ("opt", "edit"):
+        opts = poll_options_from(msg) if msg.text else []
+        if not opts:
+            err = "Пришли вариант текстом"
+        elif what == "edit":
+            if 0 <= i < len(p["options"]):
+                keep = p["options"][i]
+                p["options"][i] = {**keep, "t": opts[0]["t"], "icon": opts[0]["icon"] or keep.get("icon", "")}
+                await poll_update(p["id"], options=p["options"])
+        else:
+            room = POLL_MAX_OPTS - len(p["options"])
+            p["options"] += opts[:room]
+            await poll_update(p["id"], options=p["options"])
+            if len(opts) > room:
+                err = f"Добавил {room}: больше {POLL_MAX_OPTS} вариантов нельзя"
+    elif what == "icon":
+        m = _POLL_ANY_EMOJI.search((msg.text_html if msg.text else "") or "")
+        if not m:
+            err = "Это не премиум-эмодзи. Пришли премиум или выбери из списка"
+        elif 0 <= i < len(p["options"]):
+            p["options"][i]["icon"] = m.group(1)
+            await poll_update(p["id"], options=p["options"])
+    if err and not (what == "opt" and err.startswith("Добавил")):
+        await msg.reply_text(f"{_E_CROSS} {he(err)}", parse_mode=ParseMode.HTML,
+                             reply_markup=InlineKeyboardMarkup([[btn("❌ Отмена", callback_data=f"pla|ed|{p['id']}")]]))
+        raise ApplicationHandlerStop
+    ctx.user_data.pop("poll_in", None)
+    p = await poll_load(p["id"])
+    if what in ("edit", "icon"):
+        text, kb = poll_option_view(p, i)
+    else:
+        text, kb = await poll_editor_view(p)
+    if err:
+        text = f"{_E_CROSS} {he(err)}\n\n" + text
+    await msg.reply_text(text, parse_mode=ParseMode.HTML, reply_markup=kb,
+                         link_preview_options=LinkPreviewOptions(is_disabled=True))
+    raise ApplicationHandlerStop
+
+
+async def cmd_adminpoll(update: Update, ctx: ContextTypes.DEFAULT_TYPE) -> None:
+    """/adminpoll — опросы-рассылки."""
+    if update.effective_user.id not in ADMIN_IDS:
+        return
+    text, kb = await poll_list_view()
+    await update.message.reply_text(text, parse_mode=ParseMode.HTML, reply_markup=kb)
 
 
 # ══════════════════════════════════════════════════════════════════════════════
@@ -66696,6 +67872,10 @@ def main():
     app = builder.build()
     # Статистика: самый первый обработчик видит каждый апдейт и ничего не блокирует
     app.add_handler(TypeHandler(Update, st_on_update), group=-100)
+    # Ввод в конструктор опроса: раньше общего обработчика сообщений и
+    # останавливает его, только когда админ что-то вводит в опрос
+    app.add_handler(MessageHandler(
+        filters.ChatType.PRIVATE & (filters.TEXT | filters.PHOTO) & ~filters.COMMAND, poll_input), group=-50)
 
     cmds = [
         ("start", cmd_start),
@@ -66880,6 +68060,7 @@ def main():
     app.add_handler(CommandHandler("adminstats",        cmd_adminstats))
     app.add_handler(CommandHandler("adminreport",       cmd_adminreport))
     app.add_handler(CommandHandler("adminbars",         cmd_adminbars))
+    app.add_handler(CommandHandler("adminpoll",         cmd_adminpoll))
     # ── Расследование ботоводов ───────────────────────────────────────────
     app.add_handler(CommandHandler("admingiftchain", cmd_admingiftchain))
     app.add_handler(CommandHandler("adminrollbackdry", cmd_adminrollbackdry))
@@ -66908,6 +68089,8 @@ def main():
         (r"^nft_",                                   nft_router),
         (r"^ex\|",                                  ex_router),
         (r"^adst\|",                                st_router),
+        (r"^pla\|",                                 poll_admin_router),
+        (r"^plv\|",                                 poll_vote_router),
         (r"^(casino|jackpot|menu_jackpot)",          casino_router),
         (r"^(duel|battle_|tournament)",              duel_router),
         (r"^(shop_|buy_|market_|craft_|sub_|stars_)", shop_router),
