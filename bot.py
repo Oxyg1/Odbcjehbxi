@@ -5001,6 +5001,15 @@ def run_sync_migration():
         poll_sync_migration(conn)
     except Exception as _e:
         logger.exception("poll_sync_migration: %s", _e)
+    # Котлы, раздутые старым пассивным доходом без потолка, — до потолка
+    try:
+        cur = conn.execute("UPDATE stayas SET cauldron=? WHERE cauldron>?",
+                           (STAYA_CAULDRON_MAX, STAYA_CAULDRON_MAX))
+        conn.commit()
+        if cur.rowcount:
+            logger.warning("Котлы стай срезаны до %d: %d стай", STAYA_CAULDRON_MAX, cur.rowcount)
+    except Exception as _e:
+        logger.debug("cauldron clamp: %s", _e)
 
     # ── Фриз-ивент ───────────────────────────────────────────────────────────
     freeze_run_sync_migration(conn, cur)
@@ -8315,6 +8324,12 @@ STAYA_EVENT_POOL = [
         ],
     },
 ]
+
+# Котёл стаи: потолок и пассивный доход за тик (раз в 6 ч). Самый дорогой
+# апгрейд — 200 000, потолок с запасом в пять раз.
+STAYA_CAULDRON_MAX = 1_000_000
+STAYA_PASSIVE_MAX = 2_500        # ур. 11–14: 5% котла, но не больше
+STAYA_PASSIVE_MAX_15 = 5_000     # ур. 15: 10% котла, но не больше
 
 # ── Апгрейды болота ────────────────────────────────────────────────────────────
 STAYA_UPGRADES = {
@@ -55991,6 +56006,11 @@ async def post_init(app: Application):
     app.job_queue.run_repeating(job_st_hourly, interval=3600, first=120)
     app.job_queue.run_repeating(job_poll_tick, interval=60, first=45)
     asyncio.create_task(poll_resume(app.bot))   # дослать опросы, начатые до перезапуска
+    try:
+        import signal as _signal
+        asyncio.get_running_loop().add_signal_handler(_signal.SIGUSR1, _dump_tasks)
+    except (NotImplementedError, RuntimeError, AttributeError):
+        pass
     app.job_queue.run_repeating(job_events, interval=4 * 3600, first=300)
     app.job_queue.run_repeating(job_reminders, interval=6 * 3600, first=600)
     app.job_queue.run_repeating(job_tutorial_nudge, interval=3600, first=120)  # раз в час
@@ -64670,13 +64690,17 @@ async def job_staya_passive_income(ctx: ContextTypes.DEFAULT_TYPE):
 
         for s in stayas:
             pct = 0.10 if s["level"] >= 15 else 0.05
-            gain = int(s["cauldron"] * pct)
-            if gain <= 0:
+            # Процент от котла без потолка — сложные проценты: котёл рос
+            # в разы за неделю и упёрся в предел SQLite (9,2·10¹⁸). Теперь
+            # доход ограничен, а котёл — общим потолком.
+            cap = STAYA_PASSIVE_MAX_15 if s["level"] >= 15 else STAYA_PASSIVE_MAX
+            gain = min(int(min(s["cauldron"], STAYA_CAULDRON_MAX) * pct), cap)
+            if gain <= 0 or s["cauldron"] >= STAYA_CAULDRON_MAX:
                 continue
             async with aiosqlite.connect(DB_PATH) as db:
                 await db.execute(
-                    "UPDATE stayas SET cauldron=cauldron+? WHERE id=?",
-                    (gain, s["id"]),
+                    "UPDATE stayas SET cauldron=MIN(?, cauldron+?) WHERE id=?",
+                    (STAYA_CAULDRON_MAX, gain, s["id"]),
                 )
                 await db.commit()
             logger.info("passive_income: staya=%s +%d (%.0f%%)", s["name"], gain, pct * 100)
@@ -67840,6 +67864,46 @@ def check_required_config() -> None:
     raise SystemExit(1)
 
 
+if _RATE_LIMITER_OK:
+    class _FrogRateLimiter(AIORateLimiter):
+        """
+        Ограничитель запросов без общей заморозки.
+
+        Штатный AIORateLimiter на ответ Telegram «подожди N секунд» ставит на
+        паузу ВСЕ запросы бота, а его сообщение тонет в подавленном логе
+        telegram. 8 октября бот так час молчал всем без единой ошибки.
+
+        Здесь штатный повтор выключен (max_retries=0 — без общей паузы), а свой
+        ждёт только короткие паузы и только в этом запросе. Длинная — сразу
+        ошибка этому запросу, остальной бот работает. Каждая пауза — в лог.
+        """
+        MAX_WAIT = 30
+
+        async def process_request(self, callback, args, kwargs, endpoint, data, rate_limit_args):
+            for attempt in range(3):
+                try:
+                    return await super().process_request(
+                        callback, args, kwargs, endpoint, data, rate_limit_args)
+                except RetryAfter as e:
+                    ra = getattr(e, "retry_after", 5)
+                    wait = ra.total_seconds() if hasattr(ra, "total_seconds") else float(ra)
+                    chat = (data or {}).get("chat_id")
+                    logger.warning("Telegram просит подождать %.0f с: %s chat=%s", wait, endpoint, chat)
+                    if wait > self.MAX_WAIT or attempt == 2:
+                        raise
+                    await asyncio.sleep(wait + 0.2)
+
+
+def _dump_tasks() -> None:
+    """kill -USR1 <pid> — где сейчас висит каждая задача бота, в лог."""
+    tasks = asyncio.all_tasks()
+    logger.warning("── дамп задач: %d ──", len(tasks))
+    for t in tasks:
+        frames = t.get_stack(limit=6)
+        where = " <- ".join(f"{f.f_code.co_name}:{f.f_lineno}" for f in reversed(frames))
+        logger.warning("задача %s: %s", t.get_name(), where or "—")
+
+
 def main():
     check_required_config()
     _overridden = apply_env_overrides()
@@ -67865,7 +67929,7 @@ def main():
     # аккаунтов упирается во флуд-лимит: часть писем теряется, а бот рискует
     # получить временный бан. Лимитер сам держит темп и повторяет после 429.
     if _RATE_LIMITER_OK:
-        builder = builder.rate_limiter(AIORateLimiter(max_retries=3))
+        builder = builder.rate_limiter(_FrogRateLimiter(max_retries=0))
     else:
         print("⚠️  Без ограничителя запросов — pip install aiolimiter")
 
