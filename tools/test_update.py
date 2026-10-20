@@ -519,6 +519,11 @@ async def main():
     ok(B.premium_text("<code>🍎</code> <a href='x'>🍎</a>") == "<code>🍎</code> <a href='x'>🍎</a>",
        "в code и ссылках — не трогает")
     ok(B.premium_text("15 ⭐ и 🔵") == "15 ⭐ и 🔵", "⭐ и 🔵 двусмысленны — не трогает")
+    t_ = B.NO_PREMIUM + "🧠 Запомни: 🐼 🐨 🎲 🍎"
+    ok(B.premium_text(t_) == t_, "«Память» с меткой — значки как на кнопках")
+    src = open(os.path.join(ROOT, "bot.py"), encoding="utf-8").read()
+    memo = src[src.index('if d == "memo_start":'):src.index('if d == "checkers_menu":')]
+    ok(memo.count("edit_text(") == memo.count("edit_text(NO_PREMIUM +"), "все экраны «Памяти» с меткой")
     many = B.premium_text("🍎" * 150)
     ok(many.count("<tg-emoji") == B._PT_MAX, f"не больше {B._PT_MAX} в сообщении")
     reg_frog = B._TG_EMOJI_TAG.fullmatch(B._E_FROG).group(1)

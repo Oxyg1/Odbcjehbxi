@@ -3716,6 +3716,11 @@ def _button_premium_tags(text: str, icon_id: str | None) -> tuple[str, str | Non
 
 _PT_SKIP = {"⭐", "🔵"}
 
+# Невидимый знак-метка: текст с ним не подменяется. Для игр, где значок в
+# тексте надо сравнить с обычным значком на кнопке («Память»): премиум-картинка
+# там выглядит иначе, и игрок не узнаёт символ.
+NO_PREMIUM = "\u2063"
+
 _PT_ALIASES = {          # символ → эмодзи реестра с тем же смыслом
     "😄": "_E_HAPPY", "😊": "_E_HAPPY", "🧑‍🍼": "_E_NANNY", "📅": "_E_CALENDAR",
     "🔁": "_E_REPEAT", "😴": "_E_SLEEP", "🎉": "_E_PARTY", "🏳": "_E_FLAG_WHITE",
@@ -3837,7 +3842,7 @@ def _pt_lookup(ch: str) -> str | None:
 def premium_text(html: str) -> str:
     """Обычные эмодзи в HTML-тексте — премиум, где есть пара. Теги, <code>,
     <pre>, ссылки и уже премиальные эмодзи не трогаются."""
-    if not html or not isinstance(html, str):
+    if not html or not isinstance(html, str) or NO_PREMIUM in html:
         return html
     mp, rx = (_pt_map, _pt_re) if _pt_map is not None else _pt_build()
     if not rx.search(html):
@@ -42471,7 +42476,7 @@ async def on_callback(update: Update, ctx: ContextTypes.DEFAULT_TYPE):
         seq_str = " ".join(seq)
         cd_notice = f"\n\n<i>{_E_WARN} Режим без награды (КД)</i>" if on_cd else ""
         try:
-            await q.message.edit_text(
+            await q.message.edit_text(NO_PREMIUM +
                 f"🧠 <b>Запомни последовательность!</b>\n\n"
                 f"`{seq_str}`\n\n"
                 f"<i>Через 2 секунды начнётся повторение...</i>{cd_notice}",
@@ -42497,7 +42502,7 @@ async def on_callback(update: Update, ctx: ContextTypes.DEFAULT_TYPE):
             )
         kb_rows.append([btn("❌ Сдаться", callback_data="refresh", style="danger")])
         try:
-            await q.message.edit_text(
+            await q.message.edit_text(NO_PREMIUM +
                 f"🧠 <b>Память</b> Шаг 1/{len(cur_seq)}\n\n" f"Выбери первый символ:",
                 parse_mode=ParseMode.HTML,
                 reply_markup=InlineKeyboardMarkup(kb_rows),
@@ -42563,7 +42568,7 @@ async def on_callback(update: Update, ctx: ContextTypes.DEFAULT_TYPE):
         kb_rows.append([btn("❌ Сдаться", callback_data="refresh", style="danger")])
         chosen = " ".join(seq[:step]) if step > 0 else "<i>пусто</i>"
         try:
-            await q.message.edit_text(
+            await q.message.edit_text(NO_PREMIUM +
                 f"🧠 <b>Память</b> Шаг {step+1}/{len(seq)}\n\n"
                 f"Уже выбрано: <code>{chosen}</code>\n\n"
                 f"Выбери следующий символ:",
@@ -42601,7 +42606,7 @@ async def on_callback(update: Update, ctx: ContextTypes.DEFAULT_TYPE):
                     f["last_minigame"] = time.time()  # Всегда обновляем КД
                     await db_save(f)
                     try:
-                        await q.message.edit_text(
+                        await q.message.edit_text(NO_PREMIUM +
                             f"<b>🎉 Правильно! Все {len(seq)} символа!</b>\n\n"
                             f"<i>⚠️ Игра в режиме КД — награда не начислена.</i>\n\n{status_text(f)}",
                             parse_mode=ParseMode.HTML,
@@ -42621,7 +42626,7 @@ async def on_callback(update: Update, ctx: ContextTypes.DEFAULT_TYPE):
                     await quest_update(uid, "guess_win")
                     await ach_check(f, ctx.bot)
                     try:
-                        await q.message.edit_text(
+                        await q.message.edit_text(NO_PREMIUM +
                             f"<b>🎉 Правильно! Все {len(seq)} символа!</b>\n\n"
                             f"{_E_MONEYBAG} +{reward}{_E_COIN} {_E_STARS} +30XP\n\n{status_text(f)}",
                             parse_mode=ParseMode.HTML,
@@ -42682,7 +42687,7 @@ async def on_callback(update: Update, ctx: ContextTypes.DEFAULT_TYPE):
                 )
                 chosen_so_far = " ".join(seq[:step])
                 try:
-                    await q.message.edit_text(
+                    await q.message.edit_text(NO_PREMIUM +
                         f"{_E_CHECK} Верно! Шаг {step+1}/{len(seq)}\n\n"
                         f"Выбрано: <code>{chosen_so_far}</code>\n\n"
                         f"Выбери следующий:",
@@ -42701,7 +42706,7 @@ async def on_callback(update: Update, ctx: ContextTypes.DEFAULT_TYPE):
             cd_note = f"\n<i>{_E_WARN} Режим без награды — КД не сброшен.</i>" if is_on_cd else "\n<i>Попробуй через 15 мин</i>"
             seq_str = " ".join(seq)
             try:
-                await q.message.edit_text(
+                await q.message.edit_text(NO_PREMIUM +
                     f"{_E_CROSS} <b>Неправильно!</b>\n\nТы выбрал: {chosen_emoji}\n"
                     f"Правильный был: <b>{seq[step]}</b>\n\n"
                     f"Последовательность была: <code>{seq_str}</code>\n\n"
