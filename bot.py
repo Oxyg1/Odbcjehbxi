@@ -19969,7 +19969,7 @@ async def _chatadmin_check_access(uid: int, cid: int, bot) -> bool:
 
 
 async def cmd_kvastat(update: Update, ctx: ContextTypes.DEFAULT_TYPE):
-    """/kvastat — личная статистика участия в NFT Chill Flame ивенте."""
+    """/kvastat — личная статистика участия в NFT-ивенте."""
     user = update.effective_user
     async with aiosqlite.connect(DB_PATH) as db:
         db.row_factory = aiosqlite.Row
@@ -19990,7 +19990,7 @@ async def cmd_kvastat(update: Update, ctx: ContextTypes.DEFAULT_TYPE):
 
     total_tries = row['kva_count'] + row['retry_coins'] + row['retry_stars']
     await update.message.reply_text(
-        f"{_E_DICE} <b>Твоя статистика Chill Flame ивента</b>\n\n"
+        f"{_E_DICE} <b>Твоя статистика NFT-ивента</b>\n\n"
         f"{_E_FROG} Ква в доверенных чатах: <b>{row['kva_count']}</b>\n"
         f"{_E_REFRESH} Повторных бросков за монеты: <b>{row['retry_coins']}</b>\n"
         f"{_E_STARS} Повторных бросков за Stars: <b>{row['retry_stars']}</b>\n"
@@ -20043,7 +20043,7 @@ async def cmd_kvaadmin(update: Update, ctx: ContextTypes.DEFAULT_TYPE):
             top = await c.fetchall()
 
     lines = [
-        f"{_E_CHART} <b>Статистика NFT Chill Flame ивента</b>\n",
+        f"{_E_CHART} <b>Статистика NFT-ивента</b>\n",
         f"{_E_USERS} Участников: <b>{s['players'] or 0}</b>",
         f"🎲 Всего бросков: <b>{s['total_tries'] or 0}</b>",
         f"🐸 ├ ква в доверенных: <b>{s['total_kva'] or 0}</b>",
@@ -20206,7 +20206,7 @@ async def cmd_reset_stats(update: Update, ctx: ContextTypes.DEFAULT_TYPE):
 
 
 async def cmd_nftadmin(update: Update, ctx: ContextTypes.DEFAULT_TYPE):
-    """/nftadmin — управление NFT Chill Flame (только ADMIN_IDS).
+    """/nftadmin — управление NFT (только ADMIN_IDS).
     Использование:
       /nftadmin           — показать текущий статус
       /nftadmin on        — включить дроп
@@ -20225,7 +20225,7 @@ async def cmd_nftadmin(update: Update, ctx: ContextTypes.DEFAULT_TYPE):
         _del_reply_str = f"{NFT_KVA_DELETE_REPLY}с" if NFT_KVA_DELETE_REPLY else "не удалять"
         _del_user_str  = f"{NFT_KVA_DELETE_USER}с"  if NFT_KVA_DELETE_USER  else "не удалять"
         await update.message.reply_text(
-            f"{_E_FIRE} <b>NFT Chill Flame — статус</b>\n\n"
+            f"{_E_FIRE} <b>NFT — статус</b>\n\n"
             f"Статус: <b>{status}</b>\n"
             f"Цена повтора: <b>{NFT_KVA_STARS}{_E_STARS} / {NFT_KVA_COINS}{_E_COIN}</b>\n"
             f"Шанс выигрыша: <b>1/{NFT_KVA_TOTAL}</b>\n"
@@ -24404,7 +24404,7 @@ async def cmd_start(update: Update, ctx: ContextTypes.DEFAULT_TYPE):
             _coins_cost = NFT_KVA_COINS
             await update.message.reply_text(
                 f"{_E_FROG} <b>Квакнуть ещё раз?</b>\n\n"
-                f"Каждый бросок — шанс 1/{NFT_KVA_TOTAL} на Chill Flame NFT.\n\n"
+                f"Каждый бросок — шанс 1/{NFT_KVA_TOTAL} на NFT.\n\n"
                 f"Выбери способ:",
                 parse_mode=ParseMode.HTML,
                 reply_markup=InlineKeyboardMarkup([
@@ -50491,7 +50491,7 @@ async def on_callback(update: Update, ctx: ContextTypes.DEFAULT_TYPE):
             await ctx.bot.send_invoice(
                 chat_id=uid,
                 title="🐸 Повторное ква ×10",
-                description="10 бросков сразу — каждый даёт шанс на Chill Flame NFT",
+                description="10 бросков сразу — каждый даёт шанс на NFT",
                 payload="kva_retry_stars_10",
                 provider_token="",
                 currency="XTR",
@@ -50525,7 +50525,7 @@ async def on_callback(update: Update, ctx: ContextTypes.DEFAULT_TYPE):
                 await ctx.bot.send_invoice(
                     chat_id=uid,
                     title="🐸 Повторное ква",
-                    description="Ещё один шанс на Chill Flame NFT",
+                    description="Ещё один шанс на NFT",
                     payload="kva_retry_stars",
                     provider_token="",
                     currency="XTR",
@@ -50542,14 +50542,14 @@ async def on_callback(update: Update, ctx: ContextTypes.DEFAULT_TYPE):
         _roll = random.randint(1, NFT_KVA_TOTAL)
         if _roll == NFT_KVA_TOTAL:
             _nft_result = (
-                f"\n\n{_E_GIFT} <b>НЕВЕРОЯТНО! Ты поймал Chill Flame NFT!</b>\n"
+                f"\n\n{_E_GIFT} <b>НЕВЕРОЯТНО! Ты поймал NFT!</b>\n"
                 "<i>Свяжись с администратором для получения подарка</i>"
             )
             for _adm_id in ADMIN_IDS:
                 try:
                     await ctx.bot.send_message(
                         _adm_id,
-                        f"{_E_GIFT} <b>NFT Chill Flame (повторный ква)!</b>\n"
+                        f"{_E_GIFT} <b>NFT (повторный ква)!</b>\n"
                         f"Пользователь: <a href='tg://user?id={uid}'>{uid}</a>\n"
                         f"ID: <code>{uid}</code>",
                         parse_mode=ParseMode.HTML,
@@ -50577,7 +50577,7 @@ async def on_callback(update: Update, ctx: ContextTypes.DEFAULT_TYPE):
             logger.warning("kva_retry coins stats error: %s", _rse)
         result_text = (
             f"🐸 <b>Ква!</b>\n\n"
-            f"🎲 Chill Flame: <b>{_roll}/{NFT_KVA_TOTAL}</b>"
+            f"🎲 NFT: <b>{_roll}/{NFT_KVA_TOTAL}</b>"
             + _nft_result
             + f"\n\n<i>Монет: {f.get('coins', 0)}🪙 — квакни ещё раз?</i>"
         )
@@ -50731,9 +50731,9 @@ async def successful_payment(update: Update, ctx: ContextTypes.DEFAULT_TYPE):
             logger.warning("kva_retry_stars_10 stats error: %s", _p10e)
         _nft_result_10 = ""
         if _won_10:
-            _nft_result_10 = f"\n\n{_E_GIFT} <b>НЕВЕРОЯТНО! Ты поймал Chill Flame NFT!</b>\n<i>Свяжись с администратором</i>"
+            _nft_result_10 = f"\n\n{_E_GIFT} <b>НЕВЕРОЯТНО! Ты поймал NFT!</b>\n<i>Свяжись с администратором</i>"
             await announce(ctx.bot,
-                f"🔥 <b>Chill Flame NFT пойман!</b>\n"
+                f"🔥 <b>NFT пойман!</b>\n"
                 f"<b>{_html.escape(user.first_name)}</b> квакнул ×10 и выиграл NFT-подарок!\n"
                 f"<i>Поздравляем! 🐸</i>",
                 delete_after=None,
@@ -50742,7 +50742,7 @@ async def successful_payment(update: Update, ctx: ContextTypes.DEFAULT_TYPE):
                 try:
                     await ctx.bot.send_message(
                         _adm_id,
-                        f"{_E_GIFT} <b>NFT Chill Flame (×10 Stars ква)!</b>\n"
+                        f"{_E_GIFT} <b>NFT (×10 Stars ква)!</b>\n"
                         f"Пользователь: <a href='tg://user?id={user.id}'>{user.first_name}</a>\n"
                         f"ID: <code>{user.id}</code>\n@{user.username or '—'}",
                         parse_mode=ParseMode.HTML,
@@ -50826,11 +50826,11 @@ async def successful_payment(update: Update, ctx: ContextTypes.DEFAULT_TYPE):
             logger.warning("kva_retry stars admin notify error: %s", _ns1)
         if _won_s1:
             _nft_result = (
-                f"\n\n{_E_GIFT} <b>НЕВЕРОЯТНО! Ты поймал Chill Flame NFT!</b>\n"
+                f"\n\n{_E_GIFT} <b>НЕВЕРОЯТНО! Ты поймал NFT!</b>\n"
                 "<i>Свяжись с администратором для получения подарка</i>"
             )
             await announce(ctx.bot,
-                f"🔥 <b>Chill Flame NFT пойман!</b>\n"
+                f"🔥 <b>NFT пойман!</b>\n"
                 f"<b>{_html.escape(user.first_name)}</b> квакнул повторно и выиграл NFT-подарок!\n"
                 f"<i>Поздравляем! 🐸</i>",
                 delete_after=None,
@@ -50839,7 +50839,7 @@ async def successful_payment(update: Update, ctx: ContextTypes.DEFAULT_TYPE):
                 try:
                     await ctx.bot.send_message(
                         _adm_id,
-                        f"{_E_GIFT} <b>NFT Chill Flame (Stars ква)!</b>\n"
+                        f"{_E_GIFT} <b>NFT (Stars ква)!</b>\n"
                         f"Пользователь: <a href='tg://user?id={user.id}'>{user.first_name}</a>\n"
                         f"ID: <code>{user.id}</code>\n"
                         f"@{user.username or '—'}",
@@ -50855,7 +50855,7 @@ async def successful_payment(update: Update, ctx: ContextTypes.DEFAULT_TYPE):
         ])
         await update.message.reply_text(
             f"{_E_FROG} <b>Ква!</b>\n\n"
-            f"{_E_DICE} Chill Flame: <b>{_roll}/{NFT_KVA_TOTAL}</b>"
+            f"{_E_DICE} NFT: <b>{_roll}/{NFT_KVA_TOTAL}</b>"
             + _nft_result
             + "\n\n<i>Квакни ещё раз?</i>",
             parse_mode=ParseMode.HTML,
@@ -52889,12 +52889,12 @@ async def on_message(update: Update, ctx: ContextTypes.DEFAULT_TYPE):
 
             if _won_nft:
                 _nft_drop_text = (
-                    f"\n\n{_E_GIFT} <b>НЕВЕРОЯТНО! Ты поймал Chill Flame NFT!</b>\n"
+                    f"\n\n{_E_GIFT} <b>НЕВЕРОЯТНО! Ты поймал NFT!</b>\n"
                     "<i>Свяжись с администратором для получения подарка</i>"
                 )
                 await announce(
                     ctx.bot,
-                    f"🔥 <b>Chill Flame NFT пойман!</b>\n"
+                    f"🔥 <b>NFT пойман!</b>\n"
                     f"<b>{user.first_name}</b> написал ква и выиграл NFT-подарок!\n"
                     f"<i>Поздравляем! 🐸</i>",
                     delete_after=None,
@@ -52903,7 +52903,7 @@ async def on_message(update: Update, ctx: ContextTypes.DEFAULT_TYPE):
                     try:
                         await ctx.bot.send_message(
                             _adm_id,
-                            f"{_E_GIFT} <b>NFT Chill Flame выигран!</b>\n"
+                            f"{_E_GIFT} <b>NFT выигран!</b>\n"
                             f"Пользователь: <a href='tg://user?id={user.id}'>{user.first_name}</a>\n"
                             f"ID: <code>{user.id}</code>\n"
                             f"Username: @{user.username or '—'}\n"
@@ -52927,7 +52927,7 @@ async def on_message(update: Update, ctx: ContextTypes.DEFAULT_TYPE):
                 except Exception as _ee:
                     logger.warning("easter gift exception uid=%s: %s", user.id, _ee)
 
-            _counter_text = f"\n\n🎲 Chill Flame: <b>{_roll}/{NFT_KVA_TOTAL}</b>"
+            _counter_text = f"\n\n🎲 NFT: <b>{_roll}/{NFT_KVA_TOTAL}</b>"
 
             # Записываем статистику ивента
             try:
@@ -56373,7 +56373,7 @@ async def post_init(app: Application):
         BotCommand("referral",    "🔗 Реферальная программа"),
         BotCommand("stats",       "📊 Статистика"),
         BotCommand("mystats",     "📊 Подробная статистика"),
-        BotCommand("kvastat",     "🔥 Статистика Chill Flame ивента"),
+        BotCommand("kvastat",     "🔥 Статистика NFT-ивента"),
         BotCommand("nft",         "🪸 Добавить KissedFrog NFT"),
         BotCommand("staya",       "🌿 Моя стая"),
         BotCommand("sosedi",      "🏘 Соседи"),
@@ -56407,7 +56407,7 @@ async def post_init(app: Application):
         BotCommand("top",         "🏆 Топ игроков"),
         BotCommand("topw",        "📅 Топ недели по XP"),
         BotCommand("online",      "🟢 Онлайн игроков"),
-        BotCommand("kvastat",     "🔥 Статистика Chill Flame ивента"),
+        BotCommand("kvastat",     "🔥 Статистика NFT-ивента"),
         BotCommand("fish",        "🎣 Рыбалка"),
         BotCommand("pohod",       "⚔️ Поход"),
         BotCommand("expedition",  "🗺️ Экспедиция"),
