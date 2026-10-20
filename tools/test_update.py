@@ -498,6 +498,66 @@ async def main():
     rec2 = logging.LogRecord("frog_bot", logging.ERROR, __file__, 1, "настоящая ошибка %s", ("x",), None)
     ok(B._MIGRATION_NOISE.filter(rec2), "настоящая ошибка проходит")
 
+    print("12. Гарантия гачи — 100 круток")
+    ok(B.PITY_THRESHOLD == 100, "порог 100")
+    fr = {"gacha_pity": 100, "user_id": 1}
+    skin, trig = await B.roll_pity(fr)
+    ok(trig and (B.SKINS.get(skin) or {}).get("rarity") == "legendary" and fr["gacha_pity"] == 0,
+       f"после 100 пустых — легенда: {skin}")
+    for p_ in (50, 99):
+        fr = {"gacha_pity": p_, "user_id": 1}
+        skin, trig = await B.roll_pity(fr)
+        ok(not trig, f"на {p_} гарантии ещё нет")
+
+    print("13. Премиум-эмодзи вместо обычных")
+    import json as _json
+    cat = os.environ.get("PTE_CATALOG")
+    pt = B.premium_text("🤢 <b>Живот</b> 🍎 и 🐸")
+    ok(pt.count("<tg-emoji") == 3, f"три значка: {pt}")
+    check_html(pt)
+    ok(B.premium_text(pt) == pt, "повторно не оборачивает")
+    ok(B.premium_text("<code>🍎</code> <a href='x'>🍎</a>") == "<code>🍎</code> <a href='x'>🍎</a>",
+       "в code и ссылках — не трогает")
+    ok(B.premium_text("15 ⭐ и 🔵") == "15 ⭐ и 🔵", "⭐ и 🔵 двусмысленны — не трогает")
+    many = B.premium_text("🍎" * 150)
+    ok(many.count("<tg-emoji") == B._PT_MAX, f"не больше {B._PT_MAX} в сообщении")
+    reg_frog = B._TG_EMOJI_TAG.fullmatch(B._E_FROG).group(1)
+    ok(f'emoji-id="{reg_frog}"' in B.premium_text("🐸"), "свой реестр важнее каталога")
+    ok("5429359822065651066" in B.premium_text("🤢"), "тошнота — из CuteEmoji")
+    ok(B._PT_NATURE["🍄"] in B.premium_text("🍄"), "основной пак профиля старше CuteEmoji")
+    if cat and os.path.exists(cat):
+        ids = {it["emoji_id"] for p in _json.load(open(cat, encoding="utf-8"))["packs"] for it in p["items"]}
+        bad = [v for v in list(B._PT_CUTE.values()) + list(B._PT_NATURE.values()) if v not in ids]
+        ok(not bad, f"все id CuteEmoji есть в каталоге: {bad[:3]}")
+    d = {"text": "Привет 🍎", "parse_mode": "HTML"}
+    orig = B._premium_request(d)
+    ok("<tg-emoji" in d["text"] and orig == {"text": "Привет 🍎"}, "запрос с HTML — подменён")
+    d = {"text": "Привет 🍎"}
+    ok(not B._premium_request(d) and d["text"] == "Привет 🍎", "без HTML — не трогает")
+    b = B.btn("❓ Как играть", callback_data="x")
+    ok(b.to_dict().get("icon_custom_emoji_id") == B._PT_CUTE["❓"] and b.text == "Как играть",
+       "кнопка с ❓ — премиум-иконка из каталога")
+    if hasattr(B, "_FrogRateLimiter"):
+        lim = B._FrogRateLimiter(max_retries=0)
+        await lim.initialize()
+        sent = []
+        async def cb(endpoint, data, **kw):
+            sent.append(dict(data))
+            if "<tg-emoji" in data["text"]:
+                raise BadRequest("Can't parse entities: invalid custom emoji identifier")
+            return True
+        data = {"text": "🍎 яблоко", "parse_mode": "HTML", "chat_id": 1}
+        r = await lim.process_request(cb, ("sendMessage", data), {}, "sendMessage", data, None)
+        ok(r is True and len(sent) == 2 and sent[-1]["text"] == "🍎 яблоко",
+           "Telegram не принял значок — ушло без подмены")
+        sent.clear()
+        async def cb2(endpoint, data, **kw):
+            sent.append(dict(data))
+            return True
+        data = {"text": "🍎", "parse_mode": "HTML", "chat_id": 1}
+        await lim.process_request(cb2, ("sendMessage", data), {}, "sendMessage", data, None)
+        ok(len(sent) == 1 and "<tg-emoji" in sent[0]["text"], "обычная отправка — с премиум")
+
     print()
     if FAILS:
         print(f"ОШИБОК: {len(FAILS)}")
