@@ -92,7 +92,7 @@ say "Ставлю зависимости в venv"
 "${APP_DIR}/venv/bin/python" -c 'import telegram; print("python-telegram-bot", telegram.__version__)'
 
 # Файл должен компилироваться до того, как systemd попробует его запустить
-"${APP_DIR}/venv/bin/python" -m py_compile "${APP_DIR}/bot.py" "${APP_DIR}/exp_routes.py" \
+"${APP_DIR}/venv/bin/python" -m py_compile "${APP_DIR}/bot.py" "${APP_DIR}/exp_routes.py" "${APP_DIR}/kvaword_words.py" \
     || die "bot.py или exp_routes.py не компилируется — смотри ошибку выше"
 
 # Компиляция не ловит падение при старте. Пробный запуск на временной базе

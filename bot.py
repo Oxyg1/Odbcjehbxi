@@ -3402,6 +3402,29 @@ _file_handler = logging.handlers.RotatingFileHandler(
 )
 _file_handler.setFormatter(_log_formatter)
 
+class _MigrationNoise(logging.Filter):
+    """
+    Миграции при каждом запуске пробуют добавить колонки, которые уже есть,
+    и пишут «duplicate column name» ошибкой с трейсом. Это 95 из 258 «ошибок»
+    в недельной статистике — за ними не видно настоящих. Такие записи не
+    пишем вовсе: это штатный путь, а не сбой.
+    """
+    _MARKS = ("duplicate column name", "already exists")
+
+    def filter(self, record: logging.LogRecord) -> bool:
+        exc = record.exc_info[1] if record.exc_info else None
+        text = str(exc) if exc is not None else ""
+        try:
+            text += " " + record.getMessage()
+        except Exception:
+            pass
+        return not any(m in text for m in self._MARKS)
+
+
+_MIGRATION_NOISE = _MigrationNoise()
+_console_handler.addFilter(_MIGRATION_NOISE)
+_file_handler.addFilter(_MIGRATION_NOISE)
+
 # Корневой логгер
 logging.basicConfig(level=LOG_LEVEL, handlers=[_console_handler, _file_handler])
 logger = logging.getLogger("frog_bot")
@@ -4150,6 +4173,15 @@ def run_sync_migration():
         ("overfeed_total", "INTEGER DEFAULT 0"),
         # ── Причина смерти (overfeed / normal) ──
         ("death_reason", "TEXT DEFAULT ''"),
+        # ── Когда умерла: экран смерти пишет «умерла N дней назад» ──
+        ("died_at", "REAL DEFAULT 0"),
+        # ── Мини-игры: Кувшинки и Кваквордл ──
+        ("last_lily", "REAL DEFAULT 0"),
+        ("kw_day", "TEXT DEFAULT ''"),
+        ("kw_state", "TEXT DEFAULT ''"),
+        ("kw_streak", "INTEGER DEFAULT 0"),
+        ("kw_last_win", "TEXT DEFAULT ''"),
+        ("kw_wins", "INTEGER DEFAULT 0"),
         # ── Подписка на уведомления о комаре (1=вкл, 0=выкл) ──
         ("mosquito_notify", "INTEGER DEFAULT 1"),
         # ── Уведомления о переводах /gift (0=все, 1=только соседи по стае) ──
@@ -5010,6 +5042,21 @@ def run_sync_migration():
             logger.warning("Котлы стай срезаны до %d: %d стай", STAYA_CAULDRON_MAX, cur.rowcount)
     except Exception as _e:
         logger.debug("cauldron clamp: %s", _e)
+    # Переедание теперь считает только лишнее сверх сытости. Старый счётчик
+    # копил всю еду за жизнь — один раз обнуляем, иначе живые лягушки с
+    # тысячами на счётчике лопнули бы от первой же мухи.
+    try:
+        conn.execute("CREATE TABLE IF NOT EXISTS settings (key TEXT PRIMARY KEY, value TEXT)")
+        done = conn.execute("SELECT value FROM settings WHERE key='overfeed_v2'").fetchone()
+        has_frogs = conn.execute(
+            "SELECT 1 FROM sqlite_master WHERE type='table' AND name='frogs'").fetchone()
+        if not done and has_frogs:
+            cur = conn.execute("UPDATE frogs SET overfeed_total=0 WHERE overfeed_total!=0")
+            conn.execute("INSERT OR REPLACE INTO settings VALUES('overfeed_v2', '1')")
+            conn.commit()
+            logger.warning("Переедание: старые счётчики обнулены у %d лягушек", cur.rowcount)
+    except Exception as _e:
+        logger.exception("overfeed_v2: %s", _e)
 
     # ── Фриз-ивент ───────────────────────────────────────────────────────────
     freeze_run_sync_migration(conn, cur)
@@ -6626,8 +6673,37 @@ FOOD = {
 # ══════════════════════════════════════════
 # Нужно 3 скина одной редкости → получаешь 1 случайный скин следующей редкости
 # ── ПЕРЕЕДАНИЕ ──────────────────────────────────────────────────────────────
-OVERFEED_DEATH_THRESHOLD = 2500   # единиц сытости накоплено → смерть
+# Раньше счётчик копил ВСЮ съеденную сытость за жизнь и не убывал никогда:
+# лягушка, которую просто исправно кормили, рано или поздно «лопалась» —
+# по статистике это 12 смертей в неделю, и все у самых заботливых игроков.
+# Теперь считается только лишнее — то, что съедено сверх 100% сытости, — и
+# оно переваривается со временем (OVERFEED_COOL_PER_H в час). Лопнуть можно,
+# только если упорно пихать еду в сытую лягушку, и перед этим она предупредит.
+OVERFEED_DEATH_THRESHOLD = 300    # лишней сытости накоплено → смерть
+OVERFEED_WARN            = 150    # с этого места лягушка предупреждает
+OVERFEED_COOL_PER_H      = 25.0   # столько лишнего переваривается за час
 OVERFEED_REVIVE_COST     = 50     # монет за воскрешение от переедания
+
+
+def overfeed_add(f: dict, food_hunger: int) -> int:
+    """
+    Учесть лишнее от еды. Вызывать ДО того, как сытость прибавлена.
+    Возвращает, сколько ушло в лишнее.
+    """
+    extra = max(0, int(f.get("hunger", 0)) + int(food_hunger) - 100)
+    if extra:
+        f["overfeed_total"] = f.get("overfeed_total", 0) + extra
+    return extra
+
+
+def overfeed_note(f: dict) -> str:
+    """Строка-предупреждение, если живот уже полон. Пусто — всё в порядке."""
+    tot = f.get("overfeed_total", 0)
+    if not f.get("alive") or tot < OVERFEED_WARN:
+        return ""
+    hours = max(1, round((tot - OVERFEED_WARN + 1) / OVERFEED_COOL_PER_H))
+    return (f"🤢 <b>Живот полный</b>{SEP}{tot}/{OVERFEED_DEATH_THRESHOLD}\n"
+            f"<i>Не корми ~{hours} ч, а то лопнет</i>")
 
 
 def check_overfeed(f: dict) -> bool:
@@ -6637,6 +6713,7 @@ def check_overfeed(f: dict) -> bool:
     if f.get("overfeed_total", 0) >= OVERFEED_DEATH_THRESHOLD and f.get("alive", 0):
         _saved_streak = f.get("streak", 0)  # сохраняем стрик
         f["alive"] = 0
+        f["died_at"] = time.time()
         f["death_reason"] = "overfeed"
         f["streak"] = _saved_streak  # восстанавливаем стрик
         asyncio.create_task(plog(f["user_id"], "death", "death_reason=overfeed переедание"))
@@ -8173,8 +8250,9 @@ async def handle_interactive_event_choice(query, uid: int, event_id: str, choice
     frog = _apply_choice_rewards(frog, choice)
     if choice.get("is_lucky"):
         frog["total_iev_lucky"] = frog.get("total_iev_lucky", 0) + 1
-    if frog.get("health", 100) <= 0:
+    if frog.get("health", 100) <= 0 and frog.get("alive"):
         frog["alive"] = 0
+        frog["died_at"] = time.time()
     frog["last_interactive_event"] = time.time()
     await levelup(frog, bot)
     await db_save(frog)
@@ -13964,6 +14042,13 @@ async def init_db():
             chat_sponsor_coins       INTEGER DEFAULT 0,
             overfeed_total           INTEGER DEFAULT 0,
             death_reason             TEXT    DEFAULT '',
+            died_at                  REAL    DEFAULT 0,
+            last_lily                REAL    DEFAULT 0,
+            kw_day                   TEXT    DEFAULT '',
+            kw_state                 TEXT    DEFAULT '',
+            kw_streak                INTEGER DEFAULT 0,
+            kw_last_win              TEXT    DEFAULT '',
+            kw_wins                  INTEGER DEFAULT 0,
             mosquito_notify          INTEGER DEFAULT 1,
             gift_notify              INTEGER DEFAULT 0,
             subscription_type        INTEGER DEFAULT 0,
@@ -14627,6 +14712,29 @@ async def plog_purge_old(days: int = 7) -> int:
         return 0
 
 
+# Журналы игр и гачи — самые большие таблицы базы (113 и 178 тыс. строк при
+# базе в 100 МБ, а копий базы в бэкапах — семь). Статистике и конкурсам
+# нужны последние недели, поэтому старше LOGS_KEEP_DAYS — удаляем. Освобождённое
+# место SQLite займёт новыми строками, и файл перестанет расти.
+LOGS_KEEP_DAYS = 90
+
+
+async def logs_purge_old(days: int = LOGS_KEEP_DAYS) -> int:
+    cutoff = time.time() - days * 86400
+    total = 0
+    for table in ("game_logs", "gacha_log", "chat_activity_log"):
+        try:
+            async with aiosqlite.connect(DB_PATH) as db:
+                cur = await db.execute(f"DELETE FROM {table} WHERE ts < ?", (cutoff,))
+                await db.commit()
+                total += max(0, cur.rowcount)
+        except Exception as _e:
+            logger.warning("logs_purge_old %s: %s", table, _e)
+    if total:
+        logger.info("logs_purge: удалено %d строк старше %d дн", total, days)
+    return total
+
+
 async def plog_get(uid: int, days: int = 3, limit: int = 500) -> list[dict]:
     """Получить логи игрока за последние N дней."""
     cutoff = time.time() - days * 86400
@@ -14856,7 +14964,7 @@ class _StLogHandler(logging.Handler):
 
     def emit(self, record: logging.LogRecord) -> None:
         try:
-            if record.levelno < logging.WARNING:
+            if record.levelno < logging.WARNING or not _MIGRATION_NOISE.filter(record):
                 return
             if record.levelno < logging.ERROR:
                 st_count("log:warning")
@@ -17326,6 +17434,7 @@ DECAY_RATES = {
     "cleanliness": 7.0 * 0.4,
     "energy":      7.0 * 0.3,
     "health":      7.0 * 0.5,      # только при нулевом голоде
+    "overfeed":    OVERFEED_COOL_PER_H,   # не показатель: так переваривается лишнее
 }
 
 
@@ -17407,6 +17516,11 @@ def decay(f: dict) -> dict:
         f["health"] = max(0, f["health"] - _take("health", health_mult))
     else:
         frac.pop("health", None)      # сыта — счётчик голодного урона обнуляем
+    # Обжорство проходит само: живот переваривает лишнее
+    if f.get("overfeed_total", 0) > 0:
+        f["overfeed_total"] = max(0, f["overfeed_total"] - _take("overfeed", 1.0))
+    else:
+        frac.pop("overfeed", None)
     _decay_frac_store(f, frac)
     f["last_decay"] = now
 
@@ -17418,6 +17532,7 @@ def decay(f: dict) -> dict:
     # ── Смерть ────────────────────────────────────
     if f["health"] <= 0 and f["alive"]:
         f["alive"] = 0
+        f["died_at"] = now
         f["_just_died"] = True
         # Питти сбрасывается при смерти — стимул не давать лягушке умирать
         f["gacha_pity"] = 0
@@ -17707,6 +17822,59 @@ def censor_frog_name(name: str) -> str:
     return name
 
 
+def revive_cost(f: dict) -> int:
+    """Цена воскрешения за монеты."""
+    return OVERFEED_REVIVE_COST if f.get("death_reason", "") == "overfeed" else 100
+
+
+def dead_card(f: dict) -> str:
+    """
+    Карточка мёртвой лягушки. Раньше мёртвая лягушка показывалась обычной
+    карточкой с нулями, а каждая кнопка отвечала «используй /revive» — по
+    статистике из 77 заходивших за неделю с мёртвой лягушкой вернули её 19.
+    Теперь на экране сразу сказано, что случилось и как вернуть.
+    """
+    reason = ("объелась и лопнула" if f.get("death_reason") == "overfeed"
+              else "не дождалась еды")
+    died = f.get("died_at") or 0
+    when = ""
+    if died:
+        days = int((time.time() - died) // 86400)
+        when = ("сегодня" if days == 0 else "вчера" if days == 1
+                else f"{ui_plural(days, 'день', 'дня', 'дней')} назад")
+    if not f.get("return_revival_used"):
+        offer = (f"{_E_LEAF} <b>Вернуть — бесплатно</b>\n"
+                 "и 3 дня Няни в подарок")
+    else:
+        cost = revive_cost(f)
+        offer = "\n".join([
+            f"{_E_COIN} {ui_money(cost)} — с половиной сил",
+            f"{_E_STARS} 15 Stars — сразу и целиком",
+            f"{_E_SWORDS} Испытание — бесплатно",
+        ])
+    return ui_card(
+        f"{_E_SKULL} <b>{fname(f)}</b>",
+        ui_line(reason, when) + "\n" + ui_line(ui_kv("Уровень", f.get("level", 1)), ui_money(f.get("coins", 0))),
+        offer,
+        hint="Уровень и облики на месте",
+    )
+
+
+def dead_kb(f: dict) -> InlineKeyboardMarkup:
+    """Кнопки мёртвой лягушки: только то, что её вернёт."""
+    rows = []
+    if not f.get("return_revival_used"):
+        rows.append([btn("🌿 Вернуть бесплатно", callback_data="return_revive", style="success")])
+    else:
+        cost = revive_cost(f)
+        rows.append([btn(f"Воскресить · {cost}🪙", callback_data="revive_confirm",
+                         style="success" if f.get("coins", 0) >= cost else None)])
+    rows.append([btn("Мгновенно · 15 Stars", callback_data="revive_stars",
+                     style="primary", icon_id=ICON_STARS)])
+    rows.append([btn("⚔️ Испытание — бесплатно", callback_data="trial_start")])
+    return InlineKeyboardMarkup(rows)
+
+
 def status_text(f: dict) -> str:
     lg = f  # передаём весь f для t()
     # ── Режим испытания ───────────────────────────
@@ -17726,6 +17894,9 @@ def status_text(f: dict) -> str:
             ui_money(f.get("coins", 0)),
             hint=t("stat_trial_done", lg),
         )
+
+    if not f.get("alive", 1):
+        return dead_card(f)
 
     # ── Анабиоз ──────────────────────────────────────────
     hiber_until = f.get("hibernation_until", 0) or 0
@@ -17790,6 +17961,7 @@ def status_text(f: dict) -> str:
         f"{_E_STAR} {ui_kv('Уровень', f['level'])}\n"
         f"{_E_XP} {stat_bar('xp', xp_pct)} {f['xp']}/{need}",
         stats,
+        overfeed_note(f),
         wallet,
         t("stat_boost", lg) if f.get("_boost_active") else "",
         hint=phrase,
@@ -17857,6 +18029,8 @@ async def games_screen(f: dict, is_private: bool) -> tuple[str, InlineKeyboardMa
          btn(t("btn_guess", f), callback_data="guess_start")],
         [btn(t("btn_memory", f), callback_data="memo_start"),
          btn(t("btn_ttt", f), callback_data="ttt_menu")],
+        [btn("🪷 Кувшинки", callback_data="lily|menu"),
+         *([btn("🔤 Кваквордл", callback_data="kw|open")] if is_private else [])],
     ]
 
     if unlocked_adv:
@@ -18174,6 +18348,8 @@ def main_kb(f: dict, is_group: bool = False, sacrifice_active: bool = False,
             legend_emoji: str = "📜",
             nft_contest_active: bool = False,
             freeze_active: bool = False) -> InlineKeyboardMarkup:
+    if not f.get("alive", 1) and not f.get("trial_active"):
+        return dead_kb(f)
     care_ready = _care_ready(f)
     care_key = "menu_care_ready" if care_ready else "menu_care"
     care_lbl = t(care_key, f) + ("" if care_ready else " ⏳")
@@ -24085,6 +24261,13 @@ async def cmd_start(update: Update, ctx: ContextTypes.DEFAULT_TYPE):
             await cmd_icecube(update, ctx)
             return
 
+        # ── Кваквордл из «Поделиться»: ?start=kw ────────────────────────────
+        # Новичок идёт обычным знакомством (метка kw уже посчитана), а игроку
+        # сразу открываем слово дня.
+        if arg == "kw" and f and not is_group(update):
+            await kw_open(update.message, ctx, f, edit=False)
+            return
+
         # ── Приглашение в соседи: ?start=addneighbor_123456 ───────────────────
         # Доступно и новым, и существующим игрокам.
         if arg.startswith("addneighbor_"):
@@ -24766,10 +24949,16 @@ async def cmd_revive(update: Update, ctx: ContextTypes.DEFAULT_TYPE):  # plog in
         )
         return
 
+    # Бесплатное возвращение ещё не тратилось — его и предлагаем первым
+    if not f.get("return_revival_used"):
+        await update.message.reply_text(
+            dead_card(f), parse_mode=ParseMode.HTML, reply_markup=dead_kb(f))
+        return
+
     if is_overfeed:
         await update.message.reply_text(
             f"🤢 <b>{fname(f)} объелась и лопнула!</b>\n\n"
-            f"Накоплено сытости: <b>{f.get('overfeed_total', 0)} / {OVERFEED_DEATH_THRESHOLD}</b>\n\n"
+            f"Съедено лишнего: <b>{f.get('overfeed_total', 0)} / {OVERFEED_DEATH_THRESHOLD}</b>\n\n"
             f"• Воскресить за <b>{cost}{_E_COIN}</b> — желудок промывается, счётчик сбрасывается\n"
             f"  {coins_txt}",
             parse_mode=ParseMode.HTML,
@@ -25364,6 +25553,13 @@ async def _casino_auto_loop(
 
         await levelup(f, bot)
         await db_save(f)
+        # Журнал игр: без этой записи авторежим не попадал в «Отдачу в играх»,
+        # проигрыши там не учитывались, и казино выглядело убыточным (136%)
+        asyncio.create_task(log_game(
+            uid, "casino", stake, win + jackpot_won,
+            "win" if win > 0 else "loss",
+            {"game": gtype, "dice_value": val, "auto": 1, "jackpot": jackpot_won},
+        ))
         # player action log
         _casino_net = win - stake
         asyncio.create_task(plog(
@@ -32981,6 +33177,7 @@ async def admin_router(update: Update, ctx: ContextTypes.DEFAULT_TYPE):
         p_kill = await db_get(target_uid_kill)
         if p_kill:
             p_kill["alive"] = 0
+            p_kill["died_at"] = time.time()
             p_kill["health"] = 0
             p_kill["trial_active"] = 0
             p_kill["trial_quests"] = "[]"
@@ -34763,6 +34960,49 @@ MARKET_COMMISSION = 0.10   # комиссия рынка с продавца
 # иначе любой новый роутер стал бы дырой в обход бана.
 #
 # Возвращает (q, uid, d, f) либо None, если нажатие уже обработано.
+NOFROG_INVITE_EVERY = 24 * 3600     # одному человеку в одном чате — не чаще
+
+
+async def nofrog_invite(q, ctx) -> None:
+    """
+    Кнопку в группе нажал человек без лягушки: комара, розыгрыш, викторину.
+    Раньше он получал «Сначала напиши /start» — и на этом всё: из 57 групп
+    за месяц пришло 8 человек. Теперь под сообщением появляется приглашение
+    со ссылкой: одно нажатие — и он в боте, а чат записан как источник.
+    """
+    st_count("nofrog_tap")
+    msg = q.message
+    if not msg or msg.chat.type not in ("group", "supergroup"):
+        await q.answer("Сначала напиши /start", show_alert=True)
+        return
+    await q.answer("🐸 У тебя ещё нет лягушки — ссылка в чате", show_alert=False)
+    seen = ctx.bot_data.setdefault("nofrog_inv", {})
+    key = (msg.chat.id, q.from_user.id)
+    now = time.time()
+    if now - seen.get(key, 0) < NOFROG_INVITE_EVERY:
+        return
+    if len(seen) > 5000:                          # не копим вечно
+        for k in [k for k, v in seen.items() if now - v > NOFROG_INVITE_EVERY]:
+            seen.pop(k, None)
+    seen[key] = now
+    link = f"https://t.me/{ctx.bot.username}?start=chat_{msg.chat.id}"
+    try:
+        sent = await ctx.bot.send_message(
+            msg.chat.id,
+            f"🐸 <b>{he((q.from_user.first_name or 'Привет')[:16])}</b>, у тебя\n"
+            "ещё нет лягушки.\n"
+            "Заведи — это минута,\n"
+            "и играй со всеми тут.",
+            parse_mode=ParseMode.HTML,
+            reply_markup=InlineKeyboardMarkup([[btn("🐸 Завести лягушку", url=link, style="success")]]),
+            disable_notification=True,
+        )
+        st_count("nofrog_invite")
+        asyncio.create_task(schedule_delete(ctx.bot, msg.chat.id, sent.message_id, 120))
+    except (BadRequest, Forbidden, TimedOut):
+        pass
+
+
 async def cb_guard(update: Update, ctx: ContextTypes.DEFAULT_TYPE):
     q = update.callback_query
     uid = q.from_user.id
@@ -34923,7 +35163,7 @@ async def cb_guard(update: Update, ctx: ContextTypes.DEFAULT_TYPE):
 
     f = await db_get(uid)
     if not f:
-        await q.answer("Сначала напиши /start", show_alert=True)
+        await nofrog_invite(q, ctx)
         return None
     f = decay(f)
 
@@ -34935,7 +35175,7 @@ async def cb_guard(update: Update, ctx: ContextTypes.DEFAULT_TYPE):
     COIN_OPS = (
         "feed_", "play_", "casino", "duel_accept", "battle_accept",
         "buy_", "gacha_", "mosquito_", "cf_join", "ck_stake",
-        "sapper_", "guess_", "rps_join", "bsj|",
+        "sapper_", "guess_", "rps_join", "bsj|", "lily|",
         # Уход — меняют монеты (heal) или статы которые влияют на rewards
         "wash", "sleep", "heal", "daily",
         # Магазин
@@ -40065,7 +40305,13 @@ async def on_callback(update: Update, ctx: ContextTypes.DEFAULT_TYPE):
     if not f["alive"] and not f.get("trial_active", 0):
         # Разрешаем только кнопки воскрешения/испытания
         if d not in ("revive_confirm", "revive_stars", "trial_start", "refresh", "return_revive"):
-            await q.answer("💀 Лягушка мертва. Используй /revive или начни испытание.", show_alert=True)
+            # Не тупик с алертом, а сразу экран, где её можно вернуть
+            await q.answer("💀 Лягушка мертва")
+            try:
+                await q.message.edit_text(dead_card(f), parse_mode=ParseMode.HTML,
+                                          reply_markup=dead_kb(f))
+            except (BadRequest, Forbidden, TimedOut):
+                pass
             return
     if not f["alive"] and f.get("trial_active", 0):
         TRIAL_ALLOWED = (
@@ -40174,8 +40420,15 @@ async def on_callback(update: Update, ctx: ContextTypes.DEFAULT_TYPE):
         f["energy"]       = 70
         f["last_decay"]   = time.time()
         f["death_reason"] = ""
+        f["overfeed_total"] = 0
         f["return_revival_used"] = 1
+        if f.get("trial_active"):
+            f["trial_active"] = 0
+            f["trial_quests"] = "[]"
+            f["trial_progress"] = "{}"
+        f["total_revives"] = f.get("total_revives", 0) + 1
         await db_save(f)
+        asyncio.create_task(plog(uid, "revive", "cost=0 return_revive"))
         # Выдаём 3 дня Болотной Няни (отдельная метка — не трогаем trial_nanny_used)
         now_rr = time.time()
         base_rr = max(now_rr, f.get("subscription_until", 0))
@@ -40433,15 +40686,15 @@ async def on_callback(update: Update, ctx: ContextTypes.DEFAULT_TYPE):
         await send_action_sticker(ctx.bot, q.message.chat.id, "feed")
         await send_feed_sticker(ctx.bot, q.message.chat.id)
         await animate(q, f"🪰 <b>Ловим муху...</b>\n_Лягушка высунула язык!_ 👅")
+        overfeed_add(f, food["hunger"])
         f["hunger"] = min(100, f["hunger"] + food["hunger"])
-        f["overfeed_total"] = f.get("overfeed_total", 0) + food["hunger"]
         if check_overfeed(f):
             await db_save(f)
             await q.answer("🤢 Лягушка лопнула от обжорства", show_alert=True)
             try:
                 await q.message.edit_text(
                     f"🤢 <b>{fname(f)}</b> съела слишком много и лопнула!\n\n"
-                    f"Накоплено сытости: <b>{f['overfeed_total']} / {OVERFEED_DEATH_THRESHOLD}</b>\n"
+                    f"Съедено лишнего: <b>{f['overfeed_total']} / {OVERFEED_DEATH_THRESHOLD}</b>\n"
                     f"{_E_SKULL} Воскресить за <b>{OVERFEED_REVIVE_COST}{_E_COIN}</b> (используй /revive)",
                     parse_mode=ParseMode.HTML,
                     reply_markup=InlineKeyboardMarkup([
@@ -40510,10 +40763,10 @@ async def on_callback(update: Update, ctx: ContextTypes.DEFAULT_TYPE):
         await animate(
             q, f"{food['emoji']} <b>Кормим {food['name']}...</b>\n_Лягушка рада!_ 🐸"
         )  # animate uses MARKDOWN intentionally
+        overfeed_add(f, food["hunger"])
         f["hunger"] = min(100, f["hunger"] + food["hunger"])
         f["happiness"] = min(100, f["happiness"] + food["happy"])
         f["health"] = min(100, f["health"] + food["health"])
-        f["overfeed_total"] = f.get("overfeed_total", 0) + food["hunger"]
         add_xp(f, food["xp"])
         f["coins"] += 2
         f["total_feeds"] += 1
@@ -40523,7 +40776,7 @@ async def on_callback(update: Update, ctx: ContextTypes.DEFAULT_TYPE):
             try:
                 await q.message.edit_text(
                     f"🤢 <b>{fname(f)}</b> объелась и лопнула!\n\n"
-                    f"Накоплено сытости: <b>{f['overfeed_total']} / {OVERFEED_DEATH_THRESHOLD}</b>\n"
+                    f"Съедено лишнего: <b>{f['overfeed_total']} / {OVERFEED_DEATH_THRESHOLD}</b>\n"
                     f"{_E_SKULL} Воскресить за <b>{OVERFEED_REVIVE_COST}{_E_COIN}</b> (или /revive)",
                     parse_mode=ParseMode.HTML,
                     reply_markup=InlineKeyboardMarkup([
@@ -40577,9 +40830,14 @@ async def on_callback(update: Update, ctx: ContextTypes.DEFAULT_TYPE):
         for fid, qty in food_items.items():
             food = FOOD[fid]
             for _ in range(qty):
+                # Сытая лягушка больше не ест: остальное остаётся в инвентаре.
+                # Раньше «скормить всё» вталкивало весь запас разом.
+                if f["hunger"] >= 100:
+                    break
                 ok = await inv_use(uid, fid)
                 if not ok:
                     break
+                overfeed_add(f, food["hunger"])
                 f["hunger"] = min(100, f["hunger"] + food["hunger"])
                 f["happiness"] = min(100, f["happiness"] + food["happy"])
                 f["health"] = min(100, f["health"] + food["health"])
@@ -40590,11 +40848,11 @@ async def on_callback(update: Update, ctx: ContextTypes.DEFAULT_TYPE):
                 total_happy += food["happy"]
                 total_health += food["health"]
                 total_xp += food["xp"]
-                f["overfeed_total"] = f.get("overfeed_total", 0) + food["hunger"]
                 total_fed += 1
                 add_power(f, 0.2)  # кормление
         if total_fed == 0:
-            await q.answer("Нечего скормить", show_alert=True)
+            await q.answer("🐸 Лягушка сыта — больше не ест" if f["hunger"] >= 100
+                           else "Нечего скормить", show_alert=True)
             return
         # Проверяем смерть от переедания после скармливания всего
         if check_overfeed(f):
@@ -40603,7 +40861,7 @@ async def on_callback(update: Update, ctx: ContextTypes.DEFAULT_TYPE):
             try:
                 await q.message.edit_text(
                     f"🤢 <b>{fname(f)}</b> съела всё подряд и лопнула от обжорства!\n\n"
-                    f"Накоплено сытости: <b>{f['overfeed_total']} / {OVERFEED_DEATH_THRESHOLD}</b>\n"
+                    f"Съедено лишнего: <b>{f['overfeed_total']} / {OVERFEED_DEATH_THRESHOLD}</b>\n"
                     f"{_E_SKULL} Воскресить за <b>{OVERFEED_REVIVE_COST}{_E_COIN}</b> (или /revive)",
                     parse_mode=ParseMode.HTML,
                     reply_markup=InlineKeyboardMarkup([
@@ -40622,7 +40880,7 @@ async def on_callback(update: Update, ctx: ContextTypes.DEFAULT_TYPE):
         await ach_check(f, ctx.bot)
         await check_referral_stages(f, ctx.bot)
         result_all = (
-            f"🍽 <b>Скормлено всё!</b> ×{total_fed} единиц\n\n"
+            f"🍽 <b>Накормлена досыта</b> ×{total_fed}\n\n"
             f"{_E_FOOD} +{total_hunger} 😄 +{total_happy} {_E_HEART} +{total_health} {_E_XP} +{total_xp} {coin_emoji()} +{total_fed*2}"
         )
         for lvl, skin in rewards:
@@ -56073,6 +56331,7 @@ async def post_init(app: Application):
     async def _job_plog_purge(ctx):
         deleted = await plog_purge_old(days=7)
         logger.info("plog_purge: удалено %d старых записей", deleted)
+        await logs_purge_old(LOGS_KEEP_DAYS)
     app.job_queue.run_daily(
         _job_plog_purge,
         time=dt_time(3, 0, 0, tzinfo=timezone.utc),
@@ -60066,10 +60325,10 @@ ST_FEAT_LABELS = {
     "sacrifice": "Ивент", "kva": "Ква", "fz": "Фриз-ивент", "fzquiz": "Фриз: викторина",
     "sub": "Подписки", "buy": "Покупка", "stars": "Звёзды", "shop": "Магазин",
     "skin": "Облики", "skins": "Облики", "equip": "Надеть облик", "inv": "Инвентарь",
-    "nft": "NFT", "ach": "Достижения", "achievements": "Достижения",
-    "quest": "Задания", "quests": "Задания", "daily": "Ежедневный бонус",
+    "nft": "NFT", "ach": "Достижения: вкладка", "achievements": "Достижения",
+    "quest": "Задания: сдать", "quests": "Задания", "daily": "Ежедневный бонус",
     "bonus": "Бонусы", "top": "Топы", "topsponsors": "Топ спонсоров",
-    "season": "Сезон", "settings": "Настройки", "lang": "Язык", "toggle": "Настройки",
+    "season": "Сезон", "settings": "Настройки", "lang": "Язык", "toggle": "Настройки: переключатель",
     "ob": "Знакомство", "tip": "Таверна", "iev": "Событие", "mosquito": "Комар",
     "diary": "Дневник", "personality": "Характер", "horoscope": "Гороскоп",
     "farewell": "Прощание", "memory": "Память", "ref": "Рефералка",
@@ -60079,6 +60338,11 @@ ST_FEAT_LABELS = {
     "feedblock": "Чужое кормление", "feedunblock": "Чужое кормление",
     "menu_games": "Меню: игры", "menu_care": "Меню: уход", "menu_more": "Меню: ещё",
     "menu_shop": "Меню: магазин", "menu_jackpot": "Меню: джекпот",
+    "menu_feed": "Меню: еда", "menu_play": "Меню: поиграть", "menu_lottery": "Меню: лотерея",
+    "plaza": "Площадь", "plaza_fish": "Площадь: рыбалка", "plaza_add": "Площадь: добавить",
+    "legend": "Легенда", "stats": "Статистика", "feedback": "Обратная связь",
+    "checkers": "Шашки", "aab": "Админ: антибот", "lily": "Кувшинки", "kw": "Кваквордл",
+    "nofrog": "Без лягушки: нажал кнопку",
     "plaza_staya": "Площадь: стая", "plaza_sosedi": "Площадь: соседи",
     "plaza_bond": "Площадь: связь", "plaza_expedition": "Площадь: экспедиция",
     "plaza_pohod": "Площадь: поход", "plaza_invite": "Площадь: позвать",
@@ -60579,12 +60843,14 @@ async def _sts_players(x: _StCtx) -> _StSec:
     n7, np7 = sum(born.get(d, 0) for d in d7), sum(born.get(d, 0) for d in p7)
     t30 = x.day_ts(x.day(29))
     new30 = await x.one(f"SELECT COUNT(*) FROM frogs f WHERE born_at>=? AND {_ST_REAL}", t30)
+    # /start прямо в группе записывает рефералом владельца чата, поэтому
+    # «из групп» — все, у кого есть чат-источник, а «по приглашению» — только
+    # личные ссылки. Раньше было наоборот, и группы показывали ноль.
+    by_chat = await x.one(
+        f"SELECT COUNT(*) FROM frogs f WHERE f.born_at>=? AND f.source_chat_id!=0 AND {_ST_REAL}", t30)
     by_ref = await x.one(
         f"SELECT COUNT(*) FROM frogs f JOIN referrals r ON r.referred_id=f.user_id "
-        f"WHERE f.born_at>=? AND {_ST_REAL}", t30)
-    by_chat = await x.one(
-        f"SELECT COUNT(*) FROM frogs f WHERE f.born_at>=? AND f.source_chat_id!=0 AND {_ST_REAL} "
-        "AND f.user_id NOT IN (SELECT referred_id FROM referrals)", t30)
+        f"WHERE f.born_at>=? AND f.source_chat_id=0 AND {_ST_REAL}", t30)
     s.kv("Приток",
          ("за 7 дн", _stn(n7), f"неделей раньше {_stn(np7)} {_std(n7, np7)}".rstrip()),
          ("за 30 дн", _stn(new30)),
@@ -60872,11 +61138,33 @@ async def _sts_money(x: _StCtx) -> _StSec:
     s.kv("Подписки сейчас",
          ("Няня", _stn(snap["sub_nanny"])), ("Трудяга", _stn(snap["sub_worker"])),
          ("кончаются за 3 дня", _stn(soon)), ("с автопродлением", _stn(auto)))
-    top = await x.rows(f"SELECT frog_name, first_name, stars_spent FROM frogs f WHERE stars_spent>0 AND {_ST_REAL} "
-                       "ORDER BY stars_spent DESC LIMIT 10")
-    s.table("Больше всех за всё время", ["игрок", "звёзд"],
-            [((fn or nm or "?")[:24], _stn(st_)) for fn, nm, st_ in top],
-            screen=lambda r: f"{r[0]} · {r[1]}⭐")
+    # Платившие ещё здесь? Деньги приносят единицы — важно, не ушли ли они
+    pay_seen = await x.rows(
+        "SELECT SUM(CASE WHEN last_seen>=? THEN 1 ELSE 0 END), SUM(CASE WHEN last_seen>=? THEN 1 ELSE 0 END), "
+        "SUM(CASE WHEN last_seen>=? THEN stars_spent ELSE 0 END), SUM(stars_spent), COUNT(*) "
+        f"FROM frogs f WHERE stars_spent>0 AND {_ST_REAL}", x.now - 7 * 86400, x.now - 30 * 86400, x.now - 7 * 86400)
+    p7, p30, st7, st_all, pn = [v or 0 for v in pay_seen[0]]
+    top20 = await x.rows(f"SELECT last_seen FROM frogs f WHERE stars_spent>0 AND {_ST_REAL} "
+                         "ORDER BY stars_spent DESC LIMIT 20")
+    t7 = sum(1 for (ls,) in top20 if (ls or 0) >= x.now - 7 * 86400)
+    t30 = sum(1 for (ls,) in top20 if (ls or 0) >= x.now - 30 * 86400)
+    s.kv("Платившие: заходят ли",
+         ("заходили за 7 дн", _stn(p7), f"{_stp(p7, pn)} плативших"),
+         ("заходили за 30 дн", _stn(p30), _stp(p30, pn)),
+         ("их звёзды за всё время", f"{_stp(st7, st_all)} у заходивших за 7 дн"),
+         ("топ-20 платящих: за 7 дн", f"{t7} из {len(top20)}", f"за 30 дн {t30}"))
+    top = await x.rows(f"SELECT frog_name, first_name, stars_spent, last_seen, alive FROM frogs f "
+                       f"WHERE stars_spent>0 AND {_ST_REAL} ORDER BY stars_spent DESC LIMIT 10")
+
+    def _ago(ts) -> str:
+        if not ts:
+            return "давно"
+        dd = int((x.now - ts) // 86400)
+        return "сегодня" if dd == 0 else f"{dd} дн назад"
+    s.table("Больше всех за всё время", ["игрок", "звёзд", "заходил", "лягушка"],
+            [((fn or nm or "?")[:24], _stn(st_), _ago(ls), "жива" if al else "мертва")
+             for fn, nm, st_, ls, al in top],
+            screen=lambda r: f"{r[0]} · {r[1]}⭐ · {r[2]}")
     s.note("До выкатки этой версии звёзды по дням — из старого счётчика продаж (сутки по UTC). "
            "Конверсия — только там, где считаются показы предложения.")
     return s
@@ -60997,6 +61285,18 @@ async def _sts_modes(x: _StCtx) -> _StSec:
          ("записей в летописи", _stn(let[0][0]), f"лайков {_stn(let[0][1] or 0)}"),
          ("выдано достижений", _stn(ach)),
          ("задания сегодня получили", _stn(dq[0][0]), f"сдали хоть одно {_stn(dq[0][1] or 0)}"))
+    d7 = x.days(7)
+    kw_p, kw_w = await x.c("kw_play", d7), await x.c("kw_win", d7)
+    kw_tries = await x.c("kw_win", d7, amount=True)
+    li_p, li_c = await x.c("lily_play", d7), await x.c("lily_cash", d7)
+    s.kv("Новые мини-игры за 7 дн",
+         ("Кваквордл: сыграли", _stn(kw_p),
+          f"угадали {_stn(kw_w)} · {_stp(kw_w, kw_p)}" + (
+              f", в среднем с {kw_tries / kw_w:.1f}".replace(".", ",") if kw_w else "")),
+         ("Кваквордл: пришли по ссылке", _stn(await x.c("start:kw", d7))),
+         ("Кувшинки: игр", _stn(li_p),
+          f"забрали банк {_stn(li_c)} · {_stp(li_c, li_p)}"),
+         ("Кувшинки: выдано", _stn(await x.c("lily_cash", d7, amount=True)) + "🪙"))
     return s
 
 
@@ -61054,6 +61354,13 @@ async def _sts_chats(x: _StCtx) -> _StSec:
           f"удалили {_stn(await x.c('group_removed', d7))}"),
          ("сообщений в группах сегодня", _stn(await x.c("group_msg", [x.today])),
           f"за 7 дн {_stn(await x.c('group_msg', d7))}"))
+    taps, invs = await x.c("nofrog_tap", d7), await x.c("nofrog_invite", d7)
+    joined = await x.one(f"SELECT COUNT(*) FROM frogs f WHERE born_at>=? AND source_chat_id!=0 AND {_ST_REAL}",
+                         x.now - 7 * 86400)
+    s.kv("Новички из групп (7 дн)",
+         ("без лягушки нажали кнопку", _stn(taps)),
+         ("отправлено приглашений", _stn(invs)),
+         ("завели лягушку из группы", _stn(joined), _stp(joined, invs) + " от приглашений" if invs else ""))
     rows = await x.rows(
         "SELECT f.source_chat_id, COALESCE(p.chat_title, ''), COUNT(*), "
         "SUM(CASE WHEN f.born_at>=? THEN 1 ELSE 0 END), SUM(CASE WHEN f.last_seen>=? THEN 1 ELSE 0 END) "
@@ -62473,6 +62780,465 @@ async def cmd_adminpoll(update: Update, ctx: ContextTypes.DEFAULT_TYPE) -> None:
         return
     text, kb = await poll_list_view()
     await update.message.reply_text(text, parse_mode=ParseMode.HTML, reply_markup=kb)
+
+
+# ══════════════════════════════════════════════════════════════════════════════
+# 🪷  КУВШИНКИ
+# ══════════════════════════════════════════════════════════════════════════════
+# Лягушка прыгает с кувшинки на кувшинку через пруд. Под одной кувшинкой в
+# каждом ряду прячется щука. Каждый ряд банк растёт, но кувшинок всё меньше,
+# а риск всё выше. Можно забрать банк в любой момент — или прыгнуть дальше.
+#
+# Мини-игры по статистике — самое «залипательное» в боте (сапёр, память,
+# угадайка — тысячи нажатий в неделю от пары десятков игроков). Эта — на
+# решение «рискнуть или забрать», которого в разделе не было.
+#
+# Бесплатно, награда раз в LILY_CD (как у угадайки); на перезарядке можно
+# играть без награды. Матожидание при разумной игре ~11🪙 — как у угадайки.
+
+LILY_CD = 10 * 60
+# (кувшинок в ряду, банк после ряда). Щука одна, шанс пройти ряд = (n-1)/n.
+LILY_ROWS = [(5, 8), (5, 14), (4, 22), (4, 32), (3, 46), (3, 64), (2, 90)]
+LILY_XP_PER_ROW = 5
+
+
+def _lily_path(row: int, lost: bool = False) -> str:
+    """Дорожка через пруд: пройденные ряды, лягушка, впереди вода."""
+    cells = []
+    for i in range(len(LILY_ROWS)):
+        if i < row:
+            cells.append("🪷")
+        elif i == row:
+            cells.append("🐟" if lost else "🐸")
+        else:
+            cells.append("▫️")
+    return "".join(cells) + "🏁"
+
+
+def lily_view(st: dict, f: dict) -> tuple[str, InlineKeyboardMarkup]:
+    row = st["row"]
+    n, nxt = LILY_ROWS[row]
+    bank = LILY_ROWS[row - 1][1] if row else 0
+    cd_line = f"\n<i>{_E_WARN} Без награды — перезарядка</i>" if st.get("on_cd") else ""
+    text = ui_card(
+        ui_title("🪷", f"Кувшинки{SEP}ряд {row + 1}/{len(LILY_ROWS)}"),
+        _lily_path(row),
+        ui_line(ui_kv("Банк", ui_money(bank)), f"дальше {ui_money(nxt)}") + cd_line,
+        hint=f"Щука под одной из {n} кувшинок",
+    )
+    rows = [[btn("🪷", callback_data=f"lily|j|{i}") for i in range(n)]]
+    if row:
+        rows.append([btn(f"Забрать {bank}🪙", callback_data="lily|take", style="success")])
+    else:
+        rows.append([btn(t("btn_back", f), callback_data="menu_games")])
+    return text, InlineKeyboardMarkup(rows)
+
+
+def lily_intro(f: dict) -> tuple[str, InlineKeyboardMarkup]:
+    left = LILY_CD - (time.time() - (f.get("last_lily") or 0))
+    best = LILY_ROWS[-1][1]
+    text = ui_card(
+        ui_title("🪷", "Кувшинки"),
+        "Прыгай через пруд.\n"
+        "В каждом ряду под одной\n"
+        "кувшинкой — щука.\n"
+        "Дальше — банк больше,\n"
+        "а кувшинок меньше.\n"
+        "Забрать можно в любой момент.",
+        ui_line(f"до {ui_money(best)}", f"+{LILY_XP_PER_ROW} XP за ряд"),
+        hint=(f"Награда через {int(left // 60) + 1} мин — пока можно сыграть просто так"
+              if left > 0 else "Щука не дремлет"),
+    )
+    kb = InlineKeyboardMarkup([
+        [btn("🐸 Прыгнуть", callback_data="lily|go", style="primary")],
+        [btn(t("btn_back", f), callback_data="menu_games")],
+    ])
+    return text, kb
+
+
+async def _lily_edit(q, text: str, kb) -> None:
+    try:
+        await q.message.edit_text(text, parse_mode=ParseMode.HTML, reply_markup=kb)
+    except (BadRequest, Forbidden, TimedOut):
+        pass
+
+
+async def lily_router(update: Update, ctx: ContextTypes.DEFAULT_TYPE):
+    _g = await cb_guard(update, ctx)
+    if _g is None:
+        return
+    q, uid, d, f = _g
+    parts = d.split("|")
+    act = parts[1] if len(parts) > 1 else ""
+    if not f.get("alive") and not f.get("trial_active"):
+        await q.answer("💀 Сначала верни лягушку", show_alert=True)
+        return
+    key = "lily"
+
+    if act == "menu":
+        await q.answer()
+        st = ctx.user_data.get(key)
+        text, kb = lily_view(st, f) if st else lily_intro(f)
+        await _lily_edit(q, text, kb)
+        return
+
+    if act == "go":
+        now = time.time()
+        on_cd = now - (f.get("last_lily") or 0) < LILY_CD
+        if not on_cd:
+            # Перезарядка с начала игры: проигрыш не обнуляет ожидание, а
+            # перезапуск бота посреди прыжков не даёт сыграть ещё раз.
+            f["last_lily"] = now
+            await db_save(f)
+        st = {"row": 0, "on_cd": on_cd}
+        ctx.user_data[key] = st
+        st_count("lily_play")
+        await q.answer()
+        await _lily_edit(q, *lily_view(st, f))
+        return
+
+    st = ctx.user_data.get(key)
+    if not st:
+        await q.answer("Игра закончилась — начни заново", show_alert=True)
+        await _lily_edit(q, *lily_intro(f))
+        return
+
+    if act == "take":
+        ctx.user_data.pop(key, None)
+        row = st["row"]
+        bank = LILY_ROWS[row - 1][1] if row else 0
+        await q.answer()
+        await _lily_finish(q, ctx, f, st, row, bank, won=True)
+        return
+
+    if act == "j":
+        n = LILY_ROWS[st["row"]][0]
+        try:
+            pick = int(parts[2])
+        except (IndexError, ValueError):
+            await q.answer()
+            return
+        if not 0 <= pick < n:
+            await q.answer()
+            return
+        if random.randrange(n) == 0:          # щука — равновероятно под любой
+            ctx.user_data.pop(key, None)
+            await q.answer("🐟 Щука!")
+            await _lily_finish(q, ctx, f, st, st["row"], 0, won=False)
+            return
+        st["row"] += 1
+        if st["row"] >= len(LILY_ROWS):
+            ctx.user_data.pop(key, None)
+            await q.answer("🏁 Весь пруд!")
+            await _lily_finish(q, ctx, f, st, st["row"], LILY_ROWS[-1][1], won=True)
+            return
+        await q.answer()
+        await _lily_edit(q, *lily_view(st, f))
+        return
+
+    await q.answer()
+
+
+async def _lily_finish(q, ctx, f: dict, st: dict, row: int, bank: int, won: bool) -> None:
+    paid = not st.get("on_cd")
+    xp = row * LILY_XP_PER_ROW
+    st_count("lily_cash" if won else "lily_lose", 1, bank if paid else 0)
+    if paid and (bank or xp):
+        f["coins"] += bank
+        add_xp(f, xp)
+        await levelup(f, ctx.bot)
+        await db_save(f)
+        await ach_check(f, ctx.bot)
+    if won and row >= len(LILY_ROWS):
+        head = ui_title("🏁", "Весь пруд пройден!")
+    elif won:
+        head = ui_title("🪷", f"Забрала банк{SEP}ряд {row}")
+    else:
+        head = ui_title("🐟", "Щука!")
+    if not paid:
+        result = "Без награды — перезарядка"
+    elif won:
+        result = ui_line(f"+{ui_money(bank)}", f"+{xp} XP")
+    else:
+        result = ("Банк сгорел" + (f"{SEP}+{xp} XP за пройденное" if xp else ""))
+    text = ui_card(head, _lily_path(row, lost=not won), result,
+                   hint="Ещё раз — без награды, пока идёт перезарядка" if paid else "")
+    kb = InlineKeyboardMarkup([
+        [btn("🐸 Ещё раз", callback_data="lily|go")],
+        [btn(t("btn_back", f), callback_data="menu_games")],
+    ])
+    await _lily_edit(q, text, kb)
+
+
+# ══════════════════════════════════════════════════════════════════════════════
+# 🔤  КВАКВОРДЛ
+# ══════════════════════════════════════════════════════════════════════════════
+# Слово дня из пяти букв, шесть попыток — одно слово на всех, по московской
+# дате. Слово пишется сообщением в личку. После игры — кнопка «Поделиться»:
+# сетка из квадратиков без букв и ссылка на бота с меткой kw. Это то, ради
+# чего игра здесь: её результатом хочется хвастаться в чатах, а ссылка в
+# сетке приводит новых игроков (в статистике — метка /start «kw»).
+#
+# Слова — в kvaword_words.py. Буквы «ё» и «е» не различаются.
+
+from datetime import date as _date
+from urllib.parse import quote as _urlquote
+
+try:
+    from kvaword_words import WORDS as KW_WORDS
+except Exception:                                # файл не доехал — игры просто нет
+    KW_WORDS = []
+
+KW_TRIES = 6
+KW_LEN = 5
+KW_REWARD = [50, 40, 32, 25, 20, 15]             # монет за победу с N-й попытки
+KW_XP = 30
+KW_EPOCH = _date(2026, 10, 21)                   # первое слово списка
+KW_WAIT_TTL = 30 * 60                            # ждать слово в личке не дольше
+_KW_LETTERS = re.compile(r"^[а-яё]{5}$")
+_KW_VOWELS = set("аеиоуыэюяё")
+_KW_MARK = {"g": "🟩", "y": "🟨", "b": "⬛"}
+
+
+def kw_today() -> str:
+    return datetime.now(ST_TZ).strftime("%Y-%m-%d")
+
+
+def kw_word(day: str | None = None) -> str:
+    """Слово дня. Идут по порядку списка; кончится список — по кругу."""
+    if not KW_WORDS:
+        return ""
+    d = datetime.strptime(day or kw_today(), "%Y-%m-%d").date()
+    return KW_WORDS[(d - KW_EPOCH).days % len(KW_WORDS)]
+
+
+def kw_norm(s: str) -> str:
+    return (s or "").strip().lower().replace("ё", "е")
+
+
+def kw_score(guess: str, answer: str) -> str:
+    """g — буква на месте, y — есть в слове, b — нет. Повторы считаются честно."""
+    res = ["b"] * KW_LEN
+    left = {}
+    for i, (g, a) in enumerate(zip(guess, answer)):
+        if g == a:
+            res[i] = "g"
+        else:
+            left[a] = left.get(a, 0) + 1
+    for i, g in enumerate(guess):
+        if res[i] != "g" and left.get(g, 0) > 0:
+            res[i] = "y"
+            left[g] -= 1
+    return "".join(res)
+
+
+def kw_load(f: dict) -> dict:
+    """Игра сегодняшнего дня: {"g": [догадки], "done": 0|1|2} (2 — проиграл)."""
+    if f.get("kw_day") != kw_today():
+        return {"g": [], "done": 0}
+    try:
+        st = json.loads(f.get("kw_state") or "{}")
+        if isinstance(st, dict) and isinstance(st.get("g"), list):
+            return {"g": [kw_norm(x) for x in st["g"]][:KW_TRIES], "done": int(st.get("done", 0))}
+    except (ValueError, TypeError):
+        pass
+    return {"g": [], "done": 0}
+
+
+def kw_store(f: dict, st: dict) -> None:
+    f["kw_day"] = kw_today()
+    f["kw_state"] = json.dumps(st, ensure_ascii=False, separators=(",", ":"))
+
+
+def kw_check_guess(word: str) -> str:
+    """Пусто — слово годится, иначе что не так."""
+    if len(word) != KW_LEN:
+        return f"Нужно слово из {KW_LEN} букв, а тут {len(word)}"
+    if not _KW_LETTERS.match(word):
+        return "Только русские буквы"
+    if not (set(word) & _KW_VOWELS) or len(set(word)) < 2:
+        return "Это не похоже на слово"
+    return ""
+
+
+def kw_board(st: dict, answer: str) -> str:
+    lines = []
+    for g in st["g"]:
+        marks = "".join(_KW_MARK[c] for c in kw_score(g, answer))
+        lines.append(f"{marks} <code>{' '.join(g.upper())}</code>")
+    for _ in range(KW_TRIES - len(st["g"])):
+        lines.append("▫️" * KW_LEN)
+    return "\n".join(lines)
+
+
+def kw_letters_line(st: dict, answer: str) -> str:
+    """Буквы, которых точно нет, — чтобы не держать в голове."""
+    present = set(answer)
+    gone = sorted({c for g in st["g"] for c in g if c not in present})
+    return f"Нет в слове: <code>{' '.join(gone).upper()}</code>" if gone else ""
+
+
+def kw_share_url(st: dict, answer: str, bot_username: str) -> str:
+    day = datetime.strptime(kw_today(), "%Y-%m-%d").strftime("%d.%m")
+    score = f"{len(st['g'])}/{KW_TRIES}" if st["done"] == 1 else f"X/{KW_TRIES}"
+    grid = "\n".join("".join(_KW_MARK[c] for c in kw_score(g, answer)) for g in st["g"])
+    text = f"🐸 Кваквордл {day} · {score}\n{grid}\n\nСможешь быстрее?"
+    link = f"https://t.me/{bot_username}?start=kw"
+    return ("https://t.me/share/url?url=" + _urlquote(link)
+            + "&text=" + _urlquote(text))
+
+
+def kw_view(f: dict, bot_username: str, note: str = "") -> tuple[str, InlineKeyboardMarkup]:
+    answer = kw_word()
+    st = kw_load(f)
+    tries = len(st["g"])
+    streak = f.get("kw_streak", 0) or 0
+    if st["done"] == 1:
+        status = f"Угадано с {tries}-й попытки" + (
+            f"\n{_E_FIRE} {streak} д. подряд" if streak > 1 else "")
+        hint = "Новое слово — в полночь по МСК"
+    elif st["done"] == 2:
+        status = f"Слово было: <b>{answer.upper()}</b>"
+        hint = "Новое слово — в полночь по МСК"
+    else:
+        status = ui_line(f"Попытка {tries + 1}/{KW_TRIES}",
+                         f"за победу до {ui_money(KW_REWARD[tries])}")
+        hint = "Напиши слово из 5 букв сообщением"
+    text = ui_card(
+        ui_title("🔤", "Кваквордл"),
+        kw_board(st, answer),
+        kw_letters_line(st, answer) if not st["done"] else "",
+        note,
+        status,
+        hint=hint,
+    )
+    rows = []
+    if st["done"]:
+        rows.append([btn("📤 Поделиться", url=kw_share_url(st, answer, bot_username))])
+    elif tries == 0:
+        rows.append([btn("❓ Как играть", callback_data="kw|help")])
+    else:
+        rows.append([btn("🏳 Сдаться", callback_data="kw|give")])
+    rows.append([btn(t("btn_back", f), callback_data="menu_games")])
+    return text, InlineKeyboardMarkup(rows)
+
+
+KW_HELP = (
+    "🟩 — буква на своём месте\n"
+    "🟨 — буква есть, но в другом месте\n"
+    "⬛ — такой буквы нет\n\n"
+    "Слово одно на всех и меняется в полночь по Москве. Чем меньше попыток — "
+    "тем больше награда."
+)
+
+
+async def kw_open(target, ctx, f: dict, edit: bool) -> None:
+    """Показать игру и ждать слово в личке."""
+    text, kb = kw_view(f, ctx.bot.username)
+    if not kw_load(f)["done"]:
+        ctx.user_data["kw_wait"] = time.time()
+    try:
+        if edit:
+            await target.edit_text(text, parse_mode=ParseMode.HTML, reply_markup=kb)
+        else:
+            await target.reply_text(text, parse_mode=ParseMode.HTML, reply_markup=kb)
+    except (BadRequest, Forbidden, TimedOut):
+        pass
+
+
+async def kw_router(update: Update, ctx: ContextTypes.DEFAULT_TYPE):
+    _g = await cb_guard(update, ctx)
+    if _g is None:
+        return
+    q, uid, d, f = _g
+    act = d.split("|")[1] if "|" in d else ""
+    if not KW_WORDS:
+        await q.answer("Игра пока недоступна", show_alert=True)
+        return
+    if q.message and q.message.chat.type != "private":
+        await q.answer("Кваквордл — в личке с ботом", show_alert=True)
+        return
+    if act == "help":
+        await q.answer(KW_HELP[:200], show_alert=True)
+        return
+    if act == "give":
+        st = kw_load(f)
+        if not st["done"] and st["g"]:
+            st["done"] = 2
+            kw_store(f, st)
+            f["kw_streak"] = 0
+            await db_save(f)
+        ctx.user_data.pop("kw_wait", None)
+        await q.answer()
+        await kw_open(q.message, ctx, f, edit=True)
+        return
+    await q.answer()
+    await kw_open(q.message, ctx, f, edit=True)
+
+
+async def kw_input(update: Update, ctx: ContextTypes.DEFAULT_TYPE) -> None:
+    """
+    Слово для Кваквордла сообщением в личку. Срабатывает, только если игрок
+    открыл игру за последние полчаса и пишет одно слово, — иначе сообщение
+    уходит дальше обычным обработчикам.
+    """
+    msg = update.message
+    user = update.effective_user
+    waited = ctx.user_data.get("kw_wait")
+    if not waited or not msg or not msg.text or msg.chat.type != "private":
+        return
+    if time.time() - waited > KW_WAIT_TTL:
+        ctx.user_data.pop("kw_wait", None)
+        return
+    word = kw_norm(msg.text)
+    if not word or " " in word or len(word) > 12:
+        return                                   # это не попытка, а просто сообщение
+    f = await db_get(user.id)
+    if not f or not KW_WORDS:
+        return
+    st = kw_load(f)
+    if st["done"]:
+        ctx.user_data.pop("kw_wait", None)
+        return
+    ctx.user_data["kw_wait"] = time.time()
+    err = kw_check_guess(word)
+    if not err and word in st["g"]:
+        err = "Это слово уже было"
+    if err:
+        text, kb = kw_view(f, ctx.bot.username, note=f"{_E_WARN} {err}")
+        await msg.reply_text(text, parse_mode=ParseMode.HTML, reply_markup=kb)
+        raise ApplicationHandlerStop
+    answer = kw_word()
+    st["g"].append(word)
+    if len(st["g"]) == 1:
+        st_count("kw_play")
+    note = ""
+    if word == answer:
+        st["done"] = 1
+        n = len(st["g"])
+        reward = KW_REWARD[n - 1]
+        yesterday = (datetime.now(ST_TZ) - timedelta(days=1)).strftime("%Y-%m-%d")
+        f["kw_streak"] = (f.get("kw_streak", 0) or 0) + 1 if f.get("kw_last_win") == yesterday else 1
+        f["kw_last_win"] = kw_today()
+        f["kw_wins"] = (f.get("kw_wins", 0) or 0) + 1
+        f["coins"] += reward
+        add_xp(f, KW_XP)
+        await levelup(f, ctx.bot)
+        note = ui_line(f"🎉 <b>{answer.upper()}</b>", f"+{ui_money(reward)}", f"+{KW_XP} XP")
+        st_count("kw_win", 1, n)
+        ctx.user_data.pop("kw_wait", None)
+    elif len(st["g"]) >= KW_TRIES:
+        st["done"] = 2
+        st_count("kw_lose")
+        f["kw_streak"] = 0
+        ctx.user_data.pop("kw_wait", None)
+    kw_store(f, st)
+    await db_save(f)
+    if st["done"] == 1:
+        await ach_check(f, ctx.bot)
+    text, kb = kw_view(f, ctx.bot.username, note=note)
+    await msg.reply_text(text, parse_mode=ParseMode.HTML, reply_markup=kb)
+    raise ApplicationHandlerStop
 
 
 # ══════════════════════════════════════════════════════════════════════════════
@@ -67940,6 +68706,9 @@ def main():
     # останавливает его, только когда админ что-то вводит в опрос
     app.add_handler(MessageHandler(
         filters.ChatType.PRIVATE & (filters.TEXT | filters.PHOTO) & ~filters.COMMAND, poll_input), group=-50)
+    # Слово для Кваквордла — так же: только когда игрок ждёт с открытой игрой
+    app.add_handler(MessageHandler(
+        filters.ChatType.PRIVATE & filters.TEXT & ~filters.COMMAND, kw_input), group=-49)
 
     cmds = [
         ("start", cmd_start),
@@ -68155,6 +68924,8 @@ def main():
         (r"^adst\|",                                st_router),
         (r"^pla\|",                                 poll_admin_router),
         (r"^plv\|",                                 poll_vote_router),
+        (r"^lily\|",                                lily_router),
+        (r"^kw\|",                                  kw_router),
         (r"^(casino|jackpot|menu_jackpot)",          casino_router),
         (r"^(duel|battle_|tournament)",              duel_router),
         (r"^(shop_|buy_|market_|craft_|sub_|stars_)", shop_router),
