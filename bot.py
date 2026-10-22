@@ -24,7 +24,7 @@
   собираются из них, а не склейкой строк на месте.
 """
 
-import os, asyncio, random, time, math, json, re, io, sqlite3, html as _html
+import os, asyncio, contextlib, random, time, math, json, re, io, sqlite3, html as _html
 import logging
 import logging.handlers
 import threading
@@ -4039,7 +4039,9 @@ _seetg_known_gifts: set[str] = set()
 
 # Сколько часов неактивности — порог для рассылки комара (default: 48ч)
 # Игроки, не заходившие дольше — не получают уведомление
-MOSQUITO_ACTIVE_HOURS = int(os.getenv("MOSQUITO_ACTIVE_HOURS", "720"))
+# Комара в личку шлём только тем, кто заходил за последние двое суток:
+# раньше было 30 дней, и он звенел у всех, кто давно не играет
+MOSQUITO_ACTIVE_HOURS = int(os.getenv("MOSQUITO_ACTIVE_HOURS", "48"))
 # Антибот комара
 MOSQUITO_MIN_REACT_MS = 400   # мин. время реакции (мс). Боты нажимают за 0–100ms
 MOSQUITO_DAILY_LIMIT  = 3     # макс поимок за сутки с одного аккаунта
@@ -4361,6 +4363,8 @@ def run_sync_migration():
         ("kw_wins", "INTEGER DEFAULT 0"),
         # ── Подписка на уведомления о комаре (1=вкл, 0=выкл) ──
         ("mosquito_notify", "INTEGER DEFAULT 1"),
+        # ── Звук фоновых сообщений (0=важные, 1=все, 2=без звука) ──
+        ("push_mode", "INTEGER DEFAULT 0"),
         # ── Уведомления о переводах /gift (0=все, 1=только соседи по стае) ──
         ("gift_notify", "INTEGER DEFAULT 0"),
         # ── Уведомления о набегах и стычках (1=вкл, 0=выкл) ──
@@ -7100,7 +7104,7 @@ EVENTS = [
 # ══════════════════════════════════════════════════════════════════════════════
 
 # ── Константы ─────────────────────────────────────────────────────────────────
-INTERACTIVE_EVENT_COOLDOWN = 6 * 3600  # мин. интервал между инт. событиями (сек)
+INTERACTIVE_EVENT_COOLDOWN = 20 * 3600  # мин. интервал между инт. событиями (сек)
 INTERACTIVE_EVENT_TIMEOUT  = 90        # тайм-аут на ответ игрока (сек)
 INTERACTIVE_EVENT_CHANCE   = 0.40      # доля интерактивных событий (0–1)
 
@@ -14227,6 +14231,7 @@ async def init_db():
             kw_last_win              TEXT    DEFAULT '',
             kw_wins                  INTEGER DEFAULT 0,
             mosquito_notify          INTEGER DEFAULT 1,
+            push_mode                INTEGER DEFAULT 0,
             gift_notify              INTEGER DEFAULT 0,
             subscription_type        INTEGER DEFAULT 0,
             subscription_until       REAL    DEFAULT 0,
@@ -14960,6 +14965,11 @@ ST_KEEP_DAYS = 400             # заходы, счётчики, снимки �
 # фоновых задач — имя задачи. Переменная контекста, поэтому у каждого апдейта
 # своя, и задачи, запущенные из обработчика, наследуют её.
 _ST_SRC: _cv.ContextVar[str] = _cv.ContextVar("st_src", default="фон")
+# Кто нажал: сообщение ему же — ответ, любому другому в личку — уведомление
+# (см. push_classify). 0 — фоновая задача.
+_PUSH_ACTOR: _cv.ContextVar[int] = _cv.ContextVar("push_actor", default=0)
+# Явная пометка вида уведомления для участка кода (push_as)
+_PUSH_KIND: _cv.ContextVar[str] = _cv.ContextVar("push_kind", default="")
 
 _st_lock = threading.Lock()    # счётчики трогает и поток логов
 _st_active: dict = {}          # (день, uid) -> [нажатий, маска часов]
@@ -15095,6 +15105,8 @@ def _st_on_update(update: Update, bot_username: str) -> None:
 async def st_on_update(update: Update, ctx: ContextTypes.DEFAULT_TYPE) -> None:
     """Самый первый обработчик (группа −100): отметить заход и функцию."""
     try:
+        u = update.effective_user
+        _PUSH_ACTOR.set(u.id if u else 0)
         _st_on_update(update, ctx.bot.username or "")
     except Exception as e:
         logger.debug("st_on_update: %s", e)
@@ -15282,6 +15294,7 @@ def st_wrap_jobs(jq) -> None:
 
         async def run(ctx):
             _ST_SRC.set(name[:32])
+            _PUSH_ACTOR.set(0)
             return await cb(ctx)
         run.__name__ = getattr(cb, "__name__", "job")
         return run
@@ -18483,9 +18496,12 @@ def settings_screen(f: dict) -> tuple[str, InlineKeyboardMarkup]:
     mosq_state = "вкл" if f.get("mosquito_notify", 1) else "выкл"
     gift_state = "только соседи" if f.get("gift_notify", 0) == 1 else "все"
     war_state  = "вкл" if f.get("war_notify", 1) else "выкл"
+    pm = int(f.get("push_mode", 0) or 0)
+    push_state = PUSH_MODES[pm] if 0 <= pm < len(PUSH_MODES) else PUSH_MODES[0]
 
     kb = InlineKeyboardMarkup([
         [btn(f"🎨 Стикеры{SEP}{mode_state}", callback_data="toggle_static")],
+        [btn(f"🔔 Звук{SEP}{push_state}", callback_data="toggle_push_mode")],
         [btn(f"🍽 Кормление{SEP}{feed_state}", callback_data="toggle_feed_notify")],
         [btn(f"🦟 Комар{SEP}{mosq_state}", callback_data="toggle_mosquito_notify")],
         [btn(f"🎁 Переводы{SEP}{gift_state}", callback_data="toggle_gift_notify")],
@@ -21347,6 +21363,7 @@ async def new_frog(user) -> dict:
         "lang": _detect_lang(user),
         # ── Подписка на уведомления о комаре ──
         "mosquito_notify": 1,
+        "push_mode": 0,
         # ── Подписки ──
         "subscription_type":  0,
         "subscription_until": 0,
@@ -49560,6 +49577,18 @@ async def on_callback(update: Update, ctx: ContextTypes.DEFAULT_TYPE):
         await show_settings(q, f)
         return
 
+    if d == "toggle_push_mode":
+        f["push_mode"] = (int(f.get("push_mode", 0) or 0) + 1) % len(PUSH_MODES)
+        await db_save(f)
+        push_mode_set(uid, f["push_mode"])
+        await q.answer({
+            0: "Со звуком только важное: лягушке плохо, тебе что-то прислали. Остальное тихо.",
+            1: "Со звуком всё, как раньше.",
+            2: "Всё без звука. Сообщения приходят, но не звенят.",
+        }[f["push_mode"]], show_alert=True)
+        await show_settings(q, f)
+        return
+
     if d == "toggle_mosquito_notify":
         f["mosquito_notify"] = 0 if f.get("mosquito_notify", 1) else 1
         await db_save(f)
@@ -50309,11 +50338,20 @@ async def on_callback(update: Update, ctx: ContextTypes.DEFAULT_TYPE):
 
         # Параллельное редактирование всех остальных сообщений
         sem = asyncio.Semaphore(10)
+        caught_uids = {str(c["uid"]) for c in catchers}
 
         async def _edit_one(r_uid_str: str, msg_id: int):
             if r_uid_str == catcher_uid_str:
                 return  # уже обновили выше
             async with sem:
+                # Комар улетел, а этот игрок не ловил — сообщение больше
+                # не нужно, убираем из лички, чтобы не копились
+                if new_kb is None and r_uid_str not in caught_uids:
+                    try:
+                        await ctx.bot.delete_message(int(r_uid_str), msg_id)
+                        return
+                    except (BadRequest, Forbidden, TimedOut):
+                        pass
                 try:
                     await ctx.bot.edit_message_text(
                         text=new_text,
@@ -53045,8 +53083,9 @@ async def job_events(ctx: ContextTypes.DEFAULT_TYPE):
     updated_frogs = []
 
     for f in frogs:
-        # Базовый кулдаун — 8 часов
-        if time.time() - f.get("last_event", 0) < 8 * 3600:
+        # Одно событие в сутки: раньше было каждые 8 часов, и вместе с остальной
+        # рассылкой это превращалось в спам
+        if time.time() - f.get("last_event", 0) < 24 * 3600:
             continue
 
         # Любопытная: +10% шанс получить событие (обычно 100%, но меняет кулдаун)
@@ -54583,15 +54622,8 @@ async def job_reminders(ctx: ContextTypes.DEFAULT_TYPE):
             )
             to_remind.append((f, text, frog_kb))
 
-        # ── Грустит: голод/настроение < 40% → раз в 6ч ──
-        elif (hunger < 40 or f.get("happiness", 100) < 30) and now - last_r > 6 * 3600:
-            m = get_mood(f)
-            if m in ("sad", "sick"):
-                text = (
-                    f"{_E_FOOD} <b>{name} заскучала</b>\n\n"
-                    f"{_E_FOOD} {hunger}% {_E_HAPPY} {f.get('happiness',100)}%"
-                )
-                to_remind.append((f, text, frog_kb))
+        # «Заскучала» (голод < 40%) убрано: ничем не грозит, а звенело
+        # по несколько раз в день. Зовём, только когда лягушке правда плохо.
 
     if not to_remind:
         return
@@ -54866,26 +54898,36 @@ async def job_background_decay(ctx: ContextTypes.DEFAULT_TYPE):
                 await db_save(f)
                 processed += 1
             # Уведомление о низком здоровье
+            # Тот же повод, что у job_reminders: если он уже звал недавно,
+            # второй раз не пишем, а после этого он сам подождёт
             if f.get("_need_warning"):
                 f.pop("_need_warning", None)
-                try:
-                    await ctx.bot.send_message(
-                        uid_dec,
-                        f"⚠️ <b>Твоя лягушка совсем слаба!</b>\n"
-                        f"{_E_HEART} Здоровье: {f['health']}%\n"
-                        f"<i>Срочно покорми и позаботься — иначе она умрёт</i>",
-                        parse_mode=ParseMode.HTML,
-                    )
-                    warned += 1
-                except (BadRequest, Forbidden, TimedOut):
-                    pass
+                if now - f.get("last_remind", 0) > 3600:
+                    try:
+                        with push_as("alert"):
+                            await ctx.bot.send_message(
+                                uid_dec,
+                                f"⚠️ <b>Твоя лягушка совсем слаба!</b>\n"
+                                f"{_E_HEART} Здоровье: {f['health']}%\n"
+                                f"<i>Покорми и вылечи — иначе она умрёт</i>",
+                                parse_mode=ParseMode.HTML,
+                                reply_markup=InlineKeyboardMarkup([[
+                                    btn("Покормить и вылечить", callback_data="menu_care",
+                                        style="primary", icon_id=ICON_CARE)
+                                ]]),
+                            )
+                        f["last_remind"] = now
+                        await db_save(f)
+                        warned += 1
+                    except (BadRequest, Forbidden, TimedOut):
+                        pass
             # Мягкий намёк на Няню при низком голоде (<20%) — не чаще раза в сутки
             _hunger_nudge_key = f"last_nanny_nudge_{uid_dec}"
             _has_sub = f.get("subscription_until", 0) > now and f.get("subscription_type", 0) >= 1
             if (
                 not _has_sub
                 and f.get("hunger", 100) < 20
-                and now - ctx.bot_data.get(_hunger_nudge_key, 0) > 86400
+                and now - ctx.bot_data.get(_hunger_nudge_key, 0) > 3 * 86400
             ):
                 ctx.bot_data[_hunger_nudge_key] = now
                 try:
@@ -55078,24 +55120,6 @@ async def job_auto_care(ctx: ContextTypes.DEFAULT_TYPE):
 WORKER_DAILY_BASE_MIN = 300
 WORKER_DAILY_BASE_MAX = 400
 
-# Утренние фразы «ушла на работу»
-_WORK_MORNING_INTROS = [
-    "☀️ Новый день — новые дела!",
-    "🌅 Солнце ещё не встало, а {name} уже собирается.",
-    "🎒 Портфель собран, термос с болотным чаем налит.",
-    "🐸 Рабочий настрой включён. Болото, жди!",
-    "💪 Сегодня будет хороший день. {name} чувствует это.",
-]
-
-# Дневные фразы «всё ещё на работе»
-_WORK_MIDDAY_INTROS = [
-    "🕛 Обеденный перерыв. {name} жуёт бутерброд прямо на рабочем месте.",
-    "📱 Быстрое сообщение с работы...",
-    "🏃 День в самом разгаре!",
-    "☕ Кофе-пауза. {name} делится новостями.",
-]
-
-
 def _work_build_scene() -> dict:
     """
     Генерирует полную сцену рабочего дня и возвращает dict со всеми
@@ -55227,36 +55251,12 @@ async def _work_phase_morning(now: float, bot, catch_up: bool = False) -> list[i
             f["worker_phase"] = 1
             await db_save(f)
 
-            name  = fname(f)
-            story = scene["story"].format(name=name)
-
-            if catch_up:
-                intro = random.choice([
-                    "⏰ Проспала чуть-чуть, но решила всё равно идти!",
-                    "🏃 Опоздала — пришлось бежать на работу вприпрыжку.",
-                    "😅 Будильник подвёл. Но лягушка не сдаётся!",
-                    "🌤️ Поздний старт, зато бодрая.",
-                ]).format(name=name)
-                footer = f"<i>День сжатый — обед придёт скоро, вечером как обычно вернётся {_E_FROG}</i>"
-            else:
-                intro = random.choice(_WORK_MORNING_INTROS).format(name=name)
-                footer = "<i>Что-то произойдёт по пути... <tg-emoji emoji-id='5341367834935075028'>🐸</tg-emoji></i>"
-
-            ok = await _work_send_safe(
-                bot, uid,
-                f"🌅 <b>{name} отправляется на работу!</b>\n"
-                f"<i>Профессия: {scene['prof_emoji']} {scene['prof_name']}</i>\n\n"
-                f"{intro}\n\n"
-                f"{story}\n\n"
-                f"{footer}",
-                parse_mode=ParseMode.HTML,
-            )
-            if ok:
-                sent.append(uid)
-                logger.info("work_morning uid=%s catch_up=%s prof=%s", uid, catch_up, scene['prof_name'])
+            # Утром и в обед больше не пишем: три сообщения в день от одной
+            # подписки игроки называли спамом. Весь день — одним отчётом вечером.
+            sent.append(uid)
+            logger.info("work_morning uid=%s catch_up=%s prof=%s", uid, catch_up, scene['prof_name'])
         except Exception as _e:
             logger.warning("work_morning uid=%s: %s", uid, _e)
-        await asyncio.sleep(0.3)
     logger.info("work_morning done: sent=%d catch_up=%s", len(sent), catch_up)
     return sent
 
@@ -55276,19 +55276,8 @@ async def _work_phase_catchup_midday(now: float, bot, uid_list: list[int]):
             scene = json.loads(scene_raw)
             f["worker_phase"] = 2
             await db_save(f)
-
-            name  = fname(f)
-            event = scene["event"].format(name=name)
-            await _work_send_safe(
-                bot, uid,
-                f"{_E_BOLT} <b>Рабочий день в разгаре</b>\n\n"
-                f"{event}\n\n"
-                f"<i>Вечером в 18:00 МСК вернётся домой <tg-emoji emoji-id='5341367834935075028'>🐸</tg-emoji></i>",
-                parse_mode=ParseMode.HTML,
-            )
         except Exception as _e:
             logger.warning("work_catchup_midday uid=%s: %s", uid, _e)
-        await asyncio.sleep(0.3)
 
 
 async def _work_phase_midday(now: float, bot):
@@ -55307,23 +55296,9 @@ async def _work_phase_midday(now: float, bot):
             scene = json.loads(scene_raw)
             f["worker_phase"] = 2
             await db_save(f)
-
-            name  = fname(f)
-            intro = random.choice(_WORK_MIDDAY_INTROS).format(name=name)
-            event = scene["event"].format(name=name)
-            await _work_send_safe(
-                bot, uid,
-                f"🕛 <b>Рабочий день в разгаре</b>\n\n"
-                f"{intro}\n\n"
-                f"{event}\n\n"
-                f"<i>Вечером узнаешь, чем всё закончилось <tg-emoji emoji-id='5341367834935075028'>🐸</tg-emoji></i>",
-                parse_mode=ParseMode.HTML,
-            )
             sent += 1
-            logger.info("work_midday uid=%s", uid)
         except Exception as _e:
             logger.warning("work_midday uid=%s: %s", uid, _e)
-        await asyncio.sleep(0.3)
     logger.info("work_midday done: sent=%d", sent)
 
 
@@ -55379,6 +55354,8 @@ async def _work_phase_evening(now: float, bot):
 
             name    = fname(f)
             outcome = scene["outcome"].format(name=name, earned=earned)
+            story   = scene["story"].format(name=name)
+            event   = scene["event"].format(name=name)
 
             bonus_parts = []
             if scene["bonus_hunger"]    != 0: bonus_parts.append(f"{_E_FOOD}{scene['bonus_hunger']:+d}")
@@ -55389,8 +55366,9 @@ async def _work_phase_evening(now: float, bot):
 
             await _work_send_safe(
                 bot, uid,
-                f"{scene['prof_emoji']} <b>{name} вернулась с работы!</b>\n\n"
-                f"{outcome}\n\n"
+                f"{scene['prof_emoji']} <b>{name} вернулась с работы!</b>\n"
+                f"<i>Профессия: {scene['prof_name']}</i>\n\n"
+                f"{story}\n\n{event}\n\n{outcome}\n\n"
                 f"{_E_COIN} Принесла домой: <b>+{earned}{_E_COIN}</b>{bonus_line}\n\n"
                 f"<i>«Ква! Устала, но довольна!» <tg-emoji emoji-id='5341367834935075028'>🐸</tg-emoji></i>",
                 parse_mode=ParseMode.HTML,
@@ -61182,6 +61160,12 @@ async def _sts_retention(x: _StCtx) -> _StSec:
          ("за 7 дн", _stn(await x.c("bot_blocked", d7)),
           f"разблокировали {_stn(await x.c('bot_unblocked', d7))}"),
          ("за 30 дн", _stn(await x.c("bot_blocked", x.days(30)))))
+    loud, quiet = await x.c("push_loud", d7), await x.c("push_quiet", d7)
+    if loud or quiet:
+        s.kv("Уведомления в личку (7 дн)",
+             ("со звуком", _stn(loud)),
+             ("тихо", _stn(quiet)),
+             ("тревог о лягушке", _stn(await x.c("push:alert", d7))))
     s.note("«Возвращаются» — доля новых, кто заходил через N дней после регистрации или позже (по last_seen). "
            "«…» — неделя ещё не дожила до этого срока.")
     return s
@@ -65944,18 +65928,8 @@ async def job_canteen_tick(ctx: ContextTypes.DEFAULT_TYPE):
                                 (staya_id, m["user_id"], "auto_eat", item, 1, time.time()),
                             )
                             await db.commit()
-                        effects_msg = f"🍖 Голод: +{gain_hunger}"
-                        if gain_happy:  effects_msg += f"  😄 Счастье: +{gain_happy}"
-                        if gain_health: effects_msg += f"  ❤️ Здоровье: +{gain_health}"
-                        try:
-                            await ctx.bot.send_message(
-                                m["user_id"],
-                                f"🍲 <b>Столовая стаи</b> подкормила твою лягушку!\n"
-                                f"{effects_msg}",
-                                parse_mode=ParseMode.HTML,
-                            )
-                        except (BadRequest, Forbidden, TimedOut):
-                            pass
+                        # В личку не пишем: столовая кормит по десятку раз
+                        # в день, и каждое «подкормила» звенело. Видно в статусе.
                         break
 
             # Feed happiness (если голод в норме, но счастье низкое)
@@ -65981,18 +65955,6 @@ async def job_canteen_tick(ctx: ContextTypes.DEFAULT_TYPE):
                                 (staya_id, m["user_id"], "auto_eat", item, 1, time.time()),
                             )
                             await db.commit()
-                        effects_msg = f"😊 Счастье: +{gain_happy}"
-                        if gain_hunger: effects_msg += f"  🍖 Голод: +{gain_hunger}"
-                        if gain_health: effects_msg += f"  ❤️ Здоровье: +{gain_health}"
-                        try:
-                            await ctx.bot.send_message(
-                                m["user_id"],
-                                f"🍲 <b>Столовая стаи</b> подняла настроение лягушки!\n"
-                                f"{effects_msg}",
-                                parse_mode=ParseMode.HTML,
-                            )
-                        except (BadRequest, Forbidden, TimedOut):
-                            pass
                         break
 
             if food_changed and (fed or happiness < CANTEEN_HAPPINESS_THRESHOLD):
@@ -68825,6 +68787,8 @@ if _RATE_LIMITER_OK:
         MAX_WAIT = 30
 
         async def process_request(self, callback, args, kwargs, endpoint, data, rate_limit_args):
+            # Звук фонового уведомления в личку (см. push_govern)
+            await push_govern(endpoint, data)
             # Премиум-эмодзи в тексте: data — тот же словарь, что уйдёт в запрос
             orig = _premium_request(data)
             try:
@@ -68850,6 +68814,130 @@ if _RATE_LIMITER_OK:
                     if wait > self.MAX_WAIT or attempt == 2:
                         raise
                     await asyncio.sleep(wait + 0.2)
+
+
+# ══════════════════════════════════════════
+# 🔔 ЗВУК УВЕДОМЛЕНИЙ
+# ══════════════════════════════════════════
+# Бот писал в личку десятки сообщений в день, и каждое звенело — игроки
+# ставили его на беззвучный и переставали видеть даже «лягушка умирает».
+# Здесь, на выходе всех запросов, решается, звенит ли сообщение:
+#   • ответ на нажатие самого игрока — как обычно;
+#   • тревога о лягушке (голод, при смерти) — со звуком, до PUSH_LOUD_ALERT в сутки;
+#   • личное (кто-то покормил, подарок, поход ждёт выбора, давно не заходил) —
+#     со звуком до PUSH_LOUD_PERSONAL в сутки, дальше тихо;
+#   • всё остальное (комар, события, отчёты, акции) — тихо;
+#   • ночью (PUSH_NIGHT, МСК) — всё тихо.
+# Тихое сообщение приходит как обычно, просто без звука и вибрации.
+PUSH_LOUD_ALERT = 3
+PUSH_LOUD_PERSONAL = 3
+PUSH_NIGHT = (23, 9)
+PUSH_MODES = ("важные", "все", "без звука")
+_PUSH_ENDPOINTS = frozenset({
+    "sendMessage", "sendPhoto", "sendSticker", "sendAnimation", "sendVideo",
+    "sendDocument", "sendAudio", "sendVoice", "sendDice", "sendPoll",
+    "copyMessage", "forwardMessage", "sendMediaGroup", "sendLocation",
+})
+# Фоновые задачи по имени (как их подписывает st_wrap_jobs)
+_PUSH_JOB_KIND = {
+    "job:reminders": "alert",
+    "job:adventure_tick": "personal",
+    "job:ex_tick": "personal",
+    "job:winback": "personal",
+}
+_push_loud: dict = {}          # (день, uid, вид) -> сколько прозвенело
+_push_mode_cache: dict = {}    # uid -> (режим, когда прочитан)
+
+
+@contextlib.contextmanager
+def push_as(kind: str):
+    """Пометить отправки внутри блока: alert / personal / quiet."""
+    tok = _PUSH_KIND.set(kind)
+    try:
+        yield
+    finally:
+        _PUSH_KIND.reset(tok)
+
+
+def push_classify(chat_id) -> str:
+    """'' — не уведомление (ответ игроку, группа, канал); иначе вид."""
+    if not isinstance(chat_id, int) or chat_id <= 0:
+        return ""
+    actor = _PUSH_ACTOR.get()
+    if actor and actor == chat_id:
+        return ""
+    kind = _PUSH_KIND.get()
+    if kind:
+        return kind
+    if actor:
+        return "personal"      # другой игрок что-то сделал с твоей лягушкой
+    return _PUSH_JOB_KIND.get(_ST_SRC.get(), "quiet")
+
+
+def push_mode_set(uid: int, mode: int) -> None:
+    _push_mode_cache[uid] = (mode, time.time())
+
+
+async def _push_mode(uid: int) -> int:
+    hit = _push_mode_cache.get(uid)
+    if hit and time.time() - hit[1] < 600:
+        return hit[0]
+    mode = 0
+    try:
+        async with aiosqlite.connect(DB_PATH) as db:
+            async with db.execute("SELECT push_mode FROM frogs WHERE user_id=?", (uid,)) as c:
+                row = await c.fetchone()
+        mode = int(row[0] or 0) if row else 0
+    except Exception as _e:
+        logger.debug("push_mode uid=%s: %s", uid, _e)
+    if len(_push_mode_cache) > 50000:
+        _push_mode_cache.clear()
+    _push_mode_cache[uid] = (mode, time.time())
+    return mode
+
+
+def _push_loud_ok(uid: int, kind: str, now: float | None = None) -> bool:
+    """Можно ли этому уведомлению звенеть. Считает прозвеневшие за сутки (МСК)."""
+    msk = datetime.fromtimestamp((now or time.time()) + 3 * 3600, timezone.utc)
+    a, b = PUSH_NIGHT
+    if msk.hour >= a or msk.hour < b:
+        return False
+    limit = {"alert": PUSH_LOUD_ALERT, "personal": PUSH_LOUD_PERSONAL}.get(kind, 0)
+    day = msk.strftime("%Y-%m-%d")
+    key = (day, uid, kind)
+    n = _push_loud.get(key, 0)
+    if n >= limit:
+        return False
+    if len(_push_loud) > 100000:
+        _push_loud.clear()
+    _push_loud[key] = n + 1
+    return True
+
+
+async def push_govern(endpoint: str, data) -> None:
+    """Выставить disable_notification фоновому сообщению в личку."""
+    try:
+        if endpoint not in _PUSH_ENDPOINTS or not isinstance(data, dict):
+            return
+        if data.get("disable_notification"):
+            return
+        chat = data.get("chat_id")
+        kind = push_classify(chat)
+        if not kind:
+            return
+        mode = await _push_mode(chat)
+        if mode == 1:
+            loud = True
+        elif mode == 2:
+            loud = False
+        else:
+            loud = kind in ("alert", "personal") and _push_loud_ok(chat, kind)
+        if not loud:
+            data["disable_notification"] = True
+        st_count("push_loud" if loud else "push_quiet")
+        st_count("push:" + kind)
+    except Exception as _e:              # звук — не повод не доставить сообщение
+        logger.debug("push_govern: %s", _e)
 
 
 _PT_FIELDS = ("text", "caption")
