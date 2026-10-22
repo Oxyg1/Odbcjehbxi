@@ -55120,6 +55120,24 @@ async def job_auto_care(ctx: ContextTypes.DEFAULT_TYPE):
 WORKER_DAILY_BASE_MIN = 300
 WORKER_DAILY_BASE_MAX = 400
 
+# Утренние фразы «ушла на работу»
+_WORK_MORNING_INTROS = [
+    "☀️ Новый день — новые дела!",
+    "🌅 Солнце ещё не встало, а {name} уже собирается.",
+    "🎒 Портфель собран, термос с болотным чаем налит.",
+    "🐸 Рабочий настрой включён. Болото, жди!",
+    "💪 Сегодня будет хороший день. {name} чувствует это.",
+]
+
+# Дневные фразы «всё ещё на работе»
+_WORK_MIDDAY_INTROS = [
+    "🕛 Обеденный перерыв. {name} жуёт бутерброд прямо на рабочем месте.",
+    "📱 Быстрое сообщение с работы...",
+    "🏃 День в самом разгаре!",
+    "☕ Кофе-пауза. {name} делится новостями.",
+]
+
+
 def _work_build_scene() -> dict:
     """
     Генерирует полную сцену рабочего дня и возвращает dict со всеми
@@ -55251,18 +55269,48 @@ async def _work_phase_morning(now: float, bot, catch_up: bool = False) -> list[i
             f["worker_phase"] = 1
             await db_save(f)
 
-            # Утром и в обед больше не пишем: три сообщения в день от одной
-            # подписки игроки называли спамом. Весь день — одним отчётом вечером.
-            sent.append(uid)
-            logger.info("work_morning uid=%s catch_up=%s prof=%s", uid, catch_up, scene['prof_name'])
+            name  = fname(f)
+            story = scene["story"].format(name=name)
+
+            if catch_up:
+                intro = random.choice([
+                    "⏰ Проспала чуть-чуть, но решила всё равно идти!",
+                    "🏃 Опоздала — пришлось бежать на работу вприпрыжку.",
+                    "😅 Будильник подвёл. Но лягушка не сдаётся!",
+                    "🌤️ Поздний старт, зато бодрая.",
+                ]).format(name=name)
+                footer = f"<i>День сжатый — обед придёт скоро, вечером как обычно вернётся {_E_FROG}</i>"
+            else:
+                intro = random.choice(_WORK_MORNING_INTROS).format(name=name)
+                footer = "<i>Что-то произойдёт по пути... <tg-emoji emoji-id='5341367834935075028'>🐸</tg-emoji></i>"
+
+            ok = await _work_send_safe(
+                bot, uid,
+                f"🌅 <b>{name} отправляется на работу!</b>\n"
+                f"<i>Профессия: {scene['prof_emoji']} {scene['prof_name']}</i>\n\n"
+                f"{intro}\n\n"
+                f"{story}\n\n"
+                f"{footer}",
+                parse_mode=ParseMode.HTML,
+            )
+            if ok:
+                sent.append(uid)
+                logger.info("work_morning uid=%s catch_up=%s prof=%s", uid, catch_up, scene['prof_name'])
         except Exception as _e:
             logger.warning("work_morning uid=%s: %s", uid, _e)
+        await asyncio.sleep(0.3)
     logger.info("work_morning done: sent=%d catch_up=%s", len(sent), catch_up)
     return sent
 
 
 async def _work_phase_catchup_midday(now: float, bot, uid_list: list[int]):
     """Ускоренная фаза 2: отправляем только конкретным uid через 30 мин после catch-up утра."""
+    # Запускается безымянной задачей — пометить отчёт Трудяги явно
+    with push_as("paid"):
+        await _work_catchup_send(bot, uid_list)
+
+
+async def _work_catchup_send(bot, uid_list: list[int]):
     for uid in uid_list:
         try:
             f = await db_get(uid)
@@ -55276,8 +55324,19 @@ async def _work_phase_catchup_midday(now: float, bot, uid_list: list[int]):
             scene = json.loads(scene_raw)
             f["worker_phase"] = 2
             await db_save(f)
+
+            name  = fname(f)
+            event = scene["event"].format(name=name)
+            await _work_send_safe(
+                bot, uid,
+                f"{_E_BOLT} <b>Рабочий день в разгаре</b>\n\n"
+                f"{event}\n\n"
+                f"<i>Вечером в 18:00 МСК вернётся домой <tg-emoji emoji-id='5341367834935075028'>🐸</tg-emoji></i>",
+                parse_mode=ParseMode.HTML,
+            )
         except Exception as _e:
             logger.warning("work_catchup_midday uid=%s: %s", uid, _e)
+        await asyncio.sleep(0.3)
 
 
 async def _work_phase_midday(now: float, bot):
@@ -55296,9 +55355,23 @@ async def _work_phase_midday(now: float, bot):
             scene = json.loads(scene_raw)
             f["worker_phase"] = 2
             await db_save(f)
+
+            name  = fname(f)
+            intro = random.choice(_WORK_MIDDAY_INTROS).format(name=name)
+            event = scene["event"].format(name=name)
+            await _work_send_safe(
+                bot, uid,
+                f"🕛 <b>Рабочий день в разгаре</b>\n\n"
+                f"{intro}\n\n"
+                f"{event}\n\n"
+                f"<i>Вечером узнаешь, чем всё закончилось <tg-emoji emoji-id='5341367834935075028'>🐸</tg-emoji></i>",
+                parse_mode=ParseMode.HTML,
+            )
             sent += 1
+            logger.info("work_midday uid=%s", uid)
         except Exception as _e:
             logger.warning("work_midday uid=%s: %s", uid, _e)
+        await asyncio.sleep(0.3)
     logger.info("work_midday done: sent=%d", sent)
 
 
@@ -55354,8 +55427,6 @@ async def _work_phase_evening(now: float, bot):
 
             name    = fname(f)
             outcome = scene["outcome"].format(name=name, earned=earned)
-            story   = scene["story"].format(name=name)
-            event   = scene["event"].format(name=name)
 
             bonus_parts = []
             if scene["bonus_hunger"]    != 0: bonus_parts.append(f"{_E_FOOD}{scene['bonus_hunger']:+d}")
@@ -55366,9 +55437,8 @@ async def _work_phase_evening(now: float, bot):
 
             await _work_send_safe(
                 bot, uid,
-                f"{scene['prof_emoji']} <b>{name} вернулась с работы!</b>\n"
-                f"<i>Профессия: {scene['prof_name']}</i>\n\n"
-                f"{story}\n\n{event}\n\n{outcome}\n\n"
+                f"{scene['prof_emoji']} <b>{name} вернулась с работы!</b>\n\n"
+                f"{outcome}\n\n"
                 f"{_E_COIN} Принесла домой: <b>+{earned}{_E_COIN}</b>{bonus_line}\n\n"
                 f"<i>«Ква! Устала, но довольна!» <tg-emoji emoji-id='5341367834935075028'>🐸</tg-emoji></i>",
                 parse_mode=ParseMode.HTML,
@@ -68826,6 +68896,8 @@ if _RATE_LIMITER_OK:
 #   • тревога о лягушке (голод, при смерти) — со звуком, до PUSH_LOUD_ALERT в сутки;
 #   • личное (кто-то покормил, подарок, поход ждёт выбора, давно не заходил) —
 #     со звуком до PUSH_LOUD_PERSONAL в сутки, дальше тихо;
+#   • платное (отчёты Трудяги) — со звуком без лимита: за это платят, а кому
+#     мешает, переключит «Звук» в настройках;
 #   • всё остальное (комар, события, отчёты, акции) — тихо;
 #   • ночью (PUSH_NIGHT, МСК) — всё тихо.
 # Тихое сообщение приходит как обычно, просто без звука и вибрации.
@@ -68843,6 +68915,7 @@ _PUSH_JOB_KIND = {
     "job:reminders": "alert",
     "job:adventure_tick": "personal",
     "job:ex_tick": "personal",
+    "job:auto_farm": "paid",
     "job:winback": "personal",
 }
 _push_loud: dict = {}          # (день, uid, вид) -> сколько прозвенело
@@ -68902,6 +68975,8 @@ def _push_loud_ok(uid: int, kind: str, now: float | None = None) -> bool:
     a, b = PUSH_NIGHT
     if msk.hour >= a or msk.hour < b:
         return False
+    if kind == "paid":
+        return True
     limit = {"alert": PUSH_LOUD_ALERT, "personal": PUSH_LOUD_PERSONAL}.get(kind, 0)
     day = msk.strftime("%Y-%m-%d")
     key = (day, uid, kind)
@@ -68931,7 +69006,7 @@ async def push_govern(endpoint: str, data) -> None:
         elif mode == 2:
             loud = False
         else:
-            loud = kind in ("alert", "personal") and _push_loud_ok(chat, kind)
+            loud = kind in ("alert", "personal", "paid") and _push_loud_ok(chat, kind)
         if not loud:
             data["disable_notification"] = True
         st_count("push_loud" if loud else "push_quiet")

@@ -1,6 +1,6 @@
 """
 Звук уведомлений: что звенит, что приходит тихо, сколько раз в сутки.
-Плюс урезанная рассылка: Трудяга одним сообщением, без «заскучала»,
+Плюс урезанная рассылка: Трудяга (платный) звенит всегда, без «заскучала»,
 столовая без отчётов, комар только недавним игрокам.
 
 Запуск из корня репозитория:
@@ -105,7 +105,7 @@ async def main():
     ok(await cls(5, actor=7) == "personal", "другой игрок что-то сделал — личное")
     ok(await cls(5, src="job:reminders") == "alert", "напоминание о лягушке — тревога")
     ok(await cls(5, src="job:mosquito") == "quiet", "комар — тихо")
-    ok(await cls(5, src="job:auto_farm") == "quiet", "Трудяга — тихо")
+    ok(await cls(5, src="job:auto_farm") == "paid", "Трудяга — платное")
     ok(await cls(5, src="job:background_decay", kind="alert") == "alert", "push_as перекрывает")
     with B.push_as("alert"):
         pass
@@ -118,6 +118,8 @@ async def main():
     ok(B._push_loud_ok(1, "personal", day), "у личного свой счёт")
     ok(B._push_loud_ok(1, "alert", day + 86400), "на следующий день счёт заново")
     ok(not B._push_loud_ok(2, "quiet", day), "«тихое» не звенит никогда")
+    ok(all(B._push_loud_ok(2, "paid", day) for _ in range(10)), "платное — без лимита")
+    ok(not B._push_loud_ok(2, "paid", at_msk(2)), "платное ночью тоже тихо")
     ok(not B._push_loud_ok(3, "alert", at_msk(2)), "ночью тихо")
     ok(not B._push_loud_ok(3, "alert", at_msk(23) + 60), "23:01 — уже ночь")
     ok(B._push_loud_ok(3, "alert", at_msk(9) + 60), "9:01 — уже можно")
@@ -156,7 +158,7 @@ async def main():
     B.push_mode_set(11, 2)
     ok(await B._push_mode(11) == 2, "смена режима сразу видна фильтру")
 
-    print("5. Трудяга: один отчёт вечером вместо трёх")
+    print("5. Трудяга: три сообщения в день, как раньше, со звуком")
     bot = FakeBot()
     await make_frog(21, subscription_type=2, subscription_until=_time.time() + 86400 * 5,
                     worker_phase=0, last_worker_report=0)
@@ -168,20 +170,18 @@ async def main():
         now = _time.time()
         await B._work_phase_morning(now, bot)
         await B._work_phase_midday(now, bot)
-        ok(bot.sent == [], f"утром и в обед молчит ({len(bot.sent)})")
-        if hasattr(B._user_cache, "clear"):
-            B._user_cache.clear()
-        f = await B.db_get(21)
-        scene = json.loads(f.get("worker_scene_json") or "{}")
-        ok(f.get("worker_phase") == 2 and scene, "день всё равно идёт по фазам")
         await B._work_phase_evening(now, bot)
-        ok(len(bot.sent) == 1, f"вечером одно сообщение ({len(bot.sent)})")
-        if bot.sent and scene:
-            t = bot.sent[0][1]
-            name = B.fname(f)
-            ok(scene["story"].format(name=name) in t and scene["event"].format(name=name) in t,
-               "в вечернем отчёте вся история дня")
+        ok(len(bot.sent) == 3, f"утро, обед, вечер ({len(bot.sent)})")
+        B._push_mode_cache.clear()
+        B.time.time = lambda: day
+        ok(await govern(21, src="job:auto_farm"), "отчёт Трудяги звенит")
+        async def catchup():
+            B._PUSH_ACTOR.set(0); B._ST_SRC.set("job:lambda")
+            with B.push_as("paid"):
+                return B.push_classify(21)
+        ok(await asyncio.create_task(catchup()) == "paid", "догоняющий обед — тоже платное")
     finally:
+        B.time.time = real_time
         B._worker_get_eligible = real_elig
 
     print("6. Напоминания: только когда лягушке плохо")
