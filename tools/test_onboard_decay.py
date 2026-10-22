@@ -57,6 +57,14 @@ async def main():
     f = B.decay(f)
     ok(f["hunger"] < 100, "после кормления до 100 снова падает")
 
+    print("1б. Отметка затухания в будущем")
+    f = base(last_decay=_time.time() + 30 * 86400)
+    f = B.decay(f)
+    ok(abs(f["last_decay"] - _time.time()) < 5, "отметку из будущего вернули в настоящее")
+    f["last_decay"] = _time.time() - 3 * 3600
+    f = B.decay(f)
+    ok(f["hunger"] < 100, "и дальше параметры падают")
+
     print("2. Снятие флага при старте")
     user = types.SimpleNamespace(id=7, first_name="Т", username="", last_name="",
                                  language_code="ru", is_bot=False)
@@ -67,6 +75,7 @@ async def main():
     con = sqlite3.connect(DB, timeout=30)
     con.execute("UPDATE frogs SET onboard_step=1, born_at=? WHERE user_id=7", (_time.time() - 86400,))
     con.execute("UPDATE frogs SET onboard_step=1, born_at=? WHERE user_id=8", (_time.time() - 60,))
+    con.execute("UPDATE frogs SET last_decay=? WHERE user_id=8", (_time.time() + 86400 * 90,))
     con.commit()
     con.close()
     B.run_sync_migration()
@@ -75,6 +84,10 @@ async def main():
     con.close()
     ok(rows.get(7) == 0, "застрявший сутки назад — флаг снят")
     ok(rows.get(8) == 1, "новичок, который знакомится прямо сейчас, — не тронут")
+    con = sqlite3.connect(DB, timeout=30)
+    ld = con.execute("SELECT last_decay FROM frogs WHERE user_id=8").fetchone()[0]
+    con.close()
+    ok(ld <= _time.time() + 1, "отметка из будущего исправлена при старте")
 
     print()
     if FAILS:

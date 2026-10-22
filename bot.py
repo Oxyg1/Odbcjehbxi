@@ -5255,6 +5255,18 @@ def run_sync_migration():
             logger.warning("Переедание: старые счётчики обнулены у %d лягушек", cur.rowcount)
     except Exception as _e:
         logger.exception("overfeed_v2: %s", _e)
+    # Отметка затухания в будущем — то же «застывание», см. decay()
+    try:
+        if conn.execute(
+                "SELECT 1 FROM sqlite_master WHERE type='table' AND name='frogs'").fetchone():
+            _fut = conn.execute("UPDATE frogs SET last_decay=? WHERE last_decay>?",
+                                (time.time(), time.time() + 60))
+            conn.commit()
+            if _fut.rowcount:
+                logger.warning("Затухание: отметка была в будущем у %d лягушек — "
+                               "у них не падали параметры", _fut.rowcount)
+    except Exception as _e:
+        logger.exception("last_decay future: %s", _e)
     # Брошенное знакомство: см. ONBOARD_DECAY_GRACE. Снимаем флаг со всех,
     # кто застрял в нём дольше срока, — при каждом старте, это дёшево.
     try:
@@ -17715,6 +17727,11 @@ def decay(f: dict) -> dict:
 
     hours = (now - f["last_decay"]) / 3600
     if hours <= 0:
+        # Отметка в будущем (часы сервера уходили вперёд, ручная правка базы):
+        # раньше просто выходили, не трогая её, и параметры стояли, пока это
+        # «будущее» не наступит. Возвращаем отметку в настоящее.
+        if hours < -1 / 60:
+            f["last_decay"] = now
         return f
 
     # ── Погода: применяем множители ──────────────────────
