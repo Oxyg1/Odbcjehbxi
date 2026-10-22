@@ -17682,6 +17682,53 @@ DECAY_RATES = {
 }
 
 
+# Здоровье падает от плохого ухода. Раньше — только при нулевой сытости, и у
+# 81% активных игроков оно стояло на 100 вечно: кормишь хоть раз в несколько
+# часов — и всё. Теперь каждый запущенный параметр подтачивает здоровье
+# (единиц в час), вклады складываются. Нулевая сытость — как раньше, и тогда
+# считается только она: брошенная лягушка умирает не быстрее, чем прежде.
+# Заботливому игроку ничего не грозит: пока всё выше HEALTH_LOW, здоровье
+# не падает.
+HEALTH_LOW, HEALTH_VERYLOW = 30, 10
+HEALTH_RATE_LOW, HEALTH_RATE_VERYLOW = 0.3, 0.6
+HEALTH_NEGLECT = {
+    "hunger":      "голодная",
+    "happiness":   "грустит",
+    "cleanliness": "грязная",
+    "energy":      "устала",
+}
+
+
+def health_drain(f: dict) -> tuple[float, list[str]]:
+    """Сколько здоровья в час отнимает уход сейчас и почему."""
+    rate, why = 0.0, []
+    starving = f.get("hunger", 100) <= 0
+    for stat, word in HEALTH_NEGLECT.items():
+        v = f.get(stat, 100)
+        if stat == "hunger" and starving:
+            rate += DECAY_RATES["health"]
+        elif v < HEALTH_VERYLOW:
+            rate += HEALTH_RATE_VERYLOW
+        elif v < HEALTH_LOW:
+            rate += HEALTH_RATE_LOW
+        else:
+            continue
+        why.append(word)
+    if starving:
+        rate = DECAY_RATES["health"]       # голод — главное, остальное не добавляем
+    return rate, why
+
+
+def health_note(f: dict) -> str:
+    """Строка в карточке: здоровье падает и из-за чего. Пусто — не падает."""
+    if not f.get("alive") or f.get("health", 0) <= 0:
+        return ""
+    rate, why = health_drain(f)
+    if not rate:
+        return ""
+    return f"{_E_HEART} <i>Здоровье падает: {', '.join(why)}</i>"
+
+
 def _decay_frac_load(f: dict) -> dict:
     """Недосписанные доли единиц. Хранятся строкой JSON в колонке decay_frac."""
     raw = f.get("decay_frac") or ""
@@ -17768,10 +17815,12 @@ def decay(f: dict) -> dict:
     f["happiness"]   = max(0, f["happiness"]            - _take("happiness", happy_mult))
     f["cleanliness"] = max(0, f.get("cleanliness", 100) - _take("cleanliness", _clean_mult_d))
     f["energy"]      = max(0, f.get("energy", 100)      - _take("energy", energy_mult))
-    if f["hunger"] == 0:
-        f["health"] = max(0, f["health"] - _take("health", health_mult))
+    # Здоровье — от ухода (health_drain): считаем по состоянию после затухания
+    h_rate, _ = health_drain(f)
+    if h_rate:
+        f["health"] = max(0, f["health"] - _take("health", h_rate / DECAY_RATES["health"] * health_mult))
     else:
-        frac.pop("health", None)      # сыта — счётчик голодного урона обнуляем
+        frac.pop("health", None)      # уход в порядке — счётчик урона обнуляем
     # Обжорство проходит само: живот переваривает лишнее
     if f.get("overfeed_total", 0) > 0:
         f["overfeed_total"] = max(0, f["overfeed_total"] - _take("overfeed", 1.0))
@@ -18218,6 +18267,7 @@ def status_text(f: dict) -> str:
         f"{_E_XP} {stat_bar('xp', xp_pct)} {f['xp']}/{need}",
         stats,
         overfeed_note(f),
+        health_note(f),
         wallet,
         t("stat_boost", lg) if f.get("_boost_active") else "",
         hint=phrase,
