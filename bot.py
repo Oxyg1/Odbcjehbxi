@@ -55305,12 +55305,6 @@ async def _work_phase_morning(now: float, bot, catch_up: bool = False) -> list[i
 
 async def _work_phase_catchup_midday(now: float, bot, uid_list: list[int]):
     """Ускоренная фаза 2: отправляем только конкретным uid через 30 мин после catch-up утра."""
-    # Запускается безымянной задачей — пометить отчёт Трудяги явно
-    with push_as("paid"):
-        await _work_catchup_send(bot, uid_list)
-
-
-async def _work_catchup_send(bot, uid_list: list[int]):
     for uid in uid_list:
         try:
             f = await db_get(uid)
@@ -68896,9 +68890,7 @@ if _RATE_LIMITER_OK:
 #   • тревога о лягушке (голод, при смерти) — со звуком, до PUSH_LOUD_ALERT в сутки;
 #   • личное (кто-то покормил, подарок, поход ждёт выбора, давно не заходил) —
 #     со звуком до PUSH_LOUD_PERSONAL в сутки, дальше тихо;
-#   • платное (отчёты Трудяги) — со звуком без лимита: за это платят, а кому
-#     мешает, переключит «Звук» в настройках;
-#   • всё остальное (комар, события, отчёты, акции) — тихо;
+#   • всё остальное (комар, события, отчёты Трудяги, акции) — тихо;
 #   • ночью (PUSH_NIGHT, МСК) — всё тихо.
 # Тихое сообщение приходит как обычно, просто без звука и вибрации.
 PUSH_LOUD_ALERT = 3
@@ -68915,7 +68907,6 @@ _PUSH_JOB_KIND = {
     "job:reminders": "alert",
     "job:adventure_tick": "personal",
     "job:ex_tick": "personal",
-    "job:auto_farm": "paid",
     "job:winback": "personal",
 }
 _push_loud: dict = {}          # (день, uid, вид) -> сколько прозвенело
@@ -68975,8 +68966,6 @@ def _push_loud_ok(uid: int, kind: str, now: float | None = None) -> bool:
     a, b = PUSH_NIGHT
     if msk.hour >= a or msk.hour < b:
         return False
-    if kind == "paid":
-        return True
     limit = {"alert": PUSH_LOUD_ALERT, "personal": PUSH_LOUD_PERSONAL}.get(kind, 0)
     day = msk.strftime("%Y-%m-%d")
     key = (day, uid, kind)
@@ -69006,7 +68995,7 @@ async def push_govern(endpoint: str, data) -> None:
         elif mode == 2:
             loud = False
         else:
-            loud = kind in ("alert", "personal", "paid") and _push_loud_ok(chat, kind)
+            loud = kind in ("alert", "personal") and _push_loud_ok(chat, kind)
         if not loud:
             data["disable_notification"] = True
         st_count("push_loud" if loud else "push_quiet")
