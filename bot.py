@@ -4385,6 +4385,13 @@ def run_sync_migration():
         ("winback_stage",      "INTEGER DEFAULT 0"),  # 0=не отправлялось, 1-4 = этапы
         # ── Туториал новичка (первые 3 дня) ─────────────────
         ("last_tutorial_day",  "INTEGER DEFAULT 0"),  # последний отправленный день (1/2/3)
+        # ── Ежедневное напоминание (job_daily_remind) ───────
+        ("remind_day",         "TEXT    DEFAULT ''"),  # день МСК последнего напоминания
+        ("remind_saver_day",   "TEXT    DEFAULT ''"),  # день вечернего «спаси серию»
+        ("remind_at",          "REAL    DEFAULT 0"),
+        ("remind_ignored",     "INTEGER DEFAULT 0"),  # подряд без ответа
+        ("remind_variant",     "TEXT    DEFAULT ''"),
+        ("remind_credited",    "INTEGER DEFAULT 1"),  # возврат уже засчитан / окно прошло
         # ── Заморозка бонуса облика ───────────────────────
         ("frozen_skin",        "TEXT    DEFAULT ''"),
         # ── Недосписанные доли затухания ──────────────────
@@ -54448,6 +54455,7 @@ async def job_tutorial_nudge(ctx: ContextTypes.DEFAULT_TYPE):
         reward_coins = {1: 30, 2: 50, 3: 75}.get(target_day, 0)
         f_t["coins"] += reward_coins
         f_t["last_tutorial_day"] = target_day
+        f_t["remind_day"] = st_day(now)     # письмо дня уже есть — напоминание не шлём
         await db_save(f_t)
 
         name_t = fname(f_t)
@@ -54597,8 +54605,10 @@ async def job_reminders(ctx: ContextTypes.DEFAULT_TYPE):
                 style="primary", icon_id=ICON_CARE)
         ]])
 
-        # ── Критично: HP < 10% или голод = 0 → предупреждаем раз в 1ч ──
-        if (hp < 10 or hunger == 0) and now - last_r > 3600:
+        # ── Критично: HP < 10% или голод = 0 → не чаще раза в 6 ч, и не
+        # сразу после ежедневного напоминания — оно уже позвало ──
+        if ((hp < 10 or hunger == 0) and now - last_r > 6 * 3600
+                and now - (f.get("remind_at", 0) or 0) > 3 * 3600):
             # Кнопка теперь делает всё на месте, поэтому «срочно зайди» из
             # текстов убрано: указание никуда не идти уже неверно, а гнать
             # человека паникой ради возврата — ровно то, чего гайд не велит.
@@ -54614,16 +54624,10 @@ async def job_reminders(ctx: ContextTypes.DEFAULT_TYPE):
                 )
             to_remind.append((f, text, frog_kb))
 
-        # ── Плохо: HP 10–25% или голод < 20% → раз в 4ч ──
-        elif (10 <= hp < 25 or hunger < 20) and now - last_r > 4 * 3600:
-            text = (
-                f"{_E_HEART} <b>{name} расклеилась</b>\n\n"
-                f"{_E_HEART} {hp}% {_E_FOOD} {hunger}%"
-            )
-            to_remind.append((f, text, frog_kb))
-
-        # «Заскучала» (голод < 40%) убрано: ничем не грозит, а звенело
-        # по несколько раз в день. Зовём, только когда лягушке правда плохо.
+        # «Расклеилась» и «заскучала» теперь — забота ежедневного напоминания
+        # (job_daily_remind): оно приходит раз в день в удобный игроку час.
+        # Здесь остаётся только «при смерти» — между двумя напоминаниями
+        # лягушка может не дожить.
 
     if not to_remind:
         return
@@ -54645,6 +54649,304 @@ async def job_reminders(ctx: ContextTypes.DEFAULT_TYPE):
     if updated_frogs:
         for f in updated_frogs:
             await db_save(f)
+
+
+# ══════════════════════════════════════════════════════════════════════════════
+# 🔔 ЕЖЕДНЕВНОЕ НАПОМИНАНИЕ (по образцу Duolingo)
+#
+# Что взято у Duolingo и почему:
+#   • одно напоминание в день и только тому, кто сегодня ещё не заходил;
+#   • в то время, когда игрок обычно играет (по его заходам за 2 недели), —
+#     человек как раз свободен, а не в 7 утра всем сразу;
+#   • в центре — серия дней (streak): терять её обиднее, чем получить бонус;
+#     вечером отдельное «спаси серию», если бонус ещё не забран;
+#   • пишет сама лягушка, тексты разные и не повторяются подряд;
+#   • в сообщении одна кнопка, которая сразу делает дело (бонус или уход);
+#   • если игрок не отвечает — пишем реже, а потом честно прощаемся
+#     («больше не буду писать каждый день»). Дальше — только winback;
+#   • какой текст лучше возвращает, бот узнаёт сам: каждый вариант считает
+#     «отправлено / вернулся за REMIND_BACK_H часов», и чаще берутся лучшие
+#     (выборка Томпсона: новые варианты тоже получают свой шанс).
+# ══════════════════════════════════════════════════════════════════════════════
+REMIND_DEFAULT_HOUR = 19          # МСК, если по игроку ещё нет данных
+REMIND_WINDOW = (9, 22)           # раньше и позже не пишем
+REMIND_SAVER_HOUR = 21            # «спаси серию»: серия сгорает в 03:00 МСК
+REMIND_SAVER_MIN_STREAK = 3
+REMIND_BACK_H = 12                # вернулся за столько часов — текст сработал
+REMIND_GIVE_UP = 5                # столько напоминаний без ответа — прощаемся
+REMIND_HISTORY_DAYS = 14
+
+# Ситуация → варианты. Ключ варианта — для статистики, менять текст можно,
+# а ключ лучше оставлять: под ним накоплены результаты.
+# Поля: {name} {hp} {hunger} {streak} {streak_days} {coins} {days} {left}
+REMIND_TEXTS = {
+    "danger": [
+        ("danger_lie",   "{name} легла лапками кверху",
+                         "Здоровье {hp}%. Ещё немного — и всё."),
+        ("danger_quiet", "{name} почти не квакает",
+                         "Здоровье {hp}%, сытость {hunger}%.\nОдна кнопка — и она снова в строю."),
+        ("danger_note",  "{name} оставила записку",
+                         "«Еда кончилась. Здоровье {hp}%.\nНе то чтобы я жаловалась.»"),
+    ],
+    "streak": [
+        ("streak_lose",  "{streak_days} подряд",
+                         "Обидно будет начинать с нуля\nиз-за одного дня.\nБонус сегодня: +{coins} {coin}"),
+        ("streak_count", "{name} считает дни: {streak} {fire}",
+                         "Сегодня ещё не отмечено.\nБонус ждёт: +{coins} {coin}"),
+        ("streak_proud", "{name} хвастается серией",
+                         "{streak_days} подряд — у соседей столько нет.\nНе подведи: +{coins} {coin}"),
+    ],
+    "hungry": [
+        ("hungry_bowl",  "{name} смотрит на пустую миску",
+                         "Сытость {hunger}%."),
+        ("hungry_kva",   "«Ква. Ква. Ква.»",
+                         "Это {name} намекает на мух.\nСытость {hunger}%."),
+        ("hungry_self",  "{name} поймала муху сама",
+                         "Одну. Больше не нашла.\nСытость {hunger}%."),
+    ],
+    "bonus": [
+        ("bonus_leaf",   "{name} нашла монетки под листом",
+                         "+{coins} {coin} — отдаст, если заглянешь."),
+        ("bonus_guard",  "Сегодняшний бонус ещё не забран",
+                         "+{coins} {coin}. {name} его охраняет,\nно долго не продержится."),
+        ("bonus_start",  "{name} начинает серию",
+                         "Первый день — +{coins} {coin}.\nДальше каждый день больше."),
+    ],
+    "miss": [
+        ("miss_wait",    "{name} ждала тебя вчера",
+                         "До самого вечера. Сегодня снова ждёт."),
+        ("miss_tell",    "Тебя нет {days}",
+                         "{name} уже рассказывает соседям,\nчто ты в отпуске."),
+        ("miss_window",  "{name} сидит у окна",
+                         "Тебя нет {days}. Она не обижается.\nПочти."),
+    ],
+    "saver": [
+        ("saver_left",   "Серия сгорит через {left}",
+                         "{streak_days} подряд.\nОдна кнопка — и всё сохранится."),
+        ("saver_plea",   "{name} просит спасти серию",
+                         "{streak_days} — и до конца суток {left}.\nБонус: +{coins} {coin}"),
+    ],
+    "last": [
+        ("last_bye",     "{name} больше не будет писать каждый день",
+                         "Кажется, мои письма не помогают.\nЕсли соскучишься — я тут. Ква."),
+    ],
+}
+_REMIND_SITUATION = {k: s for s, vs in REMIND_TEXTS.items() for k, *_ in vs}
+
+
+def _remind_bonus(f: dict, now: float) -> tuple[bool, int, int]:
+    """(бонус сегодня ещё не забран, серия после него, монет без множителей)."""
+    day0 = datetime.fromtimestamp(now, timezone.utc).replace(
+        hour=0, minute=0, second=0, microsecond=0).timestamp()
+    last = f.get("last_daily", 0) or 0
+    streak = int(f.get("streak", 0) or 0)
+    if last >= day0:
+        return False, streak, 0
+    nxt = streak + 1 if last >= day0 - 86400 else 1
+    return True, nxt, 20 + min(nxt * 5, 100)
+
+
+def _remind_streak_alive(f: dict, now: float) -> int:
+    """Серия, которая ещё не сгорела (бонус вчера или сегодня), иначе 0."""
+    day0 = datetime.fromtimestamp(now, timezone.utc).replace(
+        hour=0, minute=0, second=0, microsecond=0).timestamp()
+    return int(f.get("streak", 0) or 0) if (f.get("last_daily", 0) or 0) >= day0 - 86400 else 0
+
+
+def remind_situation(f: dict, now: float, ignored: int) -> str:
+    """Главный повод написать сегодня. Порядок — от самого срочного."""
+    if ignored >= REMIND_GIVE_UP:
+        return "last"
+    hp, hunger = f.get("health", 100), f.get("hunger", 100)
+    if hp < 25 or hunger < 10:
+        return "danger"
+    can_claim, _, _ = _remind_bonus(f, now)
+    if can_claim and _remind_streak_alive(f, now) >= REMIND_SAVER_MIN_STREAK:
+        return "streak"
+    if now - (f.get("last_seen", 0) or 0) > 30 * 3600:
+        return "miss"
+    if hunger < 50:
+        return "hungry"
+    return "bonus" if can_claim else "hungry"
+
+
+def remind_pick(situation: str, stats: dict, last_key: str = "") -> str:
+    """Вариант текста: выборка Томпсона по «вернулся / отправлено»."""
+    keys = [k for k, *_ in REMIND_TEXTS[situation]]
+    if len(keys) > 1 and last_key in keys:
+        keys.remove(last_key)           # подряд один и тот же — приедается
+    best, best_v = keys[0], -1.0
+    for k in keys:
+        sent, back = stats.get(k, (0, 0))
+        v = random.betavariate(back + 1, max(sent - back, 0) + 1)
+        if v > best_v:
+            best, best_v = k, v
+    return best
+
+
+def remind_message(f: dict, key: str, now: float) -> tuple[str, InlineKeyboardMarkup]:
+    sit = _REMIND_SITUATION[key]
+    _, title, body = next(v for v in REMIND_TEXTS[sit] if v[0] == key)
+    can_claim, nxt, coins = _remind_bonus(f, now)
+    away = max(1, int((now - (f.get("last_seen", 0) or now)) // 86400))
+    # До 00:00 UTC — тогда сгорает серия
+    end = datetime.fromtimestamp(now, timezone.utc).replace(
+        hour=0, minute=0, second=0, microsecond=0).timestamp() + 86400
+    left_h = max(1, round((end - now) / 3600))
+    streak = _remind_streak_alive(f, now)
+    fields = {
+        "name": fname(f), "hp": f.get("health", 100), "hunger": f.get("hunger", 100),
+        "streak": streak, "streak_days": ui_plural(streak, "день", "дня", "дней"),
+        "coins": coins,
+        "days": ui_plural(away, "день", "дня", "дней"),
+        "left": ui_plural(left_h, "час", "часа", "часов"),
+        "coin": _E_COIN, "fire": _E_FIRE,
+    }
+    icon = {"danger": _E_HEART, "streak": _E_FIRE, "saver": _E_FIRE,
+            "hungry": _E_FOOD, "bonus": _E_GIFT}.get(sit, _E_FROG)
+    text = f"{icon} <b>{title.format(**fields)}</b>\n\n{body.format(**fields)}"
+    if sit in ("danger", "hungry"):
+        b = btn("Покормить и вылечить", callback_data="menu_care", style="primary", icon_id=ICON_CARE)
+    elif can_claim:
+        b = btn(f"🎁 Забрать бонус · +{coins}", callback_data="daily", style="success")
+    else:
+        b = btn("🐸 К лягушке", callback_data="refresh", style="primary")
+    return text, InlineKeyboardMarkup([[b]])
+
+
+def remind_hours(rows) -> dict:
+    """uid → любимый час МСК по маскам часов st_active (окно REMIND_WINDOW)."""
+    lo, hi = REMIND_WINDOW
+    cnt: dict = {}
+    for uid, mask in rows:
+        c = cnt.setdefault(uid, [0] * 24)
+        for h in range(24):
+            if mask & (1 << h):
+                c[h] += 1
+    out = {}
+    for uid, c in cnt.items():
+        # Ранние и поздние заходы переносим к краям окна, а не теряем
+        w = [0] * 24
+        for h, n in enumerate(c):
+            w[min(max(h, lo), hi - 1)] += n
+        best = max(range(lo, hi), key=lambda h: (w[h], -abs(h - REMIND_DEFAULT_HOUR)))
+        out[uid] = best if w[best] else REMIND_DEFAULT_HOUR
+    return out
+
+
+async def _remind_stats(db) -> dict:
+    await db.execute(
+        "CREATE TABLE IF NOT EXISTS remind_ab ("
+        " variant TEXT PRIMARY KEY, sent INTEGER DEFAULT 0, back INTEGER DEFAULT 0)")
+    async with db.execute("SELECT variant, sent, back FROM remind_ab") as c:
+        return {r[0]: (r[1], r[2]) for r in await c.fetchall()}
+
+
+async def _remind_ab_add(db, key: str, col: str) -> None:
+    await db.execute(
+        f"INSERT INTO remind_ab(variant, {col}) VALUES(?, 1) "
+        f"ON CONFLICT(variant) DO UPDATE SET {col}={col}+1", (key,))
+
+
+async def job_daily_remind(ctx: ContextTypes.DEFAULT_TYPE):
+    """Раз в 15 минут: кому пора — одно напоминание в день, вечером «спаси серию»."""
+    now = time.time()
+    msk = datetime.fromtimestamp(now, ST_TZ)
+    today = msk.strftime("%Y-%m-%d")
+    hour = msk.hour
+    lo, hi = REMIND_WINDOW
+    since = st_day(now - REMIND_HISTORY_DAYS * 86400)
+    async with aiosqlite.connect(DB_PATH) as db:
+        db.row_factory = aiosqlite.Row
+        stats = await _remind_stats(db)
+        # Засчитать возвраты: зашёл в течение REMIND_BACK_H после напоминания
+        async with db.execute(
+            "SELECT user_id, remind_variant FROM frogs WHERE remind_credited=0 AND remind_at>0 "
+            "AND last_seen>remind_at AND last_seen<=remind_at+?", (REMIND_BACK_H * 3600,)
+        ) as c:
+            backs = [(r[0], r[1]) for r in await c.fetchall()]
+        for uid_b, key in backs:
+            if key:
+                await _remind_ab_add(db, key, "back")
+                st_count("remind_back")
+                st_count("remind_back:" + key)
+            await db.execute("UPDATE frogs SET remind_credited=1, remind_ignored=0 WHERE user_id=?", (uid_b,))
+        # Окно ответа прошло без захода — больше не ждём
+        await db.execute(
+            "UPDATE frogs SET remind_credited=1 WHERE remind_credited=0 AND remind_at>0 AND remind_at<?",
+            (now - REMIND_BACK_H * 3600,))
+        await db.commit()
+        if not (lo <= hour < hi):
+            return
+        async with db.execute(
+            "SELECT user_id FROM frogs WHERE alive=1 AND is_bot=0 AND banned=0 AND last_seen>0 "
+            "AND born_at<? AND COALESCE(hibernation_until,0)<? "
+            "AND (COALESCE(remind_day,'')<>? OR (? >= ? AND COALESCE(remind_saver_day,'')<>?))",
+            (now - 20 * 3600, now, today, hour, REMIND_SAVER_HOUR, today),
+        ) as c:
+            uids = [r[0] for r in await c.fetchall()]
+        if not uids:
+            return
+        async with db.execute(
+            "SELECT user_id, hours FROM st_active WHERE day>=?", (since,)
+        ) as c:
+            fav = remind_hours([(r[0], r[1] or 0) for r in await c.fetchall()])
+
+    for uid_r in uids:
+        try:
+            f = await db_get(uid_r)
+            if not f or not f.get("alive"):
+                continue
+            seen = f.get("last_seen", 0) or 0
+            seen_today = st_day(seen) == today
+            last_at = f.get("remind_at", 0) or 0
+            # Сколько напоминаний подряд остались без ответа, считая прошлое
+            ignored = int(f.get("remind_ignored", 0) or 0)
+            unanswered = ignored + 1 if last_at and seen <= last_at else 0
+            g = decay(dict(f))
+            g.pop("_need_warning", None)
+            key = ""
+            saver = False
+            can_claim, _, _ = _remind_bonus(g, now)
+            if (hour >= REMIND_SAVER_HOUR and f.get("remind_saver_day", "") != today
+                    and can_claim and _remind_streak_alive(g, now) >= REMIND_SAVER_MIN_STREAK
+                    and unanswered < REMIND_GIVE_UP):
+                # Вечер: серия сгорит ночью — даже если сегодня заходил,
+                # но бонус не забрал (серию растит именно он)
+                key = remind_pick("saver", stats, f.get("remind_variant", ""))
+                saver = True
+            elif f.get("remind_day", "") != today and not seen_today and hour >= fav.get(uid_r, REMIND_DEFAULT_HOUR):
+                if unanswered > REMIND_GIVE_UP:
+                    continue                     # попрощались — дальше winback
+                if unanswered >= 3 and now - last_at < 47 * 3600:
+                    continue                     # не отвечает — через день
+                sit = remind_situation(g, now, unanswered)
+                key = remind_pick(sit, stats, f.get("remind_variant", ""))
+            if not key:
+                continue
+            text, kb = remind_message(g, key, now)
+            with push_as("remind"):
+                await ctx.bot.send_message(uid_r, text, parse_mode=ParseMode.HTML, reply_markup=kb)
+            if saver:
+                # Вечернее не считаем отдельным «без ответа» — счёт по дням
+                f["remind_saver_day"] = today
+            else:
+                f["remind_day"] = today
+                f["remind_ignored"] = unanswered
+            f["remind_at"] = now
+            f["remind_variant"] = key
+            f["remind_credited"] = 0
+            await db_save(f)
+            async with aiosqlite.connect(DB_PATH) as db:
+                await _remind_ab_add(db, key, "sent")
+                await db.commit()
+            st_count("remind_sent")
+            st_count("remind_sent:" + key)
+        except (BadRequest, Forbidden):
+            pass
+        except Exception as _e:
+            logger.warning("job_daily_remind uid=%s: %s", uid_r, _e)
+        await asyncio.sleep(0.05)
 
 
 async def job_mosquito(ctx: ContextTypes.DEFAULT_TYPE):
@@ -55448,12 +55750,7 @@ async def _work_phase_evening(now: float, bot):
 # ── Win-back сегменты ────────────────────────────────────────────────
 # (мин_дней, макс_дней, этап, текст, бонус_монеты)
 _WINBACK_SEGMENTS = [
-    (3, 7, 1,
-     "😢 <b>{name} скучает по тебе!</b>\n\n"
-     "Лягушка ждёт не дождётся хозяина.\n"
-     "Загляни — она будет рада! 🐸\n\n"
-     "<i>Открыть: /frog</i>",
-     0),
+    # 3–7 дней — забота ежедневного напоминания: оно пишет реже и прощается
     (7, 14, 2,
      "🤒 <b>{name} заболела от одиночества!</b>\n\n"
      "Здоровье падает, лягушка грустит...\n"
@@ -55794,8 +56091,9 @@ async def job_winback(ctx: ContextTypes.DEFAULT_TYPE):
     """
     now = time.time()
     async with aiosqlite.connect(DB_PATH) as db:
-        # Игроки которые давно не заходили (last_seen > 3 дней назад)
-        cutoff = now - 3 * 86400
+        # Игроки которые давно не заходили (last_seen > 7 дней назад;
+        # 3–7 дней — у ежедневного напоминания)
+        cutoff = now - 7 * 86400
         async with db.execute(
             "SELECT user_id FROM frogs WHERE last_seen < ? AND last_seen > 0",
             (cutoff,),
@@ -56491,7 +56789,8 @@ async def post_init(app: Application):
     except (NotImplementedError, RuntimeError, AttributeError):
         pass
     app.job_queue.run_repeating(job_events, interval=4 * 3600, first=300)
-    app.job_queue.run_repeating(job_reminders, interval=6 * 3600, first=600)
+    app.job_queue.run_repeating(job_reminders, interval=2 * 3600, first=600)
+    app.job_queue.run_repeating(job_daily_remind, interval=15 * 60, first=240)
     app.job_queue.run_repeating(job_tutorial_nudge, interval=3600, first=120)  # раз в час
     # Комар: первый запуск через 30 мин, далее сам себя перепланирует (avg ~2/день)
     app.job_queue.run_once(job_mosquito, when=1800, name="mosquito_once")
@@ -61230,6 +61529,24 @@ async def _sts_retention(x: _StCtx) -> _StSec:
              ("со звуком", _stn(loud)),
              ("тихо", _stn(quiet)),
              ("тревог о лягушке", _stn(await x.c("push:alert", d7))))
+    r_sent, r_back = await x.c("remind_sent", d7), await x.c("remind_back", d7)
+    if r_sent:
+        rows = [("отправлено", _stn(r_sent)),
+                (f"вернулись за {REMIND_BACK_H} ч", _stn(r_back), f"{r_back * 100 // r_sent}%")]
+        try:
+            async with x.db.execute(
+                "SELECT variant, sent, back FROM remind_ab WHERE sent>=20 "
+                "ORDER BY CAST(back AS REAL)/sent DESC") as c:
+                ab = await c.fetchall()
+        except Exception:
+            ab = []
+        for i, (k, sn, bk) in enumerate(ab):
+            if i < 3 or i >= len(ab) - 2:          # лучшие и худшие тексты
+                rows.append((k, f"{bk * 100 // sn}%", f"из {_stn(sn)}"))
+        s.kv("Ежедневное напоминание (7 дн)", *rows)
+        if ab:
+            s.note("Тексты напоминания — за всё время, от 20 отправок: лучшие и худшие. "
+                   "Чаще уходят те, после которых возвращаются.")
     s.note("«Возвращаются» — доля новых, кто заходил через N дней после регистрации или позже (по last_seen). "
            "«…» — неделя ещё не дожила до этого срока.")
     return s
@@ -68888,6 +69205,7 @@ if _RATE_LIMITER_OK:
 # Здесь, на выходе всех запросов, решается, звенит ли сообщение:
 #   • ответ на нажатие самого игрока — как обычно;
 #   • тревога о лягушке (голод, при смерти) — со звуком, до PUSH_LOUD_ALERT в сутки;
+#   • ежедневное напоминание и «спаси серию» — со звуком, до PUSH_LOUD_REMIND;
 #   • личное (кто-то покормил, подарок, поход ждёт выбора, давно не заходил) —
 #     со звуком до PUSH_LOUD_PERSONAL в сутки, дальше тихо;
 #   • всё остальное (комар, события, отчёты Трудяги, акции) — тихо;
@@ -68895,6 +69213,7 @@ if _RATE_LIMITER_OK:
 # Тихое сообщение приходит как обычно, просто без звука и вибрации.
 PUSH_LOUD_ALERT = 3
 PUSH_LOUD_PERSONAL = 3
+PUSH_LOUD_REMIND = 2
 PUSH_NIGHT = (23, 9)
 PUSH_MODES = ("важные", "все", "без звука")
 _PUSH_ENDPOINTS = frozenset({
@@ -68905,6 +69224,7 @@ _PUSH_ENDPOINTS = frozenset({
 # Фоновые задачи по имени (как их подписывает st_wrap_jobs)
 _PUSH_JOB_KIND = {
     "job:reminders": "alert",
+    "job:daily_remind": "remind",
     "job:adventure_tick": "personal",
     "job:ex_tick": "personal",
     "job:winback": "personal",
@@ -68915,7 +69235,7 @@ _push_mode_cache: dict = {}    # uid -> (режим, когда прочитан
 
 @contextlib.contextmanager
 def push_as(kind: str):
-    """Пометить отправки внутри блока: alert / personal / quiet."""
+    """Пометить отправки внутри блока: alert / personal / remind / quiet."""
     tok = _PUSH_KIND.set(kind)
     try:
         yield
@@ -68966,7 +69286,8 @@ def _push_loud_ok(uid: int, kind: str, now: float | None = None) -> bool:
     a, b = PUSH_NIGHT
     if msk.hour >= a or msk.hour < b:
         return False
-    limit = {"alert": PUSH_LOUD_ALERT, "personal": PUSH_LOUD_PERSONAL}.get(kind, 0)
+    limit = {"alert": PUSH_LOUD_ALERT, "personal": PUSH_LOUD_PERSONAL,
+             "remind": PUSH_LOUD_REMIND}.get(kind, 0)
     day = msk.strftime("%Y-%m-%d")
     key = (day, uid, kind)
     n = _push_loud.get(key, 0)
@@ -68995,7 +69316,7 @@ async def push_govern(endpoint: str, data) -> None:
         elif mode == 2:
             loud = False
         else:
-            loud = kind in ("alert", "personal") and _push_loud_ok(chat, kind)
+            loud = kind in ("alert", "personal", "remind") and _push_loud_ok(chat, kind)
         if not loud:
             data["disable_notification"] = True
         st_count("push_loud" if loud else "push_quiet")
