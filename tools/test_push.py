@@ -57,6 +57,9 @@ async def make_frog(uid, **fields):
     user = types.SimpleNamespace(id=uid, first_name=f"Игрок{uid}", username="", last_name="",
                                  language_code="ru", is_bot=False)
     await B.new_frog(user)
+    # Дать доработать фоновым записям: x_db синхронный и на время своей
+    # записи останавливает цикл — недописанная транзакция держала бы базу
+    await asyncio.sleep(0.2)
     sets = {"onboard_step": 0, "frog_name": f"Ква{uid}", "last_decay": _time.time(), **fields}
     x_db(f"UPDATE frogs SET {','.join(k + '=?' for k in sets)} WHERE user_id=?", *sets.values(), uid)
     if hasattr(B._user_cache, "clear"):

@@ -39,11 +39,11 @@ def msk(day, h, m=0):
     return (d + timedelta(days=day, hours=h, minutes=m)).timestamp()
 
 
-async def claim_at(uid, ts):
+async def claim_at(uid, ts, fresh=True):
     real = B.time.time
     B.time.time = lambda: ts
     try:
-        if hasattr(B._user_cache, "clear"):
+        if fresh and hasattr(B._user_cache, "clear"):
             B._user_cache.clear()
         f = await B.db_get(uid)
         user = types.SimpleNamespace(id=uid, first_name="Т", is_premium=False)
@@ -118,6 +118,48 @@ async def main():
     ok(B.streak_continues(B.daily_day_start() - 60), "сброс кулдауна админом: «вчера» — серия цела")
     can, nxt, _ = B._remind_bonus(f, _time.time())
     ok(can and nxt == 10, "напоминание считает серию так же")
+
+    print("5. Фоновая задача со старой копией игрока")
+    await B.new_frog(types.SimpleNamespace(id=3, first_name="Т", username="", last_name="",
+                                           language_code="ru", is_bot=False))
+    await claim_at(3, msk(-3, 12))
+    await claim_at(3, msk(-2, 12))
+    ok(await claim_at(3, msk(-1, 23, 59)) == (True, 3), "серия 3, бонус в 23:59")
+    # Задача прочитала игрока ДО бонуса в 23:59 и сохранила после полуночи
+    B._user_cache.clear()
+    f3 = await B.db_get(3)
+    f3["last_daily"] = msk(-2, 12)
+    f3["_orig"] = dict(f3["_orig"], last_daily=msk(-2, 12), streak=2)
+    f3["hunger"] = 33
+    real = B.time.time
+    B.time.time = lambda: msk(0, 0, 0) + 10
+    try:
+        await B.db_save(f3)
+    finally:
+        B.time.time = real
+    ok(await claim_at(3, msk(0, 0, 1), fresh=False) == (True, 4),
+       "бонус в 00:01 после сохранения старой копии — серия 4, а не 1")
+    ok((await claim_at(3, msk(0, 0, 2)))[0] is False, "и второй раз в эти сутки не выдаётся")
+
+    print("6. Два нажатия одновременно — один бонус")
+    await B.new_frog(types.SimpleNamespace(id=4, first_name="Т", username="", last_name="",
+                                           language_code="ru", is_bot=False))
+    B._user_cache.clear()
+    fa, fb = await B.db_get(4), await B.db_get(4)
+    usr = types.SimpleNamespace(id=4, first_name="Т", is_premium=False)
+    cx = types.SimpleNamespace(bot=FakeBot(), user_data={}, bot_data={})
+    c0 = fa["coins"]
+    ra, rb = await asyncio.gather(B.daily_claim(usr, fa, cx), B.daily_claim(usr, fb, cx))
+    ok([ra[0], rb[0]].count(True) == 1, f"выдан один раз ({ra[0]}, {rb[0]})")
+    B._user_cache.clear()
+    ok((await B.db_get(4))["coins"] - c0 < 200, "монеты начислены один раз")
+
+    print("7. Копии из кэша не делят снимок")
+    B._user_cache.clear()
+    a = await B.db_get(4)
+    b = await B.db_get(4)
+    a["_orig"]["hunger"] = -1
+    ok(b["_orig"]["hunger"] != -1, "правка снимка в одной копии не видна в другой")
 
     print()
     if FAILS:

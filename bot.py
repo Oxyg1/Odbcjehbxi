@@ -4120,16 +4120,26 @@ class _UserCache:
         self._data: dict[int, tuple[dict, float]] = {}
         self._lock = threading.Lock()
 
+    @staticmethod
+    def _copy(data: dict) -> dict:
+        # Снимок _orig тоже копируем: иначе все копии игрока делят один
+        # словарь, и правка снимка в одном обработчике меняет его у всех —
+        # db_save другого начинает писать поля, которые тот не трогал.
+        d = dict(data)
+        if isinstance(d.get("_orig"), dict):
+            d["_orig"] = dict(d["_orig"])
+        return d
+
     def get(self, uid: int) -> dict | None:
         with self._lock:
             entry = self._data.get(uid)
             if entry and (time.time() - entry[1]) < self._TTL:
-                return dict(entry[0])  # копия чтобы не мутировать кэш
+                return self._copy(entry[0])  # копия чтобы не мутировать кэш
         return None
 
     def set(self, uid: int, data: dict):
         with self._lock:
-            self._data[uid] = (dict(data), time.time())
+            self._data[uid] = (self._copy(data), time.time())
 
     def invalidate(self, uid: int):
         with self._lock:
@@ -15790,10 +15800,15 @@ async def db_save(f: dict):
         f"ON CONFLICT(user_id) DO UPDATE SET {upd}"
     )
     vals = list(write.values()) + extra_vals
-    # Обновляем кэш немедленно — последующие db_get этого юзера не пойдут на диск
+    # В кэш свою копию не кладём. Раньше клали, и копия, прочитанная задолго
+    # до сохранения (фоновые задачи читают игрока заранее), на минуту
+    # становилась «текущей»: в ней старые поля, которые этот обработчик не
+    # менял. Так бонус выдавался второй раз, а забранный после полуночи —
+    # сравнивался с позавчерашним и обнулял серию. После записи кэш
+    # сбрасывается, и следующий db_get читает настоящую строку.
     if uid is not None:
         f["_orig"] = dict(f_clean)      # с этого момента текущее состояние — базовое
-        _user_cache.set(uid, f)
+        _user_cache.invalidate(uid)
     loop = asyncio.get_event_loop()
     def _write():
         conn = _db_pool.acquire()
@@ -15807,6 +15822,8 @@ async def db_save(f: dict):
         finally:
             _db_pool.release(conn, temporary=temporary)
     await loop.run_in_executor(None, _write)
+    if uid is not None:
+        _user_cache.invalidate(uid)     # кто-то успел прочитать во время записи
 
 
 async def db_coins_delta(uid: int, delta: int, f: dict | None = None) -> int | None:
@@ -28272,6 +28289,10 @@ async def cmd_givestreak(update: Update, ctx: ContextTypes.DEFAULT_TYPE) -> None
     old_value = tf.get(field, 0)
 
     tf[field] = value
+    # Серия ежедневного бонуса считается от даты прошлого бонуса: если она
+    # старая, первый же бонус обнулил бы выданное. Ставим «забран вчера».
+    if field == "streak" and value > 0 and not streak_continues(tf.get("last_daily", 0) or 0):
+        tf["last_daily"] = daily_day_start() - 60
     await db_save(tf)
 
     await update.message.reply_text(
@@ -40288,12 +40309,32 @@ async def daily_claim(user, f: dict, ctx: ContextTypes.DEFAULT_TYPE) -> tuple[bo
     uid = user.id
     now = time.time()
     today_start = daily_day_start()
-    if f["last_daily"] >= today_start:
+    # Серию и дату прошлого бонуса берём из базы, а не из f: f мог быть
+    # прочитан до чужого сохранения. И отмечаем бонус одним UPDATE с условием —
+    # два нажатия подряд не выдадут его дважды.
+    async with aiosqlite.connect(DB_PATH) as _ddb:
+        async with _ddb.execute(
+            "SELECT last_daily, streak FROM frogs WHERE user_id=?", (uid,)) as _c:
+            _row = await _c.fetchone()
+        last_db, streak_db = (float(_row[0] or 0), int(_row[1] or 0)) if _row else (0.0, 0)
+        new_streak = streak_db + 1 if streak_continues(last_db, now) else 1
+        _cur = await _ddb.execute(
+            "UPDATE frogs SET last_daily=?, streak=? WHERE user_id=? AND COALESCE(last_daily,0)<?",
+            (now, new_streak, uid, today_start))
+        await _ddb.commit()
+        claimed = _cur.rowcount > 0
+    if not claimed:
+        f["last_daily"], f["streak"] = max(last_db, today_start), streak_db
+        if "_orig" in f:
+            f["_orig"].update(last_daily=f["last_daily"], streak=f["streak"])
+        _user_cache.invalidate(uid)
         nxt = today_start + 86400
         h, m = int((nxt - now) / 3600), int(((nxt - now) % 3600) / 60)
         return False, f"Уже забрал. Следующий через {h}ч {m}мин"
-
-    f["streak"] = (f["streak"] + 1) if streak_continues(f["last_daily"], now) else 1
+    f["streak"] = new_streak
+    # Уже записано — снимок тоже, чтобы db_save ниже не писал их заново
+    if "_orig" in f:
+        f["_orig"].update(last_daily=now, streak=new_streak)
     # Анонс вехи стрика в чат
     _streak_milestone = STREAK_MILESTONES.get(f["streak"])
     if _streak_milestone:
