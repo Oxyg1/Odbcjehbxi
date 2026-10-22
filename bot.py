@@ -5255,6 +5255,22 @@ def run_sync_migration():
             logger.warning("Переедание: старые счётчики обнулены у %d лягушек", cur.rowcount)
     except Exception as _e:
         logger.exception("overfeed_v2: %s", _e)
+    # Брошенное знакомство: см. ONBOARD_DECAY_GRACE. Снимаем флаг со всех,
+    # кто застрял в нём дольше срока, — при каждом старте, это дёшево.
+    try:
+        has_frogs = conn.execute(
+            "SELECT 1 FROM sqlite_master WHERE type='table' AND name='frogs'").fetchone()
+        if has_frogs:
+            _ob = conn.execute(
+                "UPDATE frogs SET onboard_step=0, first_time=0 "
+                "WHERE onboard_step>0 AND COALESCE(born_at,0)<?",
+                (time.time() - ONBOARD_DECAY_GRACE,))
+            conn.commit()
+            if _ob.rowcount:
+                logger.warning("Знакомство: снят застрявший флаг у %d лягушек — "
+                               "у них не падали параметры", _ob.rowcount)
+    except Exception as _e:
+        logger.exception("onboard unstick: %s", _e)
 
     # ── Фриз-ивент ───────────────────────────────────────────────────────────
     freeze_run_sync_migration(conn, cur)
@@ -17683,9 +17699,16 @@ def decay(f: dict) -> dict:
         f["last_decay"] = now
         return f
     # ── Онбординг: отключаем деградацию для новичков ────
+    # Только пока знакомство правда идёт. Пройти его до конца ничто не
+    # заставляет: нажал «Покормить», ушёл в меню — и флаг оставался навсегда,
+    # а с ним и вечные 100%: параметры не падали никогда, даже после ручного
+    # понижения. Через ONBOARD_DECAY_GRACE после рождения флаг снимаем.
     if f.get("onboard_step", 0) > 0:
-        f["last_decay"] = now
-        return f
+        if now - (f.get("born_at", 0) or 0) < ONBOARD_DECAY_GRACE:
+            f["last_decay"] = now
+            return f
+        f["onboard_step"] = 0
+        f["first_time"] = 0
     if not f["last_decay"]:
         f["last_decay"] = now
         return f
@@ -18381,6 +18404,9 @@ async def games_screen(f: dict, is_private: bool) -> tuple[str, InlineKeyboardMa
 # внизу тянет к следующему, а не пересказывает прошлое. Раньше подсказки
 # описывали то, что игрок уже сделал («Ей понравилось — подпрыгивает»), и шаг
 # заканчивался тупиком: приходилось искать кнопку глазами.
+# Сколько после рождения параметры стоят, пока идёт знакомство
+ONBOARD_DECAY_GRACE = 3600
+
 ONBOARD_STEPS = {
     1: {
         "cb":     "ob_feed",
