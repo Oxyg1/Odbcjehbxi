@@ -70,6 +70,29 @@ def main():
     for s in STATS:
         print(f"{q(f'SELECT COUNT(*) FROM frogs WHERE {seen} AND {s}>=100'):7}  {s}")
 
+    # В базе лежит значение на момент последнего сохранения: затухание
+    # применяется при заходе. Поэтому считаем, сколько было бы СЕЙЧАС, и
+    # отдельно — у кого 100 в базе, хотя затухание прошло давно, а действия,
+    # поднимающего этот параметр, давно не было. Вот это и есть «застрял».
+    rate = {"hunger": 7.0, "happiness": 7.0, "cleanliness": 2.8, "energy": 2.1}
+    act = {"hunger": ("last_feed", "last_fly_feed"), "happiness": ("last_play",),
+           "cleanliness": ("last_wash",), "energy": ("last_sleep",)}
+    cols = {r[1] for r in con.execute("PRAGMA table_info(frogs)")}
+    print("\nСейчас (с учётом затухания) на 99–100 / из них подозрительных:")
+    print("  подозрительно = в базе 100, затухание было > 2 ч назад, а поднимающего действия не было > 2 ч")
+    rows = [dict(r) for r in con.execute(f"SELECT * FROM frogs WHERE {seen}")]
+    for s, rt in rate.items():
+        now_full, sus = 0, []
+        for r in rows:
+            v = float(r.get(s) or 0)
+            hrs = max(0.0, (now - float(r.get("last_decay") or now)) / 3600)
+            if v - rt * hrs >= 99:
+                now_full += 1
+            last_act = max([float(r.get(c) or 0) for c in act[s] if c in cols] or [0])
+            if v >= 100 and hrs > 2 and now - last_act > 2 * 3600:
+                sus.append(r["user_id"])
+        print(f"{now_full:7} / {len(sus):<4} {s}" + (f"   напр. {', '.join(map(str, sus[:5]))}" if sus else ""))
+
 
 if __name__ == "__main__":
     main()
