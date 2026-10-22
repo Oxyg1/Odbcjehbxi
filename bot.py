@@ -18147,7 +18147,7 @@ def status_text(f: dict) -> str:
 
     wallet = ui_line(
         ui_money(f["coins"]),
-        f"{_E_FIRE}{f['streak']}д" if f["streak"] > 1 else "",
+        f"{_E_FIRE}{streak_now(f)}д" if streak_now(f) > 1 else "",
     )
 
     return ui_card(
@@ -18183,14 +18183,80 @@ def _cd_label(base: str, f: dict, key: str, secs: int) -> str:
         return f"{base} ⏳{int(remaining)}с"
 
 
+# ── Сутки ежедневного бонуса и серии ─────────────────────────────────────────
+# Серия считалась по суткам UTC, а они начинаются в 03:00 МСК. Кто забирал
+# бонус с полуночи до трёх ночи, для бота забирал его «вчера» — и на
+# следующий день серия обнулялась посреди дня. Теперь сутки — московские,
+# как у самих игроков, и одни на всё: бонус, кнопки, напоминания.
+#
+# Простой бота серию не сжигает: дни, когда бот лежал хотя бы
+# STREAK_OUTAGE_MIN, при подсчёте пропускаются, как будто их не было.
+# Список таких дней пишет compensate_downtime() при старте.
+STREAK_OUTAGE_KEY = "streak_outage_days"
+STREAK_OUTAGE_MIN = 30 * 60
+STREAK_OUTAGE_KEEP = 60             # дней храним список
+_streak_excused: set = set()
+
+
+def daily_day_start(ts: float | None = None) -> float:
+    """Полночь по Москве для момента ts."""
+    d = datetime.fromtimestamp(time.time() if ts is None else ts, ST_TZ)
+    return d.replace(hour=0, minute=0, second=0, microsecond=0).timestamp()
+
+
+def streak_continues(last_daily: float, now: float | None = None) -> bool:
+    """Продолжится ли серия, если забрать бонус сейчас: прошлый бонус вчера
+    (или сегодня), а между ними только дни простоя бота."""
+    if not last_daily:
+        return False
+    now = time.time() if now is None else now
+    last = datetime.fromtimestamp(last_daily, ST_TZ).date()
+    today = datetime.fromtimestamp(now, ST_TZ).date()
+    gap = (today - last).days
+    if gap <= 1:
+        return True
+    if gap > STREAK_OUTAGE_KEEP:
+        return False
+    return all((last + timedelta(days=i)).isoformat() in _streak_excused for i in range(1, gap))
+
+
+def streak_now(f: dict) -> int:
+    """Серия, какой её видит игрок: уже сгоревшую не показываем."""
+    st = int(f.get("streak", 0) or 0)
+    return st if st and streak_continues(f.get("last_daily", 0) or 0) else 0
+
+
+def streak_outage_days(start: float, end: float) -> list[str]:
+    """Московские дни, на которые простой [start, end) пришёлся хотя бы на STREAK_OUTAGE_MIN."""
+    out = []
+    t = daily_day_start(start)
+    while t < end:
+        nxt = daily_day_start(t + 86400 + 3600)
+        if min(end, nxt) - max(start, t) >= STREAK_OUTAGE_MIN:
+            out.append(st_day(t + 3600))
+        t = nxt
+    return out
+
+
+async def streak_outage_load(add: list[str] = ()) -> None:
+    """Прочитать список дней простоя (и дописать новые)."""
+    try:
+        days = set(json.loads(await db_setting(STREAK_OUTAGE_KEY) or "[]"))
+    except (TypeError, ValueError):
+        days = set()
+    if add:
+        days |= set(add)
+        cut = st_day(time.time() - STREAK_OUTAGE_KEEP * 86400)
+        days = {d for d in days if d >= cut}
+        await db_setting(STREAK_OUTAGE_KEY, json.dumps(sorted(days)))
+    _streak_excused.clear()
+    _streak_excused.update(days)
+
+
 def _care_ready(f: dict) -> bool:
     """Возвращает True, если хотя бы одно действие по уходу уже доступно."""
     now = time.time()
-    today_start = (
-        datetime.now(timezone.utc)
-        .replace(hour=0, minute=0, second=0, microsecond=0)
-        .timestamp()
-    )
+    today_start = daily_day_start()
     checks = [
         ("last_fly_feed", 86400),
         ("last_play",  20 * 60),
@@ -18639,11 +18705,7 @@ def care_kb(f: dict) -> InlineKeyboardMarkup:
     heal_lbl  = _cd_label(t("care_heal",  f), f, "last_heal",  3600)
     wash_lbl  = _cd_label(t("care_wash",  f), f, "last_wash",  2 * 3600)
     sleep_lbl = _cd_label(t("care_sleep", f), f, "last_sleep", 3 * 3600)
-    today_start = (
-        datetime.now(timezone.utc)
-        .replace(hour=0, minute=0, second=0, microsecond=0)
-        .timestamp()
-    )
+    today_start = daily_day_start()
     if f.get("last_daily", 0) < today_start:
         daily_lbl = f"{t('care_daily', f)} ✅"
     else:
@@ -30142,7 +30204,7 @@ async def cmd_mystats(update: Update, ctx: ContextTypes.DEFAULT_TYPE):
     text = (
         f"{_E_FROG} <b>{fname(f)}</b> — ур.{f['level']} {R_DOT[s['rarity']]} {pemoji(f['skin'])}\n"
         f"{_E_HEART} {f['health']}% {_E_FOOD} {f['hunger']}% {_E_HAPPY} {f['happiness']}%\n"
-        f"{f['coins']}{coin_emoji()} {_E_FIRE} {f['streak']}д 📅 {days}дн\n"
+        f"{f['coins']}{coin_emoji()} {_E_FIRE} {streak_now(f)}д 📅 {days}дн\n"
         # «Побед в дуэлях» не влезало в строку: пара уезжала на второй ряд
         f"🗂 Коллекция: {len(coll)}/50 {_E_SWORDS} Дуэли: {f.get('total_duel_wins', 0)}\n"
         f"{M_ICON[m]} <i>«{random.choice(M_SAY[m])}»</i>"
@@ -32516,11 +32578,7 @@ async def cmd_cooldowns(update: Update, ctx: ContextTypes.DEFAULT_TYPE):
     lines.append(cd_str(f.get("last_sleep"), 3 * 3600, "Сон", "😴"))
     lines.append(cd_str(f.get("last_heal"), 3600, "Лечение", "💊"))
     # Daily bonus
-    today_start = (
-        datetime.now(timezone.utc)
-        .replace(hour=0, minute=0, second=0, microsecond=0)
-        .timestamp()
-    )
+    today_start = daily_day_start()
     if f["last_daily"] >= today_start:
         nxt = today_start + 86400
         left = int(nxt - now)
@@ -32566,17 +32624,13 @@ async def cmd_mymenu(update: Update, ctx: ContextTypes.DEFAULT_TYPE):
     wash_cd = cd_ready(f.get("last_wash"), 2 * 3600)
     sleep_cd = cd_ready(f.get("last_sleep"), 3 * 3600)
     heal_cd = cd_ready(f.get("last_heal"), 3600)
-    today_start = (
-        datetime.now(timezone.utc)
-        .replace(hour=0, minute=0, second=0, microsecond=0)
-        .timestamp()
-    )
+    today_start = daily_day_start()
     daily_cd = "✅" if f["last_daily"] < today_start else "⏳"
     text = (
         f"🐸 <b>{name}</b> {M_ICON[m]}\n"
         f"Облик: {R_DOT[s['rarity']]} {display_skin(skin, use_st)}\n"
         f"{'✅ Жива' if f['alive'] else '💀 Мертва'} {f['coins']}{coin_emoji()}"
-        + (f"  🔥{f['streak']}д" if f["streak"] > 1 else "")
+        + (f"  🔥{streak_now(f)}д" if streak_now(f) > 1 else "")
         + "\n\n"
         f"🍖 Голод: <code>{bar(f['hunger'])}</code> {f['hunger']}%\n"
         f"😄 Радость: <code>{bar(f['happiness'])}</code> {f['happiness']}%\n"
@@ -33476,6 +33530,9 @@ async def admin_router(update: Update, ctx: ContextTypes.DEFAULT_TYPE):
                 "last_expedition",
             ):
                 p_cd[cd_key] = 0
+            # Бонус снова доступен, но серия не сгорает: «забран вчера»
+            if p_cd.get("streak", 0):
+                p_cd["last_daily"] = daily_day_start() - 60
             await db_save(p_cd)
             await admin_log(uid, "reset_cd", target_uid_cd)
         await q.answer("✅ Кулдауны сброшены", show_alert=True)
@@ -40230,18 +40287,13 @@ async def daily_claim(user, f: dict, ctx: ContextTypes.DEFAULT_TYPE) -> tuple[bo
     """
     uid = user.id
     now = time.time()
-    today_start = (
-        datetime.now(timezone.utc)
-        .replace(hour=0, minute=0, second=0, microsecond=0)
-        .timestamp()
-    )
+    today_start = daily_day_start()
     if f["last_daily"] >= today_start:
         nxt = today_start + 86400
         h, m = int((nxt - now) / 3600), int(((nxt - now) % 3600) / 60)
         return False, f"Уже забрал. Следующий через {h}ч {m}мин"
 
-    yesterday = today_start - 86400
-    f["streak"] = (f["streak"] + 1) if f["last_daily"] >= yesterday else 1
+    f["streak"] = (f["streak"] + 1) if streak_continues(f["last_daily"], now) else 1
     # Анонс вехи стрика в чат
     _streak_milestone = STREAK_MILESTONES.get(f["streak"])
     if _streak_milestone:
@@ -54670,7 +54722,7 @@ async def job_reminders(ctx: ContextTypes.DEFAULT_TYPE):
 # ══════════════════════════════════════════════════════════════════════════════
 REMIND_DEFAULT_HOUR = 19          # МСК, если по игроку ещё нет данных
 REMIND_WINDOW = (9, 22)           # раньше и позже не пишем
-REMIND_SAVER_HOUR = 21            # «спаси серию»: серия сгорает в 03:00 МСК
+REMIND_SAVER_HOUR = 21            # «спаси серию»: серия сгорает в полночь МСК
 REMIND_SAVER_MIN_STREAK = 3
 REMIND_BACK_H = 12                # вернулся за столько часов — текст сработал
 REMIND_GIVE_UP = 5                # столько напоминаний без ответа — прощаемся
@@ -54736,21 +54788,17 @@ _REMIND_SITUATION = {k: s for s, vs in REMIND_TEXTS.items() for k, *_ in vs}
 
 def _remind_bonus(f: dict, now: float) -> tuple[bool, int, int]:
     """(бонус сегодня ещё не забран, серия после него, монет без множителей)."""
-    day0 = datetime.fromtimestamp(now, timezone.utc).replace(
-        hour=0, minute=0, second=0, microsecond=0).timestamp()
     last = f.get("last_daily", 0) or 0
     streak = int(f.get("streak", 0) or 0)
-    if last >= day0:
+    if last >= daily_day_start(now):
         return False, streak, 0
-    nxt = streak + 1 if last >= day0 - 86400 else 1
+    nxt = streak + 1 if streak_continues(last, now) else 1
     return True, nxt, 20 + min(nxt * 5, 100)
 
 
 def _remind_streak_alive(f: dict, now: float) -> int:
     """Серия, которая ещё не сгорела (бонус вчера или сегодня), иначе 0."""
-    day0 = datetime.fromtimestamp(now, timezone.utc).replace(
-        hour=0, minute=0, second=0, microsecond=0).timestamp()
-    return int(f.get("streak", 0) or 0) if (f.get("last_daily", 0) or 0) >= day0 - 86400 else 0
+    return int(f.get("streak", 0) or 0) if streak_continues(f.get("last_daily", 0) or 0, now) else 0
 
 
 def remind_situation(f: dict, now: float, ignored: int) -> str:
@@ -54789,9 +54837,8 @@ def remind_message(f: dict, key: str, now: float) -> tuple[str, InlineKeyboardMa
     _, title, body = next(v for v in REMIND_TEXTS[sit] if v[0] == key)
     can_claim, nxt, coins = _remind_bonus(f, now)
     away = max(1, int((now - (f.get("last_seen", 0) or now)) // 86400))
-    # До 00:00 UTC — тогда сгорает серия
-    end = datetime.fromtimestamp(now, timezone.utc).replace(
-        hour=0, minute=0, second=0, microsecond=0).timestamp() + 86400
+    # До полуночи по Москве — тогда сгорает серия
+    end = daily_day_start(now) + 86400
     left_h = max(1, round((end - now) / 3600))
     streak = _remind_streak_alive(f, now)
     fields = {
@@ -56515,6 +56562,14 @@ async def compensate_downtime() -> float:
     if downtime < HEARTBEAT_MIN_GAP:
         return 0.0
     downtime = min(downtime, HEARTBEAT_MAX_CREDIT)
+    # Дни простоя не сжигают серию ежедневного бонуса
+    try:
+        days = streak_outage_days(now - downtime, now)
+        if days:
+            await streak_outage_load(days)
+            logger.info("⏸ Серии: дни простоя не считаются — %s", ", ".join(days))
+    except Exception as _e:
+        logger.warning("streak_outage: %s", _e)
 
     async with aiosqlite.connect(DB_PATH) as db:
         # MIN(...) — чтобы отметка не уехала в будущее: тогда следующий decay
@@ -56550,6 +56605,7 @@ async def post_init(app: Application):
     asyncio.create_task(nft_attrs_backfill())  # старые холдеры — в фоне
     await _load_peak_online()  # восстанавливаем пиковый онлайн из БД
     await compensate_downtime()
+    await streak_outage_load()
     # ── Миграция: синхронизируем streak в user_bonds из frogs для старых связей ──
     try:
         async with aiosqlite.connect(DB_PATH) as _mdb:

@@ -127,7 +127,7 @@ async def main():
 
     print("2. Повод написать")
     now = msk_ts(0, 15)
-    day0 = datetime.fromtimestamp(now, timezone.utc).replace(hour=0, minute=0, second=0, microsecond=0).timestamp()
+    day0 = B.daily_day_start(now)
     base = {"health": 90, "hunger": 80, "streak": 0, "last_daily": 0, "last_seen": now - 20 * 3600}
     ok(B.remind_situation({**base, "health": 15}, now, 0) == "danger", "лягушке плохо — первым делом это")
     ok(B.remind_situation({**base, "streak": 8, "last_daily": day0 - 3600}, now, 0) == "streak",
@@ -207,8 +207,7 @@ async def main():
     ok("больше не будет" in sent_days[-1][1], "последнее — прощание")
 
     print("7. Вечером — «спаси серию», даже если заходил, но бонус не забрал")
-    utc0 = datetime.fromtimestamp(msk_ts(0, 21, 10), timezone.utc).replace(
-        hour=0, minute=0, second=0, microsecond=0).timestamp()
+    utc0 = B.daily_day_start(msk_ts(0, 21, 10))
     await make_frog(301, born_at=born, last_seen=msk_ts(0, 11), streak=12, last_daily=utc0 - 3600,
                     hunger=80, health=90)
     await make_frog(302, born_at=born, last_seen=msk_ts(0, 11), streak=12, last_daily=utc0 + 3600,
