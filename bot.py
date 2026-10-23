@@ -4999,6 +4999,18 @@ def run_sync_migration():
             )""",
         ),
         (
+            "fish_games",
+            """CREATE TABLE IF NOT EXISTS fish_games (
+                id         INTEGER PRIMARY KEY AUTOINCREMENT,
+                a          INTEGER NOT NULL,
+                b          INTEGER NOT NULL,
+                stake      INTEGER NOT NULL,
+                state      TEXT    NOT NULL,
+                created_at REAL    NOT NULL,
+                finished   INTEGER DEFAULT 0
+            )""",
+        ),
+        (
             "letopis",
             """CREATE TABLE IF NOT EXISTS letopis (
                 id         INTEGER PRIMARY KEY AUTOINCREMENT,
@@ -35474,6 +35486,7 @@ async def cb_guard(update: Update, ctx: ContextTypes.DEFAULT_TYPE):
         "plaza_",           # все экраны площади
         "staya_vote_",      # голос за событие стаи — личный
         "fish_accept_",     # принять рыбалку — личный
+        "fishg_",           # ход в рыбалке — игрок проверяется внутри
         "fish_decline_",    # отклонить рыбалку — личный
         "friend_accept_",   # принять заявку в друзья — личный
         "friend_decline_",  # отклонить заявку — личный
@@ -40898,18 +40911,22 @@ _PLAZA_PICK = {
     "adv": (_E_SWORDS, "Поход", "plaza_invite_adv_",
             "Вы с соседом отправляете лягушек на 2, 4 или 8 часов. В пути — развилки, "
             "решаете вместе. В конце — монеты и опыт обоим."),
-    "fish": ("🎣", "Рыбалка", "plaza_invite_fish_",
-             f"Ставка — {FISH_COST}🪙 с каждого, раз в сутки.\n"
-             "🐟 35% — улов на двоих, обоим ставка с бонусом\n"
-             "🏆 30% — обе ставки твои\n"
-             "🤝 25% — обе ставки у соседа\n"
-             "💨 10% — не клюёт, ставки сгорают"),
+    # Правила рыбалки — в fish_about(): константы игры объявлены ниже
+    "fish": ("🎣", "Рыбалка", "plaza_invite_fish_", ""),
 }
+
+
+def fish_about() -> str:
+    return (f"Три заброса: каждый втайне выбирает место — 🌿 камыши, 🪷 кувшинки или 🌊 омут. "
+            f"Кто наловит больше по весу, забирает обе ставки. Наловите вместе "
+            f"{_kg(FISH_TEAM_GOAL)} — ещё +{FISH_TEAM_BONUS}🪙 обоим.\n"
+            f"Ставка — {FISH_COST}🪙 с каждого, раз в сутки.")
 
 
 async def plaza_pick_view(f: dict, kind: str) -> tuple[str, InlineKeyboardMarkup]:
     """Выбор соседа для похода или рыбалки: нужны «Приятели» и выше."""
     emoji, title, cb, about = _PLAZA_PICK[kind]
+    about = about or fish_about()
     now = time.time()
     friends = [r for r in await plaza_friends(f["user_id"])
                if r.get("fr_level", 0) >= 1 and r.get("alive")
@@ -40937,7 +40954,624 @@ async def plaza_show(q, view):
         pass
 
 
+# ── 🎣 Рыбалка вдвоём ────────────────────────────────────────────────────
+# Раньше после «Принять» сразу показывался итог броска кубика — игры не было.
+# Теперь три заброса: каждый втайне выбирает место, улов — по весу. Победитель
+# забирает банк из двух ставок; если вместе наловили FISH_TEAM_GOAL кг —
+# обоим ещё FISH_TEAM_BONUS. В одно место — рыба пугается, улов пополам:
+# выгодно угадать, куда пойдёт сосед, и не мешать ему.
+FISH_ROUNDS = 3
+FISH_TEAM_GOAL = 12.0     # при случайном выборе мест — в 44% игр, если не толкаться — чаще
+FISH_TEAM_BONUS = 30
+FISH_TURN_WAIT = 300      # кто не выбрал за 5 минут — удочка сама летит в камыши
+FISH_SPOTS = {
+    "reeds":  ("🌿", "Камыши"),
+    "lilies": ("🪷", "Кувшинки"),
+    "deep":   ("🌊", "Омут"),
+}
+_FISH_WHERE = {"reeds": "в камышах", "lilies": "в кувшинках", "deep": "в омуте"}
+FISH_RULES = ("🌿 клюёт всегда, но мелочь · 🪷 крупнее, иногда пусто · 🌊 бывает щука, "
+              "но часто срывается. В одно место с соседом — распугаете рыбу, улов пополам")
+_fish_locks: dict[int, asyncio.Lock] = {}
+
+
+def fish_cast(spot: str, rnd=random) -> tuple[str, float]:
+    """Один заброс: (рыба, кг); пустая рыба — сорвалась."""
+    r = rnd.random()
+    if spot == "reeds":
+        return rnd.choice(("карась", "ёрш", "окунёк", "плотва")), round(rnd.uniform(0.5, 2.5), 1)
+    if spot == "lilies":
+        if r < 0.2:
+            return "", 0.0
+        return rnd.choice(("лещ", "линь", "окунь")), round(rnd.uniform(1.5, 4.5), 1)
+    if r < 0.45:
+        return "", 0.0
+    if r < 0.9:
+        return rnd.choice(("судак", "сомёнок", "налим")), round(rnd.uniform(3.0, 7.0), 1)
+    return "щука", round(rnd.uniform(8.0, 12.0), 1)
+
+
+def _kg(v: float) -> str:
+    return f"{v:.1f}".replace(".", ",") + " кг"
+
+
+async def fish_new(a: int, b: int, stake: int, mid_a: int | None, mid_b: int | None) -> int:
+    st = {"round": 1, "pick": {"a": None, "b": None}, "w": {"a": 0.0, "b": 0.0},
+          "log": [], "mid": {"a": mid_a, "b": mid_b}, "turn_at": time.time()}
+    async with aiosqlite.connect(DB_PATH) as db:
+        cur = await db.execute(
+            "INSERT INTO fish_games(a, b, stake, state, created_at) VALUES(?,?,?,?,?)",
+            (a, b, stake, json.dumps(st), time.time()))
+        await db.commit()
+        return cur.lastrowid
+
+
+async def fish_load(gid: int) -> dict | None:
+    async with aiosqlite.connect(DB_PATH) as db:
+        db.row_factory = aiosqlite.Row
+        async with db.execute("SELECT * FROM fish_games WHERE id=?", (gid,)) as c:
+            row = await c.fetchone()
+    if not row:
+        return None
+    g = dict(row)
+    g["state"] = json.loads(g["state"])
+    return g
+
+
+async def fish_save(g: dict):
+    async with aiosqlite.connect(DB_PATH) as db:
+        await db.execute("UPDATE fish_games SET state=?, finished=? WHERE id=?",
+                         (json.dumps(g["state"]), g["finished"], g["id"]))
+        await db.commit()
+
+
+def fish_view(g: dict, role: str, names: dict) -> tuple[str, InlineKeyboardMarkup]:
+    st, o = g["state"], ("b" if role == "a" else "a")
+    other = he(names[o])
+    done = bool(g["finished"])
+    total = st["w"]["a"] + st["w"]["b"]
+    head = ui_title("🎣", f"Рыбалка с {other}") + ("" if done else f"{SEP}заброс {st['round']} из {FISH_ROUNDS}")
+
+    def side(e):
+        spot, fish, kg = e
+        icon = FISH_SPOTS[spot][0]
+        return f"{icon} {fish} {_kg(kg)}" if fish else f"{icon} сорвалась"
+    log = [f"{i}. ты: {side(e[role])}{SEP}{other}: {side(e[o])}" + (" — распугали, пополам" if e["clash"] else "")
+           for i, e in enumerate(st["log"], 1)]
+    score = (f"Ты — <b>{_kg(st['w'][role])}</b>{SEP}{other} — <b>{_kg(st['w'][o])}</b>\n"
+             f"Вместе {_kg(total)} из {_kg(FISH_TEAM_GOAL)}" + (" ✅" if total >= FISH_TEAM_GOAL else ""))
+    pot = g["stake"] * 2
+    if done:
+        win = st.get("winner", "")
+        res = (f"🏆 <b>Банк твой: +{pot}🪙</b>" if win == role else
+               f"Банк у {other}" if win else f"Ничья — ставки вернулись")
+        res += (f"\n🐟 Общий улов: +{FISH_TEAM_BONUS}🪙 обоим" if total >= FISH_TEAM_GOAL
+                else f"\nДо общего улова не хватило {_kg(FISH_TEAM_GOAL - total)}")
+        return (ui_card(head, ui_quote(*log), score, res),
+                InlineKeyboardMarkup([[btn("◀️ Площадь", callback_data="plaza")]]))
+    mine = st["pick"][role]
+    if mine:
+        return (ui_card(head, ui_quote(*log), score,
+                        f"Удочка {FISH_SPOTS[mine][0]} {_FISH_WHERE[mine]}. Ждём {other}…",
+                        hint="Если сосед не выберет за 5 минут, его удочка сама полетит в камыши"),
+                InlineKeyboardMarkup([[btn("🔄 Обновить", callback_data=f"fishg_{g['id']}_view")]]))
+    rows = [[btn(f"{e} {n}", callback_data=f"fishg_{g['id']}_{k}") for k, (e, n) in FISH_SPOTS.items()]]
+    return (ui_card(head, ui_quote(*log), score, "<b>Куда забросишь?</b>", hint=FISH_RULES),
+            InlineKeyboardMarkup(rows))
+
+
+async def fish_finish(g: dict):
+    st, stake = g["state"], g["stake"]
+    wa, wb = st["w"]["a"], st["w"]["b"]
+    st["winner"] = "a" if wa > wb else "b" if wb > wa else ""
+    team = wa + wb >= FISH_TEAM_GOAL
+    for role, pid in (("a", g["a"]), ("b", g["b"])):
+        pf = await db_get(pid)
+        if not pf:
+            continue
+        gain = (stake * 2 if st["winner"] == role else 0 if st["winner"] else stake)
+        gain += FISH_TEAM_BONUS if team else 0
+        pf["coins"] = pf.get("coins", 0) + gain
+        await db_save(pf)
+    await friend_add_xp(g["a"], g["b"], 3)
+    await friend_add_xp(g["b"], g["a"], 3)
+    g["finished"] = 1
+
+
+async def fish_step(bot, g: dict):
+    """Если оба выбрали — разыграть заброс; сохранить и перерисовать у обоих."""
+    st = g["state"]
+    if st["pick"]["a"] and st["pick"]["b"]:
+        pa, pb = st["pick"]["a"], st["pick"]["b"]
+        (fa, ka), (fb, kb) = fish_cast(pa), fish_cast(pb)
+        clash = pa == pb
+        if clash:
+            ka, kb = round(ka / 2, 1), round(kb / 2, 1)
+        st["w"]["a"] = round(st["w"]["a"] + ka, 1)
+        st["w"]["b"] = round(st["w"]["b"] + kb, 1)
+        st["log"].append({"a": [pa, fa, ka], "b": [pb, fb, kb], "clash": clash})
+        st["round"] += 1
+        st["pick"] = {"a": None, "b": None}
+        st["turn_at"] = time.time()
+        if st["round"] > FISH_ROUNDS:
+            await fish_finish(g)
+    await fish_save(g)
+    fa_, fb_ = await db_get(g["a"]), await db_get(g["b"])
+    names = {"a": fname(fa_) if fa_ else "?", "b": fname(fb_) if fb_ else "?"}
+    for role in ("a", "b"):
+        text, kb = fish_view(g, role, names)
+        chat, mid = g[role], st["mid"].get(role)
+        try:
+            if mid:
+                await bot.edit_message_text(text, chat_id=chat, message_id=mid,
+                                            parse_mode=ParseMode.HTML, reply_markup=kb)
+                continue
+        except BadRequest as e:
+            if "not modified" in str(e).lower():
+                continue
+        except (Forbidden, TimedOut):
+            continue
+        try:
+            sent = await bot.send_message(chat, text, parse_mode=ParseMode.HTML, reply_markup=kb)
+            st["mid"][role] = sent.message_id
+            await fish_save(g)
+        except (BadRequest, Forbidden, TimedOut):
+            pass
+
+
+async def fish_pick(bot, gid: int, uid: int, spot: str) -> str:
+    """Ход игрока. Возвращает текст отказа или пустую строку."""
+    lock = _fish_locks.setdefault(gid, asyncio.Lock())
+    async with lock:
+        g = await fish_load(gid)
+        if not g or g["finished"]:
+            return "Эта рыбалка уже закончилась"
+        role = "a" if uid == g["a"] else "b" if uid == g["b"] else ""
+        if not role:
+            return "Это чужая рыбалка"
+        if spot == "view":
+            await fish_step(bot, g)
+            return ""
+        if spot not in FISH_SPOTS:
+            return "Нет такого места"
+        if g["state"]["pick"][role]:
+            return "Удочка уже заброшена — ждём соседа"
+        g["state"]["pick"][role] = spot
+        await fish_step(bot, g)
+    return ""
+
+
+async def job_fish_timeouts(ctx):
+    """Кто не выбрал место за FISH_TURN_WAIT — забрасываем за него в камыши."""
+    async with aiosqlite.connect(DB_PATH) as db:
+        async with db.execute("SELECT id FROM fish_games WHERE finished=0") as c:
+            ids = [r[0] for r in await c.fetchall()]
+    now = time.time()
+    for gid in ids:
+        lock = _fish_locks.setdefault(gid, asyncio.Lock())
+        async with lock:
+            g = await fish_load(gid)
+            if not g or g["finished"] or now - g["state"]["turn_at"] < FISH_TURN_WAIT:
+                continue
+            for role in ("a", "b"):
+                g["state"]["pick"][role] = g["state"]["pick"][role] or "reeds"
+            await fish_step(ctx.bot, g)
+        if g and g["finished"]:
+            _fish_locks.pop(gid, None)
+
+
+# ── 🌿 Стаи: поиск, карточка, заявки ─────────────────────────────────────
+STAYA_ACTIVE_DAYS = 3
+STAYA_LIST_PAGE = 5
+STAYA_LEADERS = ("chief", "elder")
+
+
+async def staya_catalog() -> list[dict]:
+    """Все стаи с числом участников, активных за STAYA_ACTIVE_DAYS дней и именем вожака."""
+    since = time.time() - STAYA_ACTIVE_DAYS * 86400
+    async with aiosqlite.connect(DB_PATH) as db:
+        db.row_factory = aiosqlite.Row
+        async with db.execute(
+            "SELECT s.*, COUNT(sm.user_id) AS member_count, "
+            "SUM(CASE WHEN f.last_seen > ? THEN 1 ELSE 0 END) AS active_count, "
+            "(SELECT COALESCE(NULLIF(f2.frog_name, ''), f2.first_name) FROM staya_members sm2 "
+            " JOIN frogs f2 ON f2.user_id=sm2.user_id "
+            " WHERE sm2.staya_id=s.id AND sm2.role='chief' LIMIT 1) AS chief_name "
+            "FROM stayas s LEFT JOIN staya_members sm ON sm.staya_id=s.id "
+            "LEFT JOIN frogs f ON f.user_id=sm.user_id GROUP BY s.id", (since,)
+        ) as c:
+            return [dict(r) for r in await c.fetchall()]
+
+
+def _staya_cap(s: dict) -> int:
+    return s.get("max_members") or STAYA_MAX_MEMBERS
+
+
+def _staya_bonuses(lvl: int) -> list[str]:
+    return [up["bonus"] for k, up in sorted(STAYA_UPGRADES.items()) if k <= lvl and up.get("bonus")]
+
+
+async def staya_list_view(f: dict, page: int = 0) -> tuple[str, InlineKeyboardMarkup]:
+    stayas = [s for s in await staya_catalog() if (s.get("member_count") or 0) < _staya_cap(s)]
+    # Сверху — живые стаи: в мёртвой новичку делать нечего, как бы высок ни был уровень
+    stayas.sort(key=lambda s: (-(s.get("active_count") or 0), -(s.get("level") or 0)))
+    if not stayas:
+        return (ui_card(ui_title(_E_LEAF, "Стаи"), "Свободных мест сейчас нет ни в одной стае."),
+                InlineKeyboardMarkup([[btn(f"🌿 Создать свою ({STAYA_CREATE_COST}🪙)", callback_data="staya_create_start")],
+                                      [btn("◀️ Назад", callback_data="plaza_staya")]]))
+    pages = max(1, math.ceil(len(stayas) / STAYA_LIST_PAGE))
+    page = max(0, min(page, pages - 1))
+    lines, rows = [], []
+    for i, s in enumerate(stayas[page * STAYA_LIST_PAGE:(page + 1) * STAYA_LIST_PAGE],
+                          page * STAYA_LIST_PAGE + 1):
+        line = (f"{i}. {s['emoji']} <b>{he(s['name'])}</b>{SEP}ур. {s.get('level') or 0}{SEP}"
+                f"{s.get('member_count') or 0}/{_staya_cap(s)}\n"
+                f"Вожак — {he(s.get('chief_name') or '?')}{SEP}"
+                f"активны {s.get('active_count') or 0}")
+        if (s.get("invite_text") or "").strip():
+            line += f"\n<i>{he(s['invite_text'].strip()[:80])}</i>"
+        lines.append(line)
+        rows.append([btn(f"{i}. {s['emoji']} {he(s['name'])}", callback_data=f"plaza_staya_view_{s['id']}")])
+    if pages > 1:
+        rows.append([btn("◀️", callback_data=f"plaza_staya_list_{(page - 1) % pages}"),
+                     btn(f"{page + 1}/{pages}", callback_data="noop"),
+                     btn("▶️", callback_data=f"plaza_staya_list_{(page + 1) % pages}")])
+    rows.append([btn("◀️ Назад", callback_data="plaza_staya")])
+    return (ui_card(ui_title(_E_LEAF, f"Стаи с местами · {len(stayas)}"), "\n\n".join(lines),
+                    hint=f"Сверху — где больше игроков заходили за {STAYA_ACTIVE_DAYS} дня"),
+            InlineKeyboardMarkup(rows))
+
+
+async def staya_card_view(f: dict, staya_id: int) -> tuple[str, InlineKeyboardMarkup] | None:
+    """Стая глазами того, кто хочет вступить."""
+    s = next((x for x in await staya_catalog() if x["id"] == staya_id), None)
+    if not s:
+        return None
+    uid = f["user_id"]
+    members = await staya_get_members(staya_id)
+    role_of = {"chief": [], "elder": [], "member": []}
+    for m in members:
+        role_of.setdefault(m["role"], []).append(he(_plaza_name(m)))
+    lvl, cap, n = s.get("level") or 0, _staya_cap(s), len(members)
+    up = STAYA_UPGRADES.get(lvl)
+    blocks = [
+        ui_line(f"Ур. {lvl}" + (f" «{up['name']}»" if up else ""), f"{n}/{cap}",
+                f"активны за {STAYA_ACTIVE_DAYS} дня — {s.get('active_count') or 0}"),
+        f"{staya_role_label(s, 'chief')}: <b>{', '.join(role_of['chief']) or '?'}</b>"
+        + (f"\n{staya_role_label(s, 'elder')}: {', '.join(role_of['elder'])}" if role_of["elder"] else ""),
+    ]
+    if (s.get("invite_text") or "").strip():
+        blocks.append(f"<i>{he(s['invite_text'].strip()[:300])}</i>")
+    bon = _staya_bonuses(lvl)
+    if bon:
+        blocks.append("<b>Бонусы участникам</b>\n" + ui_quote(*bon, expandable=len(bon) > 3))
+    rest = role_of["member"]
+    if rest:
+        blocks.append(ui_quote("Участники: " + ", ".join(rest[:15])
+                               + (f" и ещё {len(rest) - 15}" if len(rest) > 15 else ""), expandable=True))
+
+    async with aiosqlite.connect(DB_PATH) as db:
+        async with db.execute("SELECT status, text FROM staya_applications WHERE staya_id=? AND user_id=?",
+                              (staya_id, uid)) as c:
+            app = await c.fetchone()
+    my = await staya_of_user(uid)
+    rows, hint = [], ""
+    if my and my["id"] == staya_id:
+        hint = "Ты в этой стае"
+    elif my:
+        hint = f"Ты в стае «{he(my['name'])}». Чтобы перейти, сначала выйди из неё"
+    elif app and app[0] == "pending":
+        blocks.append("⏳ <b>Заявка отправлена</b> — ждём решения вожака"
+                      + (f"\nТвоё сообщение: <i>{he(app[1])}</i>" if app[1] else ""))
+        rows.append([btn("✏️ Написать вожаку", callback_data=f"plaza_applymsg_{staya_id}"),
+                     btn("Отозвать", callback_data=f"plaza_applycancel_{staya_id}")])
+    elif n >= cap:
+        hint = "Мест нет"
+    else:
+        if app and app[0] == "rejected":
+            blocks.append("Прошлую заявку отклонили — можно подать снова")
+        rows.append([btn("📝 Подать заявку", callback_data=f"plaza_apply_{staya_id}", style="primary")])
+    rows.append([btn("◀️ К списку", callback_data="plaza_staya_list")])
+    return ui_card(f"{s['emoji']} <b>Стая «{he(s['name'])}»</b>", *blocks, hint=hint), InlineKeyboardMarkup(rows)
+
+
+async def staya_notify_leaders(bot, staya: dict, text: str):
+    """Заявки видят и вожак, и старейшины — решать могут оба."""
+    for m in await staya_get_members(staya["id"]):
+        if m["role"] in STAYA_LEADERS:
+            try:
+                await bot.send_message(m["user_id"], text, parse_mode=ParseMode.HTML,
+                                       reply_markup=InlineKeyboardMarkup([[
+                                           btn("📬 Заявки", callback_data="staya_applications")]]))
+            except (BadRequest, Forbidden, TimedOut):
+                pass
+
+
+async def staya_apps_view(staya: dict) -> tuple[str, InlineKeyboardMarkup]:
+    async with aiosqlite.connect(DB_PATH) as db:
+        db.row_factory = aiosqlite.Row
+        async with db.execute(
+            "SELECT sa.*, f.frog_name, f.first_name, f.level, f.last_seen "
+            "FROM staya_applications sa JOIN frogs f ON f.user_id=sa.user_id "
+            "WHERE sa.staya_id=? AND sa.status='pending' AND COALESCE(f.staya_id, 0)=0 "
+            "ORDER BY sa.created_at", (staya["id"],)
+        ) as c:
+            apps = [dict(r) for r in await c.fetchall()]
+    head = ui_title(_E_MAIL, f"Заявки в «{he(staya['name'])}»")
+    if not apps:
+        return (ui_card(head, "Новых заявок нет."),
+                InlineKeyboardMarkup([[btn("◀️ Назад", callback_data="plaza_staya")]]))
+    now = time.time()
+    lines, rows = [], []
+    for a in apps[:10]:
+        name = he(_plaza_name(a))
+        seen = "в игре сегодня" if _plaza_online(a, now) else "давно не заходил(а)"
+        lines.append(f"{_E_FROG} <b>{name}</b>{SEP}ур. {a.get('level') or 1}{SEP}{seen}"
+                     + (f"\n<i>{he(a['text'][:120])}</i>" if (a.get("text") or "").strip() else ""))
+        rows.append([btn(f"✅ {name}", callback_data=f"staya_app_ok_{a['user_id']}"),
+                     btn("❌", callback_data=f"staya_app_no_{a['user_id']}")])
+    rows.append([btn("◀️ Назад", callback_data="plaza_staya")])
+    return ui_card(head, "\n\n".join(lines)), InlineKeyboardMarkup(rows)
+
+
+async def staya_my_leader(uid: int) -> tuple[dict | None, str]:
+    """Стая игрока и его роль, если он вожак или старейшина."""
+    staya = await staya_of_user(uid)
+    if not staya:
+        return None, ""
+    role = next((m["role"] for m in await staya_get_members(staya["id"]) if m["user_id"] == uid), "member")
+    return staya, role
+
+
+async def staya_home_view(f: dict, staya: dict) -> tuple[str, InlineKeyboardMarkup]:
+    """Экран своей стаи."""
+    uid, now = f["user_id"], time.time()
+    members = await staya_get_members(staya["id"])
+    since = now - STAYA_ACTIVE_DAYS * 86400
+    seen = {}
+    for m in members:
+        mf = await db_get(m["user_id"])
+        seen[m["user_id"]] = float((mf or {}).get("last_seen") or 0)
+    active = sum(1 for v in seen.values() if v > since)
+    role = next((m["role"] for m in members if m["user_id"] == uid), "member")
+    lvl = staya.get("level") or 0
+    up_now, up_next = STAYA_UPGRADES.get(lvl), STAYA_UPGRADES.get(lvl + 1)
+
+    blocks = [ui_line(f"Ур. {lvl}" + (f" «{up_now['name']}»" if up_now else ""),
+                      f"{len(members)}/{_staya_cap(staya)}",
+                      f"активны {active}")]
+    if up_next:
+        blocks.append(f"{_staya_bar(staya['cauldron'], up_next['cost'])}\n"
+                      f"В котле {staya['cauldron']}🪙 из {up_next['cost']}🪙 — до ур. {lvl + 1} "
+                      f"«{up_next['name']}»")
+    else:
+        blocks.append(f"{_E_TROPHY} Высший уровень болота")
+    boost = await staya_boost_active(staya["id"])
+    if boost:
+        blocks.append(f"✨ Опыт ×{boost['mult']} — ещё {_ex_left(boost['ends_at'])}")
+    async with aiosqlite.connect(DB_PATH) as db:
+        async with db.execute("SELECT id FROM staya_events WHERE staya_id=? AND finished=0 LIMIT 1",
+                              (staya["id"],)) as c:
+            ev = await c.fetchone()
+        async with db.execute(
+            "SELECT COUNT(*) FROM staya_applications sa JOIN frogs f ON f.user_id=sa.user_id "
+            "WHERE sa.staya_id=? AND sa.status='pending' AND COALESCE(f.staya_id,0)=0", (staya["id"],)) as c:
+            apps_n = (await c.fetchone())[0]
+    if ev:
+        blocks.append(f"{_E_MASK} <b>Идёт голосование стаи</b>")
+    bon = _staya_bonuses(lvl)
+    if bon:
+        blocks.append("<b>Бонусы</b>\n" + ui_quote(*bon, expandable=len(bon) > 3))
+
+    rows = []
+    if ev:
+        rows.append([btn("🎭 Голосовать", callback_data="staya_events_view", style="primary")])
+    rows.append([btn("👥 Участники", callback_data="plaza_staya_members"),
+                 btn("🪙 Котёл", callback_data="staya_cauldron")])
+    rows.append([btn("🛒 Магазин", callback_data="staya_shop"),
+                 btn("🏔️ Уровни", callback_data="staya_level_info")])
+    extra = ([btn("⚔️ Война", callback_data="war_menu")] if lvl >= 5 else []) + \
+            ([btn("🍲 Столовая", callback_data="canteen_menu")] if lvl >= 6 else [])
+    if extra:
+        rows.append(extra)
+    if role in STAYA_LEADERS:
+        rows.append([btn("📬 Заявки" + (f" · {apps_n}" if apps_n else ""), callback_data="staya_applications",
+                         style="primary" if apps_n else None),
+                     btn("⚙️ Управление", callback_data="staya_manage")])
+    rows.append([btn("🏆 Топ стай", callback_data="staya_top_inline"),
+                 btn("🚪 Выйти", callback_data="staya_leave")])
+    rows.append([btn("◀️ Назад", callback_data="plaza")])
+    return (ui_card(f"{staya['emoji']} <b>Стая «{he(staya['name'])}»</b>", *blocks,
+                    hint=f"Ты — {staya_role_label(staya, role)}"),
+            InlineKeyboardMarkup(rows))
+
+
+async def staya_members_view(staya: dict) -> tuple[str, InlineKeyboardMarkup]:
+    now = time.time()
+    order = {"chief": 0, "elder": 1, "member": 2}
+    members = await staya_get_members(staya["id"])
+    rows = []
+    for m in members:
+        mf = await db_get(m["user_id"])
+        rows.append((m, float((mf or {}).get("last_seen") or 0)))
+    rows.sort(key=lambda r: (order.get(r[0]["role"], 3), -r[1]))
+    lines, cur = [], None
+    for m, seen in rows:
+        if m["role"] != cur:
+            cur = m["role"]
+            lines.append(f"\n<b>{staya_role_label(staya, cur)}</b>")
+        mark = " 🟢" if seen > now - 86400 else ""
+        lines.append(f"{he(_plaza_name(m))}{SEP}ур. {m.get('level') or 1}{mark}")
+    return (ui_card(ui_title(_E_USERS, f"Участники · {len(members)}/{_staya_cap(staya)}"),
+                    "\n".join(lines).strip(), hint="🟢 — в игре за сутки"),
+            InlineKeyboardMarkup([[btn("◀️ Назад", callback_data="plaza_staya")]]))
+
+
+async def staya_cauldron_view(f: dict, staya: dict) -> tuple[str, InlineKeyboardMarkup]:
+    """Котёл: сколько до уровня, кто вложил больше всех, кнопки взноса."""
+    lvl = staya.get("level") or 0
+    up = STAYA_UPGRADES.get(lvl + 1)
+    blocks = []
+    if up:
+        blocks.append(f"{_staya_bar(staya['cauldron'], up['cost'])}\n"
+                      f"{staya['cauldron']}🪙 из {up['cost']}🪙 — до ур. {lvl + 1} «{up['name']}»\n"
+                      f"Откроется: <i>{up.get('bonus', '')}</i>")
+    else:
+        blocks.append(f"{_E_TROPHY} Высший уровень болота — котёл копится на бустеры в магазине")
+    top = []
+    for i, row in enumerate(await cauldron_log_top(staya["id"], limit=5), 1):
+        df = await db_get(row["user_id"])
+        top.append(f"{i}. {he(fname(df) if df else '?')} — {row['total']}🪙")
+    if top:
+        blocks.append("<b>Больше всех вложили</b>\n" + ui_quote(*top))
+    amounts = [a for a in (50, 200, 500) if a <= f.get("coins", 0)]
+    rows = [[btn(f"+{a}🪙", callback_data=f"staya_cauldron_{a}") for a in amounts]] if amounts else []
+    rows.append([btn("✏️ Своя сумма", callback_data="staya_cauldron_custom"),
+                 btn("◀️ Назад", callback_data="plaza_staya")])
+    return (ui_card(ui_title(_E_COIN, "Котёл стаи"), *blocks,
+                    hint=f"У тебя {f.get('coins', 0)}🪙. 5% монет Трудяги идут в котёл сами"),
+            InlineKeyboardMarkup(rows))
+
+
+async def staya_event_view(uid: int, staya: dict) -> tuple[str, InlineKeyboardMarkup]:
+    """Голосование стаи: вопрос, варианты, сколько проголосовало и что выбрал ты."""
+    back = [btn("◀️ Назад", callback_data="plaza_staya")]
+    async with aiosqlite.connect(DB_PATH) as db:
+        db.row_factory = aiosqlite.Row
+        async with db.execute(
+            "SELECT * FROM staya_events WHERE staya_id=? AND finished=0 ORDER BY started_at DESC LIMIT 1",
+            (staya["id"],)) as c:
+            ev = await c.fetchone()
+        if not ev:
+            return (ui_card(ui_title("🎭", "Голосование стаи"), "Сейчас голосования нет.",
+                            hint="Оно начинается само время от времени — придёт сообщение"),
+                    InlineKeyboardMarkup([back]))
+        ev = dict(ev)
+        async with db.execute("SELECT choice, COUNT(*) AS cnt FROM staya_votes WHERE event_id=? GROUP BY choice",
+                              (ev["id"],)) as c:
+            votes = {r["choice"]: r["cnt"] for r in await c.fetchall()}
+        async with db.execute("SELECT choice FROM staya_votes WHERE event_id=? AND user_id=?",
+                              (ev["id"], uid)) as c:
+            mine = await c.fetchone()
+    data = json.loads(ev["event_json"])
+    total = sum(votes.values())
+    n = len(await staya_get_members(staya["id"]))
+    lines = []
+    for ch in data["choices"]:
+        cnt = votes.get(ch["key"], 0)
+        mark = " ← твой голос" if mine and mine[0] == ch["key"] else ""
+        lines.append(f"{ch['label']} — {cnt}{mark}")
+    info = f"Проголосовали {total} из {n}"
+    if ev.get("ends_at"):
+        info += f"{SEP}итог через {_ex_left(ev['ends_at'])}"
+    rows = [] if mine else [[btn(ch["label"], callback_data=f"staya_vote_{ev['id']}_{ch['key']}")]
+                            for ch in data["choices"]]
+    rows.append(back)
+    return (ui_card(f"{data.get('emoji', '🎭')} <b>Голосование стаи</b>", data["text"], ui_quote(*lines), info,
+                    hint="" if mine else "Выигрывает вариант, за который больше голосов"),
+            InlineKeyboardMarkup(rows))
+
+
+STAYA_BOOST_CATALOG = [
+    {"type": "xp_20", "label": "⭐ +20% опыта", "mult": 1.20, "hours": 2, "cost": 3000},
+    {"type": "xp_20", "label": "⭐ +20% опыта", "mult": 1.20, "hours": 6, "cost": 7500},
+    {"type": "xp_50", "label": "✨ +50% опыта", "mult": 1.50, "hours": 2, "cost": 6000},
+    {"type": "xp_50", "label": "✨ +50% опыта", "mult": 1.50, "hours": 6, "cost": 14000},
+]
+
+
+async def staya_shop_view(uid: int, staya: dict) -> tuple[str, InlineKeyboardMarkup]:
+    """Бустеры за монеты котла: участники голосуют, вожак запускает."""
+    role = next((m["role"] for m in await staya_get_members(staya["id"]) if m["user_id"] == uid), "member")
+    async with aiosqlite.connect(DB_PATH) as db:
+        async with db.execute("SELECT boost_type, COUNT(*) FROM staya_boost_votes WHERE staya_id=? GROUP BY boost_type",
+                              (staya["id"],)) as c:
+            votes = {r[0]: r[1] for r in await c.fetchall()}
+        async with db.execute("SELECT boost_type FROM staya_boost_votes WHERE staya_id=? AND user_id=?",
+                              (staya["id"], uid)) as c:
+            mine = (await c.fetchone() or [None])[0]
+    boost = await staya_boost_active(staya["id"])
+    lines, rows = [], []
+    for i, it in enumerate(STAYA_BOOST_CATALOG):
+        key = f"{it['type']}_{it['hours']}"
+        lines.append(f"{it['label']}{SEP}{it['hours']} ч{SEP}{it['cost']}🪙{SEP}"
+                     f"голосов {votes.get(key, 0)}" + (" ← твой" if mine == key else ""))
+        if role == "chief":
+            if staya["cauldron"] >= it["cost"]:
+                rows.append([btn(f"▶️ {it['label']} · {it['hours']} ч", callback_data=f"staya_shop_buy_{i}")])
+        elif mine != key:
+            rows.append([btn(f"🗳 {it['label']} · {it['hours']} ч",
+                             callback_data=f"staya_shop_vote_{it['type']}_{it['hours']}")])
+    rows.append([btn("◀️ Назад", callback_data="plaza_staya")])
+    return (ui_card(
+        ui_title(_E_SHOP, "Магазин стаи"),
+        f"В котле {staya['cauldron']}🪙. Бустер оплачивается из котла — до следующего уровня "
+        "болота станет дальше.",
+        f"✨ Сейчас идёт: опыт ×{boost['mult']} — ещё {_ex_left(boost['ends_at'])}" if boost else "",
+        ui_quote(*lines),
+        hint=("Нажми бустер, чтобы запустить" if len(rows) > 1 else "На бустер пока не хватает монет в котле")
+             if role == "chief" else
+             "Проголосуй — вожак видит, чего хочет стая, и запускает"),
+        InlineKeyboardMarkup(rows))
+
+
+class _AnswerOnce:
+    """
+    На нажатие Telegram принимает один ответ. Обработчики часто пишут
+    q.answer() в начале, а ниже — q.answer("Нужно 500🪙", show_alert=True):
+    второй ответ Telegram отбрасывает, и игрок видит, что кнопка «молчит».
+    Пустой ответ поэтому откладывается на ANSWER_DEFER секунд: если за это
+    время пришёл ответ с текстом — уходит он, иначе — пустой, чтобы не
+    крутились часики.
+    """
+    ANSWER_DEFER = 0.8
+
+    def __init__(self, q):
+        self.q, self.orig, self.sent, self.timer = q, q.answer, False, None
+
+    async def _send(self, *a, **kw):
+        if self.sent:
+            return True
+        self.sent = True
+        if self.timer:
+            self.timer.cancel()
+        try:
+            return await self.orig(*a, **kw)
+        except (BadRequest, TimedOut):
+            return False
+
+    async def answer(self, text=None, show_alert=False, **kw):
+        if self.sent:
+            return True
+        if text or kw.get("url"):
+            return await self._send(text, show_alert=show_alert, **kw)
+        if not self.timer:
+            async def later():
+                await asyncio.sleep(self.ANSWER_DEFER)
+                self.timer = None
+                await self._send()
+            self.timer = asyncio.create_task(later())
+        return True
+
+    async def flush(self):
+        if not self.sent:
+            await self._send()
+
+
 async def on_callback(update: Update, ctx: ContextTypes.DEFAULT_TYPE):
+    q = update.callback_query
+    # Уже обёрнуто (сюда передал другой роутер) — второй раз не оборачиваем
+    if q is None or isinstance(getattr(q.answer, "__self__", None), _AnswerOnce):
+        return await _on_callback_main(update, ctx)
+    once = _AnswerOnce(q)
+    object.__setattr__(q, "answer", once.answer)
+    try:
+        await _on_callback_main(update, ctx)
+    finally:
+        await once.flush()
+
+
+async def _on_callback_main(update: Update, ctx: ContextTypes.DEFAULT_TYPE):
     _g = await cb_guard(update, ctx)
     if _g is None:
         return
@@ -45424,270 +46058,125 @@ async def on_callback(update: Update, ctx: ContextTypes.DEFAULT_TYPE):
             pass
         return
 
-    # ── 🌿 Список всех стай (для вступления) ────────────────────────────────
+    # ── 🌿 Поиск стаи ─────────────────────────────────────────────────────────
     if d.startswith("plaza_staya_list"):
-        page = int(d.split("_")[-1]) if d != "plaza_staya_list" else 0
-        per  = 5
         await q.answer()
-        async with aiosqlite.connect(DB_PATH) as db:
-            db.row_factory = aiosqlite.Row
-            async with db.execute(
-                "SELECT s.*, COUNT(sm.user_id) as member_count "
-                "FROM stayas s LEFT JOIN staya_members sm ON sm.staya_id=s.id "
-                "GROUP BY s.id ORDER BY s.level DESC, member_count DESC"
-            ) as c:
-                all_stayas = [dict(r) for r in await c.fetchall()]
-
-        # Фильтруем незаполненные
-        open_stayas = [s for s in all_stayas if s.get("member_count", 0) < (s.get("max_members") or STAYA_MAX_MEMBERS)]
-        total = len(open_stayas)
-        page_stayas = open_stayas[page*per:(page+1)*per]
-
-        if not page_stayas and page == 0:
-            try:
-                await q.message.edit_text(
-                    "🌿 Нет доступных стай для вступления.\nСоздай свою!",
-                    reply_markup=InlineKeyboardMarkup([[
-                        btn(f"🌿 Создать ({STAYA_CREATE_COST}🪙)", callback_data="staya_create_start"),
-                        btn("◀️ Назад", callback_data="plaza_staya"),
-                    ]])
-                )
-            except (BadRequest, Forbidden, TimedOut):
-                pass
-            return
-
-        lines = [f"{_E_LEAF} <b>Стаи с местами</b>" + (f" · стр. {page+1}" if page else "") + "\n"]
-        kb_rows = []
-        for s in page_stayas:
-            cnt  = s.get("member_count", 0)
-            lvl  = s.get("level", 0)
-            s_max = s.get("max_members") or STAYA_MAX_MEMBERS
-            bonuses_preview = STAYA_UPGRADES.get(lvl, {}).get("bonus", "") if lvl > 0 else ""
-            lines.append(
-                f"{s['emoji']} <b>{he(s['name'])}</b> ур.{lvl} {cnt}/{s_max}\n"
-                + (f"   <i>✨ {bonuses_preview}</i>" if bonuses_preview else "")
-            )
-            kb_rows.append([btn(
-                f"{s['emoji']} {he(s['name'])} ур.{lvl} ({cnt}/{s_max})",
-                callback_data=f"plaza_staya_view_{s['id']}"
-            )])
-
-        nav = []
-        if page > 0:
-            nav.append(btn("◀️", callback_data=f"plaza_staya_list_{page-1}"))
-        if (page+1)*per < total:
-            nav.append(btn("▶️", callback_data=f"plaza_staya_list_{page+1}"))
-        if nav:
-            kb_rows.append(nav)
-        kb_rows.append([btn("◀️ Назад", callback_data="plaza_staya")])
-
-        try:
-            await q.message.edit_text("\n".join(lines), parse_mode=ParseMode.HTML,
-                                      reply_markup=InlineKeyboardMarkup(kb_rows))
-        except (BadRequest, Forbidden, TimedOut):
-            pass
+        tail = d[len("plaza_staya_list_"):]
+        await plaza_show(q, await staya_list_view(f, int(tail) if tail.isdigit() else 0))
         return
 
-    # ── Просмотр конкретной стаи + подать заявку ─────────────────────────────
     if d.startswith("plaza_staya_view_"):
-        staya_id = int(d[17:])
+        view = await staya_card_view(f, int(d[17:]))
+        if not view:
+            await q.answer("Стаи больше нет", show_alert=True)
+            return
         await q.answer()
-        async with aiosqlite.connect(DB_PATH) as db:
-            db.row_factory = aiosqlite.Row
-            async with db.execute("SELECT * FROM stayas WHERE id=?", (staya_id,)) as c:
-                s = await c.fetchone()
-        if not s:
-            await q.answer("Стая не найдена", show_alert=True); return
-        s = dict(s)
-        members = await staya_get_members(staya_id)
-
-        # Проверяем есть ли уже заявка
-        async with aiosqlite.connect(DB_PATH) as db:
-            async with db.execute(
-                "SELECT status FROM staya_applications WHERE staya_id=? AND user_id=?",
-                (staya_id, uid)
-            ) as c:
-                existing_app = await c.fetchone()
-
-        already_member = any(m["user_id"] == uid for m in members)
-        s_max_members = s.get("max_members") or STAYA_MAX_MEMBERS
-        full = len(members) >= s_max_members
-
-        members_short = ", ".join(
-            (m.get("frog_name") or m.get("first_name") or "?")[:8]
-            for m in members[:5]
-        ) + (f" и ещё {len(members)-5}" if len(members) > 5 else "")
-
-        upgrade = STAYA_UPGRADES.get(s["level"] + 1)
-        bonus_line = f"{_E_GIFT} Бонус: <i>{upgrade['bonus']}</i>" if upgrade and s["level"] > 0 else ""
-
-        text = (
-            f"{s['emoji']} <b>Стая «{he(s['name'])}»</b>\n\n"
-            f"🏔️ Уровень болота: <b>{s['level']}</b>\n"
-            f"🪙 Котёл: <b>{s['cauldron']}🪙</b>\n"
-            f"{_E_USERS} Участников: <b>{len(members)}/{s_max_members}</b>\n"
-            f"{bonus_line}\n\n"
-            f"<b>Участники:</b> {members_short}"
-        )
-        if already_member:
-            kb = InlineKeyboardMarkup([[btn("◀️ Назад", callback_data="plaza_staya_list")]])
-        elif full:
-            text += f"\n\n{_E_LOCK} <i>Стая заполнена</i>"
-            kb = InlineKeyboardMarkup([[btn("◀️ Назад", callback_data="plaza_staya_list")]])
-        elif existing_app:
-            app_status = existing_app[0]
-            status_label = {"pending": "⏳ Заявка на рассмотрении — ждём ответа Вожака",
-                           "rejected": "❌ Заявка отклонена"}.get(app_status, app_status)
-            text += f"\n\n{status_label}"
-            rows_app = []
-            if app_status == "rejected":
-                rows_app.append([btn("📝 Подать заново", callback_data=f"plaza_apply_{staya_id}")])
-            rows_app.append([btn("◀️ Назад", callback_data="plaza_staya_list")])
-            kb = InlineKeyboardMarkup(rows_app)
-        else:
-            kb = InlineKeyboardMarkup([
-                [btn("📝 Подать заявку", callback_data=f"plaza_apply_{staya_id}")],
-                [btn("◀️ Назад", callback_data="plaza_staya_list")],
-            ])
-        try:
-            await q.message.edit_text(text, parse_mode=ParseMode.HTML, reply_markup=kb)
-        except (BadRequest, Forbidden, TimedOut):
-            pass
+        await plaza_show(q, view)
         return
 
-    # ── Подать заявку ──────────────────────────────────────────────────────────
+    # Заявка — одним нажатием; сообщение вожаку — по желанию, отдельно
     if d.startswith("plaza_apply_"):
         staya_id = int(d[12:])
+        s_ap = await staya_get(staya_id)
+        my = await staya_of_user(uid)
+        if not s_ap:
+            await q.answer("Стаи больше нет", show_alert=True)
+            return
+        if my:
+            await q.answer(f"Ты уже в стае «{my['name']}» — сначала выйди из неё", show_alert=True)
+            return
+        if len(await staya_get_members(staya_id)) >= _staya_cap(s_ap):
+            await q.answer("Мест в стае нет", show_alert=True)
+            return
+        async with aiosqlite.connect(DB_PATH) as db:
+            await db.execute(
+                "INSERT INTO staya_applications(staya_id,user_id,text,created_at,status) VALUES(?,?,?,?,'pending') "
+                "ON CONFLICT(staya_id,user_id) DO UPDATE SET text='', created_at=excluded.created_at, status='pending'",
+                (staya_id, uid, "", time.time()))
+            await db.commit()
+        await q.answer("📝 Заявка отправлена")
+        await staya_notify_leaders(ctx.bot, s_ap,
+            f"{_E_MAIL} <b>{he(fname(f))}</b> (ур. {f.get('level', 1)}) просится в стаю «{he(s_ap['name'])}»")
+        await plaza_show(q, await staya_card_view(f, staya_id))
+        return
+
+    if d.startswith("plaza_applymsg_"):
+        staya_id = int(d[15:])
         await q.answer()
         ctx.user_data["applying_staya"] = staya_id
-        try:
-            await q.message.edit_text(
-                f"{_E_MEMO} <b>Заявка в стаю</b>\n\n"
-                "Напиши короткое сообщение — почему тебя должны принять?\n"
-                "<i>(или просто «+» если хочешь без объяснений)</i>",
-                parse_mode=ParseMode.HTML,
-                reply_markup=InlineKeyboardMarkup([[
-                    btn("❌ Отмена", callback_data=f"plaza_staya_view_{staya_id}")
-                ]])
-            )
-        except (BadRequest, Forbidden, TimedOut):
-            pass
+        await plaza_show(q, (
+            ui_card(ui_title(_E_MEMO, "Сообщение вожаку"),
+                    "Напиши в чат, почему тебя стоит взять — вожак увидит это рядом с заявкой."),
+            InlineKeyboardMarkup([[btn("❌ Отмена", callback_data=f"plaza_staya_view_{staya_id}")]])))
         return
 
-    # ── Приглашения и заявки (для вожака) ─────────────────────────────────────
-    if d == "staya_applications":
-        await q.answer()
-        staya = await staya_of_user(uid)
-        if not staya:
-            await q.answer("Ты не в стае", show_alert=True); return
-        members = await staya_get_members(staya["id"])
-        my_role = next((m["role"] for m in members if m["user_id"] == uid), "member")
-        if my_role not in ("chief", "elder"):
-            await q.answer("Только Вожак и Старейшина могут управлять заявками", show_alert=True); return
-
+    if d.startswith("plaza_applycancel_"):
+        staya_id = int(d[18:])
         async with aiosqlite.connect(DB_PATH) as db:
-            db.row_factory = aiosqlite.Row
-            async with db.execute(
-                "SELECT sa.*, f.frog_name, f.first_name, f.level "
-                "FROM staya_applications sa JOIN frogs f ON f.user_id=sa.user_id "
-                "WHERE sa.staya_id=? AND sa.status='pending' "
-                "AND f.staya_id=0 ORDER BY sa.created_at",
-                (staya["id"],)
-            ) as c:
-                apps = [dict(r) for r in await c.fetchall()]
-
-        if not apps:
-            try:
-                await q.message.edit_text(
-                    f"{_E_MAIL} <b>Заявки в стаю «{he(staya['name'])}»</b>\n\nНет новых заявок.",
-                    parse_mode=ParseMode.HTML,
-                    reply_markup=InlineKeyboardMarkup([[
-                        btn("◀️ Назад", callback_data="plaza_staya")
-                    ]])
-                )
-            except (BadRequest, Forbidden, TimedOut):
-                pass
-            return
-
-        lines = [f"{_E_MAIL} <b>Заявки в стаю «{he(staya['name'])}»</b> — {len(apps)} шт.\n"]
-        kb_rows = []
-        for app in apps:
-            name = app.get("frog_name") or app.get("first_name") or "?"
-            lvl  = app.get("level", 1)
-            app_text = app.get("text", "")[:50] or "—"
-            lines.append(f"{_E_FROG} <b>{he(name)}</b> ур.{lvl}: <i>{he(app_text)}</i>")
-            kb_rows.append([
-                btn(f"✅ {he(name)[:10]}", callback_data=f"staya_app_ok_{app['user_id']}"),
-                btn(f"❌ Откл.", callback_data=f"staya_app_no_{app['user_id']}"),
-            ])
-        kb_rows.append([btn("◀️ Назад", callback_data="plaza_staya")])
-        try:
-            await q.message.edit_text("\n".join(lines), parse_mode=ParseMode.HTML,
-                                      reply_markup=InlineKeyboardMarkup(kb_rows))
-        except (BadRequest, Forbidden, TimedOut):
-            pass
-        return
-
-    if d.startswith("staya_app_ok_"):
-        applicant_id = int(d[13:])
-        staya = await staya_of_user(uid)
-        if not staya:
-            await q.answer("Ты не в стае", show_alert=True); return
-        members = await staya_get_members(staya["id"])
-        if len(members) >= (staya.get("max_members") or STAYA_MAX_MEMBERS):
-            await q.answer("Стая заполнена", show_alert=True); return
-        now_app = time.time()
-        async with aiosqlite.connect(DB_PATH) as db:
-            await db.execute(
-                "UPDATE staya_applications SET status='approved' WHERE staya_id=? AND user_id=?",
-                (staya["id"], applicant_id)
-            )
-            await db.execute(
-                "INSERT OR IGNORE INTO staya_members(staya_id,user_id,role,joined_at) VALUES(?,?,?,?)",
-                (staya["id"], applicant_id, "member", now_app)
-            )
+            await db.execute("DELETE FROM staya_applications WHERE staya_id=? AND user_id=? AND status='pending'",
+                             (staya_id, uid))
             await db.commit()
+        await q.answer("Заявка отозвана")
+        await plaza_show(q, await staya_card_view(f, staya_id))
+        return
+
+    # ── Заявки (для вожака и старейшин) ──────────────────────────────────────
+    if d == "staya_applications":
+        staya, role = await staya_my_leader(uid)
+        if not staya or role not in STAYA_LEADERS:
+            await q.answer("Заявки разбирают вожак и старейшины", show_alert=True)
+            return
+        await q.answer()
+        await plaza_show(q, await staya_apps_view(staya))
+        return
+
+    if d.startswith("staya_app_ok_") or d.startswith("staya_app_no_"):
+        applicant_id = int(d[13:])
+        approve = d.startswith("staya_app_ok_")
+        staya, role = await staya_my_leader(uid)
+        if not staya or role not in STAYA_LEADERS:
+            await q.answer("Заявки разбирают вожак и старейшины", show_alert=True)
+            return
+        async with aiosqlite.connect(DB_PATH) as db:
+            async with db.execute(
+                "SELECT 1 FROM staya_applications WHERE staya_id=? AND user_id=? AND status='pending'",
+                (staya["id"], applicant_id)) as c:
+                pending = await c.fetchone()
         app_f = await db_get(applicant_id)
-        if app_f:
-            app_f["staya_id"] = staya["id"]
-            await db_save(app_f)
+        if not pending or not app_f:
+            await q.answer("Заявку уже разобрали или отозвали", show_alert=True)
+        elif approve and await staya_of_user(applicant_id):
+            await q.answer(f"{fname(app_f)} уже вступил(а) в другую стаю", show_alert=True)
+        elif approve and len(await staya_get_members(staya["id"])) >= _staya_cap(staya):
+            await q.answer("Стая заполнена", show_alert=True)
+        else:
+            async with aiosqlite.connect(DB_PATH) as db:
+                await db.execute("UPDATE staya_applications SET status=? WHERE staya_id=? AND user_id=?",
+                                 ("approved" if approve else "rejected", staya["id"], applicant_id))
+                if approve:
+                    await db.execute(
+                        "INSERT OR IGNORE INTO staya_members(staya_id,user_id,role,joined_at) VALUES(?,?,?,?)",
+                        (staya["id"], applicant_id, "member", time.time()))
+                    # Остальные заявки этого игрока больше не нужны
+                    await db.execute("DELETE FROM staya_applications WHERE user_id=? AND staya_id!=? "
+                                     "AND status='pending'", (applicant_id, staya["id"]))
+                await db.commit()
+            if approve:
+                app_f["staya_id"] = staya["id"]
+                await db_save(app_f)
             try:
                 await ctx.bot.send_message(
                     applicant_id,
-                    f"🎉 <b>Заявка принята!</b>\n\nТы теперь в стае {staya['emoji']} <b>{he(staya['name'])}</b>!\n"
-                    f"Добро пожаловать на болото! {_E_LEAF}",
+                    f"🎉 Тебя приняли в стаю {staya['emoji']} <b>{he(staya['name'])}</b>" if approve else
+                    f"Заявку в стаю «{he(staya['name'])}» отклонили. Можно выбрать другую.",
                     parse_mode=ParseMode.HTML,
-                )
+                    reply_markup=InlineKeyboardMarkup([[
+                        btn("🌿 Моя стая", callback_data="plaza_staya") if approve else
+                        btn("🔍 Другие стаи", callback_data="plaza_staya_list_0")]]))
             except (BadRequest, Forbidden, TimedOut):
                 pass
-        await q.answer(f"✅ Принят в стаю")
-        # Обновляем список
-        if d.startswith("staya_app"):
-            ctx_data_d = "staya_applications"
-            # перерисовываем
-        return
-
-    if d.startswith("staya_app_no_"):
-        applicant_id = int(d[13:])
-        staya = await staya_of_user(uid)
-        if not staya:
-            await q.answer("Ты не в стае", show_alert=True); return
-        async with aiosqlite.connect(DB_PATH) as db:
-            await db.execute(
-                "UPDATE staya_applications SET status='rejected' WHERE staya_id=? AND user_id=?",
-                (staya["id"], applicant_id)
-            )
-            await db.commit()
-        try:
-            await ctx.bot.send_message(
-                applicant_id,
-                f"😔 Твоя заявка в стаю <b>{he(staya['name'])}</b> отклонена.\n"
-                f"Попробуй другую стаю или создай свою! {_E_LEAF}",
-                parse_mode=ParseMode.HTML,
-            )
-        except (BadRequest, Forbidden, TimedOut):
-            pass
-        await q.answer("❌ Заявка отклонена.")
+            await q.answer(f"✅ {fname(app_f)} в стае" if approve else "Заявка отклонена")
+        await plaza_show(q, await staya_apps_view(staya))
         return
 
     # ── Пригласить игрока в стаю (от вожака) ─────────────────────────────────
@@ -45793,145 +46282,33 @@ async def on_callback(update: Update, ctx: ContextTypes.DEFAULT_TYPE):
                 pass
             return
 
-        members = await staya_get_members(staya["id"])
-        lvl      = staya["level"]
-        my_role  = next((m["role"] for m in members if m["user_id"] == uid), "member")
-        chief    = next((m for m in members if m["role"] == "chief"), None)
-        chief_name = (chief.get("frog_name") or chief.get("first_name") or "?") if chief else "?"
-
-        # Кастомные названия ролей
-        my_role_label = staya_role_label(staya, my_role)
-
-        # Активный бустер
-        boost_st = await staya_boost_active(staya["id"])
-        boost_st_line = ""
-        if boost_st:
-            left_h = max(0, int((boost_st["ends_at"] - time.time()) / 3600))
-            left_m = max(0, int((boost_st["ends_at"] - time.time()) % 3600 / 60))
-            boost_st_line = f"\n✨ <b>Бустер XP ×{boost_st['mult']}</b> — {left_h}ч {left_m}мин"
-
-        # Активное событие
-        async with aiosqlite.connect(DB_PATH) as db:
-            async with db.execute(
-                "SELECT id FROM staya_events WHERE staya_id=? AND finished=0 LIMIT 1",
-                (staya["id"],)
-            ) as c:
-                active_ev = await c.fetchone()
-
-        upgrade_pl = STAYA_UPGRADES.get(lvl + 1)
-        if upgrade_pl:
-            need_pl   = max(0, upgrade_pl["cost"] - staya["cauldron"])
-            bar_pl    = _staya_bar(staya["cauldron"], upgrade_pl["cost"])
-            next_line_pl = (
-                f"\n{bar_pl}\n"
-                f"До ур.{lvl + 1} «{upgrade_pl['name']}»: ещё <b>{need_pl:,}🪙</b>"
-                f"  (в котле: {staya['cauldron']:,}🪙)"
-            )
-        else:
-            next_line_pl = f"\n{_E_TROPHY} <b>Максимальный уровень болота!</b>"
-
-        text = ui_card(
-            f"{staya['emoji']} <b>Стая «{he(staya['name'])}»</b>",
-            f"🏔️ Уровень болота: <b>{lvl}</b>{boost_st_line}{next_line_pl}",
-            ui_line(f"{_E_USERS} {len(members)}/{staya.get('max_members') or STAYA_MAX_MEMBERS}",
-                    f"ты — {my_role_label}"),
-            f"{_E_MASK} <b>Идёт голосование стаи</b>" if active_ev else "",
-        )
-
-        kb_rows = []
-        if active_ev:
-            kb_rows.append([btn("🎭 Голосовать", callback_data="staya_events_view", style="primary")])
-        kb_rows.append([
-            btn("👥 Участники", callback_data="plaza_staya_members"),
-            btn("🪙 Котёл", callback_data="staya_cauldron"),
-        ])
-        kb_rows.append([
-            btn("🛒 Магазин стаи", callback_data="staya_shop"),
-            btn("🏔️ Уровень болота", callback_data="staya_level_info"),
-        ])
-        _plaza_war_btns = []
-        if staya.get("level", 1) >= 5:
-            _plaza_war_btns.append(btn("⚔️ Война", callback_data="war_menu"))
-        if staya.get("level", 1) >= 6:
-            _plaza_war_btns.append(btn("🍲 Столовая", callback_data="canteen_menu"))
-        if _plaza_war_btns:
-            kb_rows.append(_plaza_war_btns)
-        if my_role in ("chief", "elder"):
-            kb_rows.append([
-                btn("📬 Заявки", callback_data="staya_applications"),
-                btn("⚙️ Управление", callback_data="staya_manage"),
-            ])
-        kb_rows.append([
-            btn("🚪 Покинуть" if my_role != "chief" else "💔 Распустить",
-                                 callback_data="staya_leave" if my_role != "chief" else "staya_disband"),
-            btn("◀️ Назад", callback_data="plaza"),
-        ])
-
-        try:
-            await q.message.edit_text(text, parse_mode=ParseMode.HTML,
-                                      reply_markup=InlineKeyboardMarkup(kb_rows))
-        except (BadRequest, Forbidden, TimedOut):
-            pass
+        await plaza_show(q, await staya_home_view(f, staya))
         return
 
     # ── 🏔️ Раздел «Уровень болота» ────────────────────────────────────────────
     if d == "staya_level_info":
-        await q.answer()
         staya = await staya_of_user(uid)
         if not staya:
             await q.answer("Ты не в стае", show_alert=True); return
-        lvl      = staya["level"]
-        cauldron = staya["cauldron"]
-        upgrade  = STAYA_UPGRADES.get(lvl + 1)
-
-        # ── Шапка с прогресс-баром ───────────────────────────────────────────
-        if upgrade:
-            need = max(0, upgrade["cost"] - cauldron)
-            bar  = _staya_bar(cauldron, upgrade["cost"])
-            progress_block = (
-                f"\n🪙 Котёл: <b>{cauldron:,}</b> / <b>{upgrade['cost']:,}</b>🪙\n"
-                f"{bar}\n"
-                f"До ур.{lvl + 1}: ещё <b>{need:,}🪙</b>\n"
-            )
-        else:
-            progress_block = f"\n{_E_TROPHY} <b>Максимальный уровень — Астральное Болото!</b>\n"
-
-        lines = [
-            f"🏔️ <b>Болото стаи «{he(staya['name'])}»</b>\n",
-            f"Текущий уровень: <b>{lvl}</b> из {len(STAYA_UPGRADES)}",
-            progress_block,
-            f"<b>Как качать:</b> пополняйте {_E_COIN} Котёл — когда монет в котле накопится "
-            "достаточно, болото автоматически переходит на следующий уровень.\n"
-            "<i>5% монет каждого 🚀 Трудяги идёт в котёл автоматически. "
-            "Остальные участники могут пополнять вручную.</i>\n",
-            "─────────────────────────",
-        ]
-
-        # ── Список уровней: компактно ────────────────────────────────────────
-        for lvl_key, up in STAYA_UPGRADES.items():
-            if lvl >= lvl_key:
-                icon = "✅"
-                marker = " ← <i>текущий</i>" if lvl == lvl_key else ""
-                cost_str = ""
-            elif lvl_key == lvl + 1:
-                icon = "⏳"
-                marker = " ← <i>следующий</i>"
-                cost_str = f"  ({up['cost']:,}🪙)"
-            else:
-                icon = "🔒"
-                marker = ""
-                cost_str = f"  ({up['cost']:,}🪙)"
-            bonus_str = f"\n     <i>{up['bonus']}</i>" if up.get("bonus") else ""
-            lines.append(f"{icon} Ур.{lvl_key} — <b>{up['name']}</b>{cost_str}{marker}{bonus_str}")
-
-        try:
-            await q.message.edit_text("\n".join(lines), parse_mode=ParseMode.HTML,
-                reply_markup=InlineKeyboardMarkup([[
-                    btn("🪙 Пополнить котёл", callback_data="staya_cauldron"),
-                    btn("◀️ Назад", callback_data="plaza_staya"),
-                ]]))
-        except (BadRequest, Forbidden, TimedOut):
-            pass
+        await q.answer()
+        lvl = staya.get("level") or 0
+        done = [f"{up['name']} — {up['bonus']}" for k, up in sorted(STAYA_UPGRADES.items()) if k <= lvl]
+        nxt = STAYA_UPGRADES.get(lvl + 1)
+        later = [f"{k}. {up['name']} — {up['cost']}🪙\n{up['bonus']}"
+                 for k, up in sorted(STAYA_UPGRADES.items()) if k > lvl + 1]
+        text = ui_card(
+            ui_title("🏔️", f"Уровни болота · {lvl} из {len(STAYA_UPGRADES)}"),
+            "Монеты из котла тратятся на следующий уровень, как только их хватает. "
+            "Бонусы получают все участники.",
+            (f"<b>Следующий — {lvl + 1}. {nxt['name']}</b>\n{nxt['bonus']}\n"
+             f"{_staya_bar(staya['cauldron'], nxt['cost'])} {staya['cauldron']} из {nxt['cost']}🪙") if nxt else
+            f"{_E_TROPHY} Все уровни открыты",
+            ("<b>Уже открыто</b>\n" + ui_quote(*done, expandable=True)) if done else "",
+            ("<b>Дальше</b>\n" + ui_quote(*later, expandable=True)) if later else "",
+        )
+        await plaza_show(q, (text, InlineKeyboardMarkup([[
+            btn("🪙 В котёл", callback_data="staya_cauldron"),
+            btn("◀️ Назад", callback_data="plaza_staya")]])))
         return
 
     # ── 📣 Рассылка Вожака участникам стаи ────────────────────────────────────
@@ -45958,32 +46335,12 @@ async def on_callback(update: Update, ctx: ContextTypes.DEFAULT_TYPE):
         return
 
     if d == "plaza_staya_members":
-        await q.answer()
         staya = await staya_of_user(uid)
         if not staya:
             await q.answer("Ты не в стае", show_alert=True)
             return
-        members = await staya_get_members(staya["id"])
-        role_map = {"chief": "🐸 Вожак", "elder": "🦎 Старейшина", "member": "🐟 Житель"}
-        lines = [f"{_E_USERS} <b>Участники стаи «{he(staya['name'])}»</b>\n"]
-        today_start = (datetime.now(timezone.utc)
-                      .replace(hour=0,minute=0,second=0,microsecond=0).timestamp())
-        for m in members:
-            name = m.get("frog_name") or m.get("first_name") or "?"
-            role = role_map.get(m["role"], "🐟")
-            # Проверяем онлайн
-            mf = await db_get(m["user_id"])
-            online = " 🟢" if mf and mf.get("last_seen", 0) > today_start else ""
-            lines.append(f"{role} <b>{he(name)}</b> ур.{m.get('level',1)}{online}")
-        try:
-            await q.message.edit_text(
-                "\n".join(lines), parse_mode=ParseMode.HTML,
-                reply_markup=InlineKeyboardMarkup([[
-                    btn("◀️ Назад", callback_data="plaza_staya")
-                ]])
-            )
-        except (BadRequest, Forbidden, TimedOut):
-            pass
+        await q.answer()
+        await plaza_show(q, await staya_members_view(staya))
         return
 
     # ── ⚔️ Поход ─────────────────────────────────────────────────────────────
@@ -46125,68 +46482,54 @@ async def on_callback(update: Update, ctx: ContextTypes.DEFAULT_TYPE):
     if d.startswith("plaza_invite_fish_"):
         target_id = int(d[18:])
         tf = await db_get(target_id)
-        if not tf:
-            await q.answer("Игрок не найден.", show_alert=True)
+        if not tf or not tf.get("alive"):
+            await q.answer("Игрок не найден", show_alert=True)
             return
         now_fish = time.time()
-        if f.get("last_fish", 0) and now_fish - f["last_fish"] < FISH_COOLDOWN:
-            left_h = int((FISH_COOLDOWN - (now_fish - f["last_fish"])) / 3600)
-            await q.answer((f"Уже рыбачили сегодня. Ещё {left_h}ч.")[:200], show_alert=True)
+        if now_fish - (f.get("last_fish") or 0) < FISH_COOLDOWN:
+            await q.answer(f"Сегодня уже рыбачили. Снова — через {_ex_left(f['last_fish'] + FISH_COOLDOWN)}",
+                           show_alert=True)
+            return
+        if now_fish - (tf.get("last_fish") or 0) < FISH_COOLDOWN:
+            await q.answer(f"{fname(tf)} сегодня уже рыбачил(а) — позови завтра", show_alert=True)
             return
         if f["coins"] < FISH_COST:
-            await q.answer((f"Нужно {FISH_COST}🪙 на ставку")[:200], show_alert=True)
+            await q.answer(f"Нужно {FISH_COST}🪙 на ставку", show_alert=True)
             return
-        tname = fname(tf)
-        my_name = fname(f)
-        # Отменяем предыдущее приглашение на рыбалку если висит
+        tname, my_name = fname(tf), fname(f)
         old_fish = ctx.bot_data.get(f"fish_invite_{uid}")
-        if old_fish:
-            old_f_target = old_fish.get("target")
-            old_f_msg = old_fish.get("msg_id")
-            if old_f_target and old_f_msg:
-                try:
-                    await ctx.bot.edit_message_text(
-                        f"🎣 <b>{he(my_name)}</b> уже ушёл на рыбалку с другим — приглашение отменено.",
-                        chat_id=old_f_target, message_id=old_f_msg,
-                        parse_mode=ParseMode.HTML,
-                    )
-                except (BadRequest, Forbidden, TimedOut):
-                    pass
+        if old_fish and old_fish.get("target") and old_fish.get("msg_id"):
+            try:
+                await ctx.bot.edit_message_text(
+                    f"🎣 <b>{he(my_name)}</b> позвал(а) на рыбалку другого — приглашение отменено.",
+                    chat_id=old_fish["target"], message_id=old_fish["msg_id"], parse_mode=ParseMode.HTML)
+            except (BadRequest, Forbidden, TimedOut):
+                pass
         ctx.bot_data[f"fish_invite_{uid}"] = {
             "inviter": uid, "target": target_id, "cost": FISH_COST,
-            "created": now_fish, "msg_id": None,
+            "created": now_fish, "msg_id": None, "inviter_msg": q.message.message_id,
         }
-        await q.answer("🎣 Приглашение отправлено")
         try:
-            kb = InlineKeyboardMarkup([[
-                btn("🎣 Принять", callback_data=f"fish_accept_{uid}_{FISH_COST}"),
-                btn("❌ Отказать", callback_data=f"fish_decline_{uid}"),
-            ]])
             sent_fish = await ctx.bot.send_message(
                 target_id,
-                f"🎣 <b>{he(my_name)}</b> зовёт на совместную рыбалку!\n\n"
-                f"Ставка: <b>{FISH_COST}{_E_COIN}</b> каждый.\n"
-                f"Победитель забирает всё — или оба поймают что-то вместе!",
-                parse_mode=ParseMode.HTML, reply_markup=kb,
-            )
-            if sent_fish:
-                ctx.bot_data[f"fish_invite_{uid}"]["msg_id"] = sent_fish.message_id
-        except (BadRequest, Forbidden, TimedOut):
-            pass
-        # Показываем отправителю подтверждение с кнопкой отмены
-        try:
-            await q.message.edit_text(
-                f"🎣 <b>Приглашение отправлено!</b>\n\n"
-                f"Ждём ответа от <b>{he(tname)}</b>...\n"
-                f"Ставка: <b>{FISH_COST}{_E_COIN}</b>",
+                ui_card(f"🎣 <b>{he(my_name)}</b> зовёт на рыбалку", fish_about(),
+                        hint="Приглашение действует 15 минут"),
                 parse_mode=ParseMode.HTML,
                 reply_markup=InlineKeyboardMarkup([[
-                    btn("❌ Отменить", callback_data=f"fish_cancel_{target_id}"),
-                    btn("◀️ Назад", callback_data="plaza"),
-                ]]),
-            )
+                    btn("🎣 Пойти", callback_data=f"fish_accept_{uid}_{FISH_COST}", style="success"),
+                    btn("❌ Не сейчас", callback_data=f"fish_decline_{uid}"),
+                ]]))
+            ctx.bot_data[f"fish_invite_{uid}"]["msg_id"] = sent_fish.message_id
+            sent_ok = True
         except (BadRequest, Forbidden, TimedOut):
-            pass
+            sent_ok = False
+        await q.answer()
+        await plaza_show(q, (
+            ui_card(ui_title("🎣", "Рыбалка"),
+                    f"Ждём ответа от <b>{he(tname)}</b>. Как только примет — игра начнётся здесь же."
+                    if sent_ok else f"Не получилось отправить: <b>{he(tname)}</b> закрыл(а) личку с ботом."),
+            InlineKeyboardMarkup([[btn("❌ Отменить", callback_data=f"fish_cancel_{target_id}"),
+                                   btn("◀️ Назад", callback_data="plaza")]])))
         return
 
     # ── 💚 Болотная Связь ─────────────────────────────────────────────────────
@@ -47007,29 +47350,19 @@ async def on_callback(update: Update, ctx: ContextTypes.DEFAULT_TYPE):
                 "GROUP BY s.id ORDER BY total_contributed DESC LIMIT 10"
             ) as c:
                 rows = [dict(r) for r in await c.fetchall()]
-        medals = ["🥇","🥈","🥉","4.","5.","6.","7.","8.","9.","10."]
-        medals = ["🥇","🥈","🥉","4.","5.","6.","7.","8.","9.","10."]
-        lines = [f"{_E_TROPHY} <b>Рейтинг Болотных Стай</b>\n"
-                 "<i>По общей сумме монет, вложенных в котёл за всё время</i>\n"]
-        for i, s in enumerate(rows):
-            cnt   = s.get("member_count") or 0
-            total = s.get("total_contributed") or 0
-            badge = "🌌 " if s.get("level", 0) >= 15 else ""
-            lines.append(
-                f"{medals[i]} {badge}{s['emoji']} <b>{he(s['name'])}</b>  "
-                f"ур.{s['level']} · {cnt} уч.\n"
-                f"   {_E_COIN} <b>{total:,}</b> монет вложено в болото"
-            )
-        try:
-            await q.message.edit_text(
-                "\n".join(lines), parse_mode=ParseMode.HTML,
-                reply_markup=InlineKeyboardMarkup([[
-                    btn("🔄 Обновить", callback_data="staya_top_inline"),
-                    btn("🌿 Моя стая", callback_data="plaza_staya"),
-                ]])
-            )
-        except (BadRequest, Forbidden, TimedOut):
-            pass
+        medals = ["🥇", "🥈", "🥉"] + [f"{n}." for n in range(4, 11)]
+        lines, kb_top = [], []
+        for i, st_ in enumerate(rows):
+            lines.append(f"{medals[i]} {st_['emoji']} <b>{he(st_['name'])}</b>{SEP}ур. {st_['level']}{SEP}"
+                         f"{st_.get('member_count') or 0} уч.\n"
+                         f"Вложено {st_.get('total_contributed') or 0}🪙")
+            kb_top.append(btn(f"{medals[i]} {he(st_['name'])}"[:28], callback_data=f"plaza_staya_view_{st_['id']}"))
+        kb_rows_top = [kb_top[k:k + 2] for k in range(0, len(kb_top), 2)]
+        kb_rows_top.append([btn("◀️ Назад", callback_data="plaza_staya")])
+        await plaza_show(q, (
+            ui_card(ui_title(_E_TROPHY, "Топ стай"), "\n\n".join(lines) or "Стай пока нет",
+                    hint="По монетам, вложенным в котёл за всё время"),
+            InlineKeyboardMarkup(kb_rows_top)))
         return
 
     # ── Удаление из друзей ───────────────────────────────────────────────────
@@ -47257,75 +47590,39 @@ async def on_callback(update: Update, ctx: ContextTypes.DEFAULT_TYPE):
         inviter_id, cost = int(parts[0]), int(parts[1])
         invite_key = f"fish_invite_{inviter_id}"
         invite = ctx.bot_data.get(invite_key)
-        if not invite or time.time() - invite.get("created", 0) > 900:
-            await q.answer("Приглашение устарело! (истекло 15 минут)", show_alert=True)
+        if not invite or invite.get("target") != uid or time.time() - invite.get("created", 0) > 900:
+            await q.answer("Приглашение устарело — оно действует 15 минут", show_alert=True)
             return
-        if f["coins"] < cost or (await db_get(inviter_id) or {}).get("coins", 0) < cost:
-            await q.answer("У кого-то не хватает монет", show_alert=True)
+        inviter_f = await db_get(inviter_id)
+        if not inviter_f or not inviter_f.get("alive"):
+            await q.answer("Лягушки соседа сейчас нет", show_alert=True)
+            return
+        now_fa = time.time()
+        if now_fa - (f.get("last_fish") or 0) < FISH_COOLDOWN:
+            await q.answer(f"Ты сегодня уже рыбачил(а). Снова — через {_ex_left(f['last_fish'] + FISH_COOLDOWN)}",
+                           show_alert=True)
+            return
+        if f["coins"] < cost or inviter_f.get("coins", 0) < cost:
+            await q.answer(f"Нужно по {cost}🪙 у каждого — у кого-то не хватает", show_alert=True)
+            return
+        if ctx.bot_data.pop(invite_key, None) is None:   # двойное нажатие
+            await q.answer()
             return
         await q.answer()
-        # Убираем кнопки из приглашения
-        try:
-            await q.message.edit_reply_markup(reply_markup=None)
-        except (BadRequest, Forbidden, TimedOut):
-            pass
-        ctx.bot_data.pop(invite_key, None)
-        inviter_f = await db_get(inviter_id)
-        # Списываем ставки
         f["coins"] -= cost
-        f["last_fish"] = time.time()
+        f["last_fish"] = now_fa
         inviter_f["coins"] -= cost
-        inviter_f["last_fish"] = time.time()
-        # Результат рыбалки
-        roll_fish = random.random()
-        my_name = f.get("frog_name") or f.get("first_name") or "Ты"
-        inv_name = inviter_f.get("frog_name") or inviter_f.get("first_name") or "Друг"
-        if roll_fish < 0.35:
-            # Совместный улов — оба получают
-            prize = cost + random.randint(20, 80)
-            f["coins"] += prize
-            inviter_f["coins"] += prize
-            result = (
-                f"🎣 <b>Отличная рыбалка!</b>\n\n"
-                f"Вы поймали огромного болотного карпа!\n"
-                f"Каждый получает: <b>+{prize}🪙</b> 🐟"
-            )
-        elif roll_fish < 0.65:
-            # Победил текущий
-            prize = cost * 2
-            f["coins"] += prize
-            result = (
-                f"🎣 <b>Рыбалка завершена!</b>\n\n"
-                f"<b>{he(my_name)}</b> поймал больше рыбы!\n"
-                f"Выигрыш: <b>+{prize}🪙</b>"
-            )
-        elif roll_fish < 0.90:
-            # Победил инвайтер
-            prize = cost * 2
-            inviter_f["coins"] += prize
-            result = (
-                f"🎣 <b>Рыбалка завершена!</b>\n\n"
-                f"<b>{he(inv_name)}</b> поймал больше рыбы!\n"
-                f"Выигрыш: <b>+{prize}🪙</b>"
-            )
-        else:
-            # Ничего
-            result = (
-                f"🎣 <b>Рыбалка завершена!</b>\n\n"
-                f"Рыба сегодня не клюёт... Ставки потеряны 😢"
-            )
+        inviter_f["last_fish"] = now_fa
         await db_save(f)
         await db_save(inviter_f)
-        await friend_add_xp(uid, inviter_id, 3)
-        await friend_add_xp(inviter_id, uid, 3)
-        try:
-            await q.message.edit_text(result, parse_mode=ParseMode.HTML)
-        except (BadRequest, Forbidden, TimedOut):
-            pass
-        try:
-            await ctx.bot.send_message(inviter_id, result, parse_mode=ParseMode.HTML)
-        except (BadRequest, Forbidden, TimedOut):
-            pass
+        gid = await fish_new(inviter_id, uid, cost, invite.get("inviter_msg"), q.message.message_id)
+        await fish_step(ctx.bot, await fish_load(gid))
+        return
+
+    if d.startswith("fishg_"):
+        _, gid_s, spot = d.split("_", 2)
+        err = await fish_pick(ctx.bot, int(gid_s), uid, spot) if gid_s.isdigit() else "Нет такой рыбалки"
+        await q.answer(err or None, show_alert=bool(err))
         return
 
     if d.startswith("fish_cancel_"):
@@ -47369,20 +47666,19 @@ async def on_callback(update: Update, ctx: ContextTypes.DEFAULT_TYPE):
 
     # ── Создание стаи ─────────────────────────────────
     if d == "staya_create_start":
-        await q.answer()
-        if f.get("staya_id"):
-            await q.answer("Ты уже в стае", show_alert=True)
+        if await staya_of_user(uid):
+            await q.answer("Ты уже в стае — сначала выйди из неё", show_alert=True)
             return
         if f["coins"] < STAYA_CREATE_COST:
-            await q.answer((f"Нужно {STAYA_CREATE_COST}🪙")[:200], show_alert=True)
+            await q.answer(f"Нужно {STAYA_CREATE_COST}🪙, у тебя {f['coins']}🪙", show_alert=True)
             return
+        await q.answer()
         ctx.user_data["staya_creating"] = True
         try:
             await q.message.edit_text(
-                f"{_E_LEAF} <b>Создание стаи</b>\n\n"
-                f"Напиши название стаи в чат (до 30 символов).\n"
-                f"Стоимость: <b>{STAYA_CREATE_COST}{_E_COIN}</b>\n\n"
-                f"<i>Отправь текст прямо сейчас 👇</i>",
+                f"{_E_LEAF} <b>Новая стая</b>\n\n"
+                f"Напиши в чат название — до 30 символов. "
+                f"Создание стоит {STAYA_CREATE_COST}{_E_COIN}.",
                 parse_mode=ParseMode.HTML,
                 reply_markup=InlineKeyboardMarkup([[
                     btn("❌ Отмена", callback_data="staya_create_cancel"),
@@ -47397,7 +47693,8 @@ async def on_callback(update: Update, ctx: ContextTypes.DEFAULT_TYPE):
         ctx.user_data.pop("staya_name_pending", None)
         await q.answer("Отменено.")
         try:
-            await q.message.edit_text("❌ Создание стаи отменено.")
+            await q.message.edit_text("Создание стаи отменено.", reply_markup=InlineKeyboardMarkup([[
+                btn("◀️ Назад", callback_data="plaza_staya")]]))
         except (BadRequest, Forbidden, TimedOut):
             pass
         return
@@ -47421,7 +47718,7 @@ async def on_callback(update: Update, ctx: ContextTypes.DEFAULT_TYPE):
                 kb_transfer.append([btn("◀️ Отмена", callback_data="plaza_staya")])
                 try:
                     await q.message.edit_text(
-                        f"{_E_CROWN} <b>Ты Вожак</b>\n\nЧтобы покинуть стаю — сначала передай лидерство другому участнику:",
+                        f"{_E_CROWN} <b>Ты вожак</b>\n\nЧтобы выйти, сначала передай стаю другому участнику:",
                         parse_mode=ParseMode.HTML,
                         reply_markup=InlineKeyboardMarkup(kb_transfer),
                     )
@@ -47431,7 +47728,7 @@ async def on_callback(update: Update, ctx: ContextTypes.DEFAULT_TYPE):
                 # Один в стае — можно распустить
                 try:
                     await q.message.edit_text(
-                        f"{_E_DOOR} Ты единственный участник. Покинуть = распустить стаю «{he(staya['name'])}»?",
+                        f"{_E_DOOR} Ты в стае один(одна). Выйти — значит распустить «{he(staya['name'])}». Распустить?",
                         reply_markup=InlineKeyboardMarkup([[
                             btn("💔 Да, распустить", callback_data="staya_disband"),
                             btn("◀️ Отмена", callback_data="plaza_staya"),
@@ -47443,7 +47740,7 @@ async def on_callback(update: Update, ctx: ContextTypes.DEFAULT_TYPE):
         # Обычный участник — подтверждение
         try:
             await q.message.edit_text(
-                f"{_E_DOOR} Покинуть стаю «{he(staya['name'])}»?\nВступить можно будет снова без ограничений.",
+                f"{_E_DOOR} Выйти из стаи «{he(staya['name'])}»?\nВернуться можно будет по новой заявке.",
                 reply_markup=InlineKeyboardMarkup([[
                     btn("✅ Да, покинуть", callback_data="staya_leave_confirm"),
                     btn("◀️ Отмена", callback_data="plaza_staya"),
@@ -47466,8 +47763,10 @@ async def on_callback(update: Update, ctx: ContextTypes.DEFAULT_TYPE):
         await db_save(f)
         try:
             await q.message.edit_text(
-                f"{_E_DOOR} Ты покинул стаю «{he(staya['name'])}». Удачи на болоте! {_E_LEAF}",
-                reply_markup=InlineKeyboardMarkup([[btn("Площадь", callback_data="plaza")]]), parse_mode=ParseMode.HTML
+                f"{_E_DOOR} Ты вышел(а) из стаи «{he(staya['name'])}».",
+                reply_markup=InlineKeyboardMarkup([[btn("🔍 Другие стаи", callback_data="plaza_staya_list_0"),
+                                                    btn("◀️ Площадь", callback_data="plaza")]]),
+                parse_mode=ParseMode.HTML
             )
         except (BadRequest, Forbidden, TimedOut):
             pass
@@ -47518,8 +47817,9 @@ async def on_callback(update: Update, ctx: ContextTypes.DEFAULT_TYPE):
 
     if d == "staya_disband":
         await q.answer()
-        staya = await staya_of_user(uid)
-        if not staya or staya["creator_id"] != uid:
+        staya, _role_dis = await staya_my_leader(uid)
+        if not staya or (_role_dis != "chief" and staya["creator_id"] != uid):
+            await q.answer("Распустить стаю может только вожак", show_alert=True)
             return
         members_d = await staya_get_members(staya["id"])
         member_count = len(members_d)
@@ -47542,8 +47842,9 @@ async def on_callback(update: Update, ctx: ContextTypes.DEFAULT_TYPE):
 
     if d == "staya_disband_confirm":
         await q.answer()
-        staya = await staya_of_user(uid)
-        if not staya or staya["creator_id"] != uid:
+        staya, _role_dis = await staya_my_leader(uid)
+        if not staya or (_role_dis != "chief" and staya["creator_id"] != uid):
+            await q.answer("Распустить стаю может только вожак", show_alert=True)
             return
         async with aiosqlite.connect(DB_PATH) as db:
             members_dc = await staya_get_members(staya["id"])
@@ -47553,11 +47854,21 @@ async def on_callback(update: Update, ctx: ContextTypes.DEFAULT_TYPE):
                     mf["staya_id"] = 0
                     await db_save(mf)
             await db.execute("DELETE FROM staya_members WHERE staya_id=?", (staya["id"],))
+            await db.execute("DELETE FROM staya_applications WHERE staya_id=?", (staya["id"],))
             await db.execute("DELETE FROM stayas WHERE id=?", (staya["id"],))
             await db.commit()
+        for m in members_dc:
+            if m["user_id"] != uid:
+                try:
+                    await ctx.bot.send_message(m["user_id"], f"💔 Стаю «{he(staya['name'])}» распустили.",
+                                               reply_markup=InlineKeyboardMarkup([[
+                                                   btn("🔍 Найти другую", callback_data="plaza_staya_list_0")]]))
+                except (BadRequest, Forbidden, TimedOut):
+                    pass
         try:
             await q.message.edit_text(
-                f"\U0001f494 Стая «{he(staya['name'])}» распущена. Болото осиротело..."
+                f"\U0001f494 Стая «{he(staya['name'])}» распущена.",
+                reply_markup=InlineKeyboardMarkup([[btn("◀️ Площадь", callback_data="plaza")]])
             )
         except (BadRequest, Forbidden, TimedOut):
             pass
@@ -47565,76 +47876,12 @@ async def on_callback(update: Update, ctx: ContextTypes.DEFAULT_TYPE):
 
     # ── Пополнить котёл ───────────────────────────────
     if d == "staya_cauldron":
-        await q.answer()
         staya = await staya_of_user(uid)
         if not staya:
+            await q.answer("Ты не в стае", show_alert=True)
             return
-        my_role_c = next((m["role"] for m in await staya_get_members(staya["id"]) if m["user_id"] == uid), "member")
-        # Топ жертвователей и последние пополнения
-        top_donors = await cauldron_log_top(staya["id"], limit=5)
-        recent_log = await cauldron_log_recent(staya["id"], limit=5)
-        # Активный бустер
-        boost = await staya_boost_active(staya["id"])
-        boost_line = ""
-        if boost:
-            boost_left_h = max(0, int((boost["ends_at"] - time.time()) / 3600))
-            boost_left_m = max(0, int((boost["ends_at"] - time.time()) % 3600 / 60))
-            boost_line = f"\n✨ <b>Бустер XP ×{boost['mult']}</b> — ещё {boost_left_h}ч {boost_left_m}мин"
-        # Топ жертвователей
-        top_lines = []
-        medals_c = ["🥇","🥈","🥉","4️⃣","5️⃣"]
-        for i, row in enumerate(top_donors):
-            df = await db_get(row["user_id"])
-            dname = fname(df) if df else "?"
-            top_lines.append(f"{medals_c[i]} {he(dname)} — {row['total']}{_E_COIN}")
-        top_block = "\n<b>Топ вкладчиков:</b>\n" + "\n".join(top_lines) if top_lines else ""
-        # Последние пополнения (только для вожака и старейшины)
-        recent_block = ""
-        if my_role_c in ("chief", "elder") and recent_log:
-            rec_lines = []
-            for r in recent_log:
-                rf = await db_get(r["user_id"])
-                rname = fname(rf) if rf else "?"
-                mins_ago = int((time.time() - r["ts"]) / 60)
-                time_str = f"{mins_ago}мин назад" if mins_ago < 60 else f"{mins_ago//60}ч назад"
-                rec_lines.append(f"• {he(rname)} +{r['amount']}{_E_COIN} ({time_str})")
-            recent_block = "\n<b>Последние пополнения:</b>\n" + "\n".join(rec_lines)
-        rows_c = [
-            [btn("🪙 50", callback_data="staya_cauldron_50"),
-             btn("🪙 200", callback_data="staya_cauldron_200"),
-             btn("🪙 500", callback_data="staya_cauldron_500")],
-            [btn("✏️ Своя сумма", callback_data="staya_cauldron_custom")],
-        ]
-        if my_role_c in ("chief", "elder"):
-            rows_c.append([btn("🛒 Магазин стаи", callback_data="staya_shop")])
-        rows_c.append([btn("◀️ Назад", callback_data="plaza_staya")])
-        # Прогресс до следующего уровня
-        _upgrade_c = STAYA_UPGRADES.get(staya["level"] + 1)
-        if _upgrade_c:
-            _need_c  = max(0, _upgrade_c["cost"] - staya["cauldron"])
-            _bar_c   = _staya_bar(staya["cauldron"], _upgrade_c["cost"])
-            _prog_c  = (
-                f"\n🏔️ До ур.{staya['level'] + 1} «{_upgrade_c['name']}»:\n"
-                f"{_bar_c}\n"
-                f"Нужно ещё: <b>{_need_c:,}🪙</b>"
-                f"  (накоплено {staya['cauldron']:,}/{_upgrade_c['cost']:,}🪙)\n"
-            )
-        else:
-            _prog_c = f"\n{_E_TROPHY} <b>Уровень болота максимальный!</b>\n"
-
-        try:
-            await q.message.edit_text(
-                f"{_E_COIN} <b>Котёл стаи «{he(staya['name'])}»</b>\n"
-                f"Уровень болота: <b>{staya['level']}</b>{boost_line}\n"
-                f"{_prog_c}"
-                f"У тебя монет: <b>{f['coins']:,}{_E_COIN}</b>\n"
-                f"{top_block}{recent_block}\n\n"
-                f"Сколько положить в котёл?",
-                parse_mode=ParseMode.HTML,
-                reply_markup=InlineKeyboardMarkup(rows_c),
-            )
-        except (BadRequest, Forbidden, TimedOut):
-            pass
+        await q.answer()
+        await plaza_show(q, await staya_cauldron_view(f, staya))
         return
 
     if d == "staya_cauldron_custom":
@@ -47656,15 +47903,14 @@ async def on_callback(update: Update, ctx: ContextTypes.DEFAULT_TYPE):
         return
 
     if d.startswith("staya_cauldron_"):
-        try:
-            amount = int(d[15:])
-        except ValueError:
-            return
+        tail = d[15:]
+        amount = int(tail) if tail.isdigit() else 0
         staya = await staya_of_user(uid)
-        if not staya:
+        if not staya or amount <= 0:
+            await q.answer()
             return
         if f["coins"] < amount:
-            await q.answer("Недостаточно монет", show_alert=True)
+            await q.answer(f"Не хватает монет: у тебя {f['coins']}🪙", show_alert=True)
             return
         f["coins"] -= amount
         f["coins_spent"] = f.get("coins_spent", 0) + amount
@@ -47672,101 +47918,21 @@ async def on_callback(update: Update, ctx: ContextTypes.DEFAULT_TYPE):
         await staya_add_cauldron(staya["id"], amount)
         await staya_add_xp(staya["id"], amount // 10)
         await cauldron_log_add(staya["id"], uid, amount)
-        # Обновляем котёл в БД и перечитываем актуальные данные
-        staya_upd = await staya_get(staya["id"])
-        upgrade_upd = STAYA_UPGRADES.get((staya_upd["level"] if staya_upd else staya["level"]) + 1)
-        cauldron_now = staya_upd["cauldron"] if staya_upd else staya["cauldron"] + amount
-        need_upd = max(0, upgrade_upd["cost"] - cauldron_now) if upgrade_upd else 0
-        need_line_upd = f"До следующего уровня: <b>{need_upd}🪙</b>\n" if need_upd else ""
-        rows_upd = [
-            [btn("🪙 50", callback_data="staya_cauldron_50"),
-             btn("🪙 200", callback_data="staya_cauldron_200"),
-             btn("🪙 500", callback_data="staya_cauldron_500")],
-            [btn("✏️ Своя сумма", callback_data="staya_cauldron_custom")],
-            [btn("◀️ Назад", callback_data="plaza_staya")],
-        ]
-        try:
-            await q.message.edit_text(
-                f"{_E_CHECK} <b>+{amount}{_E_COIN} в котёл!</b>\n\n"
-                f"{_E_MONEYBAG} Котёл: <b>{cauldron_now}{_E_COIN}</b>\n"
-                f"{need_line_upd}"
-                f"У тебя осталось: <b>{f['coins']}{_E_COIN}</b>\n\nДобавить ещё?",
-                parse_mode=ParseMode.HTML,
-                reply_markup=InlineKeyboardMarkup(rows_upd),
-            )
-        except Exception:
-            await q.answer((f"✅ +{amount}🪙 в котёл")[:200], show_alert=True)
+        staya_upd = await staya_get(staya["id"]) or staya
+        await q.answer(f"+{amount}🪙 в котёл" + (f" — болото выросло до ур. {staya_upd['level']}!"
+                                                  if staya_upd.get("level", 0) > staya.get("level", 0) else ""),
+                       show_alert=staya_upd.get("level", 0) > staya.get("level", 0))
+        await plaza_show(q, await staya_cauldron_view(f, staya_upd))
         return
 
     # ── События стаи ──────────────────────────────────
     if d == "staya_events_view":
-        await q.answer()
         staya = await staya_of_user(uid)
         if not staya:
             await q.answer("Ты не в стае", show_alert=True)
             return
-        async with aiosqlite.connect(DB_PATH) as db:
-            db.row_factory = aiosqlite.Row
-            async with db.execute(
-                "SELECT * FROM staya_events WHERE staya_id=? AND finished=0 ORDER BY started_at DESC LIMIT 1",
-                (staya["id"],),
-            ) as c:
-                ev_row = await c.fetchone()
-        if not ev_row:
-            try:
-                await q.message.edit_text(
-                    f"🎭 <b>События стаи «{he(staya['name'])}»</b>\n\n"
-                    f"Сейчас нет активных событий.\nСледи за обновлениями {_E_LEAF}",
-                    parse_mode=ParseMode.HTML,
-                    reply_markup=InlineKeyboardMarkup([[
-                        btn("🪙 Котёл", callback_data="staya_cauldron"),
-                        btn("◀️ Назад", callback_data="plaza_staya"),
-                    ]]),
-                )
-            except (BadRequest, Forbidden, TimedOut):
-                pass
-            return
-        ev = dict(ev_row)
-        ev_data = json.loads(ev["event_json"])
-        # Считаем голоса
-        async with aiosqlite.connect(DB_PATH) as db:
-            db.row_factory = aiosqlite.Row
-            async with db.execute(
-                "SELECT choice, COUNT(*) as cnt FROM staya_votes WHERE event_id=? GROUP BY choice",
-                (ev["id"],),
-            ) as c:
-                vote_rows = {r["choice"]: r["cnt"] for r in await c.fetchall()}
-            async with db.execute(
-                "SELECT choice FROM staya_votes WHERE event_id=? AND user_id=?",
-                (ev["id"], uid),
-            ) as c:
-                my_vote = await c.fetchone()
-
-        total_votes = sum(vote_rows.values())
-        vote_lines = []
-        for ch in ev_data["choices"]:
-            cnt = vote_rows.get(ch["key"], 0)
-            pct = int(cnt / total_votes * 100) if total_votes else 0
-            bar = "<code>" + "█" * (pct // 10) + "░" * (10 - pct // 10) + "</code>"
-            vote_lines.append(f"{ch['label']}: {bar} {pct}% ({cnt})")
-
-        text = (
-            f"{ev_data['emoji']} <b>Событие стаи!</b>\n\n"
-            f"{ev_data['text']}\n\n"
-            f"<b>Голосование:</b>\n" + "\n".join(vote_lines)
-        )
-        if my_vote:
-            text += f"\n\n✅ Ты проголосовал: {my_vote[0]}"
-            kb = InlineKeyboardMarkup([[btn("◀️ Назад", callback_data="plaza_staya")]])
-        else:
-            kb = InlineKeyboardMarkup([
-                [btn(ch["label"], callback_data=f"staya_vote_{ev['id']}_{ch['key']}")]
-                for ch in ev_data["choices"]
-            ] + [[btn("◀️ Назад", callback_data="plaza_staya")]])
-        try:
-            await q.message.edit_text(text, parse_mode=ParseMode.HTML, reply_markup=kb)
-        except (BadRequest, Forbidden, TimedOut):
-            pass
+        await q.answer()
+        await plaza_show(q, await staya_event_view(uid, staya))
         return
 
     if d.startswith("staya_vote_"):
@@ -47775,6 +47941,13 @@ async def on_callback(update: Update, ctx: ContextTypes.DEFAULT_TYPE):
         staya = await staya_of_user(uid)
         if not staya:
             await q.answer("Ты не в стае", show_alert=True)
+            return
+        async with aiosqlite.connect(DB_PATH) as db:
+            async with db.execute("SELECT 1 FROM staya_events WHERE id=? AND staya_id=? AND finished=0",
+                                  (ev_id, staya["id"])) as c:
+                ev_ok = await c.fetchone()
+        if not ev_ok:
+            await q.answer("Голосование уже закончилось", show_alert=True)
             return
         async with aiosqlite.connect(DB_PATH) as db:
             existing = await db.execute(
@@ -47804,16 +47977,7 @@ async def on_callback(update: Update, ctx: ContextTypes.DEFAULT_TYPE):
                                  (time.time() - 1, ev_id))
                 await db.commit()
             asyncio.create_task(job_staya_resolve_single(ev_id, ctx.bot))
-        # Обновляем экран
-        try:
-            await q.message.edit_text(
-                f"{_E_CHECK} <b>Твой голос принят!</b>\n\nВыбрано: <b>{choice_key}</b>\n\n"
-                f"Проголосовало: {vote_count}/{len(members_vote)}\n"
-                + ("⏳ Ждём остальных..." if vote_count < len(members_vote) else "🎉 Все проголосовали — подводим итоги!"),
-                parse_mode=ParseMode.HTML,
-            )
-        except (BadRequest, Forbidden, TimedOut):
-            pass
+        await plaza_show(q, await staya_event_view(uid, staya))
         return
 
     if d == "staya_manage":
@@ -47829,27 +47993,26 @@ async def on_callback(update: Update, ctx: ContextTypes.DEFAULT_TYPE):
         now_sm = time.time()
         recruit_cd = staya.get("last_recruit", 0) or 0
         recruit_left = max(0, int((recruit_cd + 3600 - now_sm) / 60))
-        recruit_lbl = f"📣 Набор (через {recruit_left}м)" if recruit_left > 0 else "📣 Объявить набор"
+        recruit_lbl = f"📣 Объявить набор — через {recruit_left} мин" if recruit_left > 0 else "📣 Объявить набор"
 
         invite_text = staya.get("invite_text") or ""
-        invite_preview = f"\n\n<i>Текст приглашения:</i>\n{he(invite_text[:80])}" if invite_text else ""
 
-        text = (
-            f"{_E_GEAR} <b>Управление стаей «{he(staya['name'])}»</b>\n\n"
-            f"Участников: {len(members)}/{staya.get('max_members') or STAYA_MAX_MEMBERS}\n"
-            f"XP болота: {staya['xp']}"
-            f"{invite_preview}"
+        text = ui_card(
+            ui_title(_E_GEAR, f"Управление «{he(staya['name'])}»"),
+            ("<b>Текст в поиске стай</b>\n" + ui_quote(he(invite_text[:300]))) if invite_text else
+            "Текста в поиске стай нет — добавь пару строк, чем вы живёте: так вступают охотнее.",
         )
         kb_rows_manage = [
             [btn(recruit_lbl, callback_data="staya_recruit")],
-            [btn("📣 Рассылка", callback_data="staya_broadcast"),
-             btn("✏️ Переименовать", callback_data="staya_rename")],
-            [btn("👥 Управление уч.", callback_data="staya_members_manage"),
-             btn("🏠 Докупить места", callback_data="staya_buy_slots")],
-            [btn("✏️ Текст приглашения", callback_data="staya_set_invite_text")],
-            [btn("🏷️ Названия ролей", callback_data="staya_roles_rename")],
-            [btn("📬 Заявки", callback_data="staya_applications")],
+            [btn("👥 Участники и роли", callback_data="staya_members_manage"),
+             btn("🏷️ Названия ролей", callback_data="staya_roles_rename")],
+            [btn("✏️ Текст в поиске", callback_data="staya_set_invite_text"),
+             btn("✏️ Название", callback_data="staya_rename")],
+            [btn("📣 Написать всем", callback_data="staya_broadcast"),
+             btn("🏠 Больше мест", callback_data="staya_buy_slots")],
         ]
+        if my_role == "chief":
+            kb_rows_manage.append([btn("💔 Распустить стаю", callback_data="staya_disband", style="danger")])
         kb_rows_manage.append([btn("◀️ Назад", callback_data="plaza_staya")])
         kb = InlineKeyboardMarkup(kb_rows_manage)
         try:
@@ -48082,60 +48245,14 @@ async def on_callback(update: Update, ctx: ContextTypes.DEFAULT_TYPE):
         return
 
     # ── Магазин стаи ─────────────────────────────────────────────────────────
-    STAYA_BOOST_CATALOG = [
-        {"type": "xp_20", "label": "⭐ +20% XP",  "mult": 1.20, "hours": 2,  "cost": 3000},
-        {"type": "xp_20", "label": "⭐ +20% XP",  "mult": 1.20, "hours": 6,  "cost": 7500},
-        {"type": "xp_50", "label": "✨ +50% XP",  "mult": 1.50, "hours": 2,  "cost": 6000},
-        {"type": "xp_50", "label": "✨ +50% XP",  "mult": 1.50, "hours": 6,  "cost": 14000},
-    ]
 
     if d == "staya_shop":
-        await q.answer()
         staya = await staya_of_user(uid)
-        if not staya: return
-        members_sh = await staya_get_members(staya["id"])
-        my_role_sh = next((m["role"] for m in members_sh if m["user_id"] == uid), "member")
-        boost = await staya_boost_active(staya["id"])
-        boost_line = ""
-        if boost:
-            left_h = max(0, int((boost["ends_at"] - time.time()) / 3600))
-            left_m = max(0, int((boost["ends_at"] - time.time()) % 3600 / 60))
-            boost_line = f"\n✨ <b>Активен бустер ×{boost['mult']}</b> — {left_h}ч {left_m}мин"
-        # Голоса участников
-        async with aiosqlite.connect(DB_PATH) as _vdb:
-            _vdb.row_factory = aiosqlite.Row
-            async with _vdb.execute(
-                "SELECT boost_type, COUNT(*) as cnt FROM staya_boost_votes WHERE staya_id=? GROUP BY boost_type",
-                (staya["id"],)
-            ) as _vc:
-                vote_rows = {r["boost_type"]: r["cnt"] for r in await _vc.fetchall()}
-        total_votes = sum(vote_rows.values()) or 1
-        text_sh = (
-            f"{_E_SHOP} <b>Магазин стаи «{he(staya['name'])}»</b>\n"
-            f"Котёл: <b>{staya['cauldron']}🪙</b>{boost_line}\n\n"
-            f"<i>Участники могут голосовать за бустер который хотят. "
-            f"Вожак видит результаты и активирует нужный.</i>\n\n"
-        )
-        kb_sh = []
-        for i, item in enumerate(STAYA_BOOST_CATALOG):
-            votes_pct = int(vote_rows.get(item["type"] + f"_{item['hours']}", 0) / total_votes * 100)
-            affordable = staya["cauldron"] >= item["cost"]
-            label = f"{item['label']} · {item['hours']}ч · {item['cost']}🪙"
-            if my_role_sh in ("chief", "elder"):
-                label += f" ({votes_pct}% хотят)"
-            if my_role_sh == "chief" and affordable:
-                kb_sh.append([btn(f"✅ {label}", callback_data=f"staya_shop_buy_{i}")])
-            else:
-                kb_sh.append([btn(
-                    f"{'🗳️' if my_role_sh == 'member' else '🔒'} {label}",
-                    callback_data=f"staya_shop_vote_{item['type']}_{item['hours']}"
-                    if my_role_sh == "member" else "ignore",
-                )])
-        kb_sh.append([btn("◀️ Назад", callback_data="staya_cauldron")])
-        try:
-            await q.message.edit_text(text_sh, parse_mode=ParseMode.HTML, reply_markup=InlineKeyboardMarkup(kb_sh))
-        except (BadRequest, Forbidden, TimedOut):
-            pass
+        if not staya:
+            await q.answer("Ты не в стае", show_alert=True)
+            return
+        await q.answer()
+        await plaza_show(q, await staya_shop_view(uid, staya))
         return
 
     if d.startswith("staya_shop_vote_"):
@@ -48152,7 +48269,8 @@ async def on_callback(update: Update, ctx: ContextTypes.DEFAULT_TYPE):
                 (staya["id"], uid, vote_key, time.time()),
             )
             await _vdb2.commit()
-        await q.answer("✅ Голос учтён. Вожак увидит результаты.", show_alert=True)
+        await q.answer("🗳 Голос учтён")
+        await plaza_show(q, await staya_shop_view(uid, staya))
         return
 
     if d.startswith("staya_shop_buy_"):
@@ -48190,7 +48308,8 @@ async def on_callback(update: Update, ctx: ContextTypes.DEFAULT_TYPE):
                 )
             except (BadRequest, Forbidden, TimedOut):
                 pass
-        await q.answer(f"✅ Бустер активирован")
+        await q.answer("✨ Бустер запущен")
+        await plaza_show(q, await staya_shop_view(uid, await staya_get(staya["id"]) or staya))
         return
 
     if d == "staya_rename":
@@ -51945,42 +52064,24 @@ async def on_message(update: Update, ctx: ContextTypes.DEFAULT_TYPE):
         staya_id_app = ctx.user_data.pop("applying_staya")
         app_text = text.strip()[:200]
         s = await staya_get(staya_id_app)
-        if not s:
-            await update.message.reply_text("Стая не найдена.")
+        me_f = await db_get(user.id)
+        if not s or not me_f:
+            await update.message.reply_text("Стаи больше нет.")
             return
-        members_app = await staya_get_members(staya_id_app)
-        if any(m["user_id"] == user.id for m in members_app):
-            await update.message.reply_text("Ты уже в этой стае")
+        if await staya_of_user(user.id):
+            await update.message.reply_text("Ты уже в стае.")
             return
         async with aiosqlite.connect(DB_PATH) as db:
             await db.execute(
-                "INSERT INTO staya_applications(staya_id,user_id,text,created_at,status) "
-                "VALUES(?,?,?,?,?) ON CONFLICT(staya_id,user_id) DO UPDATE SET text=?, created_at=?, status='pending'",
-                (staya_id_app, user.id, app_text, time.time(), "pending", app_text, time.time())
-            )
+                "INSERT INTO staya_applications(staya_id,user_id,text,created_at,status) VALUES(?,?,?,?,'pending') "
+                "ON CONFLICT(staya_id,user_id) DO UPDATE SET text=excluded.text, status='pending'",
+                (staya_id_app, user.id, app_text, time.time()))
             await db.commit()
-        my_name = fname(await db_get(user.id))
-        await update.message.reply_text(
-            f"📝 Заявка в стаю <b>«{he(s['name'])}»</b> подана!\n"
-            f"Ждём ответа Вожака {_E_LEAF}",
-            parse_mode=ParseMode.HTML,
-        )
-        # Уведомляем вожака
-        chief = next((m for m in members_app if m["role"] == "chief"), None)
-        if chief:
-            try:
-                await ctx.bot.send_message(
-                    chief["user_id"],
-                    f"{_E_MAIL} Новая заявка в стаю <b>«{he(s['name'])}»</b>!\n\n"
-                    f"<tg-emoji emoji-id='5341367834935075028'>🐸</tg-emoji> <b>{he(my_name)}</b>: <i>{he(app_text)}</i>\n\n"
-                    f"Открой управление стаей чтобы принять или отклонить.",
-                    parse_mode=ParseMode.HTML,
-                    reply_markup=InlineKeyboardMarkup([[
-                        btn("📬 Заявки", callback_data="staya_applications")
-                    ]])
-                )
-            except (BadRequest, Forbidden, TimedOut):
-                pass
+        await staya_notify_leaders(ctx.bot, s,
+            f"{_E_MAIL} <b>{he(fname(me_f))}</b> просится в стаю «{he(s['name'])}»:\n<i>{he(app_text)}</i>")
+        view = await staya_card_view(me_f, staya_id_app)
+        if view:
+            await update.message.reply_text(view[0], parse_mode=ParseMode.HTML, reply_markup=view[1])
         return
 
     # ── Поиск игрока (Болотная Площадь) ──────────────────────────────────────
@@ -56987,6 +57088,7 @@ async def post_init(app: Application):
         name="staya_weekly_reset",
     )
     app.job_queue.run_repeating(job_boost_check, interval=60, first=30)
+    app.job_queue.run_repeating(job_fish_timeouts, interval=60, first=45)
     # 🐸 Фоновый decay лягушек — каждые 3 часа обновляем статы всех живых игроков
     # Это гарантирует деградацию даже если игрок не открывал профиль целую неделю
     app.job_queue.run_repeating(job_background_decay, interval=3 * 3600, first=600)
@@ -60951,7 +61053,7 @@ ST_FEAT_LABELS = {
     "diary": "Дневник", "personality": "Характер", "horoscope": "Гороскоп",
     "farewell": "Прощание", "memory": "Память", "ref": "Рефералка",
     "referral": "Рефералка", "contest": "Конкурс", "ca": "Настройки чата",
-    "pi": "Партнёрский чат", "fish": "Рыбалка", "sgift": "Тайный подарок",
+    "pi": "Партнёрский чат", "fish": "Рыбалка", "fishg": "Рыбалка: заброс", "sgift": "Тайный подарок",
     "gift": "Подарок", "speedup": "Ускорение", "games": "Игры", "game": "Игры",
     "feedblock": "Чужое кормление", "feedunblock": "Чужое кормление",
     "menu_games": "Меню: игры", "menu_care": "Меню: уход", "menu_more": "Меню: ещё",

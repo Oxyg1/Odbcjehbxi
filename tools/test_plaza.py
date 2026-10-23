@@ -240,7 +240,7 @@ async def main():
     ok(f"plaza_invite_adv_{F1}" in cbs(m.last[1]) and f"plaza_invite_adv_{F2}" in cbs(m.last[1]),
        f"в поход зовём «Приятелей»: {cbs(m.last[1])}")
     q, m = await press(A, "plaza_fish_invite")
-    ok("35%" in plain(m.last[0]) and f"plaza_invite_fish_{F1}" in cbs(m.last[1]), "рыбалка: шансы и выбор")
+    ok("Три заброса" in plain(m.last[0]) and f"plaza_invite_fish_{F1}" in cbs(m.last[1]), "рыбалка: правила и выбор")
     x_db("UPDATE frogs SET last_fish=? WHERE user_id=?", _time.time(), A)
     B._user_cache.clear()
     q, m = await press(A, "plaza_fish_invite")
