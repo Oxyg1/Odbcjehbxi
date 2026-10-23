@@ -8980,6 +8980,10 @@ async def remove_bond(uid: int, partner_id: int):
     for a, b in [(uid, partner_id), (partner_id, uid)]:
         frog = await db_get(a)
         if frog and frog.get("bond_with") == b:
+            # Сначала стираем старое поле: get_user_bonds при пустой таблице
+            # переносит bond_with обратно в user_bonds — и связь «воскресала»
+            frog["bond_with"] = 0
+            await db_save(frog)
             remaining = await get_user_bonds(a)
             frog["bond_with"] = remaining[0]["partner_id"] if remaining else 0
             if not remaining:
@@ -13052,9 +13056,11 @@ SOCIAL_ACTIONS = {
         "emoji": "🍎", "label": "Угостить",
         "cd": 30 * 60,
         "effect": {"hunger": 20},
+        "condition": lambda f: f.get("hunger", 100) < 80,
+        "condition_fail": "Лягушка сыта — угощать не нужно! 🍎",
         "texts_sender": [
             "{me} угостила {them} сочной мухой. Та аж заквакала от радости!",
-            "{me} принесла {them} целую гору жуков. Пир на весь болот!",
+            "{me} принесла {them} целую гору жуков. Пир на всё болото!",
             "{me} поделилась любимым угощением с {them}. Очень по-соседски.",
         ],
         "texts_receiver": [
@@ -40546,6 +40552,391 @@ async def cmd_daily(update: Update, ctx: ContextTypes.DEFAULT_TYPE):
     await show_status(update.message, f, header=msg)
 
 
+# ════════════════════════════════════════════════════════════════════════
+# 🌿 ПЛОЩАДЬ — экраны
+# ════════════════════════════════════════════════════════════════════════
+# Площадь — про соседей: позаботиться о лягушке друга, позвать в поход или
+# на рыбалку, держать Связь. Экраны собраны функциями: карточка соседа после
+# действия перерисовывается той же функцией, что и при открытии, — раньше
+# это были две разные клавиатуры, и после первого нажатия кнопки менялись.
+
+SOCIAL_COLS = {"treat": "last_treat", "hug": "last_hug", "scratch": "last_scratch",
+               "praise": "last_praise", "wash": "last_wash", "lullaby": "last_lullaby"}
+SOCIAL_SHORT = {"treat": "Угостить", "hug": "Обнять", "scratch": "Пузико",
+                "praise": "Похвалить", "wash": "Помыть", "lullaby": "Убаюкать"}
+SOCIAL_DONE = {"treat": "угостила", "hug": "обняла", "scratch": "почесала пузико",
+               "praise": "похвалила", "wash": "помыла", "lullaby": "убаюкала"}
+_SOCIAL_STAT_ICON = {"hunger": "🍖", "happiness": "😄", "cleanliness": "🧼", "energy": "⚡"}
+PLAZA_PAGE = 8
+PLAZA_CARE_MAX = 30       # «позаботиться обо всех» за одно нажатие
+
+
+def social_state(fr: dict | None, tf: dict, now: float, prefix: str = "") -> dict:
+    """
+    Что можно сделать для соседа: 0 — можно сейчас, >0 — секунд до отката,
+    None — не нужно (лягушка и так сыта/чиста/бодра или её нет).
+    prefix — для строк plaza_friends(), где откаты лежат как fr_last_hug.
+    """
+    out = {}
+    for k, col in SOCIAL_COLS.items():
+        a = SOCIAL_ACTIONS[k]
+        left = a["cd"] - (now - float((fr or {}).get(prefix + col) or 0))
+        if not tf.get("alive", 1):
+            out[k] = None
+        elif left > 0:
+            out[k] = left
+        elif a.get("condition") and not a["condition"](tf):
+            out[k] = None
+        else:
+            out[k] = 0
+    return out
+
+
+def social_ready(fr: dict | None, tf: dict, now: float, prefix: str = "") -> list[str]:
+    return [k for k, v in social_state(fr, tf, now, prefix).items() if v == 0]
+
+
+async def plaza_friends(uid: int) -> list[dict]:
+    """Соседи вместе с откатами заботы — одним запросом, а не db_get на каждого."""
+    cols = ", ".join(f"fr.{c} AS fr_{c}" for c in SOCIAL_COLS.values())
+    async with aiosqlite.connect(DB_PATH) as db:
+        db.row_factory = aiosqlite.Row
+        async with db.execute(
+            f"SELECT f2.*, fr.level AS fr_level, fr.xp AS fr_xp, {cols} "
+            "FROM friendships fr JOIN frogs f2 ON f2.user_id=fr.friend_id "
+            "WHERE fr.user_id=? AND fr.pending=0", (uid,)
+        ) as c:
+            return [dict(r) for r in await c.fetchall()]
+
+
+async def plaza_requests_in(uid: int) -> list[dict]:
+    """Входящие заявки в соседи."""
+    async with aiosqlite.connect(DB_PATH) as db:
+        db.row_factory = aiosqlite.Row
+        async with db.execute(
+            "SELECT fr.user_id, f2.frog_name, f2.first_name, f2.level FROM friendships fr "
+            "JOIN frogs f2 ON f2.user_id=fr.user_id "
+            "WHERE fr.friend_id=? AND fr.pending=1", (uid,)
+        ) as c:
+            return [dict(r) for r in await c.fetchall()]
+
+
+def _plaza_online(r: dict, now: float) -> bool:
+    return float(r.get("last_seen") or 0) > now - 86400
+
+
+def _plaza_busy(r: dict, now: float) -> bool:
+    return float(r.get("adventure_locked_until") or 0) > now or bool(r.get("adventure_id"))
+
+
+def _plaza_name(r: dict) -> str:
+    return r.get("frog_name") or r.get("first_name") or "?"
+
+
+async def social_care(ctx, f: dict, target_id: int, keys: list[str] | None = None):
+    """
+    Забота о лягушке соседа. keys=None — всё, что можно сейчас.
+    Возвращает (сделанные действия, текст отказа, новый уровень дружбы или None).
+    """
+    uid = f["user_id"]
+    fr = await friend_get(uid, target_id)
+    if not fr or fr.get("pending"):
+        return [], "Это можно только с соседями", None
+    tf = await db_get(target_id)
+    if not tf or not tf.get("alive"):
+        return [], "Лягушки соседа сейчас нет", None
+    now = time.time()
+    st = social_state(fr, tf, now)
+    if keys is None:
+        keys = [k for k, v in st.items() if v == 0]
+        if not keys:
+            return [], "Сейчас соседу ничего не нужно — загляни позже", None
+    else:
+        k = keys[0]
+        if st[k] is None:
+            return [], SOCIAL_ACTIONS[k].get("condition_fail", "Сейчас не нужно"), None
+        if st[k] > 0:
+            return [], f"⏳ {SOCIAL_SHORT[k]} — через {_ex_left(now + st[k])}", None
+
+    xp_me = xp_them = 0
+    gained: dict[str, int] = {}
+    for k in keys:
+        for stat, val in SOCIAL_ACTIONS[k]["effect"].items():
+            if stat == "xp_friend":
+                xp_me += val
+                xp_them += val // 2
+                continue
+            before = int(tf.get(stat) or 0)
+            tf[stat] = max(0, min(100, before + val))
+            gained[stat] = gained.get(stat, 0) + tf[stat] - before
+        xp_me += 2
+        xp_them += 1
+    await db_save(tf)
+    async with aiosqlite.connect(DB_PATH) as db:
+        await db.execute(
+            f"UPDATE friendships SET {', '.join(SOCIAL_COLS[k] + '=?' for k in keys)} "
+            "WHERE user_id=? AND friend_id=?", (*[now] * len(keys), uid, target_id))
+        await db.commit()
+    up, new_lvl = await friend_add_xp(uid, target_id, xp_me) or (False, 0)
+    await friend_add_xp(target_id, uid, xp_them)
+
+    # Соседу — одно сообщение, не чаще раза в 30 минут
+    nkey = f"social_notif_{target_id}"
+    if now - ctx.bot_data.get(nkey, 0) > 1800:
+        ctx.bot_data[nkey] = now
+        my_name = he(fname(f))
+        if len(keys) == 1:
+            text = random.choice(SOCIAL_ACTIONS[keys[0]]["texts_receiver"]).format(me=my_name)
+        else:
+            text = (f"🤗 <b>{my_name}</b> заглянула в гости: "
+                    + ", ".join(SOCIAL_DONE[k] for k in keys) + ".")
+            plus = " ".join(f"+{v} {_SOCIAL_STAT_ICON.get(s, s)}" for s, v in gained.items() if v > 0)
+            if plus:
+                text += f"\nТвоей лягушке: {plus}"
+        try:
+            await ctx.bot.send_message(
+                target_id, text, parse_mode=ParseMode.HTML,
+                reply_markup=InlineKeyboardMarkup([[
+                    btn(f"🪙 Поблагодарить (10🪙)", callback_data=f"tip_feed_{uid}_10"),
+                    btn("👤 Карточка", callback_data=f"plaza_friend_{uid}"),
+                ]]))
+        except (BadRequest, Forbidden, TimedOut):
+            pass
+    return keys, "", (new_lvl if up else None)
+
+
+async def plaza_home_view(f: dict) -> tuple[str, InlineKeyboardMarkup]:
+    uid, now = f["user_id"], time.time()
+    friends = await plaza_friends(uid)
+    reqs = await plaza_requests_in(uid)
+    care = [r for r in friends if social_ready(r, r, now, "fr_")]
+    staya = await staya_of_user(uid)
+    adv = await adv_get_active(uid)
+    bonds = await get_user_bonds(uid)
+
+    lines = []
+    if reqs:
+        lines.append(f"{_E_MAIL} {ui_plural(len(reqs), 'заявка', 'заявки', 'заявок')} в соседи")
+    if care:
+        lines.append(f"🤗 Можно позаботиться о {ui_plural(len(care), 'соседе', 'соседях', 'соседях')}")
+    if adv:
+        other = await db_get(adv["user2_id"] if adv["user1_id"] == uid else adv["user1_id"])
+        lines.append(f"{_E_SWORDS} Поход с {he(fname(other) if other else '?')} — ещё "
+                     f"{_ex_left(adv['ends_at'])}")
+    for b in bonds[:3]:
+        partner = await db_get(b["partner_id"])
+        lines.append(f"{_E_GREENHEART} Связь с {he(fname(partner) if partner else '?')} — "
+                     f"{ui_plural(b.get('streak', 0), 'день', 'дня', 'дней')}")
+    if staya:
+        n = len(await staya_get_members(staya["id"]))
+        async with aiosqlite.connect(DB_PATH) as db:
+            async with db.execute(
+                "SELECT 1 FROM staya_events WHERE staya_id=? AND finished=0 LIMIT 1", (staya["id"],)
+            ) as c:
+                has_ev = await c.fetchone()
+        lines.append(ui_line(f"{staya['emoji']} Стая «{he(staya['name'])}»",
+                             ui_plural(n, "участник", "участника", "участников"),
+                             "идёт голосование" if has_ev else ""))
+
+    if not friends and not reqs:
+        hint = ("Добавь соседей: можно заботиться о лягушках друг друга, "
+                "вместе ходить в поход и на рыбалку")
+    elif not care and not reqs:
+        hint = "Соседям сейчас ничего не нужно — загляни позже"
+    else:
+        hint = ""
+    text = ui_card(ui_title(_E_LEAF, "Площадь"), "\n".join(lines), hint=hint)
+
+    rows = [[btn(f"{_E_USERS} Соседи" + (f" · {len(reqs)} 📬" if reqs else ""), callback_data="plaza_sosedi"),
+             btn("🌿 Стая", callback_data="plaza_staya")]]
+    if care:
+        rows.append([btn("🤗 Позаботиться обо всех", callback_data="plaza_care_all", style="success")])
+    rows.append([btn("⚔️ Поход", callback_data="plaza_pohod"),
+                 btn("🎣 Рыбалка", callback_data="plaza_fish_invite"),
+                 btn("💚 Связь", callback_data="plaza_bond")])
+    rows.append([btn("🗺️ Экспедиция", callback_data="plaza_expedition"),
+                 btn("📖 Летопись", callback_data="letopis_view")])
+    rows.append([btn("🏆 Топ стай", callback_data="staya_top_inline"),
+                 btn("◀️ Меню", callback_data="refresh")])
+    return text, InlineKeyboardMarkup(rows)
+
+
+async def plaza_friends_view(f: dict, page: int = 0) -> tuple[str, InlineKeyboardMarkup]:
+    uid, now = f["user_id"], time.time()
+    friends = await plaza_friends(uid)
+    reqs = await plaza_requests_in(uid)
+    if not friends and not reqs:
+        text = ui_card(
+            ui_title(_E_USERS, "Соседи"),
+            "Соседей пока нет.",
+            "Найди игрока по @username или имени лягушки. Ещё можно ответить "
+            "на чьё-нибудь сообщение в группе словом <b>сосед</b>.")
+        return text, InlineKeyboardMarkup([
+            [btn("🔍 Найти игрока", callback_data="plaza_find", style="primary")],
+            [btn("◀️ Назад", callback_data="plaza")]])
+
+    ready = {r["user_id"]: len(social_ready(r, r, now, "fr_")) for r in friends}
+    friends.sort(key=lambda r: (-ready[r["user_id"]], -float(r.get("last_seen") or 0)))
+    pages = max(1, math.ceil(len(friends) / PLAZA_PAGE))
+    page = max(0, min(page, pages - 1))
+
+    legend = []
+    if any(ready.values()):
+        legend.append("🤗 — можно позаботиться")
+    if any(_plaza_online(r, now) for r in friends):
+        legend.append("🟢 — в игре за сутки")
+    text = ui_card(ui_title(_E_USERS, f"Соседи · {len(friends)}"), SEP.join(legend))
+
+    rows = []
+    if reqs:
+        rows.append([btn(f"📬 Заявки · {len(reqs)}", callback_data="plaza_requests", style="primary")])
+    if any(ready.values()):
+        rows.append([btn("🤗 Позаботиться обо всех", callback_data="plaza_care_all_s", style="success")])
+    for r in friends[page * PLAZA_PAGE:(page + 1) * PLAZA_PAGE]:
+        lvl_name = FRIEND_LEVELS.get(r.get("fr_level", 0), ("", "Знакомые"))[1]
+        label = (("🤗 " if ready[r["user_id"]] else "") + he(_plaza_name(r))
+                 + (" 🟢" if _plaza_online(r, now) else "") + f"{SEP}{lvl_name}")
+        rows.append([btn(label, callback_data=f"plaza_friend_{r['user_id']}")])
+    if pages > 1:
+        rows.append([btn("◀️", callback_data=f"plaza_sosedi_{(page - 1) % pages}"),
+                     btn(f"{page + 1}/{pages}", callback_data="noop"),
+                     btn("▶️", callback_data=f"plaza_sosedi_{(page + 1) % pages}")])
+    rows.append([btn("➕ Добавить", callback_data="plaza_find"),
+                 btn("◀️ Назад", callback_data="plaza")])
+    return text, InlineKeyboardMarkup(rows)
+
+
+async def plaza_card_view(f: dict, target_id: int) -> tuple[str, InlineKeyboardMarkup] | None:
+    """Карточка игрока: соседа — с заботой и приглашениями, чужого — с заявкой."""
+    tf = await db_get(target_id)
+    if not tf:
+        return None
+    uid, now = f["user_id"], time.time()
+    fr = await friend_get(uid, target_id)
+    friend = bool(fr) and not fr.get("pending")
+    lvl = int(fr.get("level", 0) or 0) if fr else 0
+    icon, lvl_name = FRIEND_LEVELS.get(lvl, ("🌱", "Знакомые"))
+    alive = bool(tf.get("alive"))
+    busy = _plaza_busy(tf, now)
+
+    head = (f"{icon} <b>{he(fname(tf))}</b>{SEP}{lvl_name}" if friend
+            else f"{_E_FROG} <b>{he(fname(tf))}</b>")
+    blocks = []
+    if friend:
+        if lvl < 3:
+            lo, hi = FRIEND_LEVEL_XP[lvl], FRIEND_LEVEL_XP[lvl + 1]
+            have = max(0, int(fr.get("xp", 0) or 0) - lo)
+            fill = int(min(have / (hi - lo), 1.0) * 8)
+            blocks.append(f"<code>{'█' * fill}{'░' * (8 - fill)}</code> {have}/{hi - lo} "
+                          f"до «{FRIEND_LEVELS[lvl + 1][1]}»")
+        else:
+            blocks.append("Высший уровень дружбы")
+    staya_tf = await staya_of_user(target_id)
+    days = int((now - float(tf.get("born_at") or now)) / 86400)
+    info = [ui_line(f"Ур. {tf.get('level', 1)}",
+                    ui_plural(days, "день", "дня", "дней") + " на болоте",
+                    f"стая «{he(staya_tf['name'])}»" if staya_tf else "")]
+    if not alive:
+        info.append("🪦 Лягушки сейчас нет")
+    else:
+        info.append(ui_line(*(f"{_SOCIAL_STAT_ICON[s]} {int(tf.get(s) or 0)}"
+                              for s in ("hunger", "happiness", "cleanliness", "energy")),
+                            f"❤️ {int(tf.get('health') or 0)}"))
+        if busy:
+            info.append(f"{_E_SWORDS} Сейчас в походе")
+        elif not _plaza_online(tf, now):
+            info.append("Давно не заходила в игру")
+    blocks.append("\n".join(info))
+
+    rows = []
+    hint = ""
+    if friend and alive:
+        st = social_state(fr, tf, now)
+        ready = [k for k, v in st.items() if v == 0]
+        later = [f"{SOCIAL_SHORT[k].lower()} — через {_ex_left(now + v)}"
+                 for k, v in sorted(st.items(), key=lambda kv: kv[1] or 0) if v]
+        if later:
+            # Ближайшие два, остальное — числом: шесть откатов подряд не читаются
+            blocks.append("Позже: " + ", ".join(later[:2])
+                          + (f" и ещё {len(later) - 2}" if len(later) > 2 else ""))
+        if len(ready) > 1:
+            rows.append([btn(f"🤗 Всё сразу · {len(ready)}", callback_data=f"social_all_{target_id}",
+                             style="success")])
+        acts = [btn(f"{SOCIAL_ACTIONS[k]['emoji']} {SOCIAL_SHORT[k]}", callback_data=f"social_{k}_{target_id}")
+                for k in ready]
+        rows += [acts[i:i + 2] for i in range(0, len(acts), 2)]
+        if not ready:
+            hint = "" if later else "Сейчас ей ничего не нужно"
+        elif lvl == 0:
+            hint = "Забота поднимает дружбу. С «Приятелями» откроются поход и рыбалка"
+        elif lvl == 1:
+            hint = "С «Друзьями» откроется Связь — общая серия дней"
+        if lvl >= 1 and not busy:
+            rows.append([btn("⚔️ В поход", callback_data=f"plaza_invite_adv_{target_id}"),
+                         btn("🎣 На рыбалку", callback_data=f"plaza_invite_fish_{target_id}")])
+        if lvl >= 2 and not any(b["partner_id"] == target_id for b in await get_user_bonds(uid)):
+            rows.append([btn("💚 Предложить Связь", callback_data=f"plaza_bond_invite_{target_id}")])
+        rows.append([btn("◀️ Соседи", callback_data="plaza_sosedi"),
+                     btn("🗑 Удалить", callback_data=f"plaza_unfriend_{target_id}")])
+    elif friend:
+        rows.append([btn("◀️ Соседи", callback_data="plaza_sosedi"),
+                     btn("🗑 Удалить", callback_data=f"plaza_unfriend_{target_id}")])
+    else:
+        if target_id == uid:
+            hint = "Это ты"
+        elif fr:
+            rows.append([btn("📬 Заявка отправлена", callback_data="noop")])
+        elif await friend_get(target_id, uid):
+            rows.append([btn("✅ Принять заявку", callback_data=f"friend_accept_{target_id}", style="success")])
+        else:
+            rows.append([btn("➕ В соседи", callback_data=f"plaza_add_{target_id}", style="primary")])
+        rows.append([btn("◀️ Соседи", callback_data="plaza_sosedi")])
+    return ui_card(head, *blocks, hint=hint), InlineKeyboardMarkup(rows)
+
+
+_PLAZA_PICK = {
+    "adv": (_E_SWORDS, "Поход", "plaza_invite_adv_",
+            "Вы с соседом отправляете лягушек на 2, 4 или 8 часов. В пути — развилки, "
+            "решаете вместе. В конце — монеты и опыт обоим."),
+    "fish": ("🎣", "Рыбалка", "plaza_invite_fish_",
+             f"Ставка — {FISH_COST}🪙 с каждого, раз в сутки.\n"
+             "🐟 35% — улов на двоих, обоим ставка с бонусом\n"
+             "🏆 30% — обе ставки твои\n"
+             "🤝 25% — обе ставки у соседа\n"
+             "💨 10% — не клюёт, ставки сгорают"),
+}
+
+
+async def plaza_pick_view(f: dict, kind: str) -> tuple[str, InlineKeyboardMarkup]:
+    """Выбор соседа для похода или рыбалки: нужны «Приятели» и выше."""
+    emoji, title, cb, about = _PLAZA_PICK[kind]
+    now = time.time()
+    friends = [r for r in await plaza_friends(f["user_id"])
+               if r.get("fr_level", 0) >= 1 and r.get("alive")
+               and not (kind == "adv" and _plaza_busy(r, now))]
+    friends.sort(key=lambda r: -float(r.get("last_seen") or 0))
+    if not friends:
+        text = ui_card(ui_title(emoji, title), about,
+                       hint="Позвать пока некого: нужен сосед уровня «Приятели». "
+                            "Позаботься о соседях — дружба растёт")
+        return text, InlineKeyboardMarkup([[btn(f"{_E_USERS} Соседи", callback_data="plaza_sosedi"),
+                                            btn("◀️ Назад", callback_data="plaza")]])
+    rows = [[btn(he(_plaza_name(r)) + (" 🟢" if _plaza_online(r, now) else ""),
+                 callback_data=f"{cb}{r['user_id']}")] for r in friends[:10]]
+    rows.append([btn("◀️ Назад", callback_data="plaza")])
+    return ui_card(ui_title(emoji, title), about, "<b>Кого позвать?</b>"), InlineKeyboardMarkup(rows)
+
+
+async def plaza_show(q, view):
+    """Показать экран площади; view — (текст, клавиатура)."""
+    if not view:
+        return
+    try:
+        await q.message.edit_text(view[0], parse_mode=ParseMode.HTML, reply_markup=view[1])
+    except (BadRequest, Forbidden, TimedOut):
+        pass
+
+
 async def on_callback(update: Update, ctx: ContextTypes.DEFAULT_TYPE):
     _g = await cb_guard(update, ctx)
     if _g is None:
@@ -44944,278 +45335,45 @@ async def on_callback(update: Update, ctx: ContextTypes.DEFAULT_TYPE):
 
     if d == "plaza":
         await q.answer()
-        now_p   = time.time()
-        friends = await friend_list(uid, accepted_only=True)
-        staya   = await staya_of_user(uid)
-        adv     = await adv_get_active(uid)
+        await plaza_show(q, await plaza_home_view(f))
+        return
 
-        # Входящие заявки
-        async with aiosqlite.connect(DB_PATH) as db:
-            async with db.execute(
-                "SELECT COUNT(*) FROM friendships WHERE friend_id=? AND pending=1", (uid,)
-            ) as c:
-                pending_cnt = (await c.fetchone())[0]
-
-        # Строим шапку с живой информацией
-        header_lines = []
-
-        # Болотная связь
-        if f.get("bond_with"):
-            partner = await db_get(f["bond_with"])
-            pname = fname(partner) if partner else "?"
-            streak = f.get("bond_streak", 0)
-            header_lines.append(f"{_E_FIRE} Болотная связь с <b>{he(pname)}</b> — {streak} дн.")
-        
-        # Стая
-        if staya:
-            members_cnt = len(await staya_get_members(staya["id"]))
-            async with aiosqlite.connect(DB_PATH) as db:
-                async with db.execute(
-                    "SELECT id FROM staya_events WHERE staya_id=? AND finished=0 LIMIT 1",
-                    (staya["id"],)
-                ) as c:
-                    has_ev = await c.fetchone()
-            ev_mark = " 🎭 событие!" if has_ev else ""
-            header_lines.append(f"Стая <b>{he(staya['name'])}</b>{SEP}{ui_plural(members_cnt, 'участник', 'участника', 'участников')}{ev_mark}")
+    # ── 🤗 Позаботиться обо всех соседях разом ───────────────────────────────
+    if d in ("plaza_care_all", "plaza_care_all_s"):
+        now_c = time.time()
+        targets = [r for r in await plaza_friends(uid) if social_ready(r, r, now_c, "fr_")]
+        done, ups = 0, []
+        for r in targets[:PLAZA_CARE_MAX]:
+            keys, _err, up = await social_care(ctx, f, r["user_id"])
+            if keys:
+                done += 1
+            if up is not None:
+                ups.append(f"{he(_plaza_name(r))} — «{FRIEND_LEVELS[up][1]}»")
+        if done:
+            msg = f"🤗 Позаботилась о {ui_plural(done, 'соседе', 'соседях', 'соседях')}"
+            if ups:
+                msg += "\nДружба выросла: " + ", ".join(ups)
+            await q.answer(msg[:200], show_alert=bool(ups))
         else:
-            header_lines.append("Стая: <i>не состоишь ни в одной</i>")
-
-        # Поход
-        if adv:
-            left_m = max(0, int((adv["ends_at"] - now_p) / 60))
-            header_lines.append(f"{_E_SWORDS} <b>Поход идёт</b> — осталось {left_m} мин")
-
-        # Соседи
-        sosedi_str = f"{len(friends)} соседей"
-        if pending_cnt:
-            sosedi_str += f" · <b>+{pending_cnt} заявки!</b>"
-        header_lines.append(f"{_E_USERS} {sosedi_str}")
-
-        # Лента последних действий в болоте (из летописи)
-        recent = await letopis_recent(3)
-        feed_lines = []
-        for ev in recent:
-            feed_lines.append(f"• {ev['text']}")
-        feed_block = ("\n\n<b>Болото сейчас:</b>\n" + "\n".join(feed_lines)) if feed_lines else ""
-
-        text = (
-            f"{_E_LEAF} <b>Болотная Площадь</b>\n\n"
-            + "\n".join(header_lines)
-            + feed_block
-        )
-
-        kb_rows = []
-        # Соседи с бейджем если есть заявки
-        sosedi_label = f"{_E_USERS} Соседи +{pending_cnt}🔴" if pending_cnt else "👥 Соседи"
-        kb_rows.append([
-            btn(sosedi_label, callback_data="plaza_sosedi"),
-            btn("🌿 Стая", callback_data="plaza_staya"),
-        ])
-        kb_rows.append([
-            btn("⚔️ Поход", callback_data="plaza_pohod"),
-            btn("💚 Связь", callback_data="plaza_bond"),
-        ])
-        kb_rows.append([
-            btn("🗺️ Экспедиция", callback_data="plaza_expedition"),
-            btn("🎣 Порыбачить", callback_data="plaza_fish_invite"),
-        ])
-        kb_rows.append([
-            btn("📖 Летопись", callback_data="letopis_view"),
-            btn("🏆 Рейтинг стай", callback_data="staya_top_inline"),
-        ])
-        kb_rows.append([btn("◀️ Главное меню", callback_data="refresh")])
-
-        try:
-            await q.message.edit_text(text, parse_mode=ParseMode.HTML,
-                                      reply_markup=InlineKeyboardMarkup(kb_rows))
-        except (BadRequest, Forbidden, TimedOut):
-            pass
+            await q.answer("Соседям сейчас ничего не нужно")
+        await plaza_show(q, await (plaza_home_view(f) if d == "plaza_care_all" else plaza_friends_view(f)))
         return
 
     # ── 👥 Соседи ─────────────────────────────────────────────────────────────
     if d.startswith("plaza_sosedi"):
-        page = int(d.split("_")[-1]) if d != "plaza_sosedi" and d[-1].isdigit() else 0
-        per  = 8
         await q.answer()
-        friends = await friend_list(uid, accepted_only=True)
-
-        async with aiosqlite.connect(DB_PATH) as db:
-            db.row_factory = aiosqlite.Row
-            async with db.execute(
-                "SELECT fr.user_id, f2.frog_name, f2.first_name FROM friendships fr "
-                "JOIN frogs f2 ON f2.user_id=fr.user_id "
-                "WHERE fr.friend_id=? AND fr.pending=1", (uid,)
-            ) as c:
-                pending = [dict(r) for r in await c.fetchall()]
-
-        if not friends and not pending:
-            try:
-                await q.message.edit_text(
-                    f"{_E_USERS} <b>Болотные Соседи</b>\n\nУ тебя пока нет соседей.\n\n"
-                    "Добавь кого-нибудь командой <code>сосед @username</code> "
-                    "или ответив на чьё-то сообщение словом <b>сосед</b>.",
-                    parse_mode=ParseMode.HTML,
-                    reply_markup=InlineKeyboardMarkup([
-                        [btn("🔍 Найти игрока", callback_data="plaza_find")],
-                        [btn("◀️ Назад", callback_data="plaza")],
-                    ])
-                )
-            except (BadRequest, Forbidden, TimedOut):
-                pass
-            return
-
-        total_fr = len(friends)
-        page_friends = friends[page*per:(page+1)*per]
-        lines = [f"{_E_USERS} <b>Болотные Соседи</b> — {total_fr} чел."]
-        if pending:
-            lines.append(f"{_E_MAIL} Новых заявок: <b>{len(pending)}</b>")
-        kb_rows = []
-        if pending:
-            kb_rows.append([btn(f"📬 Заявки ({len(pending)})", callback_data="plaza_requests")])
-        today_start = (datetime.now(timezone.utc).replace(hour=0,minute=0,second=0,microsecond=0).timestamp())
-        for fr in page_friends:
-            fn   = fr.get("frog_name") or fr.get("first_name") or "?"
-            flvl = fr.get("fr_level", 0)
-            icon, lvl_name = FRIEND_LEVELS.get(flvl, ("🌱", "Знакомые"))
-            tf_q = await db_get(fr["user_id"])
-            online = " 🟢" if tf_q and tf_q.get("last_seen", 0) > today_start else ""
-            kb_rows.append([btn(
-                f"{icon} {he(fn)}{online} · {lvl_name}",
-                callback_data=f"plaza_friend_{fr['user_id']}"
-            )])
-        nav = []
-        if page > 0:
-            nav.append(btn("◀️", callback_data=f"plaza_sosedi_{page-1}"))
-        if (page+1)*per < total_fr:
-            nav.append(btn("▶️", callback_data=f"plaza_sosedi_{page+1}"))
-        if nav:
-            kb_rows.append(nav)
-        kb_rows.append([
-            btn("➕ Добавить", callback_data="plaza_find"),
-            btn("◀️ Назад", callback_data="plaza"),
-        ])
-        try:
-            await q.message.edit_text("\n".join(lines), parse_mode=ParseMode.HTML,
-                                      reply_markup=InlineKeyboardMarkup(kb_rows))
-        except (BadRequest, Forbidden, TimedOut):
-            pass
+        tail = d[len("plaza_sosedi_"):]
+        await plaza_show(q, await plaza_friends_view(f, int(tail) if tail.isdigit() else 0))
         return
 
-
-    # ── Карточка соседа ───────────────────────────────────────────────────────
+    # ── Карточка игрока ──────────────────────────────────────────────────────
     if d.startswith("plaza_friend_"):
-        target_id = int(d[13:])
-        await q.answer()
-        tf = await db_get(target_id)
-        if not tf:
-            await q.answer("Игрок не найден.", show_alert=True)
+        view = await plaza_card_view(f, int(d[13:]))
+        if not view:
+            await q.answer("Игрок не найден", show_alert=True)
             return
-        fr = await friend_get(uid, target_id)
-        tname = fname(tf)
-        # friend_get делает SELECT * FROM friendships — колонка называется 'level', не 'fr_level'
-        lvl = fr.get("fr_level", fr.get("level", 0)) if fr else 0
-        lvl_icon, lvl_name = FRIEND_LEVELS.get(lvl, ("🌱", "Знакомые"))
-        days_alive = int((time.time() - tf.get("born_at", time.time())) / 86400)
-        adv_locked = tf.get("adventure_locked_until", 0) > time.time()
-
-        # XP до следующего уровня дружбы — показываем прогресс внутри текущего уровня
-        xp_now = fr.get("xp", 0) if fr else 0
-        if lvl < 3:
-            xp_level_start = FRIEND_LEVEL_XP[lvl]      # XP начала текущего уровня
-            xp_level_end   = FRIEND_LEVEL_XP[lvl + 1]  # XP конца (порог следующего)
-            xp_in_level    = max(0, xp_now - xp_level_start)
-            xp_needed      = xp_level_end - xp_level_start
-            xp_bar_filled  = int(min(xp_in_level / xp_needed, 1.0) * 8)
-            xp_bar         = "<code>" + "█" * xp_bar_filled + "░" * (8 - xp_bar_filled) + "</code>"
-            next_lvl_icon, next_lvl_name = FRIEND_LEVELS.get(lvl + 1, ("", ""))
-            xp_line = f"\n{xp_bar} {xp_in_level}/{xp_needed} XP → {next_lvl_icon} {next_lvl_name}"
-        else:
-            xp_line = "\n🌟 Максимальный уровень!"
-
-        # Настроение лягушки
-        mood_h = tf.get("happiness", 50)
-        mood_str = "😄 весёлая" if mood_h > 70 else "😐 спокойная" if mood_h > 40 else "😔 грустит"
-        health_str = f"❤️{tf.get('health',100)}" 
-        hunger_str = f"🍖{tf.get('hunger',50)}"
-
-        staya_tf = await staya_of_user(target_id)
-        staya_line = f"\n{_E_LEAF} Стая: {he(staya_tf['name'])}" if staya_tf else ""
-        locked_line = f"\n{_E_LOCK} <i>Лягушка в походе</i>" if adv_locked else ""
-
-        text = (
-            f"{lvl_icon} <b>{he(tname)}</b> · {lvl_name}{xp_line}\n\n"
-            f"Уровень <b>{tf.get('level',1)}</b> · {days_alive} дней на болоте\n"
-            f"{health_str} {hunger_str} {mood_str}"
-            f"{staya_line}"
-            f"{locked_line}\n\n"
-            f"<i>Взаимодействие повышает уровень дружбы</i>"
-        )
-
-        # Кулдауны
-        now_fr = time.time()
-        def _cd(last, cd_sec):
-            left = cd_sec - (now_fr - last)
-            if left <= 0: return ""
-            m = int(left / 60)
-            return f" ⏳{m}м" if m > 0 else " ⏳<1м"
-
-        def _done(last, cd_sec):
-            """Возвращает ✅ если действие уже выполнено сегодня/недавно."""
-            return " ✅" if (now_fr - last) < cd_sec else ""
-
-        last_hug     = fr.get("last_hug", 0) if fr else 0
-        last_scratch = fr.get("last_scratch", 0) if fr else 0
-        last_wash    = fr.get("last_wash", 0) if fr else 0
-        last_praise  = fr.get("last_praise", 0) if fr else 0
-        last_lullaby = fr.get("last_lullaby", 0) if fr else 0
-        last_treat   = fr.get("last_treat", 0) if fr else 0
-
-        hug_cd   = _cd(last_hug,     SOCIAL_ACTIONS["hug"]["cd"])     or _done(last_hug,     SOCIAL_ACTIONS["hug"]["cd"])
-        scr_cd   = _cd(last_scratch, SOCIAL_ACTIONS["scratch"]["cd"]) or _done(last_scratch, SOCIAL_ACTIONS["scratch"]["cd"])
-        wash_cd  = _cd(last_wash,    SOCIAL_ACTIONS["wash"]["cd"])     or _done(last_wash,    SOCIAL_ACTIONS["wash"]["cd"])
-        prs_cd   = _cd(last_praise,  SOCIAL_ACTIONS["praise"]["cd"])   or _done(last_praise,  SOCIAL_ACTIONS["praise"]["cd"])
-        lul_cd   = _cd(last_lullaby, SOCIAL_ACTIONS["lullaby"]["cd"])  or _done(last_lullaby, SOCIAL_ACTIONS["lullaby"]["cd"])
-        trt_cd   = _cd(last_treat,   SOCIAL_ACTIONS["treat"]["cd"])    or _done(last_treat,   SOCIAL_ACTIONS["treat"]["cd"])
-
-        kb_rows = [
-            [
-                btn(f"🤗 Обнять{hug_cd}",      callback_data=f"social_hug_{target_id}"),
-                btn(f"✋ Пузико{scr_cd}",      callback_data=f"social_scratch_{target_id}"),
-            ],
-            [
-                btn(f"🛁 Помыть{wash_cd}",     callback_data=f"social_wash_{target_id}"),
-                btn(f"🌟 Похвалить{prs_cd}",   callback_data=f"social_praise_{target_id}"),
-            ],
-            [
-                btn(f"💤 Убаюкать{lul_cd}",    callback_data=f"social_lullaby_{target_id}"),
-                btn(f"🍎 Угостить{trt_cd}",    callback_data=f"social_treat_{target_id}"),
-            ],
-
-        ]
-
-        # Активные действия (поход, рыбалка, связь)
-        extra = []
-        if not adv_locked and fr and not fr.get("pending") and lvl >= 1:
-            extra.append(btn("⚔️ В поход",   callback_data=f"plaza_invite_adv_{target_id}"))
-            extra.append(btn("🎣 Рыбалка",   callback_data=f"plaza_invite_fish_{target_id}"))
-        if extra:
-            kb_rows.append(extra)
-
-        if fr and not fr.get("pending") and lvl >= 2:
-            my_bonds_nc = await get_user_bonds(uid)
-            if not any(b["partner_id"] == target_id for b in my_bonds_nc):
-                kb_rows.append([btn(
-                    "💚 Болотная Связь", callback_data=f"plaza_bond_invite_{target_id}"
-                )])
-
-        kb_rows.append([btn("◀️ Назад", callback_data="plaza_sosedi")])
-        kb_rows.append([btn("🗑 Удалить из соседей", callback_data=f"plaza_unfriend_{target_id}")])
-
-        try:
-            await q.message.edit_text(text, parse_mode=ParseMode.HTML,
-                                      reply_markup=InlineKeyboardMarkup(kb_rows))
-        except (BadRequest, Forbidden, TimedOut):
-            pass
+        await q.answer()
+        await plaza_show(q, view)
         return
 
     # ── 📬 Заявки ─────────────────────────────────────────────────────────────
@@ -45256,9 +45414,7 @@ async def on_callback(update: Update, ctx: ContextTypes.DEFAULT_TYPE):
         try:
             await q.message.edit_text(
                 f"{_E_SEARCH} <b>Найти игрока</b>\n\n"
-                "Напиши <code>@username</code> в чат.\n"
-                "Я найду его лягушку и покажу карточку с кнопкой добавить.\n\n"
-                "<i>Или напиши просто:</i> <code>сосед @username</code>",
+                "Напиши в чат <code>@username</code> или имя лягушки — покажу карточку.",
                 parse_mode=ParseMode.HTML,
                 reply_markup=InlineKeyboardMarkup([[
                     btn("❌ Отмена", callback_data="plaza_sosedi")
@@ -45300,7 +45456,7 @@ async def on_callback(update: Update, ctx: ContextTypes.DEFAULT_TYPE):
                 pass
             return
 
-        lines = [f"{_E_LEAF} <b>Болотные Стаи</b> — стр.{page+1}\n"]
+        lines = [f"{_E_LEAF} <b>Стаи с местами</b>" + (f" · стр. {page+1}" if page else "") + "\n"]
         kb_rows = []
         for s in page_stayas:
             cnt  = s.get("member_count", 0)
@@ -45622,13 +45778,14 @@ async def on_callback(update: Update, ctx: ContextTypes.DEFAULT_TYPE):
         if not staya:
             try:
                 await q.message.edit_text(
-                    f"{_E_LEAF} <b>Болотные Стаи</b>\n\n"
-                    "Вступи в стаю — вместе прокачивайте болото и получайте бонусы!\n\n"
-                    f"Создать стаю: <b>{STAYA_CREATE_COST}{_E_COIN}</b> · У тебя: <b>{f['coins']}{_E_COIN}</b>",
+                    ui_card(ui_title(_E_LEAF, "Стая"),
+                            "Стая — команда до 30 игроков. Вместе копите монеты в котёл: "
+                            "болото растёт в уровне и даёт бонусы всем участникам.",
+                            f"Создать свою — {STAYA_CREATE_COST}{_E_COIN}, у тебя {f['coins']}{_E_COIN}"),
                     parse_mode=ParseMode.HTML,
                     reply_markup=InlineKeyboardMarkup([
+                        [btn("🔍 Найти и вступить", callback_data="plaza_staya_list_0", style="primary")],
                         [btn(f"🌿 Создать стаю ({STAYA_CREATE_COST}🪙)", callback_data="staya_create_start")],
-                        [btn("🔍 Найти и вступить", callback_data="plaza_staya_list_0")],
                         [btn("◀️ Назад", callback_data="plaza")],
                     ])
                 )
@@ -45673,20 +45830,17 @@ async def on_callback(update: Update, ctx: ContextTypes.DEFAULT_TYPE):
         else:
             next_line_pl = f"\n{_E_TROPHY} <b>Максимальный уровень болота!</b>"
 
-        text = (
-            f"{staya['emoji']} <b>Стая «{he(staya['name'])}»</b>\n\n"
-            f"🏔️ Уровень болота: <b>{lvl}</b>{boost_st_line}\n"
-            f"{next_line_pl}\n\n"
-            f"{_E_USERS} Участников: <b>{len(members)}/{staya.get('max_members') or STAYA_MAX_MEMBERS}</b>\n"
-            f"Ты: {my_role_label}\n\n"
-            f"<i>🪙 Пополняйте котёл — болото растёт! "
-            f"5% монет трудяги уходит автоматически.</i>"
-            + (f"\n\n{_E_MASK} <b>Идёт событие стаи! Нажми чтобы проголосовать.</b>" if active_ev else "")
+        text = ui_card(
+            f"{staya['emoji']} <b>Стая «{he(staya['name'])}»</b>",
+            f"🏔️ Уровень болота: <b>{lvl}</b>{boost_st_line}{next_line_pl}",
+            ui_line(f"{_E_USERS} {len(members)}/{staya.get('max_members') or STAYA_MAX_MEMBERS}",
+                    f"ты — {my_role_label}"),
+            f"{_E_MASK} <b>Идёт голосование стаи</b>" if active_ev else "",
         )
 
         kb_rows = []
         if active_ev:
-            kb_rows.append([btn("🎭 Событие — голосуй", callback_data="staya_events_view")])
+            kb_rows.append([btn("🎭 Голосовать", callback_data="staya_events_view", style="primary")])
         kb_rows.append([
             btn("👥 Участники", callback_data="plaza_staya_members"),
             btn("🪙 Котёл", callback_data="staya_cauldron"),
@@ -45834,20 +45988,18 @@ async def on_callback(update: Update, ctx: ContextTypes.DEFAULT_TYPE):
 
     # ── ⚔️ Поход ─────────────────────────────────────────────────────────────
     if d == "plaza_pohod":
-        await q.answer()
         adv = await adv_get_active(uid)
         if adv:
             logs = json.loads(adv.get("log_json") or "[]")
             last_logs = logs[-4:] if logs else []
-            left_m = max(0, int((adv["ends_at"] - time.time()) / 60))
+            await q.answer()
             other_id = adv["user2_id"] if adv["user1_id"] == uid else adv["user1_id"]
             other_f = await db_get(other_id)
             oname = fname(other_f) if other_f else "?"
-            log_text = "\n".join(f"• {l['text']}" for l in last_logs) or "Только начали..."
-            text = (
-                f"{_E_SWORDS} <b>Поход с {he(oname)}</b>\n"
-                f"⏱ До конца: <b>{left_m} мин</b>\n\n"
-                f"<b>Последние события:</b>\n{log_text}"
+            text = ui_card(
+                ui_title(_E_SWORDS, f"Поход с {he(oname)}"),
+                f"До конца — <b>{_ex_left(adv['ends_at'])}</b>",
+                ui_quote(*(l["text"] for l in last_logs)) or "Только вышли в путь",
             )
             try:
                 await q.message.edit_text(
@@ -45862,62 +46014,14 @@ async def on_callback(update: Update, ctx: ContextTypes.DEFAULT_TYPE):
             return
 
         if f.get("adventure_locked_until", 0) > time.time():
-            left_m = int((f["adventure_locked_until"] - time.time()) / 60)
-            await q.answer((f"Лягушка уже в походе. Осталось {left_m} мин.")[:200], show_alert=True)
+            await q.answer(f"Лягушка уже в походе, ещё {_ex_left(f['adventure_locked_until'])}",
+                           show_alert=True)
             return
         if await ex_user_run(uid):
             await q.answer("Лягушка в экспедиции. Поход — после неё", show_alert=True)
             return
-
-        friends = await friend_list(uid, accepted_only=True)
-        eligible = []
-        for fr in friends:
-            if fr.get("fr_level", 0) >= 1:
-                tf_check = await db_get(fr["user_id"])
-                if tf_check and tf_check.get("adventure_locked_until", 0) <= time.time():
-                    eligible.append(fr)
-
-        if not eligible:
-            try:
-                await q.message.edit_text(
-                    f"{_E_SWORDS} <b>Болотный Поход</b>\n\n"
-                    "Два игрока вместе отправляют лягушек на несколько часов.\n\n"
-                    "📜 Каждые 15 мин — новые события из путешествия\n"
-                    f"{_E_DICE} Будут развилки — решайте вместе!\n"
-                    f"{_E_TROPHY} В конце — монеты × длительность, XP, бонус за согласованность\n\n"
-                    "<b>Для похода нужен сосед уровня Приятели и выше.</b>\n\n"
-                    "<i>Подружись с кем-нибудь сначала</i>",
-                    parse_mode=ParseMode.HTML,
-                    reply_markup=InlineKeyboardMarkup([
-                        [btn("👥 К соседям", callback_data="plaza_sosedi")],
-                        [btn("◀️ Назад", callback_data="plaza")],
-                    ])
-                )
-            except (BadRequest, Forbidden, TimedOut):
-                pass
-            return
-
-        lines = [
-            f"{_E_SWORDS} <b>Болотный Поход</b>\n\n"
-            "Выбери партнёра из соседей:\n"
-            "<i>Нужен уровень Приятели и выше</i>"
-        ]
-        kb_rows = []
-        for fr in eligible[:8]:
-            name = fr.get("frog_name") or fr.get("first_name") or "?"
-            icon = FRIEND_LEVELS.get(fr.get("fr_level", 0), ("🌱",""))[0]
-            kb_rows.append([btn(
-                f"{icon} {he(name)}",
-                callback_data=f"plaza_invite_adv_{fr['user_id']}"
-            )])
-        kb_rows.append([btn("◀️ Назад", callback_data="plaza")])
-        try:
-            await q.message.edit_text(
-                "\n".join(lines), parse_mode=ParseMode.HTML,
-                reply_markup=InlineKeyboardMarkup(kb_rows)
-            )
-        except (BadRequest, Forbidden, TimedOut):
-            pass
+        await q.answer()
+        await plaza_show(q, await plaza_pick_view(f, "adv"))
         return
 
     # ── 🗺️ Экспедиция из площади ────────────────────────────────────────────
@@ -45928,48 +46032,12 @@ async def on_callback(update: Update, ctx: ContextTypes.DEFAULT_TYPE):
 
     # ── 🎣 Рыбалка из площади ─────────────────────────────────────────────────
     if d == "plaza_fish_invite":
+        if f.get("last_fish", 0) and time.time() - f["last_fish"] < FISH_COOLDOWN:
+            await q.answer(f"Сегодня уже рыбачили. Снова — через {_ex_left(f['last_fish'] + FISH_COOLDOWN)}",
+                           show_alert=True)
+            return
         await q.answer()
-        now_fish_p = time.time()
-        if f.get("last_fish", 0) and now_fish_p - f["last_fish"] < FISH_COOLDOWN:
-            left_h = int((FISH_COOLDOWN - (now_fish_p - f["last_fish"])) / 3600)
-            await q.answer((f"Уже рыбачили сегодня. Ещё {left_h}ч.")[:200], show_alert=True)
-            return
-        friends = await friend_list(uid, accepted_only=True)
-        eligible_fish = [fr for fr in friends if fr.get("fr_level", 0) >= 1]
-        if not eligible_fish:
-            try:
-                await q.message.edit_text(
-                    "🎣 <b>Рыбалка с другом</b>\n\n"
-                    "Нет подходящих соседей для рыбалки.\n"
-                    "Нужен уровень дружбы Приятели и выше.",
-                    parse_mode=ParseMode.HTML,
-                    reply_markup=InlineKeyboardMarkup([[btn("◀️ Назад", callback_data="plaza")]])
-                )
-            except (BadRequest, Forbidden, TimedOut):
-                pass
-            return
-        kb_fish_rows = []
-        for fr in eligible_fish[:10]:
-            fn = fr.get("frog_name") or fr.get("first_name") or "?"
-            kb_fish_rows.append([btn(
-                f"🎣 {he(fn)}", callback_data=f"plaza_invite_fish_{fr['user_id']}"
-            )])
-        kb_fish_rows.append([btn("◀️ Назад", callback_data="plaza")])
-        try:
-            await q.message.edit_text(
-                f"🎣 <b>Рыбалка с другом</b>\n\n"
-                f"Ставка: <b>{FISH_COST}{_E_COIN}</b> с каждого.\n\n"
-                f"Возможные исходы:\n"
-                f"🐟 <b>35%</b> — совместный улов, каждый получает ставку + бонус\n"
-                f"{_E_TROPHY} <b>30%</b> — ты победил, берёшь обе ставки\n"
-                f"🤝 <b>25%</b> — сосед победил, берёт обе ставки\n"
-                f"💨 <b>10%</b> — рыба не клюёт, ставки теряются\n\n"
-                f"Кулдаун: раз в сутки. <b>Выбери соседа:</b>",
-                parse_mode=ParseMode.HTML,
-                reply_markup=InlineKeyboardMarkup(kb_fish_rows)
-            )
-        except (BadRequest, Forbidden, TimedOut):
-            pass
+        await plaza_show(q, await plaza_pick_view(f, "fish"))
         return
 
     # ── Пригласить в поход / рыбалку ─────────────────────────────────────────
@@ -46124,181 +46192,127 @@ async def on_callback(update: Update, ctx: ContextTypes.DEFAULT_TYPE):
     # ── 💚 Болотная Связь ─────────────────────────────────────────────────────
     if d == "plaza_bond" or d.startswith("plaza_bond_page_"):
         await q.answer()
-        page = 0
-        if d.startswith("plaza_bond_page_"):
-            try:
-                page = int(d[16:])
-            except Exception:
-                page = 0
+        tail = d[len("plaza_bond_page_"):]
+        page = int(tail) if tail.isdigit() else 0
         bonds = await get_user_bonds(uid)
+        bonded = {b["partner_id"] for b in bonds}
+        cands = [r for r in await plaza_friends(uid)
+                 if r.get("fr_level", 0) >= 2 and r.get("alive") and r["user_id"] not in bonded]
+        about = ("Общая серия с другом: в какой день вы оба забрали ежедневный бонус, "
+                 "тот день идёт в серию. На 3, 7, 14, 30 и 100 днях — монеты обоим.")
+        rows = []
         if bonds:
-            PAGE_SIZE = 5
-            total_pages = max(1, (len(bonds) + PAGE_SIZE - 1) // PAGE_SIZE)
-            page = max(0, min(page, total_pages - 1))
-            page_bonds = bonds[page * PAGE_SIZE:(page + 1) * PAGE_SIZE]
-
-            bond_lines = []
-            kb_rows_bond = []
-            for b in page_bonds:
+            per = 5
+            pages = max(1, math.ceil(len(bonds) / per))
+            page = max(0, min(page, pages - 1))
+            lines = []
+            for b in bonds[page * per:(page + 1) * per]:
                 partner = await db_get(b["partner_id"])
-                pname = fname(partner) if partner else "?"
-                streak = b.get("streak", 0)
-                bond_lines.append(f"💚 <b>{he(pname)}</b> — {_E_FIRE} {streak} дн.")
-                kb_rows_bond.append([
-                    btn(f"💚 {he(pname)}", callback_data=f"plaza_bond_view_{b['partner_id']}"),
-                    btn("💔", callback_data=f"plaza_bond_break_{b['partner_id']}"),
-                ])
-
-            # Пагинация
-            if total_pages > 1:
-                nav = []
-                if page > 0:
-                    nav.append(btn("◀️", callback_data=f"plaza_bond_page_{page-1}"))
-                nav.append(btn(f"{page+1}/{total_pages}", callback_data="ignore"))
-                if page < total_pages - 1:
-                    nav.append(btn("▶️", callback_data=f"plaza_bond_page_{page+1}"))
-                kb_rows_bond.append(nav)
-
-            # Кнопки приглашения (только на первой странице)
-            friends = await friend_list(uid, accepted_only=True)
-            bond_partner_ids = {b["partner_id"] for b in bonds}
-            eligible = [fr for fr in friends if fr.get("fr_level", 0) >= 2 and fr["user_id"] not in bond_partner_ids]
-            text = (
-                f"💚 <b>Болотные Связи</b>\n\n"
-                + "\n".join(bond_lines)
-                + "\n\n<i>Заходите каждый день — стрик растёт</i>"
-            )
-            if page == 0 and eligible:
-                text += "\n\n<b>Пригласить ещё партнёра:</b>"
-                for fr in eligible[:3]:
-                    kb_rows_bond.append([btn(
-                        f"{_E_PLUS} {he(fr.get('frog_name') or fr.get('first_name','?'))}",
-                        callback_data=f"plaza_bond_invite_{fr['user_id']}"
-                    )])
-            kb_rows_bond.append([btn("◀️ Назад", callback_data="plaza")])
-            kb = InlineKeyboardMarkup(kb_rows_bond)
+                pname = he(fname(partner) if partner else "?")
+                lines.append(f"{_E_GREENHEART} <b>{pname}</b> — "
+                             f"{ui_plural(b.get('streak', 0), 'день', 'дня', 'дней')}")
+                rows.append([btn(f"💚 {pname}", callback_data=f"plaza_bond_view_{b['partner_id']}")])
+            if pages > 1:
+                rows.append([btn("◀️", callback_data=f"plaza_bond_page_{(page - 1) % pages}"),
+                             btn(f"{page + 1}/{pages}", callback_data="noop"),
+                             btn("▶️", callback_data=f"plaza_bond_page_{(page + 1) % pages}")])
+            text = ui_card(ui_title(_E_GREENHEART, "Связь"), "\n".join(lines),
+                           "<b>Предложить ещё:</b>" if cands else "")
         else:
-            friends = await friend_list(uid, accepted_only=True)
-            eligible = [fr for fr in friends if fr.get("fr_level", 0) >= 2]
-            text = (
-                f"{_E_GREENHEART} <b>Болотная Связь</b>\n\n"
-                "Ежедневный общий стрик с лучшим другом.\n\n"
-                "🔥 Заходите оба каждый день — стрик растёт\n"
-                "🎁 Вехи 3/7/14/30/100 дней — монеты обоим\n"
-                "🌟 100 дней — вечная связь, особый статус\n\n"
-                + ("Доступно для соседей <b>уровня Друзья</b> (ур.2+).\n\n"
-                   "<b>Выбери партнёра:</b>" if eligible else
-                   "<b>Нет подходящих соседей.</b>\nНужен уровень Друзья (2+).\n"
-                   "<i>Взаимодействуй с соседями чтобы поднять уровень</i>")
-            )
-            kb_rows_bond = [
-                [btn(
-                    f"💚 {he(fr.get('frog_name') or fr.get('first_name','?'))}",
-                    callback_data=f"plaza_bond_invite_{fr['user_id']}"
-                )]
-                for fr in eligible[:8]
-            ]
-            kb_rows_bond.append([btn("◀️ Назад", callback_data="plaza")])
-            kb = InlineKeyboardMarkup(kb_rows_bond)
-        try:
-            await q.message.edit_text(text, parse_mode=ParseMode.HTML, reply_markup=kb)
-        except (BadRequest, Forbidden, TimedOut):
-            pass
+            text = ui_card(ui_title(_E_GREENHEART, "Связь"), about,
+                           "<b>Кому предложить?</b>" if cands else "",
+                           hint="" if cands else "Связь — для соседей уровня «Друзья». "
+                                                 "Заботьтесь друг о друге — дружба растёт")
+        for r in cands[:5]:
+            rows.append([btn(f"➕ {he(_plaza_name(r))}", callback_data=f"plaza_bond_invite_{r['user_id']}")])
+        rows.append([btn("◀️ Назад", callback_data="plaza")])
+        await plaza_show(q, (text, InlineKeyboardMarkup(rows)))
         return
 
     if d.startswith("plaza_bond_view_"):
         partner_id_v = int(d[16:])
-        await q.answer()
-        bonds = await get_user_bonds(uid)
-        bond = next((b for b in bonds if b["partner_id"] == partner_id_v), None)
+        bond = next((b for b in await get_user_bonds(uid) if b["partner_id"] == partner_id_v), None)
         if not bond:
-            await q.answer("Связь не найдена.", show_alert=True)
+            await q.answer("Связи больше нет", show_alert=True)
             return
+        await q.answer()
         partner = await db_get(partner_id_v)
-        pname = fname(partner) if partner else "?"
         streak = bond.get("streak", 0)
-        milestone_next = next(
-            (m for m in sorted(BOND_MILESTONES.keys()) if m > streak), None
+        nxt = next((m for m in sorted(BOND_MILESTONES) if m > streak), None)
+        text = ui_card(
+            ui_title(_E_GREENHEART, f"Связь с {he(fname(partner) if partner else '?')}"),
+            f"{_E_FIRE} Серия: <b>{ui_plural(streak, 'день', 'дня', 'дней')}</b>"
+            + (f"\nДо награды — {ui_plural(nxt - streak, 'день', 'дня', 'дней')}" if nxt else ""),
+            ui_quote(*(f"{'✅' if streak >= days else '▫️'} {ui_plural(days, 'день', 'дня', 'дней')} — "
+                       f"+{days * 10}🪙 обоим" for days in BOND_MILESTONES)),
+            hint="День идёт в серию, когда вы оба забрали ежедневный бонус",
         )
-        progress_line = f"\nДо следующей вехи: <b>{milestone_next - streak} дней</b>" if milestone_next else ""
-        milestones_text = "\n".join(
-            f"{'✅' if streak >= days else '○'} {days} дн — {icon} {text_m}"
-            for days, (icon, text_m) in BOND_MILESTONES.items()
-        )
-        text = (
-            f"💚 <b>Болотная Связь</b>\n\n"
-            f"Партнёр: <b>{he(pname)}</b>\n"
-            f"{_E_FIRE} Стрик: <b>{streak} дней</b>{progress_line}\n\n"
-            f"<b>Вехи:</b>\n{milestones_text}\n\n"
-            f"<i>Заходи каждый день — стрик не прервётся</i>"
-        )
-        kb = InlineKeyboardMarkup([
-            [btn("💔 Разорвать связь", callback_data=f"plaza_bond_break_{partner_id_v}")],
+        await plaza_show(q, (text, InlineKeyboardMarkup([
+            [btn("👤 Карточка", callback_data=f"plaza_friend_{partner_id_v}"),
+             btn("💔 Разорвать", callback_data=f"plaza_bond_break_{partner_id_v}")],
             [btn("◀️ Назад", callback_data="plaza_bond")],
-        ])
-        try:
-            await q.message.edit_text(text, parse_mode=ParseMode.HTML, reply_markup=kb)
-        except (BadRequest, Forbidden, TimedOut):
-            pass
+        ])))
         return
 
     if d.startswith("plaza_bond_invite_"):
         target_id = int(d[18:])
         tf = await db_get(target_id)
         if not tf:
-            await q.answer("Игрок не найден.", show_alert=True)
+            await q.answer("Игрок не найден", show_alert=True)
             return
-        # Check if this specific bond already exists
-        my_bonds = await get_user_bonds(uid)
-        if any(b["partner_id"] == target_id for b in my_bonds):
-            await q.answer("💚 У вас уже есть Болотная Связь с этим игроком", show_alert=True)
+        if any(b["partner_id"] == target_id for b in await get_user_bonds(uid)):
+            await q.answer("Связь с этим соседом уже есть", show_alert=True)
             return
-        tname = fname(tf)
-        my_name = fname(f)
-        await q.answer(f"💚 Предложение отправлено {he(tname)}")
+        tname = he(fname(tf))
+        await q.answer()
         try:
-            kb = InlineKeyboardMarkup([[
-                btn("💚 Принять Связь", callback_data=f"bond_accept_{uid}"),
-                btn("❌ Отказать", callback_data=f"bond_decline_{uid}"),
-            ]])
             await ctx.bot.send_message(
                 target_id,
-                f"💚 <b>{he(my_name)}</b> предлагает Болотную Связь!\n\n"
-                f"Заходите вместе каждый день — стрик растёт.\n"
-                f"Вехи 7/14/30/100 дней — особые награды обоим! 🌟",
-                parse_mode=ParseMode.HTML, reply_markup=kb,
-            )
+                f"{_E_GREENHEART} <b>{he(fname(f))}</b> предлагает Связь — общую серию дней.\n"
+                "Забирайте ежедневный бонус оба — серия растёт, на 3, 7, 14, 30 и 100 днях "
+                "монеты обоим.",
+                parse_mode=ParseMode.HTML,
+                reply_markup=InlineKeyboardMarkup([[
+                    btn("💚 Принять", callback_data=f"bond_accept_{uid}"),
+                    btn("❌ Отказать", callback_data=f"bond_decline_{uid}"),
+                ]]))
+            sent_ok = True
         except (BadRequest, Forbidden, TimedOut):
-            pass
+            sent_ok = False
+        await plaza_show(q, (
+            ui_card(ui_title(_E_GREENHEART, "Связь"),
+                    f"Предложение отправлено — ждём ответа от <b>{tname}</b>." if sent_ok
+                    else f"Не получилось отправить: <b>{tname}</b> закрыл(а) личку с ботом."),
+            InlineKeyboardMarkup([[btn("◀️ Назад", callback_data="plaza_bond")]])))
         return
 
+    # Разрыв — только после подтверждения: раньше «💔» в списке рвал сразу
     if d.startswith("plaza_bond_break_") or d == "plaza_bond_break":
-        await q.answer("💔 Болотная Связь разорвана.")
-        if d.startswith("plaza_bond_break_"):
-            partner_id_brk = int(d[17:])
-        else:
-            partner_id_brk = f.get("bond_with", 0)
-        if partner_id_brk:
-            await remove_bond(uid, partner_id_brk)
-            partner = await db_get(partner_id_brk)
-            if partner:
-                try:
-                    await ctx.bot.send_message(
-                        partner_id_brk,
-                        f"💔 <b>{fname(f)}</b> разорвал Болотную Связь.",
-                        parse_mode=ParseMode.HTML,
-                    )
-                except (BadRequest, Forbidden, TimedOut):
-                    pass
+        partner_id_brk = int(d[17:]) if d.startswith("plaza_bond_break_") else int(f.get("bond_with") or 0)
+        partner = await db_get(partner_id_brk) if partner_id_brk else None
+        if not partner:
+            await q.answer("Связи больше нет", show_alert=True)
+            return
+        await q.answer()
+        await plaza_show(q, (
+            f"💔 Разорвать Связь с <b>{he(fname(partner))}</b>?\n\nСерия пропадёт у вас обоих.",
+            InlineKeyboardMarkup([[
+                btn("💔 Разорвать", callback_data=f"plaza_bondbreak_ok_{partner_id_brk}", style="danger"),
+                btn("◀️ Нет", callback_data=f"plaza_bond_view_{partner_id_brk}"),
+            ]])))
+        return
+
+    if d.startswith("plaza_bondbreak_ok_"):
+        partner_id_brk = int(d[19:])
+        await remove_bond(uid, partner_id_brk)
+        await q.answer("Связь разорвана")
         try:
-            await q.message.edit_text(
-                "💔 Болотная Связь разорвана.",
-                reply_markup=InlineKeyboardMarkup([[
-                    btn("◀️ Назад", callback_data="plaza_bond")
-                ]])
-            )
+            await ctx.bot.send_message(partner_id_brk, f"💔 <b>{he(fname(f))}</b> разорвал(а) Связь.",
+                                       parse_mode=ParseMode.HTML)
         except (BadRequest, Forbidden, TimedOut):
             pass
+        await plaza_show(q, ("💔 Связь разорвана.",
+                             InlineKeyboardMarkup([[btn("◀️ Назад", callback_data="plaza_bond")]])))
         return
 
     # ── Кормление из карточки соседа ─────────────────────────────────────────
@@ -46384,124 +46398,27 @@ async def on_callback(update: Update, ctx: ContextTypes.DEFAULT_TYPE):
             pass
         return
 
-    # ── Социальные действия (hug, scratch, wash, praise, lullaby, treat) ─────
+    # ── Забота о лягушке соседа: одно действие или «всё сразу» ──────────────
     if d.startswith("social_"):
-        parts = d[7:].rsplit("_", 1)
-        if len(parts) != 2:
+        key, _, tid = d[7:].rpartition("_")
+        if not tid.isdigit() or (key != "all" and key not in SOCIAL_ACTIONS):
+            await q.answer()
             return
-        action_key, target_id_str = parts[0], parts[1]
-        target_id = int(target_id_str)
-        action = SOCIAL_ACTIONS.get(action_key)
-        if not action:
-            await q.answer("Неизвестное действие.", show_alert=True)
+        target_id = int(tid)
+        done, err, up = await social_care(ctx, f, target_id, None if key == "all" else [key])
+        if err:
+            await q.answer(err[:200], show_alert=True)
             return
-        fr = await friend_get(uid, target_id)
-        if not fr or fr.get("pending"):
-            await q.answer("Это действие доступно только для соседей", show_alert=True)
-            return
-        # Кулдаун
-        now = time.time()
-        cd = action["cd"]
-        _cd_cols = {"hug": "last_hug", "scratch": "last_scratch", "wash": "last_wash",
-                    "praise": "last_praise", "lullaby": "last_lullaby", "treat": "last_treat"}
-        last = fr.get(_cd_cols.get(action_key, "last_social"), 0)
-        if now - last < cd:
-            left_m = int((cd - (now - last)) / 60)
-            await q.answer((f"⏳ Ещё {left_m} мин до следующего {action['label'].lower()}а")[:200], show_alert=True)
-            return
-        # Условие (если есть)
         tf = await db_get(target_id)
-        if not tf or not tf.get("alive"):
-            await q.answer("Лягушка недоступна.", show_alert=True)
-            return
-        cond = action.get("condition")
-        if cond and not cond(tf):
-            await q.answer(action.get("condition_fail", "Сейчас не нужно"), show_alert=True)
-            return
-        # Применяем эффект
-        for stat, val in action["effect"].items():
-            if stat == "xp_friend":
-                await friend_add_xp(uid, target_id, val)
-                await friend_add_xp(target_id, uid, val // 2)
-            elif stat in tf:
-                tf[stat] = max(0, min(100, tf.get(stat, 0) + val))
-            elif stat == "energy":
-                tf["energy"] = max(0, min(100, tf.get("energy", 0) + val))
-        await db_save(tf)
-        # Обновляем кулдаун в friendships
-        col = {"hug": "last_hug", "scratch": "last_scratch", "wash": "last_wash",
-               "praise": "last_praise", "lullaby": "last_lullaby", "treat": "last_treat"}.get(action_key, "last_social")
-        try:
-            async with aiosqlite.connect(DB_PATH) as db:
-                await db.execute(f"UPDATE friendships SET {col}=? WHERE user_id=? AND friend_id=?",
-                                 (now, uid, target_id))
-                await db.commit()
-        except Exception as _e:
-            logger.warning("social_action DB update failed action=%s col=%s: %s", action_key, col, _e)
-        my_name = f.get("frog_name") or f.get("first_name") or "Кто-то"
-        tf_name = tf.get("frog_name") or tf.get("first_name") or "Лягушка"
-        sender_text = random.choice(action["texts_sender"]).format(me=my_name, them=tf_name)
-        # XP дружбе за социальное действие
-        await friend_add_xp(uid, target_id, 2)
-        await friend_add_xp(target_id, uid, 1)
-        await q.answer((f"{action['emoji']} {sender_text[:60]}")[:200], show_alert=True)
-        # Уведомление получателю — не чаще раз в 30 минут (антиспам)
-        _notif_key = f"social_notif_{target_id}"
-        _last_notif = ctx.bot_data.get(_notif_key, 0)
-        if time.time() - _last_notif > 1800:
-            ctx.bot_data[_notif_key] = time.time()
-            try:
-                receiver_text = random.choice(action["texts_receiver"]).format(me=my_name)
-                _care_tip_kb = InlineKeyboardMarkup([[
-                    btn(
-                        f"🪙 Поблагодарить {he(my_name)} (10🪙)",
-                        callback_data=f"tip_feed_{uid}_10",
-                    )
-                ]])
-                await ctx.bot.send_message(target_id, receiver_text,
-                    parse_mode=ParseMode.HTML, reply_markup=_care_tip_kb)
-            except (BadRequest, Forbidden, TimedOut):
-                pass
-        # Обновляем карточку соседа чтобы показать новые кулдауны ✅
-        try:
-            fr2 = await friend_get(uid, target_id)
-            tf2 = await db_get(target_id)
-            if fr2 and tf2:
-                # Пересчитываем кулдауны и редактируем сообщение
-                now2 = time.time()
-                def _cd2(last2, cd_sec2):
-                    left2 = cd_sec2 - (now2 - last2)
-                    if left2 <= 0: return " ✅"
-                    m2 = int(left2 / 60)
-                    return f" ⏳{m2}м"
-                last_hug2     = fr2.get("last_hug", 0)
-                last_scratch2 = fr2.get("last_scratch", 0)
-                last_wash2    = fr2.get("last_wash", 0)
-                last_praise2  = fr2.get("last_praise", 0)
-                last_lullaby2 = fr2.get("last_lullaby", 0)
-                last_treat2   = fr2.get("last_treat", 0)
-                kb2 = InlineKeyboardMarkup([
-                    [btn(f"🤗 Обнять{_cd2(last_hug2, SOCIAL_ACTIONS['hug']['cd'])}",
-                        callback_data=f"social_hug_{target_id}"),
-                     btn(f"✋ Пузико{_cd2(last_scratch2, SOCIAL_ACTIONS['scratch']['cd'])}",
-                        callback_data=f"social_scratch_{target_id}")],
-                    [btn(f"🛁 Помыть{_cd2(last_wash2, SOCIAL_ACTIONS['wash']['cd'])}",
-                        callback_data=f"social_wash_{target_id}"),
-                     btn(f"🌟 Похвалить{_cd2(last_praise2, SOCIAL_ACTIONS['praise']['cd'])}",
-                        callback_data=f"social_praise_{target_id}")],
-                    [btn(f"💤 Убаюкать{_cd2(last_lullaby2, SOCIAL_ACTIONS['lullaby']['cd'])}",
-                        callback_data=f"social_lullaby_{target_id}"),
-                     btn(f"🍎 Угостить{_cd2(last_treat2, SOCIAL_ACTIONS['treat']['cd'])}",
-                        callback_data=f"social_treat_{target_id}")],
-                    [btn("💚 Болотная Связь", callback_data=f"plaza_bond_invite_{target_id}")
-                     if fr2.get("fr_level", 0) >= 2 and not f.get("bond_with") else
-                     btn("⚔️ В поход", callback_data=f"plaza_invite_adv_{target_id}")],
-                    [btn("🗑 Удалить из соседей", callback_data=f"plaza_unfriend_{target_id}"),
-                     btn("◀️ Назад", callback_data="plaza_sosedi")],
-                ])
-                await q.message.edit_reply_markup(reply_markup=kb2)
-        except Exception as _e:
-            logger.exception("подавлено исключение: %s", _e)
+        tname = fname(tf) if tf else "соседа"
+        if len(done) == 1:
+            msg = random.choice(SOCIAL_ACTIONS[done[0]]["texts_sender"]).format(me=fname(f), them=tname)
+        else:
+            msg = f"🤗 {fname(f)} позаботилась о {tname}: " + ", ".join(SOCIAL_DONE[k] for k in done)
+        if up is not None:
+            msg += f"\n{FRIEND_LEVELS[up][0]} Теперь вы — «{FRIEND_LEVELS[up][1]}»!"
+        await q.answer(msg[:200], show_alert=up is not None)
+        await plaza_show(q, await plaza_card_view(f, target_id))
         return
 
     # ── Принятие/отклонение похода ────────────────────────
@@ -47164,11 +47081,13 @@ async def on_callback(update: Update, ctx: ContextTypes.DEFAULT_TYPE):
         events = await letopis_recent(20)
         if not events:
             try:
-                await q.message.edit_text("📖 Летопись пуста — болото молчит 🌿")
+                await q.message.edit_text(
+                    "📖 Летопись пока пуста",
+                    reply_markup=InlineKeyboardMarkup([[btn("◀️ Назад", callback_data="plaza")]]))
             except (BadRequest, Forbidden, TimedOut):
                 pass
             return
-        lines = [f"{_E_BOOK} <b>Болотная Летопись</b>\n"]
+        lines = [f"{_E_BOOK} <b>Летопись</b>\n"]
         for ev in events:
             dt = datetime.fromtimestamp(ev["created_at"] + 3*3600, timezone.utc).strftime("%d.%m %H:%M")
             likes = ev.get("like_count", 0)
@@ -47203,8 +47122,13 @@ async def on_callback(update: Update, ctx: ContextTypes.DEFAULT_TYPE):
     if d.startswith("plaza_add_"):
         target_id = int(d[10:])
         existing = await friend_get(uid, target_id)
-        if existing:
-            await q.answer("Уже в списке соседей", show_alert=True)
+        if existing or target_id == uid:
+            await q.answer("Уже в списке соседей" if existing else "Это ты", show_alert=True)
+            return
+        if await friend_get(target_id, uid):
+            # Встречная заявка уже есть — кнопка «Принять» на карточке
+            await q.answer("Этот игрок уже позвал тебя в соседи — прими заявку", show_alert=True)
+            await plaza_show(q, await plaza_card_view(f, target_id))
             return
         now_pa = time.time()
         async with aiosqlite.connect(DB_PATH) as db:
@@ -47224,16 +47148,22 @@ async def on_callback(update: Update, ctx: ContextTypes.DEFAULT_TYPE):
             ]])
             await ctx.bot.send_message(
                 target_id,
-                f"🌱 <b>{he(my_name)}</b> хочет стать твоим болотным соседом!\n\n"
-                f"<i>Ответь на приглашение 👇</i>",
+                f"🌱 <b>{he(my_name)}</b> зовёт тебя в соседи.\n"
+                "Соседи заботятся о лягушках друг друга, вместе ходят в поход и на рыбалку.",
                 parse_mode=ParseMode.HTML, reply_markup=kb,
             )
         except (BadRequest, Forbidden, TimedOut):
             pass
+        await plaza_show(q, await plaza_card_view(f, target_id))
         return
 
     if d.startswith("friend_accept_"):
         requester_id = int(d[14:])
+        req = await friend_get(requester_id, uid)
+        if not req:
+            # Заявку отозвали или её уже отклонили — не заводим дружбу в одну сторону
+            await q.answer("Заявки больше нет", show_alert=True)
+            return
         await q.answer()
         now = time.time()
         async with aiosqlite.connect(DB_PATH) as db:
@@ -47250,8 +47180,12 @@ async def on_callback(update: Update, ctx: ContextTypes.DEFAULT_TYPE):
         my_name = f.get("frog_name") or f.get("first_name") or "Кто-то"
         try:
             await q.message.edit_text(
-                f"{_E_CHECK} Вы теперь болотные соседи! {_E_LEAF}",
+                f"{_E_CHECK} <b>{he(fname(rf) if rf else '?')}</b> теперь твой сосед.",
                 parse_mode=ParseMode.HTML,
+                reply_markup=InlineKeyboardMarkup([[
+                    btn("👤 Карточка", callback_data=f"plaza_friend_{requester_id}"),
+                    btn(f"{_E_USERS} Соседи", callback_data="plaza_sosedi"),
+                ]]),
             )
         except (BadRequest, Forbidden, TimedOut):
             pass
@@ -47259,8 +47193,10 @@ async def on_callback(update: Update, ctx: ContextTypes.DEFAULT_TYPE):
             try:
                 await ctx.bot.send_message(
                     requester_id,
-                    f"🌱 <b>{he(my_name)}</b> принял твою заявку!\nВы теперь болотные соседи <tg-emoji emoji-id='5341367834935075028'>🐸</tg-emoji>",
+                    f"🌱 <b>{he(my_name)}</b> теперь твой сосед.",
                     parse_mode=ParseMode.HTML,
+                    reply_markup=InlineKeyboardMarkup([[
+                        btn("👤 Карточка", callback_data=f"plaza_friend_{uid}")]]),
                 )
             except (BadRequest, Forbidden, TimedOut):
                 pass
@@ -52117,38 +52053,10 @@ async def on_message(update: Update, ctx: ContextTypes.DEFAULT_TYPE):
                 ]])
             )
             return
-        target_id = row[0]
-        tf = await db_get(target_id)
-        if not tf:
-            return
-        tname = fname(tf)
-        fr = await friend_get(user.id, target_id)
-        already = fr and not fr.get("pending")
-        pending_out = fr and fr.get("pending")
-        days = int((time.time() - tf.get("born_at", time.time())) / 86400)
-        text_card = (
-            f"🐸 <b>{he(tname)}</b>\n"
-            f"Уровень: <b>{tf.get('level',1)}</b> · Дней: <b>{days}</b>\n"
-            f"❤️ {tf.get('health',100)} 🍖 {tf.get('hunger',50)} 😄 {tf.get('happiness',50)}"
-        )
-        kb_rows = []
-        if target_id == user.id:
-            kb_rows.append([btn("Это ты! 🐸", callback_data="plaza_sosedi")])
-        elif already:
-            kb_rows.append([btn(
-                "👤 Открыть карточку", callback_data=f"plaza_friend_{target_id}"
-            )])
-        elif pending_out:
-            kb_rows.append([btn("📬 Заявка уже отправлена", callback_data="plaza_sosedi")])
-        else:
-            kb_rows.append([btn(
-                "🌱 Добавить соседом", callback_data=f"plaza_add_{target_id}"
-            )])
-        kb_rows.append([btn("◀️ К соседям", callback_data="plaza_sosedi")])
-        await update.message.reply_text(
-            text_card, parse_mode=ParseMode.HTML,
-            reply_markup=InlineKeyboardMarkup(kb_rows)
-        )
+        me_f = await db_get(user.id)
+        view = await plaza_card_view(me_f, row[0]) if me_f else None
+        if view:
+            await update.message.reply_text(view[0], parse_mode=ParseMode.HTML, reply_markup=view[1])
         return
 
     # ── "сосед @username" или ответом на сообщение игрока ──────────────────
@@ -61057,6 +60965,7 @@ ST_FEAT_LABELS = {
     "plaza_bond": "Площадь: связь", "plaza_expedition": "Площадь: экспедиция",
     "plaza_pohod": "Площадь: поход", "plaza_invite": "Площадь: позвать",
     "plaza_find": "Площадь: найти", "plaza_friend": "Площадь: сосед",
+    "plaza_care": "Площадь: забота обо всех", "plaza_bondbreak": "Площадь: разрыв связи",
     "refresh": "Обновить экран", "noop": "Пустая кнопка", "ignore": "Пустая кнопка",
     "личка": "Сообщение в личке", "оплата": "Оплата звёздами", "счёт": "Счёт на оплату",
     "inline": "Инлайн", "фон": "Фон без имени", "чат": "Переписка в группе",
