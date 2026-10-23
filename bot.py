@@ -9165,6 +9165,12 @@ def staya_get_level_bonus(staya_level: int) -> dict:
     if staya_level >= 3: b["worker_coins_mult"]     = 1.10
     if staya_level >= 4: b["xp_mult"]               = 1.15
     if staya_level >= 5: b["event_penalty_reduce"]  = True
+    if staya_level >= 15:
+        # «Астральное болото: все бонусы удвоены» — раньше обещалось, но не делалось
+        b["hunger_decay_mult"] = 0.90
+        b["health_regen"] = 6
+        b["worker_coins_mult"] = 1.20
+        b["xp_mult"] = 1.30
     return b
 
 
@@ -41184,8 +41190,34 @@ def _staya_cap(s: dict) -> int:
     return s.get("max_members") or STAYA_MAX_MEMBERS
 
 
-def _staya_bonuses(lvl: int) -> list[str]:
-    return [up["bonus"] for k, up in sorted(STAYA_UPGRADES.items()) if k <= lvl and up.get("bonus")]
+def _staya_bonuses(lvl: int) -> str:
+    """
+    Бонусы стаи коротко: что получает сам участник — с цифрами (на 15-м
+    уровне удвоенными), военные — одной строкой. Пятнадцать строк подряд
+    читать никто не будет, а подробности есть в «Уровнях».
+    """
+    b = staya_get_level_bonus(lvl)
+    mine = []
+    if b["hunger_decay_mult"] < 1:
+        mine.append(f"🍖 голод −{round((1 - b['hunger_decay_mult']) * 100)}%")
+    if b["health_regen"]:
+        mine.append(f"❤️ здоровье +{b['health_regen']}/ч")
+    if b["worker_coins_mult"] > 1:
+        mine.append(f"🪙 Трудяге +{round((b['worker_coins_mult'] - 1) * 100)}%")
+    if b["xp_mult"] > 1:
+        mine.append(f"⭐ опыт +{round((b['xp_mult'] - 1) * 100)}%")
+    lines = [SEP.join(mine)] if mine else []
+    extra = []
+    if b["event_penalty_reduce"]:
+        extra.append("🎲 штрафы событий вдвое меньше")
+    if lvl >= 6:
+        extra.append("🍲 столовая подкармливает слабых" + (" ×2" if lvl >= 12 else ""))
+    if extra:
+        lines.append(SEP.join(extra))
+    war = sum(1 for k in (7, 8, 9, 10, 11, 13, 14) if k <= lvl)
+    if war:
+        lines.append(f"⚔️ для войны стай — ещё {ui_plural(war, 'бонус', 'бонуса', 'бонусов')}, подробно в «Уровнях»")
+    return "\n".join(lines)
 
 
 async def staya_list_view(f: dict, page: int = 0) -> tuple[str, InlineKeyboardMarkup]:
@@ -41241,7 +41273,7 @@ async def staya_card_view(f: dict, staya_id: int) -> tuple[str, InlineKeyboardMa
         blocks.append(f"<i>{he(s['invite_text'].strip()[:300])}</i>")
     bon = _staya_bonuses(lvl)
     if bon:
-        blocks.append("<b>Бонусы участникам</b>\n" + ui_quote(*bon, expandable=len(bon) > 3))
+        blocks.append("<b>Бонусы</b>\n" + ui_quote(bon))
     rest = role_of["member"]
     if rest:
         blocks.append(ui_quote("Участники: " + ", ".join(rest[:15])
@@ -41358,7 +41390,7 @@ async def staya_home_view(f: dict, staya: dict) -> tuple[str, InlineKeyboardMark
         blocks.append(f"{_E_MASK} <b>Идёт голосование стаи</b>")
     bon = _staya_bonuses(lvl)
     if bon:
-        blocks.append("<b>Бонусы</b>\n" + ui_quote(*bon, expandable=len(bon) > 3))
+        blocks.append("<b>Бонусы</b>\n" + ui_quote(bon))
 
     rows = []
     if ev:
