@@ -359,6 +359,26 @@ async def main():
     ok(h1 > 80, f"ухоженная лечится ({h1})")
     ok(h2 <= 80, f"грязная — нет: лечение не перекрывает плохой уход ({h2})")
 
+    print("9в. Поход, закончившийся во время простоя бота, — с полной наградой")
+    P1, P2 = 631, 632
+    await make_frog(P1, coins=0)
+    await make_frog(P2, coins=0)
+    plan = [{"at": now - 3 * 3600, "choice_id": "treasure_map", "sent": True},
+            {"at": now - 3600, "choice_id": "roadside_tavern", "sent": True}]
+    picks = B.json.dumps({"treasure_map": "go", "roadside_tavern": "enter"})
+    x_db("INSERT INTO adventures(user1_id,user2_id,duration_h,started_at,ends_at,choices_json,last_log_at,"
+         "u1_choices,u2_choices,notes) VALUES(?,?,?,?,?,?,?,?,?,?)",
+         P1, P2, 4, now - 6 * 3600 - 600, now - 600, B.json.dumps(plan), now, picks, picks,
+         B.json.dumps({"extra_bonus": 120}))
+    B._user_cache.clear()
+    await B.job_adventure_tick(types.SimpleNamespace(bot=BOT))
+    B._user_cache.clear()
+    got = (await B.db_get(P1))["coins"]
+    ok(got >= 60 + 150 + 120 + 0 + 120 + 120, f"сокровище, таверна и согласие засчитаны: {got}🪙, а не 60")
+    ok(q_db("SELECT finished FROM adventures WHERE user1_id=?", P1)[0][0] == 1, "поход закрыт")
+    src = open(os.path.join(ROOT, "bot.py"), encoding="utf-8").read()
+    ok("Автозавершение при перезапуске бота" not in src, "при старте походы больше не режутся до базы")
+
     print("10. Ни одна кнопка не отвечает дважды")
     ok(not [a for a in FAILS if "раз(а)" in a], "двойных ответов нет")
 

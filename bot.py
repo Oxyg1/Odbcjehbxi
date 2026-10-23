@@ -54256,9 +54256,11 @@ async def job_adventure_tick(ctx: ContextTypes.DEFAULT_TYPE):
     for adv in active:
         adv_id = adv["id"]
         try:
-            # ── Хард-таймаут: поход завис > 9 часов (макс 8ч + 1ч буфер) ──
+            # ── Хард-таймаут: обычное завершение не срабатывает уже 6 часов.
+            # Считаем от ends_at, а не от старта: сокровище продлевает поход
+            # на 2 ч, и 8-часовой поход раньше обрывался через 9 ч голой базой.
             adv_age_s = now - adv.get("started_at", now)
-            if adv_age_s > 9 * 3600:
+            if now - adv["ends_at"] > 6 * 3600:
                 logger.warning(
                     "job_adventure_tick: поход id=%s завис (%.1fч) — принудительное завершение",
                     adv_id, adv_age_s / 3600,
@@ -56869,64 +56871,10 @@ async def post_init(app: Application):
             logger.exception("Переход на новые экспедиции не прошёл")
     asyncio.create_task(_ex_migrate_safe())
 
-    # ── Принудительное завершение зависших ПОХОДОВ (adventures, ends_at прошёл) ─
-    try:
-        async with aiosqlite.connect(DB_PATH) as _adb:
-            _adb.row_factory = aiosqlite.Row
-            async with _adb.execute(
-                "SELECT * FROM adventures WHERE finished=0 AND ends_at <= ?",
-                (time.time(),),
-            ) as _ac:
-                _stuck_advs = [dict(r) for r in await _ac.fetchall()]
-        if _stuck_advs:
-            logger.warning("Найдено %d зависших походов — принудительно завершаем", len(_stuck_advs))
-            for _sa in _stuck_advs:
-                try:
-                    _sa_reward = 20 + _sa.get("duration_h", 2) * 10
-                    _sa_xp = 20 + _sa.get("duration_h", 2) * 5
-                    for _sa_uid in (_sa["user1_id"], _sa["user2_id"]):
-                        _sa_f = await db_get(_sa_uid)
-                        if _sa_f:
-                            _sa_f["coins"] = _sa_f.get("coins", 0) + _sa_reward
-                            add_xp(_sa_f, _sa_xp)
-                            _sa_f["adventure_id"] = 0
-                            _sa_f["adventure_locked_until"] = 0
-                            await db_save(_sa_f)
-                            try:
-                                await app.bot.send_message(
-                                    _sa_uid,
-                                    f"{_E_SWORDS} <b>Поход завершён!</b>\n\n"
-                                    f"Твоя лягушка вернулась.\n"
-                                    f"<b>+{_sa_reward}{_E_COIN}</b> ⭐ <b>+{_sa_xp} XP</b>\n"
-                                    f"<i>(Автозавершение при перезапуске бота)</i>",
-                                    parse_mode="HTML",
-                                )
-                            except (BadRequest, Forbidden, TimedOut):
-                                pass
-                    async with aiosqlite.connect(DB_PATH) as _afdb:
-                        await _afdb.execute(
-                            "UPDATE adventures SET finished=1 WHERE id=?", (_sa["id"],)
-                        )
-                        await _afdb.commit()
-                    logger.info("Зависший поход id=%s завершён, reward=%s", _sa["id"], _sa_reward)
-                except Exception as _afe:
-                    logger.error("Ошибка завершения зависшего похода id=%s: %s", _sa["id"], _afe)
-                    try:
-                        async with aiosqlite.connect(DB_PATH) as _afdb2:
-                            await _afdb2.execute(
-                                "UPDATE adventures SET finished=1 WHERE id=?", (_sa["id"],)
-                            )
-                            await _afdb2.execute(
-                                "UPDATE frogs SET adventure_id=0, adventure_locked_until=0 "
-                                "WHERE user_id IN (?,?)",
-                                (_sa["user1_id"], _sa["user2_id"]),
-                            )
-                            await _afdb2.commit()
-                        logger.info("Аварийное завершение похода id=%s: игроки разблокированы", _sa["id"])
-                    except Exception as _afe2:
-                        logger.error("Аварийное завершение похода id=%s тоже упало: %s", _sa["id"], _afe2)
-    except Exception as _adv_stuck_err:
-        logger.error("Ошибка проверки зависших походов: %s", _adv_stuck_err)
+    # Походы, время которых вышло, пока бот лежал, завершает обычный
+    # job_adventure_tick (первый запуск через 2 минуты) — со всеми бонусами
+    # развилок. Раньше здесь их закрывали голой базой (20 + 10/ч): после
+    # каждого перезапуска игроки получали 60🪙 вместо заработанных ~500.
 
     # ── Загружаем активные бустеры стай в кэш ────────────────────────────────
     try:
