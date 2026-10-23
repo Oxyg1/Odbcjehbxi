@@ -1,0 +1,19 @@
+# Секреты — никогда в git
+.env
+.env.*
+!.env.example
+
+# Сессия Telethon для pars.py — это полный доступ к аккаунту, с которого
+# сканируется маркетплейс. Утечёт файл — утечёт аккаунт.
+*.session
+*.session-journal
+
+# Каталог лотов пересобирается парсером каждые 3 часа — данные, не код
+kissed_frog_on_sale.json
+
+__pycache__/
+*.pyc
+*.db
+*.db-wal
+*.db-shm
+bot.log*
