@@ -280,6 +280,23 @@ async def main():
     ok(q.answers and q.answers[0][1], "чужая/отозванная заявка не создаёт дружбу")
     ok(not q_db("SELECT 1 FROM friendships WHERE user_id=? AND friend_id=999999", S), "односторонней дружбы нет")
 
+    print("10б. Настоящий объект нажатия Telegram, а не подделка")
+    from telegram import CallbackQuery, User, Message, Chat
+    from datetime import datetime as _dt
+    calls = []
+    class RealBot(FakeBot):
+        async def answer_callback_query(self, callback_query_id, text=None, show_alert=None, **kw):
+            calls.append((text, show_alert))
+            return True
+    rb = RealBot()
+    rmsg = Message(1, _dt.now(), Chat(A, "private"))
+    rq = CallbackQuery("77", User(A, "Т", False), "ci", message=rmsg, data="plaza_fish_invite")
+    rq.set_bot(rb); rmsg.set_bot(rb)
+    upd = types.SimpleNamespace(callback_query=rq, effective_user=rq.from_user,
+                                effective_chat=rmsg.chat, message=None)
+    await asyncio.create_task(B.on_callback(upd, ctx_for(A)))
+    ok(len(calls) == 1 and calls[0][1], f"настоящая кнопка отвечает, и предупреждение не теряется: {calls}")
+
     print("11. Пустая площадь у новичка")
     N = 506
     await make_frog(N)

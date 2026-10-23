@@ -33,6 +33,7 @@ import aiohttp
 from datetime import datetime, timedelta, timezone
 from telegram import (
     Update,
+    CallbackQuery,
     InlineKeyboardButton,
     InlineKeyboardMarkup,
     LabeledPrice,
@@ -41526,8 +41527,8 @@ class _AnswerOnce:
     """
     ANSWER_DEFER = 0.8
 
-    def __init__(self, q):
-        self.q, self.orig, self.sent, self.timer = q, q.answer, False, None
+    def __init__(self, q, orig):
+        self.q, self.orig, self.sent, self.timer = q, orig, False, None
 
     async def _send(self, *a, **kw):
         if self.sent:
@@ -41558,16 +41559,40 @@ class _AnswerOnce:
             await self._send()
 
 
+# Подменять q.answer на самом объекте нельзя: у CallbackQuery это слот только
+# для чтения — так все кнопки падали с AttributeError. Перехватываем на
+# классе, а какой _AnswerOnce действует — хранит переменная контекста
+# (у каждого нажатия своя задача, значит и своё значение).
+_ANSWER_ONCE: _cv.ContextVar = _cv.ContextVar("answer_once", default=None)
+_CQ_ANSWER_ORIG = CallbackQuery.answer
+
+
+async def _cq_answer(self, *a, **kw):
+    once = _ANSWER_ONCE.get()
+    if once is not None and once.q is self:
+        return await once.answer(*a, **kw)
+    return await _CQ_ANSWER_ORIG(self, *a, **kw)
+
+
+CallbackQuery.answer = _cq_answer
+
+
 async def on_callback(update: Update, ctx: ContextTypes.DEFAULT_TYPE):
     q = update.callback_query
+    cur = _ANSWER_ONCE.get()
     # Уже обёрнуто (сюда передал другой роутер) — второй раз не оборачиваем
-    if q is None or isinstance(getattr(q.answer, "__self__", None), _AnswerOnce):
+    if q is None or (cur is not None and cur.q is q):
         return await _on_callback_main(update, ctx)
-    once = _AnswerOnce(q)
-    object.__setattr__(q, "answer", once.answer)
+    once = _AnswerOnce(q, (lambda *a, **kw: _CQ_ANSWER_ORIG(q, *a, **kw))
+                       if isinstance(q, CallbackQuery) else q.answer)
+    token = _ANSWER_ONCE.set(once)
     try:
+        if not isinstance(q, CallbackQuery):
+            # Поддельные нажатия в тестах — обычные объекты, им можно подменить метод
+            q.answer = once.answer
         await _on_callback_main(update, ctx)
     finally:
+        _ANSWER_ONCE.reset(token)
         await once.flush()
 
 
