@@ -56388,13 +56388,18 @@ async def job_hp_regen(ctx: ContextTypes.DEFAULT_TYPE):
         hp_regen = bonuses.get("health_regen", 0)
         if hp_regen <= 0:
             continue
+        # Лечит только ухоженную лягушку. Раньше +3/ч шло всем участникам без
+        # условий и прямо в базу — у запущенной лягушки здоровье всё равно
+        # стояло на 100: регенерация перекрывала потерю от плохого ухода
+        # (0,3–0,6/ч), а кэш об этой записи не знал.
         try:
-            async with aiosqlite.connect(DB_PATH) as db:
-                await db.execute(
-                    "UPDATE frogs SET health=MIN(100, health+?) WHERE user_id=? AND alive=1 AND health<100",
-                    (hp_regen, uid_r),
-                )
-                await db.commit()
+            g = await db_get(uid_r)
+            if not g or not g.get("alive") or g.get("health", 100) >= 100:
+                continue
+            if g.get("hibernation_until", 0) > time.time() or health_drain(g)[0] > 0:
+                continue
+            g["health"] = min(100, g.get("health", 0) + hp_regen)
+            await db_save(g)
         except Exception as _e:
             logger.warning("job_hp_regen uid=%s: %s", uid_r, _e)
 

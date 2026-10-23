@@ -61,6 +61,8 @@ def main():
          f"{alive} AND subscription_type>=1 AND subscription_until>{now} AND subscription_auto=1"),
         ("здоровье 100 при сытости > 0 (так задумано)",
          f"{seen} AND health>=100 AND hunger>0"),
+        ("  …из них в стае ур. 2+ (лечение стаи, до 23.10 — без условий)",
+         f"{seen} AND health>=100 AND hunger>0 AND staya_id IN (SELECT id FROM stayas WHERE level>=2)"),
     ]
     for label, where in rows:
         n = q(f"SELECT COUNT(*) FROM frogs WHERE {where}")

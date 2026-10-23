@@ -346,6 +346,19 @@ async def main():
     q, m = await press(A, f"plaza_invite_fish_{Bp}")
     ok(q.answers and q.answers[0][1], "второй раз за день не позвать")
 
+    print("9б. Лечение стаи — только ухоженной лягушке")
+    H1, H2 = 621, 622
+    await make_frog(H1, health=80, hunger=90, happiness=90, cleanliness=90, energy=90, staya_id=sid)
+    await make_frog(H2, health=80, hunger=90, happiness=90, cleanliness=10, energy=90, staya_id=sid)
+    for u in (H1, H2):
+        x_db("INSERT INTO staya_members(staya_id,user_id,role,joined_at) VALUES(?,?,?,?)", sid, u, "member", now)
+    B._user_cache.clear()
+    await B.job_hp_regen(types.SimpleNamespace(bot=BOT))
+    B._user_cache.clear()
+    h1, h2 = (await B.db_get(H1))["health"], (await B.db_get(H2))["health"]
+    ok(h1 > 80, f"ухоженная лечится ({h1})")
+    ok(h2 <= 80, f"грязная — нет: лечение не перекрывает плохой уход ({h2})")
+
     print("10. Ни одна кнопка не отвечает дважды")
     ok(not [a for a in FAILS if "раз(а)" in a], "двойных ответов нет")
 
