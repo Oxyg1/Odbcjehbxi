@@ -66282,6 +66282,11 @@ async def job_nft_catalog_refresh(ctx: ContextTypes.DEFAULT_TYPE):
             logger.warning("job_nft_catalog_refresh: парсер завис (>5 мин), убит")
             return
 
+        if proc.returncode == 3:
+            logger.warning(
+                "job_nft_catalog_refresh: у pars.py нет входа в Telegram — каталог NFT не "
+                "обновляется. Войти один раз вручную: cd %s && venv/bin/python pars.py", _bot_dir)
+            return
         if proc.returncode != 0:
             logger.warning(
                 "job_nft_catalog_refresh: pars.py завершился с кодом %d\n%s",

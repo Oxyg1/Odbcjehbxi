@@ -22,6 +22,7 @@ import json
 import logging
 import os
 import time
+import sys
 from pathlib import Path
 
 from dotenv import find_dotenv, load_dotenv
@@ -39,7 +40,8 @@ load_dotenv(ENV_PATH or None)
 API_ID = int(os.getenv("API_ID", "0"))
 API_HASH = os.getenv("API_HASH", "")
 PHONE_NUMBER = os.getenv("PHONE_NUMBER", "")
-SESSION_NAME = "kissed_frog_session"
+# Путь от каталога скрипта: сессия должна находиться, откуда бы ни запускали
+SESSION_NAME = str(Path(__file__).resolve().parent / "kissed_frog_session")
 
 COLLECTION_PREFIX = "KissedFrog"
 MAX_NUM = 15_000          # Полный тираж
@@ -419,6 +421,18 @@ async def main():
         raise SystemExit(2)
 
     client = TelegramClient(SESSION_NAME, API_ID, API_HASH)
+    # Бот запускает парсер в фоне, без клавиатуры. Если сессии нет или
+    # Telegram её сбросил, client.start() спросит код через input() и упадёт
+    # с EOFError. Вместо этого — понятное сообщение и код выхода 3.
+    if not sys.stdin.isatty():
+        await client.connect()
+        if not await client.is_user_authorized():
+            await client.disconnect()
+            log.error("Нет входа в Telegram: сессия %s.session отсутствует или сброшена.", SESSION_NAME)
+            log.error("Войдите один раз вручную: cd %s && sudo -u frogbot "
+                      "venv/bin/python pars.py — и введите код из Telegram.",
+                      Path(__file__).resolve().parent)
+            raise SystemExit(3)
     await client.start(phone=PHONE_NUMBER)
     log.info("Авторизация успешна.")
 
