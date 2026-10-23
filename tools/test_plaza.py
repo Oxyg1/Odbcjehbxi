@@ -175,7 +175,7 @@ async def main():
     ok("1 заявка в соседи" in t, f"видна заявка: {t!r}")
     ok("Можно позаботиться о 2 соседях" in t, f"видно, о ком позаботиться: {t!r}")
     ok("Болото сейчас" not in t, "ленты летописи на главном больше нет")
-    ok("plaza_care_all" in cbs(kb), "кнопка «Позаботиться обо всех»")
+    ok("plaza_care_all" not in cbs(kb), "«Позаботиться обо всех» больше нет — заботятся о каждом")
     for cb in ("plaza_sosedi", "plaza_staya", "plaza_pohod", "plaza_fish_invite", "plaza_bond",
                "plaza_expedition", "letopis_view", "refresh"):
         ok(cb in cbs(kb), f"на главном есть {cb}")
@@ -227,13 +227,13 @@ async def main():
     ok(st["treat"] is None and st["wash"] is None and st["lullaby"] is None, f"не нужно: {st}")
     ok(st["hug"] == 0, "обнять можно всегда")
 
-    print("7. Позаботиться обо всех с главного")
+    print("7. Старая кнопка «обо всех» ведёт в список, ничего не делая")
+    hug_before = q_db("SELECT last_hug FROM friendships WHERE user_id=? AND friend_id=?", A, F2)[0][0]
     q, m = await press(A, "plaza_care_all")
-    ok(q.answers and "соседе" in (q.answers[0][0] or ""), f"итог: {q.answers}")
-    fr2 = q_db("SELECT last_hug FROM friendships WHERE user_id=? AND friend_id=?", A, F2)[0][0]
-    ok(fr2 > 0, "второго соседа тоже обняли")
-    text, kb = m.last
-    ok("plaza_care_all" not in cbs(kb), "после — кнопка пропала")
+    ok(q_db("SELECT last_hug FROM friendships WHERE user_id=? AND friend_id=?", A, F2)[0][0] == hug_before,
+       "массовой заботы больше нет")
+    ok(any(c.startswith("plaza_friend_") for c in cbs(m.last[1])), "показан список соседей")
+    ok(B.SOCIAL_ACTIONS["treat"]["cd"] >= 3 * 3600, "угостить — не чаще раза в 3 часа")
 
     print("8. Поход и рыбалка: общий выбор соседа")
     q, m = await press(A, "plaza_pohod")

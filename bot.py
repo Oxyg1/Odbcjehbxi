@@ -13067,7 +13067,8 @@ SOCIAL_ACTIONS = {
     },
     "treat": {
         "emoji": "🍎", "label": "Угостить",
-        "cd": 30 * 60,
+        # Было 30 минут: с десятком соседей это бесплатная Няня для всех
+        "cd": 3 * 3600,
         "effect": {"hunger": 20},
         "condition": lambda f: f.get("hunger", 100) < 80,
         "condition_fail": "Лягушка сыта — угощать не нужно! 🍎",
@@ -40582,7 +40583,6 @@ SOCIAL_DONE = {"treat": "угостила", "hug": "обняла", "scratch": "�
                "praise": "похвалила", "wash": "помыла", "lullaby": "убаюкала"}
 _SOCIAL_STAT_ICON = {"hunger": "🍖", "happiness": "😄", "cleanliness": "🧼", "energy": "⚡"}
 PLAZA_PAGE = 8
-PLAZA_CARE_MAX = 30       # «позаботиться обо всех» за одно нажатие
 
 
 def social_state(fr: dict | None, tf: dict, now: float, prefix: str = "") -> dict:
@@ -40763,8 +40763,6 @@ async def plaza_home_view(f: dict) -> tuple[str, InlineKeyboardMarkup]:
 
     rows = [[btn(f"{_E_USERS} Соседи" + (f" · {len(reqs)} 📬" if reqs else ""), callback_data="plaza_sosedi"),
              btn("🌿 Стая", callback_data="plaza_staya")]]
-    if care:
-        rows.append([btn("🤗 Позаботиться обо всех", callback_data="plaza_care_all", style="success")])
     rows.append([btn("⚔️ Поход", callback_data="plaza_pohod"),
                  btn("🎣 Рыбалка", callback_data="plaza_fish_invite"),
                  btn("💚 Связь", callback_data="plaza_bond")])
@@ -40804,8 +40802,6 @@ async def plaza_friends_view(f: dict, page: int = 0) -> tuple[str, InlineKeyboar
     rows = []
     if reqs:
         rows.append([btn(f"📬 Заявки · {len(reqs)}", callback_data="plaza_requests", style="primary")])
-    if any(ready.values()):
-        rows.append([btn("🤗 Позаботиться обо всех", callback_data="plaza_care_all_s", style="success")])
     for r in friends[page * PLAZA_PAGE:(page + 1) * PLAZA_PAGE]:
         lvl_name = FRIEND_LEVELS.get(r.get("fr_level", 0), ("", "Знакомые"))[1]
         label = (("🤗 " if ready[r["user_id"]] else "") + he(_plaza_name(r))
@@ -45997,25 +45993,11 @@ async def _on_callback_main(update: Update, ctx: ContextTypes.DEFAULT_TYPE):
         await plaza_show(q, await plaza_home_view(f))
         return
 
-    # ── 🤗 Позаботиться обо всех соседях разом ───────────────────────────────
+    # «Позаботиться обо всех» убрана: с 30 соседями это была халява.
+    # Старые сообщения с этой кнопкой ведут в список соседей.
     if d in ("plaza_care_all", "plaza_care_all_s"):
-        now_c = time.time()
-        targets = [r for r in await plaza_friends(uid) if social_ready(r, r, now_c, "fr_")]
-        done, ups = 0, []
-        for r in targets[:PLAZA_CARE_MAX]:
-            keys, _err, up = await social_care(ctx, f, r["user_id"])
-            if keys:
-                done += 1
-            if up is not None:
-                ups.append(f"{he(_plaza_name(r))} — «{FRIEND_LEVELS[up][1]}»")
-        if done:
-            msg = f"🤗 Позаботилась о {ui_plural(done, 'соседе', 'соседях', 'соседях')}"
-            if ups:
-                msg += "\nДружба выросла: " + ", ".join(ups)
-            await q.answer(msg[:200], show_alert=bool(ups))
-        else:
-            await q.answer("Соседям сейчас ничего не нужно")
-        await plaza_show(q, await (plaza_home_view(f) if d == "plaza_care_all" else plaza_friends_view(f)))
+        await q.answer("Заботиться теперь нужно о каждом соседе — открой его карточку", show_alert=True)
+        await plaza_show(q, await plaza_friends_view(f))
         return
 
     # ── 👥 Соседи ─────────────────────────────────────────────────────────────
