@@ -54811,6 +54811,8 @@ def _frog_reaction(action: str) -> str:
 
 async def job_reminders(ctx: ContextTypes.DEFAULT_TYPE):
     """Предупреждения о состоянии лягушки — три уровня тревоги."""
+    if _TG_OFFLINE:      # нет связи — не списываем то, что игрок не может поправить
+        return
     frogs = await db_all_alive()
     now = time.time()
     to_remind = []
@@ -55404,6 +55406,8 @@ async def job_background_decay(ctx: ContextTypes.DEFAULT_TYPE):
     параметры навсегда» когда за лягушкой не ухаживают, но её подкармливают другие.
     Так же отправляет предупреждение о низком здоровье и помечает мёртвых.
     """
+    if _TG_OFFLINE:      # нет связи — не списываем то, что игрок не может поправить
+        return
     now = time.time()
     # Выбираем только живых игроков, которых не трогали более 1 часа
     stale_cutoff = now - 3600
@@ -55574,6 +55578,8 @@ async def job_auto_care(ctx: ContextTypes.DEFAULT_TYPE):
     НЕ начисляет монеты и XP — только поддерживает параметры.
     Параметры никогда не превышают AUTO_CARE_CAP (85%) — остаётся место для ручного ухода.
     """
+    if _TG_OFFLINE:      # нет связи — не списываем то, что игрок не может поправить
+        return
     now = time.time()
     async with aiosqlite.connect(DB_PATH) as db:
         async with db.execute(
@@ -56727,8 +56733,29 @@ HEARTBEAT_MIN_GAP = 5 * 60          # меньше — это обычный р�
 HEARTBEAT_MAX_CREDIT = 7 * 86400    # больше недели не прощаем
 
 
+# Процесс может работать, а связи с Telegram нет (24.10 — 14 часов). Раньше
+# отметка «жив» всё равно писалась, затухание шло, а игроки не могли
+# покормить: за день умерло больше тысячи лягушек. Теперь «жив» — это
+# «Telegram отвечает»: без связи отметка не пишется, затухание и уход стоят,
+# а когда связь вернулась, время без неё прощается как простой.
+_TG_OFFLINE = False
+
+
 async def job_heartbeat(ctx: ContextTypes.DEFAULT_TYPE):
-    """Отметка «бот жив» — по ней при старте вычисляется длительность простоя."""
+    """Отметка «бот на связи» — по ней считается длительность простоя."""
+    global _TG_OFFLINE
+    try:
+        await asyncio.wait_for(ctx.bot.get_me(), timeout=30)
+    except Exception as e:
+        if not _TG_OFFLINE:
+            logger.warning("⏸ Нет связи с Telegram (%s) — затухание остановлено", e)
+        _TG_OFFLINE = True
+        return
+    if _TG_OFFLINE:
+        _TG_OFFLINE = False
+        gap = await compensate_downtime()
+        logger.info("▶ Связь с Telegram вернулась, прощено %.1f ч", gap / 3600)
+        return
     await db_setting(HEARTBEAT_KEY, str(time.time()))
 
 

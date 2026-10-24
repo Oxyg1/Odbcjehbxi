@@ -379,6 +379,23 @@ async def main():
     src = open(os.path.join(ROOT, "bot.py"), encoding="utf-8").read()
     ok("Автозавершение при перезапуске бота" not in src, "при старте походы больше не режутся до базы")
 
+    print("9г. Нет связи с Telegram — затухание стоит, потом время прощается")
+    O = 641
+    await make_frog(O, hunger=80, last_decay=now - 3 * 3600)
+    class DownBot(FakeBot):
+        async def get_me(self):
+            raise B.NetworkError("httpx.ConnectError")
+    await B.db_setting(B.HEARTBEAT_KEY, str(now - 3 * 3600))
+    await B.job_heartbeat(types.SimpleNamespace(bot=DownBot()))
+    ok(B._TG_OFFLINE, "без связи — бот это замечает")
+    await B.job_background_decay(types.SimpleNamespace(bot=DownBot()))
+    B._user_cache.clear()
+    ok(q_db("SELECT hunger FROM frogs WHERE user_id=?", O)[0][0] == 80, "пока связи нет, сытость не списана")
+    await B.job_heartbeat(types.SimpleNamespace(bot=BOT))
+    ok(not B._TG_OFFLINE, "связь вернулась")
+    ld = q_db("SELECT last_decay FROM frogs WHERE user_id=?", O)[0][0]
+    ok(ld > now - 600, f"время без связи прощено: отметка затухания сдвинута ({(now - ld) / 3600:.1f} ч назад)")
+
     print("10. Ни одна кнопка не отвечает дважды")
     ok(not [a for a in FAILS if "раз(а)" in a], "двойных ответов нет")
 
