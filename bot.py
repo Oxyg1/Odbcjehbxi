@@ -4629,6 +4629,7 @@ def run_sync_migration():
         ("last_auto_wash",     "REAL    DEFAULT 0"),
         ("last_auto_sleep",    "REAL    DEFAULT 0"),
         ("last_auto_heal",     "REAL    DEFAULT 0"),
+        ("auto_care_stats",    "TEXT    DEFAULT ''"),   # что сделал автоуход за подписку
         ("personality",        "TEXT    DEFAULT ''"),
         ("zodiac_sign",        "TEXT    DEFAULT ''"),
         ("last_horoscope",     "REAL    DEFAULT 0"),
@@ -7031,12 +7032,12 @@ STAR_PACKAGES = [
     {"stars": 1000, "coins": 5300, "label": "5300🪙", "hidden": True},
     # ── Подписки ──────────────────────────────────────────────────────────
     # Болотная Няня: пробный заход на 7 дней
-    {"stars": 50,   "coins": 0,  "label": "🧑‍🍼 Болотная Няня — 7 дней",  "subscription": "nanny",  "days": 7},
+    {"stars": 50,   "coins": 0,  "label": "🛡️ Автоуход — 7 дней",  "subscription": "nanny",  "days": 7},
     # Болотная Няня на месяц, только автоуход (без фарма)
-    {"stars": 200,  "coins": 0,  "label": "🧑‍🍼 Болотная Няня — 30 дней", "subscription": "nanny",  "days": 30},
+    {"stars": 200,  "coins": 0,  "label": "🛡️ Автоуход — 30 дней", "subscription": "nanny",  "days": 30},
     # Трудяга: автоуход + автофарм. Было 800⭐ — это ~1200₽/мес, цена подписки
     # на большую игру. Для телеграм-тамагочи потолок месячного чека ниже.
-    {"stars": 350,  "coins": 0,  "label": "🏪 Трудяга — 30 дней",         "subscription": "worker", "days": 30},
+    {"stars": 350,  "coins": 0,  "label": "💼 Трудяга — 30 дней",         "subscription": "worker", "days": 30},
 ]
 
 
@@ -18175,7 +18176,7 @@ def dead_card(f: dict) -> str:
                 else f"{ui_plural(days, 'день', 'дня', 'дней')} назад")
     if not f.get("return_revival_used"):
         offer = (f"{_E_LEAF} <b>Вернуть — бесплатно</b>\n"
-                 "и 3 дня Няни в подарок")
+                 "и 3 дня автоухода в подарок")
     else:
         cost = revive_cost(f)
         offer = "\n".join([
@@ -22931,7 +22932,7 @@ async def cmd_adminlogs(update: Update, ctx: ContextTypes.DEFAULT_TYPE):
         uname_al = fr_al.get("username", "")
         uname_str = f"@{uname_al}" if uname_al else "—"
         alive_str = "✅ жива" if fr_al.get("alive") else "💀 мертва"
-        sub_map = {0: "нет", 1: "🧑‍🍼 Няня", 2: "🏪 Трудяга"}
+        sub_map = {0: "нет", 1: "🛡️ Автоуход", 2: "💼 Трудяга"}
         sub_str = sub_map.get(fr_al.get("subscription_type", 0), "?")
         if fr_al.get("subscription_until", 0) > 0:
             sub_until_str = datetime.fromtimestamp(
@@ -27272,25 +27273,22 @@ async def cmd_buy(update: Update, ctx: ContextTypes.DEFAULT_TYPE):
     boost_mult_b = await boost_get_mult()
     stars_mult_b = boost_mult_b.get("stars", 1.0) if boost_mult_b else 1.0
     is_newbie_b  = f.get("stars_spent", 0) == 0
-    sub_active   = f.get("subscription_until", 0) > now_buy and f.get("subscription_type", 0) > 0
+    sub_on       = f.get("subscription_until", 0) > now_buy and f.get("subscription_type", 0) > 0
     trial_used   = f.get("trial_worker_used", 0)
     inv          = await inv_get(user.id)
     ticket_count = inv.get("gacha_ticket", 0)
 
     # ── Раздел 1: Подписки — самое ценное, всегда вверху ─────────────
     sub_rows = []
-    if sub_active:
-        sub_type_buy = f.get("subscription_type", 0)
-        until_buy    = datetime.fromtimestamp(f["subscription_until"], tz=timezone.utc).strftime("%d.%m")
-        sub_name_buy = "🧑‍🍼 Няня" if sub_type_buy == 1 else "🏪 Трудяга"
-        sub_rows.append([btn(f"✅ {sub_name_buy} до {until_buy} — продлить", callback_data="sub_renew", style="success")])
+    if sub_on:
+        kind_buy = sub_active(f)
+        until_buy = datetime.fromtimestamp(f["subscription_until"], ST_TZ).strftime("%d.%m")
+        sub_rows.append([btn(f"{SUB_ICON[kind_buy]} {SUB_NAME[kind_buy]} до {until_buy}", callback_data="shop_sub")])
     else:
         if not trial_used:
-            sub_rows.append([btn("🎁 3 дня Трудяги — БЕСПЛАТНО", callback_data="sub_trial_worker", style="success")])
-        sub_rows.append([
-            btn(f"🧑‍🍼 Няня · {SUB_NANNY_STARS}⭐/мес", callback_data="sub_buy_nanny"),
-            btn(f"🏪 Трудяга · {SUB_WORKER_STARS}⭐/мес", callback_data="sub_buy_worker"),
-        ])
+            sub_rows.append([btn(f"🎁 {SUB_TRIAL_DAYS} дня Трудяги бесплатно", callback_data="sub_trial_worker",
+                                 style="success")])
+        sub_rows.append([btn("⭐ Подписки: автоуход и Трудяга", callback_data="shop_sub")])
 
     # ── Раздел 2: КваКоины ────────────────────────────────────────────
     coin_rows = []
@@ -27319,15 +27317,15 @@ async def cmd_buy(update: Update, ctx: ContextTypes.DEFAULT_TYPE):
     # ── Текст ─────────────────────────────────────────────────────────
     rate_note  = f"  ✨ Буст ×{stars_mult_b:.1f}" if stars_mult_b > 1.0 else ""
     ticket_str = f" · {_E_COSMETIC}{ui_plural(ticket_count, 'билет', 'билета', 'билетов')}" if ticket_count else ""
-    sub_hint   = "" if sub_active else (
-        f"\n🧑‍🍼 <b>Няня</b> — автоуход, {SUB_NANNY_STARS}⭐/мес"
-        f"\n🏪 <b>Трудяга</b> — уход + 400–700🪙/день, {SUB_WORKER_STARS}⭐/мес"
+    sub_hint   = "" if sub_on else (
+        f"\n\n🛡️ <b>Автоуход</b> — лягушка не голодает, пока тебя нет · {SUB_NANNY_STARS}⭐/мес"
+        f"\n💼 <b>Трудяга</b> — автоуход + ~{WORKER_AVG_DAY}🪙 в день · {SUB_WORKER_STARS}⭐/мес"
     )
 
     text = (
         f"💫 <b>Магазин</b>\n"
         f"<i>💰 {f['coins']}🪙{ticket_str}</i>\n\n"
-        f"<b>Курс:</b> 1{_E_STARS} = {int(2 * stars_mult_b)}🪙{rate_note}"
+        f"<b>Курс:</b> 1{_E_STARS} = {int(5 * stars_mult_b)}🪙{rate_note}"
         f"{sub_hint}"
     )
 
@@ -27473,122 +27471,19 @@ async def cmd_adminsecretgift(update: Update, ctx: ContextTypes.DEFAULT_TYPE):
 
 
 async def cmd_subscribe(update: Update, ctx: ContextTypes.DEFAULT_TYPE):
-    """/subscribe (/sub) — подписки: Болотная Няня и Трудяга"""
+    """/subscribe (/sub) — подписки: Автоуход и Трудяга"""
     if not await group_cmd_guard(update, "subscribe", ctx):
         return
-    user = update.effective_user
-    f = await db_get(user.id)
+    f = await db_get(update.effective_user.id)
     if not f:
         await update.message.reply_text("Сначала /start 🐸")
         return
-    now_s      = time.time()
-    sub_type   = f.get("subscription_type", 0)
-    sub_until  = f.get("subscription_until", 0)
-    sub_auto   = f.get("subscription_auto", 1)
-    active     = sub_until > now_s and sub_type > 0
-    frog_name  = f.get("frog_name") or f.get("first_name") or "Квакуся"
-    trial_used = f.get("trial_worker_used", 0)
-
-    # ── Карточки подписок ──────────────────────────────────────────────
-    nanny_card = (
-        f"🧑‍🍼 <b>Болотная Няня</b> <code>{SUB_NANNY_STARS}⭐/мес</code>\n"
-        "Тётя Жаба кормит, моет и укладывает спать лягушку пока ты занят.\n"
-        "Показатели держатся на 85% — чтобы тебе было чем заняться после.\n"
-    )
-    worker_card = (
-        f"🏪 <b>Трудяга</b> <code>{SUB_WORKER_STARS}⭐/мес</code>\n"
-        "Всё что делает Няня + лягушка ходит на Болотный Рынок.\n"
-        f"Каждый вечер приносит <b>400–700{_E_COIN}</b> и отчёт о приключениях.\n"
-    )
-
-    # ── Статус ────────────────────────────────────────────────────────
-    if active:
-        until_dt  = datetime.fromtimestamp(sub_until, tz=timezone.utc).strftime("%d.%m.%Y")
-        sub_icon  = "🧑‍🍼 Болотная Няня" if sub_type == 1 else "🏪 Трудяга"
-        auto_txt  = "✅ Активна" if sub_auto else "⏸ На паузе"
-        status_block = (
-            f"\n✅ <b>{sub_icon}</b> до {until_dt} · автозабота: {auto_txt}"
-        )
-        toggle_lbl = "⏸ Поставить на паузу" if sub_auto else "▶️ Возобновить автозаботу"
-        kb_rows = [
-            [btn(toggle_lbl, callback_data="sub_toggle_auto")],
-            [btn("🔄 Продлить подписку", callback_data="sub_renew")],
-        ]
-        if sub_type == 1:
-            kb_rows.append([btn(f"🔼 Улучшить до Трудяги · {SUB_WORKER_STARS}⭐", callback_data="sub_buy_worker", style="primary")])
-    else:
-        status_block = f"\n{_E_CROSS} <b>Подписка не активна</b>"
-        kb_rows = []
-        if not trial_used:
-            kb_rows.append([btn("🎁 3 дня Трудяги — БЕСПЛАТНО", callback_data="sub_trial_worker", style="success")])
-        kb_rows += [
-            [btn(f"🧑‍🍼 Болотная Няня · {SUB_NANNY_STARS}⭐/мес", callback_data="sub_buy_nanny")],
-            [btn(f"🏪 Трудяга · {SUB_WORKER_STARS}⭐/мес", callback_data="sub_buy_worker", style="primary")],
-        ]
-
-    # ── Дневник рабочего дня (только для Трудяги) ─────────────────────
-    workday_block = ""
-    if active and sub_type >= 2:
-        phase       = f.get("worker_phase", 0)
-        scene_raw   = f.get("worker_scene_json", "")
-        last_report = f.get("last_worker_report", 0)
-        if phase == 0 and last_report > 0:
-            today_msk = datetime.fromtimestamp(time.time() + 3*3600, timezone.utc).strftime("%Y-%m-%d")
-            last_msk  = datetime.fromtimestamp(last_report + 3*3600, timezone.utc).strftime("%Y-%m-%d")
-            last_dt   = datetime.fromtimestamp(last_report + 3*3600, timezone.utc).strftime("%d.%m в %H:%M")
-            hour_msk  = (datetime.now(timezone.utc).hour + 3) % 24
-            if today_msk == last_msk:
-                next_msg = "Следующий выход — завтра утром в 07:00 МСК"
-            elif hour_msk < 7:
-                next_msg = "Следующий выход — сегодня утром в 07:00 МСК"
-            elif hour_msk < 18:
-                next_msg = "⚡ Выйдет при ближайшем запуске"
-            else:
-                next_msg = "Следующий выход — завтра утром в 07:00 МСК"
-            workday_block = (
-                f"\n\n📋 <b>Рабочий день</b>\n"
-                f"💤 Отдыхает · <i>Последний отчёт: {last_dt} МСК</i>\n"
-                f"<i>{next_msg}</i>"
-            )
-        elif phase == 0 and last_report == 0:
-            workday_block = (
-                f"\n\n{_E_LIST} <b>Рабочий день</b>\n"
-                "⏳ Ждёт первого выхода — придёт утром в 07:00 МСК"
-            )
-        elif phase >= 1 and scene_raw:
-            try:
-                scene     = json.loads(scene_raw)
-                prof_line = f"{scene['prof_emoji']} <b>{scene['prof_name']}</b>"
-                story     = scene["story"].format(name=he(frog_name))
-                if phase == 1:
-                    workday_block = (
-                        f"\n\n📋 <b>Рабочий день</b> {prof_line}\n"
-                        f"{story}\n"
-                        f"<i>🕛 Обеденное событие в 12:00 МСК</i>"
-                    )
-                elif phase == 2:
-                    event = scene["event"].format(name=he(frog_name))
-                    workday_block = (
-                        f"\n\n📋 <b>Рабочий день</b> {prof_line}\n"
-                        f"{story}\n{event}\n"
-                        f"<i>🏠 Вернётся вечером в 18:00 МСК</i>"
-                    )
-            except Exception as _e:
-                logger.exception("подавлено исключение: %s", _e)
-
-    await update.message.reply_text(
-        f"{_E_FROG} <b>Подписки</b>\n\n"
-        f"{nanny_card}\n"
-        f"{worker_card}"
-        f"{status_block}"
-        f"{workday_block}",
-        parse_mode=ParseMode.HTML,
-        reply_markup=InlineKeyboardMarkup(kb_rows),
-    )
+    text, kb = subs_view(f)
+    await update.message.reply_text(text, parse_mode=ParseMode.HTML, reply_markup=kb)
 
 
 async def cmd_trial(update: Update, ctx: ContextTypes.DEFAULT_TYPE):
-    """/trial — получить 1 день Трудяги бесплатно (один раз)"""
+    """/trial — пробный период Трудяги (один раз)"""
     if not await group_cmd_guard(update, "trial", ctx):
         return
     user = update.effective_user
@@ -27598,57 +27493,12 @@ async def cmd_trial(update: Update, ctx: ContextTypes.DEFAULT_TYPE):
         return
     if f.get("banned", 0):
         return
-
-    # Уже использовал пробник Трудяги?
-    if f.get("trial_worker_used", 0):
-        now_t = time.time()
-        sub_until = f.get("subscription_until", 0)
-        sub_type  = f.get("subscription_type", 0)
-        if sub_until > now_t and sub_type >= 2:
-            until_dt = datetime.fromtimestamp(sub_until, tz=timezone.utc).strftime("%d.%m.%Y")
-            await update.message.reply_text(
-                f"{_E_STORE} <b>Трудяга уже активна!</b>\n"
-                f"Квакуся работает до <b>{until_dt}</b>.\n\n"
-                f"Чтобы продлить: /subscribe",
-                parse_mode=ParseMode.HTML,
-            )
-        else:
-            await update.message.reply_text(
-                "😔 <b>Пробный период уже использован.</b>\n\n"
-                "Чтобы снова отправить Квакусю на рынок:\n"
-                f"👉 /subscribe → {_E_STORE} Трудяга — {SUB_WORKER_STARS}{_E_STARS}/мес",
-                parse_mode=ParseMode.HTML,
-            )
-        return
-
-    # Выдаём пробник
-    frog_name = f.get("frog_name") or f.get("first_name") or "Квакуся"
-    granted = await grant_trial(user.id, 2, 1, bot=None)
-    if not granted:
-        await update.message.reply_text(
-            "😔 Пробный период уже был использован ранее.\n"
-            "👉 /subscribe — подключить полную подписку",
-            parse_mode=ParseMode.HTML,
-        )
-        return
-
-    until_dt = datetime.fromtimestamp(
-        (await db_get(user.id)).get("subscription_until", 0),
-        tz=timezone.utc,
-    ).strftime("%d.%m.%Y")
-
-    await update.message.reply_text(
-        f"🎉 <b>1 день Трудяги — бесплатно!</b>\n\n"
-        f"{_E_STORE} <b>{he(frog_name)}</b> уже собирает корзинку и идёт на Болотный Рынок!\n\n"
-        f"Каждый вечер она будет приносить домой <b>300–400{_E_COIN}</b>.\n"
-        f"Дожди, ярмарки, выгодные сделки — каждый день своя история {_E_LEAF}\n\n"
-        f"📅 Пробный период до: <b>{until_dt}</b>\n\n"
-        f"<i>После окончания продлить можно через /subscribe</i>",
-        parse_mode=ParseMode.HTML,
-        reply_markup=InlineKeyboardMarkup([[
-            btn("🏪 Продлить после пробника", callback_data="sub_buy_worker"),
-        ]]),
-    )
+    if await grant_trial(user.id, 2, SUB_TRIAL_DAYS, bot=ctx.bot):
+        f = await db_get(user.id) or f
+    elif not sub_active(f):
+        await update.message.reply_text("Пробный период уже был — дальше по подписке.")
+    text, kb = subs_view(f)
+    await update.message.reply_text(text, parse_mode=ParseMode.HTML, reply_markup=kb)
 
 
 async def cmd_broadcast_sub(update: Update, ctx: ContextTypes.DEFAULT_TYPE):
@@ -27681,8 +27531,8 @@ async def cmd_broadcast_sub(update: Update, ctx: ContextTypes.DEFAULT_TYPE):
             
             f"Пока ты кормил <b>{name_esc}</b> — мы кое-что приготовили 👇\n\n"
             f"<b>Теперь {name_esc} может сама о себе позаботиться.</b>\n\n"
-            f"🧑‍🍼 <b>Болотная Няня</b> — \n"
-            f"Тётя Жаба кормит, моет и укладывает спать <b>{name_esc}</b> пока ты занят.\n"
+            f"🛡️ <b>Автоуход</b> — \n"
+            f"Автоуход кормит, моет и укладывает спать <b>{name_esc}</b> пока ты занят.\n"
             f"Никаких смертей от забывчивости.\n\n"
             f"🏪 <b>Трудяга</b> — \n"
             f"<b>{name_esc}</b> ходит на <b>Болотный Рынок</b> и каждый вечер\n"
@@ -27770,7 +27620,7 @@ async def cmd_adminsubscription(update: Update, ctx: ContextTypes.DEFAULT_TYPE):
         if sub_type == 2 and target.get("last_worker_report", 0) == 0:
             target["last_worker_report"] = time.time()
         await db_save(target)
-        sub_name = "🧑‍🍼 Болотная Няня" if sub_type == 1 else "🏪 Трудяга"
+        sub_name = "🛡️ Автоуход" if sub_type == 1 else "💼 Трудяга"
         until_dt = datetime.fromtimestamp(target["subscription_until"], tz=timezone.utc).strftime("%d.%m.%Y")
         await update.message.reply_text(
             f"✅ @{mention} — {sub_name} на {days} дней (до {until_dt})."
@@ -27779,8 +27629,8 @@ async def cmd_adminsubscription(update: Update, ctx: ContextTypes.DEFAULT_TYPE):
             await ctx.bot.send_message(
                 tid,
                 f"{_E_GIFT} <b>Администратор выдал тебе подписку!</b>\n\n"
-                f"{sub_name} активирована на <b>{days} дней</b>.\n"
-                + (f"{_E_NANNY} <i>Тётя Жаба уже спешит</i>" if sub_type == 1
+                f"{sub_name}: включено на <b>{days} дн.</b>.\n"
+                + (f"{_E_NANNY} <i>Автоуход уже работает</i>" if sub_type == 1
                    else f"{_E_STORE} <i>Квакуся собирается на рынок!</i>"),
                 parse_mode=ParseMode.HTML,
             )
@@ -39096,90 +38946,7 @@ async def shop_router(update: Update, ctx: ContextTypes.DEFAULT_TYPE):
     # ── МАГАЗИН ЕДЫ ────────────────────────────────
     if d == "shop_sub":
         await q.answer()
-        now_sub = time.time()
-        sub_type_ss  = f.get("subscription_type", 0)
-        sub_until_ss = f.get("subscription_until", 0)
-        sub_auto_ss  = f.get("subscription_auto", 1)
-        active_ss          = sub_until_ss > now_sub and sub_type_ss > 0
-        trial_nanny        = f.get("trial_nanny_used", 0)
-        trial_worker       = f.get("trial_worker_used", 0)
-        nanny_trial_expired = trial_nanny and sub_until_ss <= now_sub
-
-        if active_ss:
-            until_ss = datetime.fromtimestamp(sub_until_ss, tz=timezone.utc).strftime("%d.%m.%Y")
-            icon_ss  = "🧑‍🍼 Болотная Няня" if sub_type_ss == 1 else "🏪 Трудяга"
-            # Флаг называется subscription_auto, но продлением он не управляет:
-            # автосписания в боте нет, по истечении приходит оффер купить снова.
-            # Единственное, на что он влияет, — идёт ли автоуход. Раньше здесь
-            # было написано «авто-продление», и игрок, выключавший его ради
-            # экономии, молча лишался оплаченного ухода — лягушка умирала.
-            auto_ss  = "✅ Автоуход включён" if sub_auto_ss else "⏸ Автоуход на паузе"
-            status_ss = f"✅ <b>{icon_ss}</b> до <b>{until_ss}</b>"
-        else:
-            status_ss = "❌ Подписка не активна"
-
-        rows_ss = []
-        if active_ss:
-            toggle_ss = "⏸ Поставить автоуход на паузу" if sub_auto_ss else "▶️ Включить автоуход"
-            rows_ss.append([btn(toggle_ss, callback_data="sub_toggle_auto")])
-            if sub_type_ss == 1:
-                rows_ss.append([btn(f"🔼 Улучшить до Трудяги — {SUB_WORKER_STARS}⭐", callback_data="sub_buy_worker")])
-            rows_ss.append([btn("🔄 Продлить подписку", callback_data="sub_renew")])
-        else:
-            # Бесплатный пробник Трудяги — только после того как пробник Няни уже закончился
-            if not trial_nanny:
-                rows_ss.append([btn("🎁 3 дня Болотной Няни бесплатно", callback_data="sub_trial_nanny")])
-            elif nanny_trial_expired and not trial_worker:
-                rows_ss.append([btn("🎁 1 день Трудяги бесплатно", callback_data="sub_trial_worker")])
-            rows_ss.append([btn(f"🧑‍🍼 Болотная Няня — {SUB_NANNY_STARS}⭐/мес", callback_data="sub_buy_nanny")])
-            rows_ss.append([btn(f"🏪 Трудяга — {SUB_WORKER_STARS}⭐/мес", callback_data="sub_buy_worker")])
-
-        # Дневник рабочего дня (только для активной Трудяги)
-        workday_block_ss = ""
-        if active_ss and sub_type_ss >= 2:
-            phase_ss       = f.get("worker_phase", 0)
-            last_report_ss = f.get("last_worker_report", 0)
-            hour_msk_ss    = (datetime.now(timezone.utc).hour + 3) % 24
-            now_ss2        = time.time()
-            if phase_ss == 0 and last_report_ss > 0:
-                today_msk_ss = datetime.fromtimestamp(now_ss2 + 3*3600, timezone.utc).strftime("%Y-%m-%d")
-                last_msk_ss  = datetime.fromtimestamp(last_report_ss + 3*3600, timezone.utc).strftime("%Y-%m-%d")
-                last_dt_ss   = datetime.fromtimestamp(last_report_ss + 3*3600, timezone.utc).strftime("%d.%m в %H:%M")
-                if today_msk_ss == last_msk_ss:
-                    next_ss = "Следующий выход — завтра в 07:00 МСК"
-                elif hour_msk_ss < 18:
-                    next_ss = "⚡ Выйдет при ближайшем запуске"
-                else:
-                    next_ss = "Выйдет сегодня вечером"
-                workday_block_ss = f"\n\n📅 Последний выход: {last_dt_ss}\n⏰ {next_ss}"
-
-        nanny_desc  = f"{_E_NANNY} <b>Болотная Няня</b> — автоуход за лягушкой (кормит, моет, укладывает спать)"
-        worker_desc = (
-            f"{_E_STORE} <b>Трудяга</b> — всё от Няни + лягушка каждый день ходит на работу\n"
-            "Профессии: торговка, IT-фрилансер, лекарь, художница, детектив, 🚀 космонавт\n"
-            f"Заработок: <b>400–700🪙</b>/день обычно, до <b>2 000🪙</b> если выпадет Космонавт\n"
-            f"<i>Пример: {he(f.get('frog_name') or 'Квакуся')} вышла на рынок в туман, нашла грибную поляну и продала урожай втридорога. Итог: +520🪙</i>"
-        )
-        trial_note  = ""
-        if not trial_nanny:
-            trial_note = f"\n\n{_E_GIFT} <i>Тебе доступен бесплатный пробник — попробуй прежде чем платить</i>"
-        elif nanny_trial_expired and not trial_worker:
-            trial_note = f"\n\n{_E_GIFT} <i>Пробник Няни закончился — можешь бесплатно попробовать 1 день Трудяги</i>"
-
-        rows_ss.append([btn("◀️ Назад", callback_data="menu_shop")])
-        try:
-            await q.message.edit_text(
-                f"{_E_FROG} <b>Подписки</b>\n\n"
-                f"{nanny_desc}\n"
-                f"{worker_desc}\n\n"
-                f"Статус: {status_ss}"
-                f"{workday_block_ss}"
-                f"{trial_note}",
-                parse_mode=ParseMode.HTML,
-                reply_markup=InlineKeyboardMarkup(rows_ss),
-            )
-        except (BadRequest, Forbidden, TimedOut):
-            pass
+        await plaza_show(q, subs_view(f))
         return
     if d == "shop_food":
         await q.answer()
@@ -40267,46 +40034,28 @@ async def shop_router(update: Update, ctx: ContextTypes.DEFAULT_TYPE):
     if d == "sub_toggle_auto":
         f["subscription_auto"] = 0 if f.get("subscription_auto", 1) else 1
         await db_save(f)
-        status = "возобновлена ▶️" if f["subscription_auto"] else "на паузе ⏸"
-        await q.answer((f"Автозабота {status}")[:200], show_alert=True)
+        await q.answer("▶️ Автоуход включён" if f["subscription_auto"] else
+                       "⏸ Автоуход на паузе — не забывай кормить сам")
+        await plaza_show(q, subs_view(f))
         return
     if d == "sub_trial_nanny":
-        if f.get("trial_nanny_used", 0):
-            await q.answer("😔 Пробник Няни уже был использован.", show_alert=True)
+        if not await grant_trial(uid, 1, 3, bot=ctx.bot):
+            await q.answer("Пробный период уже был", show_alert=True)
             return
-        frog_name_tn = f.get("frog_name") or f.get("first_name") or "Квакуся"
-        granted_tn = await grant_trial(uid, 1, 3, bot=ctx.bot)
-        if granted_tn:
-            await q.answer(
-                f"🎉 3 дня Болотной Няни активированы! Тётя Жаба уже спешит к {he(frog_name_tn)} 🧑‍🍼",
-                show_alert=True,
-            )
-            # Обновляем экран подписки
-            try:
-                await q.message.edit_reply_markup(reply_markup=InlineKeyboardMarkup([
-                    [btn(f"🏪 Трудяга — {SUB_WORKER_STARS}⭐/мес", callback_data="sub_buy_worker")],
-                    [btn("🎁 1 день Трудяги бесплатно", callback_data="sub_trial_worker")],
-                    [btn("◀️ Назад", callback_data="menu_shop")],
-                ]))
-            except (BadRequest, Forbidden, TimedOut):
-                pass
-        else:
-            await q.answer("😔 Пробник уже был использован.", show_alert=True)
+        await q.answer("🎁 3 дня автоухода — включено!")
+        await plaza_show(q, subs_view(await db_get(uid) or f))
         return
     if d == "sub_trial_worker":
         # Кнопка «Забрать 3 дня» прямо из рассылки
         if f.get("trial_worker_used", 0):
             await q.answer("😔 Пробный период уже был использован.", show_alert=True)
             return
-        frog_name = f.get("frog_name") or f.get("first_name") or "Квакуся"
-        granted = await grant_trial(uid, 2, 3, bot=ctx.bot)
-        if granted:
-            await q.answer(
-                f"🎉 3 дня Трудяги активированы! {he(frog_name)} идёт на рынок 🏪",
-                show_alert=True,
-            )
-        else:
-            await q.answer("😔 Пробный период уже был использован.", show_alert=True)
+        granted = await grant_trial(uid, 2, SUB_TRIAL_DAYS, bot=ctx.bot)
+        if not granted:
+            await q.answer("Пробный период уже был", show_alert=True)
+            return
+        await q.answer(f"🎁 {SUB_TRIAL_DAYS} дня Трудяги — включено!")
+        await plaza_show(q, subs_view(await db_get(uid) or f))
         return
     # ── Офферные кнопки со скидкой (после истечения подписки) ─────────────────
     if d in ("sub_renewal_offer_worker", "sub_renewal_offer_nanny"):
@@ -40330,7 +40079,7 @@ async def shop_router(update: Update, ctx: ContextTypes.DEFAULT_TYPE):
             return
 
         sale_price = offer.get("price", 640 if is_worker else 160)
-        sub_name = "🏪 Трудяга — 30 дней" if is_worker else "🧑‍🍼 Болотная Няня — 30 дней"
+        sub_name = "💼 Трудяга — 30 дней" if is_worker else "🛡️ Автоуход — 30 дней"
         description = (
             "Автоуход + 400–700🪙/день с Болотного Рынка 🐸"
             if is_worker else
@@ -40366,11 +40115,11 @@ async def shop_router(update: Update, ctx: ContextTypes.DEFAULT_TYPE):
         try:
             await ctx.bot.send_invoice(
                 chat_id=uid,
-                title="🧑‍🍼 Болотная Няня — 7 дней",
+                title="🛡️ Автоуход — 7 дней",
                 description="Автоматический уход за лягушкой — кормление, купание, сон 🐸",
                 payload="subscription_nanny_7",
                 currency="XTR",
-                prices=[LabeledPrice(label="🧑‍🍼 Болотная Няня — 7 дней", amount=pkg["stars"])],
+                prices=[LabeledPrice(label="🛡️ Автоуход — 7 дней", amount=pkg["stars"])],
             )
             await q.answer()
         except Exception as _e:
@@ -40390,7 +40139,7 @@ async def shop_router(update: Update, ctx: ContextTypes.DEFAULT_TYPE):
             await q.answer("Ошибка: тариф не найден.", show_alert=True)
             return
         pkg = STAR_PACKAGES[pkg_idx]
-        sub_name = "🏪 Трудяга — 30 дней" if is_worker else "🧑‍🍼 Болотная Няня — 30 дней"
+        sub_name = "💼 Трудяга — 30 дней" if is_worker else "🛡️ Автоуход — 30 дней"
         description = (
             "Автоуход + 400–700🪙/день с Болотного Рынка 🐸"
             if is_worker else
@@ -41896,7 +41645,7 @@ async def _on_callback_main(update: Update, ctx: ContextTypes.DEFAULT_TYPE):
         f["total_revives"] = f.get("total_revives", 0) + 1
         await db_save(f)
         asyncio.create_task(plog(uid, "revive", "cost=0 return_revive"))
-        # Выдаём 3 дня Болотной Няни (отдельная метка — не трогаем trial_nanny_used)
+        # Выдаём 3 дня автоухода (отдельная метка — не трогаем trial_nanny_used)
         now_rr = time.time()
         base_rr = max(now_rr, f.get("subscription_until", 0))
         f["subscription_until"] = base_rr + 3 * 86400
@@ -41914,7 +41663,7 @@ async def _on_callback_main(update: Update, ctx: ContextTypes.DEFAULT_TYPE):
                     f"{_E_LEAF} <b>Возвратное воскрешение</b>\n\n"
                     f"Игрок: <b>{_html.escape(fname(f))}</b> ({_uname_rr})\n"
                     f"Уровень: {f.get('level', 1)} | Был мёртв\n"
-                    f"🧑‍🍼 Выдано 3 дня Болотной Няни\n"
+                    f"🛡️ Выдано 3 дня автоухода\n"
                     f"🕐 {datetime.now(timezone.utc).strftime('%d.%m.%Y %H:%M')} UTC",
                     parse_mode=ParseMode.HTML,
                 )
@@ -41924,7 +41673,7 @@ async def _on_callback_main(update: Update, ctx: ContextTypes.DEFAULT_TYPE):
             await q.message.edit_text(
                 f"{_E_LEAF} <b>{fname(f)} вернулась на болото!</b>\n\n"
                 f"{_E_HEART} Здоровье восстановлено\n"
-                f"🧑‍🍼 Болотная Няня активна на <b>3 дня</b> — она позаботится о лягушке!\n\n"
+                f"🛡️ Автоуход включён на <b>3 дня</b> — он позаботится о лягушке!\n\n"
                 f"<i>Зайди в /frog чтобы увидеть свою лягушку {_E_FROG}</i>",
                 parse_mode=ParseMode.HTML,
                 reply_markup=InlineKeyboardMarkup([[
@@ -43010,7 +42759,7 @@ async def _on_callback_main(update: Update, ctx: ContextTypes.DEFAULT_TYPE):
         await q.answer()
         now_ms = time.time()
         sub_active_ms = f.get("subscription_until", 0) > now_ms and f.get("subscription_type", 0) > 0
-        sub_lbl = "✅ Подписка активна" if sub_active_ms else "🧑‍🍼 Подписки"
+        sub_lbl = "✅ Подписка активна" if sub_active_ms else "⭐ Подписки"
         # Показываем кнопку сезонных обликов только если они активны
         _active_seasons = get_active_seasonal()
         _shop_rows = [
@@ -43091,124 +42840,6 @@ async def _on_callback_main(update: Update, ctx: ContextTypes.DEFAULT_TYPE):
         except Exception as _e:
             await q.answer((f"Ошибка: {_e}")[:200], show_alert=True)
         return
-        await q.answer()
-        now_ss = time.time()
-        sub_type_ss  = f.get("subscription_type", 0)
-        sub_until_ss = f.get("subscription_until", 0)
-        sub_auto_ss  = f.get("subscription_auto", 1)
-        active_ss    = sub_until_ss > now_ss and sub_type_ss > 0
-        frog_name_ss = f.get("frog_name") or f.get("first_name") or "Квакуся"
-        trial_used_ss = f.get("trial_worker_used", 0)
-
-        if active_ss:
-            until_ss = datetime.fromtimestamp(sub_until_ss, tz=timezone.utc).strftime("%d.%m.%Y")
-            icon_ss  = "🧑‍🍼 Болотная Няня" if sub_type_ss == 1 else "🏪 Трудяга"
-            auto_ss  = "✅ Активна" if sub_auto_ss else "⏸ На паузе"
-            status_ss = f"✅ <b>{icon_ss}</b> до <b>{until_ss}</b> · {auto_ss}"
-        else:
-            status_ss = "❌ Подписка не активна"
-
-        rows_ss = []
-        if active_ss:
-            toggle_ss = "⏸ Поставить на паузу" if sub_auto_ss else "▶️ Возобновить"
-            rows_ss.append([btn(toggle_ss, callback_data="sub_toggle_auto")])
-            if sub_type_ss == 1:
-                rows_ss.append([btn(f"🔼 Улучшить до Трудяги — {SUB_WORKER_STARS}⭐", callback_data="sub_buy_worker")])
-            rows_ss.append([btn("🔄 Продлить подписку", callback_data="sub_renew")])
-        else:
-            if not trial_used_ss:
-                rows_ss.append([btn("🎁 3 дня Трудяги бесплатно", callback_data="sub_trial_worker")])
-            rows_ss.append([btn(f"🧑‍🍼 Болотная Няня — {SUB_NANNY_STARS}⭐/мес", callback_data="sub_buy_nanny")])
-            rows_ss.append([btn(f"🏪 Трудяга — {SUB_WORKER_STARS}⭐/мес", callback_data="sub_buy_worker")])
-
-        # ── Дневник рабочего дня (только для Трудяги) ────────────────────────
-        workday_block_ss = ""
-        if active_ss and sub_type_ss >= 2:
-            phase_ss     = f.get("worker_phase", 0)
-            scene_raw_ss = f.get("worker_scene_json", "")
-            last_report_ss = f.get("last_worker_report", 0)
-            hour_msk_ss  = (datetime.now(timezone.utc).hour + 3) % 24
-            now_ss2      = time.time()
-
-            if phase_ss == 0 and last_report_ss > 0:
-                today_msk_ss = datetime.fromtimestamp(now_ss2 + 3*3600, timezone.utc).strftime("%Y-%m-%d")
-                last_msk_ss  = datetime.fromtimestamp(last_report_ss + 3*3600, timezone.utc).strftime("%Y-%m-%d")
-                last_dt_ss   = datetime.fromtimestamp(last_report_ss + 3*3600, timezone.utc).strftime("%d.%m в %H:%M")
-                if today_msk_ss == last_msk_ss:
-                    next_ss = "Следующий выход — завтра в 07:00 МСК"
-                elif hour_msk_ss < 18:
-                    next_ss = "⚡ Выйдет при ближайшем запуске"
-                else:
-                    next_ss = "Следующий выход — завтра в 07:00 МСК"
-                workday_block_ss = (
-                    f"\n"
-                    f"📋 <b>Рабочий день</b>\n"
-                    f"💤 Отдыхает\n"
-                    f"<i>Последний отчёт: {last_dt_ss} МСК</i>\n"
-                    f"<i>{next_ss}</i>"
-                )
-            elif phase_ss == 0 and last_report_ss == 0:
-                workday_block_ss = (
-                    f"\n"
-                    f"📋 <b>Рабочий день</b>\n"
-                    f"⏳ Ждёт первого выхода — сегодня в 07:00 МСК"
-                )
-            elif phase_ss >= 1 and scene_raw_ss:
-                try:
-                    scene_ss = json.loads(scene_raw_ss)
-                    prof_line_ss = f"{scene_ss['prof_emoji']} <b>{scene_ss['prof_name']}</b>"
-                    story_ss = scene_ss["story"].format(name=he(frog_name_ss))
-                    if phase_ss == 1:
-                        workday_block_ss = (
-                            f"\n"
-                            f"📋 <b>Рабочий день — сегодня</b>\n"
-                            f"🌅 {prof_line_ss}\n\n"
-                            f"{story_ss}\n\n"
-                            f"<i>🕛 Обед придёт в 12:00 МСК</i>"
-                        )
-                    elif phase_ss == 2:
-                        event_ss = scene_ss["event"].format(name=he(frog_name_ss))
-                        workday_block_ss = (
-                            f"\n"
-                            f"📋 <b>Рабочий день — сегодня</b>\n"
-                            f"🌅 {prof_line_ss}\n\n"
-                            f"{story_ss}\n\n"
-                            f"{event_ss}\n\n"
-                            f"<i>🏠 Вернётся в 18:00 МСК</i>"
-                        )
-                except Exception as _e:
-                    logger.exception("подавлено исключение: %s", _e)
-
-        try:
-            await q.message.edit_text(
-                f"{_E_FROG} <b>Подписки для {he(frog_name_ss)}</b>\n\n"
-                f"🧑‍🍼 <b>Болотная Няня</b> — 300{_E_XP}/мес\n"
-                f"Тётя Жаба кормит, моет и укладывает спать <b>{he(frog_name_ss)}</b>.\n"
-                f"Параметры держатся на 85% — тебе всегда есть чем заняться.\n\n"
-                f"{_E_STORE} <b>Трудяга</b> — 800{_E_XP}/мес\n"
-                f"Всё то же + <b>{he(frog_name_ss)}</b> каждый вечер приносит <b>400–700{_E_COIN}</b>\n"
-                f"с Болотного Рынка и рассказывает что там было {_E_LEAF}\n\n"
-                "\n"
-                f"{status_ss}"
-                f"{workday_block_ss}",
-                parse_mode=ParseMode.HTML,
-                reply_markup=InlineKeyboardMarkup(rows_ss),
-            )
-        except (BadRequest, Forbidden, TimedOut):
-            pass
-        return
-
-
-
-
-
-
-
-
-
-
-
-
     # ── КВЕСТЫ ─────────────────────────────────────
     if d == "quests":
         await q.answer()
@@ -51299,6 +50930,7 @@ async def successful_payment(update: Update, ctx: ContextTypes.DEFAULT_TYPE):
         sub_type = 1 if sub_type_str == "nanny" else 2
         # Продление: складываем дни если подписка ещё активна
         now_sp = time.time()
+        auto_care_reset_if_new(f, now_sp)
         current_until = f.get("subscription_until", 0)
         base = max(now_sp, current_until)
         f["subscription_until"] = base + days * 86400
@@ -51319,17 +50951,11 @@ async def successful_payment(update: Update, ctx: ContextTypes.DEFAULT_TYPE):
                 (user.id, -stars_paid, f"stars_payment {payload}", time.time())
             )
             await _db.commit()
-        sub_name = "🧑‍🍼 Болотная Няня" if sub_type == 1 else "🏪 Трудяга"
-        until_dt = datetime.fromtimestamp(f["subscription_until"], tz=timezone.utc).strftime("%d.%m.%Y")
+        sub_name = "🛡️ Автоуход" if sub_type == 1 else "💼 Трудяга"
         await update.message.reply_text(
-            f"{_E_CHECK} <b>Подписка активирована!</b>\n\n"
-            f"{sub_name} — активна до <b>{until_dt}</b>\n\n"
-            + (
-                f"🧑‍🍼 <i>Тётя Жаба уже спешит к твоей лягушке</i>"
-                if sub_type == 1 else
-                f"{_E_STORE} <i>Квакуся собирает корзинку и идёт на Болотный Рынок!</i>"
-            ),
+            sub_welcome_text(f, f["subscription_type"], paid=True),
             parse_mode=ParseMode.HTML,
+            reply_markup=InlineKeyboardMarkup([[btn("⭐ Моя подписка", callback_data="shop_sub")]]),
         )
         await announce(ctx.bot,
             f"💳 <b>Подписка!</b> {user.first_name} (@{user.username or '—'}) [{user.id}]\n"
@@ -54500,13 +54126,13 @@ async def job_sub_expiry_offer(ctx: ContextTypes.DEFAULT_TYPE):
             if is_worker:
                 orig_price  = 800   # обычная цена Трудяги
                 sale_price  = 640   # скидка 20%
-                sub_name    = "🏪 Трудяга"
+                sub_name    = "💼 Трудяга"
                 benefit     = "400–700🪙 каждый вечер + автоуход"
                 cb_buy      = "sub_renewal_offer_worker"
             else:
                 orig_price  = 200   # обычная цена Няни (как в STAR_PACKAGES)
                 sale_price  = 160   # скидка 20%
-                sub_name    = "🧑‍🍼 Болотная Няня"
+                sub_name    = "🛡️ Автоуход"
                 benefit     = "автоматический уход пока ты занят"
                 cb_buy      = "sub_renewal_offer_nanny"
 
@@ -55472,10 +55098,10 @@ async def job_background_decay(ctx: ContextTypes.DEFAULT_TYPE):
                         uid_dec,
                         f"🍖 <b>Твоя лягушка голодна!</b>\n\n"
                         f"Голод: <b>{f.get('hunger', 0)}%</b>\n\n"
-                        f"<i>Если некогда следить — Болотная Няня покормит её пока ты занят.</i>",
+                        f"<i>Если некогда следить — автоуход покормит её, пока ты занят.</i>",
                         parse_mode=ParseMode.HTML,
                         reply_markup=InlineKeyboardMarkup([[
-                            btn("🧑‍🍼 Няня · 7 дней · 75⭐", callback_data="sub_buy_nanny_7"),
+                            btn(f"🛡️ Автоуход · неделя · {sub_price('nanny', 7)}⭐", callback_data="sub_buy_nanny_7"),
                         ]])
                     )
                 except (BadRequest, Forbidden, TimedOut):
@@ -55502,9 +55128,9 @@ async def job_background_decay(ctx: ContextTypes.DEFAULT_TYPE):
                     )
                     death_kb = None
                     if not _has_sub_death:
-                        death_msg += "\n\n<i>Болотная Няня следила бы за ней пока ты был занят.</i>"
+                        death_msg += "\n\n<i>С автоуходом она бы не голодала, пока тебя нет.</i>"
                         death_kb = InlineKeyboardMarkup([[
-                            btn("🧑‍🍼 Няня · 7 дней · 75⭐", callback_data="sub_buy_nanny_7"),
+                            btn(f"🛡️ Автоуход · неделя · {sub_price('nanny', 7)}⭐", callback_data="sub_buy_nanny_7"),
                         ]])
                     await ctx.bot.send_message(
                         uid_dec,
@@ -55537,6 +55163,7 @@ async def grant_trial(uid: int, sub_type: int, days: int, bot=None, reason: str 
     if f.get(field, 0):
         return False  # уже получал
     now_t = time.time()
+    auto_care_reset_if_new(f, now_t)
     base = max(now_t, f.get("subscription_until", 0))
     f["subscription_until"] = base + days * 86400
     if sub_type == 2 or f.get("subscription_type", 0) < sub_type:
@@ -55547,23 +55174,49 @@ async def grant_trial(uid: int, sub_type: int, days: int, bot=None, reason: str 
     if sub_type == 2:
         f["last_worker_report"] = time.time()
     await db_save(f)
-    sub_name = "🧑‍🍼 Болотная Няня" if sub_type == 1 else "🏪 Трудяга"
     if bot:
         try:
-            msg = (
-                f"{_E_GIFT} <b>Пробный период!</b>\n\n"
-                f"{sub_name} активирована на <b>{days} дней</b> бесплатно!\n"
-            )
+            msg = sub_welcome_text(f, f["subscription_type"], paid=False, days=days)
             if reason:
-                msg += f"<i>{reason}</i>\n"
-            if sub_type == 1:
-                msg += f"\n{_E_NANNY} <i>Тётя Жаба уже спешит к твоей лягушке</i>"
-            else:
-                msg += f"\n{_E_STORE} <i>Квакуся собирает корзинку — первый выход на рынок уже сегодня!</i>"
-            await bot.send_message(uid, msg, parse_mode=ParseMode.HTML)
+                msg += f"\n<i>{reason}</i>"
+            await bot.send_message(uid, msg, parse_mode=ParseMode.HTML,
+                                   reply_markup=InlineKeyboardMarkup([[
+                                       btn("⭐ Моя подписка", callback_data="shop_sub")]]))
         except (BadRequest, Forbidden, TimedOut):
             pass
     return True
+
+
+def auto_care_count(f: dict, done: list[str]):
+    """Счётчик того, что автоуход сделал за подписку — показывается подписчику."""
+    try:
+        st = json.loads(f.get("auto_care_stats") or "{}")
+    except ValueError:
+        st = {}
+    st.setdefault("since", time.time())
+    for k in done:
+        st[k] = st.get(k, 0) + 1
+    f["auto_care_stats"] = json.dumps(st)
+
+
+def sub_welcome_text(f: dict, kind: int, paid: bool, days: int = 0) -> str:
+    """Что игрок получил и что будет дальше — после оплаты и после пробника."""
+    until = datetime.fromtimestamp(f["subscription_until"], ST_TZ).strftime("%d.%m")
+    name = he(fname(f))
+    lines = [f"{_E_CHECK} <b>{'Оплачено' if paid else 'Пробный период'}: "
+             f"{SUB_ICON.get(kind, '')} {SUB_NAME.get(kind, 'подписка')} до {until}</b>"]
+    lines.append(f"🛡️ С этой минуты {name} под присмотром: раз в 15 минут её кормят, развлекают, "
+                 f"моют и укладывают — параметры держатся на {AUTO_CARE_CAP}%.")
+    if kind >= 2:
+        lines.append(f"💼 Завтра в 7:00 {name} пойдёт на работу, в обед пришлёт новости, вечером "
+                     f"принесёт монеты — в среднем {WORKER_AVG_DAY}🪙 в день. Сообщения приходят без звука.")
+    return "\n\n".join(lines)
+
+
+def auto_care_reset_if_new(f: dict, now: float):
+    """Новая подписка после перерыва — счётчик заново."""
+    if f.get("subscription_until", 0) <= now:
+        f["auto_care_stats"] = json.dumps({"since": now})
 
 
 # ── Caps для автоухода — показатели никогда не доводятся до 100% ──
@@ -55595,7 +55248,7 @@ async def job_auto_care(ctx: ContextTypes.DEFAULT_TYPE):
             if not f or not f.get("alive"):
                 continue
             f = decay(f)
-            changed = False
+            done = []
 
             # Кормление: кулдаун 20 минут
             # Используем last_auto_feed — не трогаем last_feed (он для ручного ухода и квестов)
@@ -55603,7 +55256,7 @@ async def job_auto_care(ctx: ContextTypes.DEFAULT_TYPE):
                 if f["hunger"] < AUTO_CARE_CAP:
                     f["hunger"] = min(AUTO_CARE_CAP, f["hunger"] + 20)
                     f["last_auto_feed"] = now
-                    changed = True
+                    done.append("feed")
 
             # Игра: кулдаун 20 минут
             # Используем last_auto_play — не трогаем last_play (он для ручного ухода и квестов)
@@ -55611,7 +55264,7 @@ async def job_auto_care(ctx: ContextTypes.DEFAULT_TYPE):
                 if f["happiness"] < AUTO_CARE_CAP:
                     f["happiness"] = min(AUTO_CARE_CAP, f["happiness"] + random.randint(18, 25))
                     f["last_auto_play"] = now
-                    changed = True
+                    done.append("play")
 
             # Купание: кулдаун 2 часа
             # Используем last_auto_wash — не трогаем last_wash (он для ручного ухода и квестов)
@@ -55619,7 +55272,7 @@ async def job_auto_care(ctx: ContextTypes.DEFAULT_TYPE):
                 if f.get("cleanliness", 100) < AUTO_CARE_CAP:
                     f["cleanliness"] = AUTO_CARE_CAP
                     f["last_auto_wash"] = now
-                    changed = True
+                    done.append("wash")
 
             # Сон: кулдаун 3 часа
             # Используем last_auto_sleep — не трогаем last_sleep (он для ручного ухода и квестов)
@@ -55627,19 +55280,123 @@ async def job_auto_care(ctx: ContextTypes.DEFAULT_TYPE):
                 if f.get("energy", 100) < AUTO_CARE_CAP:
                     f["energy"] = min(AUTO_CARE_CAP, f.get("energy", 100) + random.randint(30, 45))
                     f["last_auto_sleep"] = now
-                    changed = True
+                    done.append("sleep")
 
             # Лечение: кулдаун 1 час, только до AUTO_CARE_CAP
             # Используем last_auto_heal — не трогаем last_heal (он для ручного ухода и квестов)
             if now - f.get("last_auto_heal", 0) >= 3600 and f["health"] < 60:
                 f["health"] = min(AUTO_CARE_CAP, f["health"] + 35)
                 f["last_auto_heal"] = now
-                changed = True
+                done.append("heal")
 
-            if changed:
+            if done:
+                auto_care_count(f, done)
                 await db_save(f)
         except Exception as _e:
             logger.warning("job_auto_care uid=%s: %s", uid_ac, _e)
+
+
+# ══════════════════════════════════════════════════════════════════════════
+# ⭐ ПОДПИСКИ — один экран
+# ══════════════════════════════════════════════════════════════════════════
+# Раньше было три экрана (/subscribe, магазин, старый «Звёзды») с разными
+# пробниками (3 дня Няни, 1 день Трудяги, 3 дня Трудяги), а в напоминаниях
+# стояла цена 75⭐ при счёте на 50⭐. «Болотная Няня» и «Тётя Жаба» ничего не
+# объясняли — теперь это прямо «Автоуход». Трудягу продаёт честный расчёт:
+# сколько монет он приносит за месяц и сколько это стоило бы звёздами.
+SUB_TRIAL_DAYS = 3
+WORKER_AVG_DAY = 490          # среднее _work_build_scene(), проверено на 20 000 сцен
+WORKER_MAX_DAY = 1350
+SUB_ICON = {1: "🛡️", 2: "💼"}
+SUB_NAME = {1: "Автоуход", 2: "Трудяга"}
+_CARE_WORDS = {"feed": "покормил", "play": "поиграл", "wash": "искупал", "sleep": "уложил спать",
+               "heal": "вылечил"}
+
+
+def coins_in_stars(coins: int) -> int:
+    """Сколько звёзд стоили бы монеты обычными пакетами (лучший курс среди видимых)."""
+    rate = max(p["coins"] / p["stars"] for p in STAR_PACKAGES
+               if not p.get("subscription") and not p.get("hidden") and not p.get("newbie")
+               and not p.get("daily_deal") and p["stars"])
+    return int(round(coins / rate, -2))
+
+
+def sub_active(f: dict, now: float | None = None) -> int:
+    """Тип активной подписки (0 — нет)."""
+    now = time.time() if now is None else now
+    return int(f.get("subscription_type", 0) or 0) if f.get("subscription_until", 0) > now else 0
+
+
+def worker_day_text(f: dict) -> str:
+    """Что сейчас делает Трудяга."""
+    phase, scene_raw = f.get("worker_phase", 0), f.get("worker_scene_json", "")
+    if phase >= 1 and scene_raw:
+        try:
+            sc = json.loads(scene_raw)
+            line = f"{sc['prof_emoji']} Сегодня — {sc['prof_name'].lower()}: " + sc["story"].format(name=he(fname(f)))
+            return line + ("\n<i>Вечером вернётся с монетами</i>" if phase == 2 else "\n<i>Новости — в обед</i>")
+        except Exception:
+            pass
+    # Отметка ставится и вечером после работы, и при покупке — различить нельзя,
+    # поэтому без «уже отработала»: после пробника это было бы неправдой
+    hour = datetime.now(ST_TZ).hour
+    return "⏳ Выйдет на работу сегодня в 7:00" if hour < 7 else "💤 Отдыхает — следующий выход завтра в 7:00"
+
+
+def subs_view(f: dict, back: str = "menu_shop") -> tuple[str, InlineKeyboardMarkup]:
+    now = time.time()
+    kind = sub_active(f, now)
+    month_coins = WORKER_AVG_DAY * 30
+    rows = []
+    if kind:
+        left_d = max(1, math.ceil((f["subscription_until"] - now) / 86400))
+        until = datetime.fromtimestamp(f["subscription_until"], ST_TZ).strftime("%d.%m")
+        blocks = [f"{SUB_ICON[kind]} <b>{SUB_NAME[kind]}</b> до {until}{SEP}ещё "
+                  + ui_plural(left_d, "день", "дня", "дней")]
+        if not f.get("subscription_auto", 1):
+            blocks.append("⏸ Автоуход на паузе — лягушкой занимаешься сам")
+        try:
+            st = json.loads(f.get("auto_care_stats") or "{}")
+        except ValueError:
+            st = {}
+        done = [f"{w} {ui_plural(st[k], 'раз', 'раза', 'раз')}" for k, w in _CARE_WORDS.items() if st.get(k)]
+        if done:
+            blocks.append("<b>Автоуход уже</b>\n" + ui_quote(", ".join(done)))
+        if kind >= 2:
+            blocks.append("<b>Работа</b>\n" + worker_day_text(f))
+        price = SUB_WORKER_STARS if kind >= 2 else SUB_NANNY_STARS
+        rows.append([btn(f"🔄 Продлить на 30 дней · {price}⭐", callback_data="sub_renew", style="primary")])
+        if kind == 1:
+            rows.append([btn(f"💼 Трудяга — ещё и ~{WORKER_AVG_DAY}🪙 в день · {SUB_WORKER_STARS}⭐",
+                             callback_data="sub_buy_worker")])
+        rows.append([btn("▶️ Включить автоуход" if not f.get("subscription_auto", 1) else "⏸ Пауза автоухода",
+                         callback_data="sub_toggle_auto")])
+        head = ui_title("⭐", "Подписка")
+        hint = ""
+    else:
+        blocks = [
+            f"🛡️ <b>Автоуход</b>{SEP}{SUB_NANNY_STARS}⭐ в месяц\n"
+            "Лягушка не голодает и не болеет, пока тебя нет: каждые 15 минут её кормят, "
+            "развлекают, моют, укладывают и лечат. Параметры держатся на "
+            f"{AUTO_CARE_CAP}% — серия и здоровье в безопасности.",
+            f"💼 <b>Трудяга</b>{SEP}{SUB_WORKER_STARS}⭐ в месяц\n"
+            f"Всё то же + лягушка каждый день ходит на работу и приносит в среднем "
+            f"<b>{WORKER_AVG_DAY}🪙</b> (бывает до {WORKER_MAX_DAY:,}🪙). За месяц — около "
+            f"<b>{month_coins:,}🪙</b>".replace(",", " ")
+            + f": обычными пакетами столько монет стоит ~{coins_in_stars(month_coins):,}⭐.".replace(",", " "),
+        ]
+        if not f.get("trial_worker_used"):
+            rows.append([btn(f"🎁 {SUB_TRIAL_DAYS} дня Трудяги бесплатно", callback_data="sub_trial_worker",
+                             style="success")])
+        rows.append([btn(f"💼 Трудяга · {SUB_WORKER_STARS}⭐/мес", callback_data="sub_buy_worker",
+                         style="primary" if f.get("trial_worker_used") else None)])
+        rows.append([btn(f"🛡️ Автоуход · {SUB_NANNY_STARS}⭐/мес", callback_data="sub_buy_nanny"),
+                     btn(f"Неделя · {sub_price('nanny', 7)}⭐", callback_data="sub_buy_nanny_7")])
+        head = ui_title("⭐", "Подписки")
+        hint = ("Попробуй бесплатно — платить ничего не нужно, через 3 дня просто закончится"
+                if not f.get("trial_worker_used") else "Оплата звёздами Telegram, без автосписаний")
+    rows.append([btn("◀️ Назад", callback_data=back)])
+    return ui_card(head, *blocks, hint=hint), InlineKeyboardMarkup(rows)
 
 
 # ── Трудяга: трёхэтапный рабочий день ────────────────────────────────────────
@@ -55997,13 +55754,13 @@ _WINBACK_SEGMENTS = [
     (14, 30, 3,
      "😰 <b>{name} совсем плохо...</b>\n\n"
      "Лягушка лежит пластом. Ещё немного — и она не выдержит.\n"
-     f"Возвращайся! Мы дадим тебе <b>3 дня {_E_NANNY} Болотной Няни</b> бесплатно.\n\n"
+     f"Возвращайся! Мы дадим тебе <b>3 дня автоухода</b> бесплатно.\n\n"
      "<i>Открыть: /frog</i>",
      0),
     (30, 9999, 4,
      "💀 <b>{name} давно одна...</b>\n\n"
      "Болото стало тихим без тебя. Лягушка почти не дышит.\n"
-     f"Возвращайся — получи <b>7 дней {_E_NANNY} Болотной Няни</b> и <b>+100 🪙</b> на восстановление!\n\n"
+     f"Возвращайся — получи <b>7 дней автоухода</b> и <b>+100 🪙</b> на восстановление!\n\n"
      "<i>Открыть: /frog</i>",
      100),
 ]
@@ -57111,7 +56868,7 @@ async def post_init(app: Application):
     # 🐸 Фоновый decay лягушек — каждые 3 часа обновляем статы всех живых игроков
     # Это гарантирует деградацию даже если игрок не открывал профиль целую неделю
     app.job_queue.run_repeating(job_background_decay, interval=3 * 3600, first=600)
-    # 🧑‍🍼 Болотная Няня — автоуход каждые 15 минут
+    # 🛡️ Автоуход — автоуход каждые 15 минут
     # Отметка «бот жив» — по ней при следующем старте вычисляется простой
     app.job_queue.run_repeating(job_heartbeat, interval=120, first=60)
     app.job_queue.run_repeating(job_auto_care, interval=15 * 60, first=120)
@@ -58917,7 +58674,7 @@ async def cmd_givesub(update: Update, ctx: ContextTypes.DEFAULT_TYPE):
     if not args or len(args) < 2:
         await update.message.reply_text(
             "Использование: /givesub @username тип [дни]\n"
-            "Типы: <code>nanny</code> (Няня) / <code>worker</code> (Трудяга)\n"
+            "Типы: <code>nanny</code> (Автоуход) / <code>worker</code> (Трудяга)\n"
             "Пример: <code>/givesub @puzik worker 30</code>",
             parse_mode=ParseMode.HTML,
         )
@@ -58935,10 +58692,10 @@ async def cmd_givesub(update: Update, ctx: ContextTypes.DEFAULT_TYPE):
 
     if sub_str in ("worker", "w", "2", "трудяга"):
         sub_type = 2
-        sub_name = "🏪 Трудяга"
+        sub_name = "💼 Трудяга"
     elif sub_str in ("nanny", "n", "1", "няня"):
         sub_type = 1
-        sub_name = "🧑‍🍼 Болотная Няня"
+        sub_name = "🛡️ Автоуход"
     else:
         await update.message.reply_text("Тип: nanny или worker")
         return
@@ -59002,7 +58759,7 @@ async def cmd_givesub(update: Update, ctx: ContextTypes.DEFAULT_TYPE):
             f"📅 Активна до <b>{until_dt}</b>\n\n"
             + (f"{_E_STORE} <i>Квакуся идёт на Болотный Рынок!</i>"
                if sub_type == 2 else
-               f"{_E_NANNY} <i>Тётя Жаба уже спешит к твоей лягушке</i>"),
+               f"{_E_NANNY} <i>Автоуход уже присматривает за лягушкой</i>"),
             parse_mode=ParseMode.HTML,
         )
     except (BadRequest, Forbidden, TimedOut):
@@ -59854,7 +59611,7 @@ async def cmd_broadcast_return(update: Update, ctx: ContextTypes.DEFAULT_TYPE):
         "Она ждёт на болоте уже несколько дней.\n\n"
         "Мы хотим предложить тебе вернуться:\n"
         f"{_E_LEAF} <b>Бесплатное воскрешение</b> — одна кнопка\n"
-        "🧑\u200d🍼 <b>3 дня Болотной Няни</b> в подарок — она сама позаботится о лягушке, "
+        "🛡️ <b>3 дня автоухода</b> в подарок — он сам позаботится о лягушке, "
         "пока ты будешь обживаться заново\n\n"
         "<i>Предложение одноразовое.</i>"
     )
@@ -59868,7 +59625,7 @@ async def cmd_broadcast_return(update: Update, ctx: ContextTypes.DEFAULT_TYPE):
         f"  └ умерли ≤7д: <b>{day7}</b>\n"
         f"  └ умерли ≤14д: <b>{day14}</b>\n"
         f"  └ умерли ≤30д: <b>{total}</b>\n\n"
-        f"🧑\u200d🍼 3 дня Болотной Няни при нажатии кнопки.\n\n"
+        f"🛡️ 3 дня автоухода при нажатии кнопки.\n\n"
         f"Запустить рассылку?"
     )
 
@@ -59894,7 +59651,7 @@ async def _run_broadcast_return(bot, targets: list, status_msg):
     text_br = (
         f"{_E_FROG} <b>Пока тебя не было, на болоте кое-что поменялось</b>\n\n"
         f"Твоя лягушка на месте. Вернуть её — одна кнопка, бесплатно.\n"
-        f"И три дня Няни сверху: она присмотрит, пока ты осваиваешься.\n\n"
+        f"И три дня автоухода сверху: он присмотрит, пока ты осваиваешься.\n\n"
         f"<i>Предложение одноразовое.</i>"
     )
     kb_br = InlineKeyboardMarkup([[
@@ -61093,7 +60850,7 @@ ST_FEAT_LABELS = {
     "новый игрок": "Стартовые монеты",
     "plv": "Опрос: голос",
     "/start": "/start", "/?": "Неизвестная команда",
-    "job:auto_farm": "Трудяга", "job:auto_care": "Няня",
+    "job:auto_farm": "Трудяга", "job:auto_care": "Автоуход",
     "job:staya_passive_income": "Доход котла стаи", "job:lottery_draw": "Розыгрыш лотереи",
     "job:ex_tick": "Экспедиции (ход)", "job:adventure_tick": "Поход (ход)",
     "job:background_decay": "Угасание статов", "job:events": "Случайные события",
@@ -61639,7 +61396,7 @@ async def _sts_players(x: _StCtx) -> _StSec:
             [(l, _stn(n), _stn(a)) for l, n, a in langs],
             screen=lambda r: f"{r[0]} · {r[1]} · за 7 дн {r[2]}")
     s.kv("Подписки",
-         ("Няня", _stn(snap["sub_nanny"])), ("Трудяга", _stn(snap["sub_worker"])))
+         ("Автоуход", _stn(snap["sub_nanny"])), ("Трудяга", _stn(snap["sub_worker"])))
     s.note("«Заходили» — по last_seen: обновляется при нажатии кнопок и сообщениях боту.")
     return s
 
@@ -61900,7 +61657,7 @@ async def _sts_money(x: _StCtx) -> _StSec:
     auto = await x.one(f"SELECT COUNT(*) FROM frogs f WHERE subscription_type>0 AND subscription_until>? "
                        f"AND subscription_auto=1 AND {_ST_REAL}", x.now)
     s.kv("Подписки сейчас",
-         ("Няня", _stn(snap["sub_nanny"])), ("Трудяга", _stn(snap["sub_worker"])),
+         ("Автоуход", _stn(snap["sub_nanny"])), ("Трудяга", _stn(snap["sub_worker"])),
          ("кончаются за 3 дня", _stn(soon)), ("с автопродлением", _stn(auto)))
     # Платившие ещё здесь? Деньги приносят единицы — важно, не ушли ли они
     pay_seen = await x.rows(
