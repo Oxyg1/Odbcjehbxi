@@ -5001,13 +5001,37 @@ def run_sync_migration():
             )""",
         ),
         (
-            "chat_kva",
-            """CREATE TABLE IF NOT EXISTS chat_kva (
+            "chat_members",
+            """CREATE TABLE IF NOT EXISTS chat_members (
                 chat_id  INTEGER NOT NULL,
                 user_id  INTEGER NOT NULL,
-                wk       TEXT    NOT NULL,
-                n        INTEGER DEFAULT 0,
-                PRIMARY KEY (chat_id, user_id, wk)
+                last_ts  REAL    DEFAULT 0,
+                wins     INTEGER DEFAULT 0,
+                losses   INTEGER DEFAULT 0,
+                days     INTEGER DEFAULT 0,
+                PRIMARY KEY (chat_id, user_id)
+            )""",
+        ),
+        (
+            "chat_battles",
+            """CREATE TABLE IF NOT EXISTS chat_battles (
+                chat_id  INTEGER NOT NULL,
+                a        INTEGER NOT NULL,
+                b        INTEGER NOT NULL,
+                winner   INTEGER NOT NULL,
+                ts       REAL    NOT NULL
+            )""",
+        ),
+        (
+            "chat_battles_idx",
+            "CREATE INDEX IF NOT EXISTS idx_chat_battles_pair ON chat_battles(chat_id, a, b)",
+        ),
+        (
+            "chat_day",
+            """CREATE TABLE IF NOT EXISTS chat_day (
+                chat_id  INTEGER PRIMARY KEY,
+                day      TEXT    NOT NULL,
+                user_id  INTEGER NOT NULL
             )""",
         ),
         (
@@ -21684,32 +21708,43 @@ async def group_cmd_guard(update: Update, cmd: str, ctx: ContextTypes.DEFAULT_TY
 # ══════════════════════════════════════════════════════════════════════════════
 # 👥 БОТ В ГРУППАХ
 # ══════════════════════════════════════════════════════════════════════════════
-# В группе бот — гость. Раньше он вёл себя как в личке: /frog и /start
-# вываливали в чат карточку на 14 строк с личным меню, /daily — 19 строк,
-# /help — 29, новичку прямо в группе начиналось знакомство, а на «квартиру»
-# и «квас» бот писал «⏳ Ква ещё не готово — через 37 мин». Теперь:
-#   • в группе только то, что интересно всем: «ква», карточка лягушки в две
-#     строки, квакеры чата, игры на двоих;
-#   • всё личное — одной кнопкой в личку, по ссылке ?start=chat_<id>, так
-#     что новичок из группы засчитывается группе;
-#   • откат «ква» — молча, реакцией; ответы бота исчезают сами.
+# В группе бот — гость. Растят лягушку в личке, а в чате ими меряются: то,
+# как ты ухаживаешь, видно другим. Поэтому в группе:
+#   • «ква» — лягушка отзывается одной строкой;
+#   • «батл» ответом на сообщение — чья лягушка сильнее; сила от уровня и
+#     ухода, так что голодная лягушка проигрывает и хозяину есть зачем в личку;
+#   • /frogday — лягушка дня из тех, кто пишет в чат, ей корона;
+#   • /top — лягушки чата по уровню, с победами и коронами.
+# Монет в чате не прибавляется: награда — место в чате на виду у всех.
+# Всё личное — одной кнопкой в личку, по ссылке ?start=chat_<id>, так что
+# новичок из группы засчитывается группе. Ответы бота исчезают сами.
 GROUP_REPLY_TTL = 120                 # секунд до удаления ответа бота в группе
 GROUP_INVITE_COOLDOWN = 86400         # приглашение новичку — раз в сутки на чат
+CHAT_ACTIVE_DAYS = 14                 # кто писал за столько дней — участник лягушки дня
+CHAT_TOP_DAYS = 30                    # и топа чата
+BATTLE_CD = 10 * 60
 _KVA_WORD = re.compile(r"ква+к?(?:-?ква+к?)*")
-_group_invited: dict[tuple[int, int], float] = {}
+_BATTLE_WORDS = {"батл", "баттл"}
+_group_invited: dict[tuple, float] = {}
+_member_seen: dict[tuple[int, int], float] = {}
+_battle_last: dict[int, float] = {}
 
 # Команды, у которых в группе свой короткий ответ (остальные «личные» —
-# кнопкой в личку). Групповые игры (/duel, /ttt, /checkers, /giveaway) и
+# кнопкой в личку). Игры на двоих (/duel, /ttt, /checkers, /giveaway) и
 # администрирование (/chatadmin…) идут обычными обработчиками.
 _GROUP_CARD_CMDS = {"start", "frog", "mymenu", "mystats", "stats"}
+_GROUP_OWN_CMDS = {"daily", "help", "top", "frogday", "vs"}
 _GROUP_PRIVATE_CMDS = {
-    "games": "🎮 Игры", "casino": "🎰 Казино", "lottery": "🎟 Лотерея", "jackpot": "🎰 Джекпот",
-    "staya": "🌿 Стая", "staya_top": "🌿 Стаи", "sosedi": "👥 Соседи", "letopis": "📖 Летопись",
-    "bond": "💚 Связь", "fish": "🎣 Рыбалка", "pohod": "⚔️ Поход", "expedition": "🗺 Экспедиции",
-    "exp": "🗺 Экспедиции", "cooldowns": "⏳ Откаты", "rename": "✏️ Имя", "revive": "💖 Воскрешение",
-    "heal": "❤️ Лечение", "referral": "🔗 Приглашения", "topw": "🏆 Топ недели",
-    "topm": "🏆 Топ месяца", "online": "👥 Онлайн", "donate": "⭐ Поддержать",
+    "games": "Игры", "casino": "Казино", "lottery": "Лотерея", "jackpot": "Джекпот",
+    "staya": "Стая", "staya_top": "Рейтинг стай", "sosedi": "Соседи", "letopis": "Летопись",
+    "bond": "Связь", "fish": "Рыбалка", "pohod": "Поход", "expedition": "Экспедиции",
+    "exp": "Экспедиции", "cooldowns": "Откаты", "rename": "Смена имени", "revive": "Воскрешение",
+    "heal": "Лечение", "referral": "Приглашения", "topw": "Топ недели",
+    "topm": "Топ месяца", "online": "Онлайн", "donate": "Поддержка проекта",
 }
+# Что не так с лягушкой — словами, а не пятью значками с числами
+_FROG_TROUBLES = (("hunger", "голодная"), ("health", "болеет"), ("energy", "уставшая"),
+                  ("cleanliness", "грязная"), ("happiness", "грустит"))
 
 
 def is_kva(text: str) -> bool:
@@ -21718,37 +21753,38 @@ def is_kva(text: str) -> bool:
 
 
 async def kva_not_ready(update: Update, ctx, left: int):
-    """Откат «ква». В группе — молча, реакцией на сообщение; в личке — строкой."""
+    """Откат «ква». В группе — молча: «ещё не готово» на каждое ква и было спамом."""
     if is_group(update):
-        try:
-            await ctx.bot.set_message_reaction(update.effective_chat.id, update.message.message_id,
-                                               reaction=[ReactionTypeEmoji("🥱")])
-        except Exception:
-            pass
         return
     try:
-        await update.message.reply_text(f"⏳ Лягушка отдыхает — ква снова через {_ex_left(time.time() + left)}")
+        await update.message.reply_text(f"Лягушка отдыхает, ква снова через {_ex_left(time.time() + left)}")
     except (BadRequest, Forbidden, TimedOut):
         pass
 
 
-async def kva_no_frog(update: Update, ctx, f: dict | None):
-    """«Ква» без лягушки. В группе — приглашение, но не чаще раза в сутки на человека и чат."""
-    if not is_group(update):
-        try:
-            await update.message.reply_text(f"{_E_FROG} Чтобы квакать — сначала заведи лягушку: /start")
-        except (BadRequest, Forbidden, TimedOut):
-            pass
-        return
+async def group_invite(update: Update, ctx, f: dict | None, why: str):
+    """Приглашение завести (или вернуть) лягушку — не чаще раза в сутки на человека и чат."""
     key = (update.effective_chat.id, update.effective_user.id)
     if time.time() - _group_invited.get(key, 0) < GROUP_INVITE_COOLDOWN:
         return
     _group_invited[key] = time.time()
     link = await bot_link(ctx.bot, update.effective_chat.id)
-    text = (f"{_E_FROG} Ква! Своей лягушки у тебя нет — заведи, и она будет отзываться тут на «ква»."
-            if not f else f"💀 Твоей лягушки больше нет — её можно вернуть в личке.")
-    await group_reply(update, text, InlineKeyboardMarkup([[
-        btn("🐸 Завести лягушку" if not f else "💖 Вернуть лягушку", url=link)]]))
+    if f:
+        text, label = "Твоя лягушка умерла. Вернуть её можно в личке.", "Вернуть лягушку"
+    else:
+        text, label = f"Своей лягушки у тебя пока нет. Заведи — и {why}.", "Завести лягушку"
+    await group_say(update, text, InlineKeyboardMarkup([[btn(label, url=link)]]))
+
+
+async def kva_no_frog(update: Update, ctx, f: dict | None):
+    """«Ква» без лягушки. В группе — приглашение, это главный вход новичков из чатов."""
+    if not is_group(update):
+        try:
+            await update.message.reply_text("Чтобы квакать, сначала заведи лягушку: /start")
+        except (BadRequest, Forbidden, TimedOut):
+            pass
+        return
+    await group_invite(update, ctx, f, "она будет отзываться здесь на «ква»")
 
 
 async def bot_link(bot, chat_id: int = 0) -> str:
@@ -21757,7 +21793,7 @@ async def bot_link(bot, chat_id: int = 0) -> str:
     return f"https://t.me/{me.username}" + (f"?start=chat_{chat_id}" if chat_id else "")
 
 
-async def group_reply(update: Update, text: str, kb=None, ttl: int = GROUP_REPLY_TTL):
+async def group_say(update: Update, text: str, kb=None, ttl: int = GROUP_REPLY_TTL):
     """Ответ в группе, который сам исчезнет (если чат не отключил автоудаление)."""
     try:
         sent = await update.message.reply_text(text, parse_mode=ParseMode.HTML, reply_markup=kb,
@@ -21770,18 +21806,60 @@ async def group_reply(update: Update, text: str, kb=None, ttl: int = GROUP_REPLY
     return sent
 
 
-def group_frog_line(f: dict) -> str:
-    """Лягушка в две строки — для группы."""
-    stats = SEP.join(f"{e}{int(f.get(k) or 0)}" for k, e in
-                     (("hunger", "🍖"), ("happiness", "😃"), ("health", "❤️"),
-                      ("cleanliness", "🧼"), ("energy", "⚡")))
-    st = streak_now(f)
-    head = ui_line(f"{_E_FROG} <b>{he(fname(f))}</b>", f"ур. {f.get('level', 1)}",
-                   f"{pemoji(f.get('skin', ''))} {he(f.get('skin', ''))}" if f.get("skin") else "")
-    tail = ui_line(stats, f"🔥{st}" if st else "")
+def frog_troubles(f: dict) -> list[str]:
+    return [w for k, w in _FROG_TROUBLES if int(f.get(k) or 0) < 40]
+
+
+def frog_form(f: dict) -> float:
+    """Форма лягушки 0–100: среднее по пяти параметрам ухода."""
+    return sum(int(f.get(k) or 0) for k, _ in _FROG_TROUBLES) / len(_FROG_TROUBLES)
+
+
+async def chat_member_touch(chat_id: int, uid: int):
+    """Отметка «писал в этот чат» — не чаще раза в 10 минут на человека."""
+    now = time.time()
+    if now - _member_seen.get((chat_id, uid), 0) < 600:
+        return
+    if len(_member_seen) > 50000:
+        _member_seen.clear()
+    _member_seen[(chat_id, uid)] = now
+    async with aiosqlite.connect(DB_PATH) as db:
+        await db.execute("INSERT INTO chat_members(chat_id, user_id, last_ts) VALUES(?,?,?) "
+                         "ON CONFLICT(chat_id, user_id) DO UPDATE SET last_ts=excluded.last_ts",
+                         (chat_id, uid, now))
+        await db.commit()
+
+
+async def chat_member_stats(chat_id: int, uid: int) -> dict:
+    async with aiosqlite.connect(DB_PATH) as db:
+        async with db.execute("SELECT wins, losses, days FROM chat_members WHERE chat_id=? AND user_id=?",
+                              (chat_id, uid)) as c:
+            row = await c.fetchone()
+    return dict(zip(("wins", "losses", "days"), row or (0, 0, 0)))
+
+
+def chat_record(st: dict) -> str:
+    """«5 побед, 2 поражения, 1 корона» — только то, что есть."""
+    return ", ".join(p for p in (
+        ui_plural(st["wins"], "победа", "победы", "побед") if st["wins"] else "",
+        ui_plural(st["losses"], "поражение", "поражения", "поражений") if st["losses"] else "",
+        ui_plural(st["days"], "корона", "короны", "корон") if st["days"] else "",
+    ) if p)
+
+
+def group_frog_text(f: dict, st: dict | None = None) -> str:
+    """Лягушка для группы: кто она, в какой форме и как дела в этом чате."""
     if not f.get("alive"):
-        tail = "💀 Лягушки нет — её можно вернуть в личке"
-    return f"{head}\n{tail}"
+        return f"{_E_SKULL} <b>{fname(f)}</b> умерла. Вернуть её можно в личке."
+    head = ui_line(f"{_E_FROG} <b>{fname(f)}</b>",
+                   f"ур. {f.get('level', 1)}",
+                   f"серия {ui_plural(streak_now(f), 'день', 'дня', 'дней')}" if streak_now(f) else "")
+    tr = frog_troubles(f)
+    lines = [head, (" и ".join(tr[:2]).capitalize() + " — пора в личку") if tr else "В хорошей форме"]
+    rec = chat_record(st) if st else ""
+    if rec:
+        lines.append(f"В этом чате: {rec}")
+    return "\n".join(lines)
 
 
 async def group_card(update: Update, ctx):
@@ -21789,81 +21867,221 @@ async def group_card(update: Update, ctx):
     f = await db_get(user.id)
     link = await bot_link(ctx.bot, chat.id)
     if not f:
-        await group_reply(update, f"{_E_FROG} У тебя пока нет лягушки — заводится за минуту, в личке.",
-                          InlineKeyboardMarkup([[btn("🐸 Завести лягушку", url=link)]]))
+        await group_say(update, "У тебя пока нет лягушки. Заводится за минуту, в личке.",
+                          InlineKeyboardMarkup([[btn("Завести лягушку", url=link)]]))
         return
     f = decay(f)
-    await group_reply(update, group_frog_line(f),
-                      InlineKeyboardMarkup([[btn("🐸 Ухаживать — в личке", url=link)]]))
+    await group_say(update, group_frog_text(f, await chat_member_stats(chat.id, user.id)),
+                      InlineKeyboardMarkup([[btn("Открыть в личке", url=link)]]))
 
 
 async def group_daily(update: Update, ctx):
     user = update.effective_user
     f = await db_get(user.id)
-    link = await bot_link(ctx.bot, update.effective_chat.id)
     if not f or not f.get("alive"):
         await group_card(update, ctx)
         return
     coins0 = f.get("coins", 0)
     ok_, msg = await daily_claim(user, f, ctx)
     if not ok_:
-        await group_reply(update, f"📅 {he(msg)}", ttl=30)
+        await group_say(update, he(msg), ttl=30)
         return
-    await group_reply(update, ui_line(f"📅 <b>{he(fname(f))}</b> забирает бонус",
-                                      f"+{f.get('coins', 0) - coins0}🪙", f"🔥 серия {f.get('streak', 1)}"),
-                      InlineKeyboardMarkup([[btn("🐸 Моя лягушка", url=link)]]))
+    await group_say(update, ui_line(f"<b>{fname(f)}</b> забирает ежедневный бонус",
+                                      f"+{f.get('coins', 0) - coins0}{coin_emoji()}",
+                                      f"серия {f.get('streak', 1)}"))
 
 
 async def group_help(update: Update, ctx):
     link = await bot_link(ctx.bot, update.effective_chat.id)
-    await group_reply(update, ui_card(
+    await group_say(update, ui_card(
         f"{_E_FROG} <b>Лягушка в этом чате</b>",
-        "<b>ква</b> — твоя лягушка отзовётся и принесёт монетку (раз в 30 мин)\n"
-        "/frog — показать свою лягушку\n"
-        "/top — квакеры этого чата за неделю\n"
-        "/duel @ник · /ttt · /checkers — сыграть с кем-то из чата",
-        hint="Уход, игры и магазин — в личке. Мои ответы сами исчезают через 2 минуты"),
-        InlineKeyboardMarkup([[btn("🐸 Открыть игру", url=link)]]), ttl=300)
+        "<b>ква</b> — твоя лягушка отзовётся, раз в 30 минут\n"
+        "<b>батл</b> ответом на сообщение — чья лягушка сильнее. Решают уровень и уход: "
+        "голодная и уставшая проигрывает чаще\n"
+        "/frogday — лягушка дня, ей достаётся корона\n"
+        "/top — лягушки чата · /frog — твоя\n"
+        "/duel, /ttt, /checkers — игры на двоих",
+        hint="Кормить и растить лягушку — в личке. Мои ответы удаляются через 2 минуты"),
+        InlineKeyboardMarkup([[btn("Открыть игру", url=link)]]), ttl=300)
 
 
-def _kva_week() -> str:
-    d = datetime.now(ST_TZ).date()
-    return f"{d.isocalendar()[0]}-{d.isocalendar()[1]:02d}"
+def _member_name(r: dict) -> str:
+    """«Петя — Квакуша»: в чате знают людей, а не их лягушек."""
+    who = he(r.get("first_name") or "Без имени")
+    return f"{who} — {he(r['frog_name'])}" if r.get("frog_name") else who
 
 
-async def chat_kva_add(chat_id: int, uid: int):
-    async with aiosqlite.connect(DB_PATH) as db:
-        await db.execute(
-            "INSERT INTO chat_kva(chat_id, user_id, wk, n) VALUES(?,?,?,1) "
-            "ON CONFLICT(chat_id, user_id, wk) DO UPDATE SET n=n+1", (chat_id, uid, _kva_week()))
-        await db.commit()
-
-
-async def group_top(update: Update, ctx):
-    chat = update.effective_chat
+async def chat_frogs(chat_id: int, days: int) -> list[dict]:
+    """Живые лягушки тех, кто писал в чат за `days` дней, — сильнейшие первыми."""
     async with aiosqlite.connect(DB_PATH) as db:
         db.row_factory = aiosqlite.Row
         async with db.execute(
-            "SELECT k.user_id, k.n, f.frog_name, f.first_name, f.level FROM chat_kva k "
-            "JOIN frogs f ON f.user_id=k.user_id WHERE k.chat_id=? AND k.wk=? "
-            "ORDER BY k.n DESC, f.level DESC LIMIT 10", (chat.id, _kva_week())) as c:
-            rows = [dict(r) for r in await c.fetchall()]
+            "SELECT m.user_id, m.wins, m.losses, m.days, f.first_name, f.frog_name, f.level, f.xp "
+            "FROM chat_members m JOIN frogs f ON f.user_id=m.user_id "
+            "WHERE m.chat_id=? AND m.last_ts>? AND f.alive=1 "
+            "AND COALESCE(f.banned,0)=0 AND COALESCE(f.is_bot,0)=0 "
+            "ORDER BY f.level DESC, f.xp DESC LIMIT 500",
+            (chat_id, time.time() - days * 86400)) as c:
+            return [dict(r) for r in await c.fetchall()]
+
+
+async def group_top(update: Update, ctx):
+    chat, user = update.effective_chat, update.effective_user
+    rows = await chat_frogs(chat.id, CHAT_TOP_DAYS)
     link = await bot_link(ctx.bot, chat.id)
     if not rows:
-        await group_reply(update, f"{_E_TROPHY} На этой неделе тут ещё никто не квакал. Напиши <b>ква</b> 🐸",
-                          InlineKeyboardMarkup([[btn("🐸 Завести лягушку", url=link)]]))
+        await group_say(update, "В этом чате пока ни у кого нет лягушки.",
+                          InlineKeyboardMarkup([[btn("Завести лягушку", url=link)]]))
         return
-    medals = ["🥇", "🥈", "🥉"]
-    lines = [f"{medals[i] if i < 3 else f'{i + 1}.'} {he(r['frog_name'] or r['first_name'] or '?')}"
-             f"{SEP}{ui_plural(r['n'], 'ква', 'ква', 'ква')}{SEP}ур. {r['level']}" for i, r in enumerate(rows)]
-    await group_reply(update, ui_card(f"{_E_TROPHY} <b>Квакеры чата за неделю</b>", "\n".join(lines)),
-                      InlineKeyboardMarkup([[btn("🐸 Моя лягушка", url=link)]]), ttl=300)
+
+    def line(i, r):
+        rec = ", ".join(p for p in (
+            ui_plural(r["wins"], "победа", "победы", "побед") if r["wins"] else "",
+            ui_plural(r["days"], "корона", "короны", "корон") if r["days"] else "") if p)
+        return ui_line(f"{i}. {_member_name(r)}", f"ур. {r['level']}", rec)
+
+    lines = [line(i, r) for i, r in enumerate(rows[:10], 1)]
+    me = next((i for i, r in enumerate(rows, 1) if r["user_id"] == user.id), None)
+    if me and me > 10:
+        lines.append(f"…\n{line(me, rows[me - 1])}")
+    await group_say(update, ui_card(f"{_E_TROPHY} <b>Лягушки чата</b>", "\n".join(lines),
+                                      hint="Те, кто писал сюда за последние 30 дней"),
+                      InlineKeyboardMarkup([[btn("Моя лягушка", url=link)]]), ttl=300)
+
+
+async def group_frogday(update: Update, ctx):
+    """Лягушка дня: раз в сутки на чат, из тех, кто писал сюда за две недели."""
+    chat = update.effective_chat
+    today = datetime.now(ST_TZ).date().isoformat()
+    async with aiosqlite.connect(DB_PATH) as db:
+        async with db.execute("SELECT day, user_id FROM chat_day WHERE chat_id=?", (chat.id,)) as c:
+            row = await c.fetchone()
+    if row and row[0] == today:
+        f = await db_get(row[1])
+        await group_say(update, f"Сегодня лягушка дня — <b>{he((f or {}).get('first_name') or '?')}</b>. "
+                                  "Новую выберем завтра.", ttl=30)
+        return
+    pool = await chat_frogs(chat.id, CHAT_ACTIVE_DAYS)
+    if len(pool) < 2:
+        await group_say(update, "Лягушку дня выбирают из тех, у кого есть лягушка и кто писал сюда "
+                                  "за последние две недели. Пока таких меньше двух.",
+                          InlineKeyboardMarkup([[btn("Завести лягушку", url=await bot_link(ctx.bot, chat.id))]]),
+                          ttl=60)
+        return
+    r = random.choice(pool)
+    async with aiosqlite.connect(DB_PATH) as db:
+        cur = await db.execute(
+            "INSERT INTO chat_day(chat_id, day, user_id) VALUES(?,?,?) "
+            "ON CONFLICT(chat_id) DO UPDATE SET day=excluded.day, user_id=excluded.user_id "
+            "WHERE chat_day.day<>excluded.day", (chat.id, today, r["user_id"]))
+        if cur.rowcount == 0:
+            return                       # одновременно выбрали в другом запросе
+        await db.execute("UPDATE chat_members SET days=days+1 WHERE chat_id=? AND user_id=?",
+                         (chat.id, r["user_id"]))
+        await db.commit()
+    n = r["days"] + 1
+    who = f'<a href="tg://user?id={r["user_id"]}">{he(r["first_name"] or "Без имени")}</a>'
+    frog = f" и {he(r['frog_name'])}" if r.get("frog_name") else ""
+    try:
+        await update.message.reply_text(
+            f"{_E_CROWN} <b>Лягушка дня</b> — {who}{frog}, ур. {r['level']}\n"
+            + ("Первая корона в этом чате." if n == 1 else f"{n}-я корона в этом чате."),
+            parse_mode=ParseMode.HTML)
+    except (BadRequest, Forbidden, TimedOut):
+        pass
+
+
+def _battle_reason(win: dict, lose: dict, base_w: float, base_l: float) -> str:
+    """Почему победила эта лягушка — по тому, что на самом деле решило бой."""
+    tr = frog_troubles(lose)
+    if base_w < base_l * 0.95:
+        return f"Неожиданно: {fname(lose)} была сильнее."
+    if tr and frog_form(lose) < frog_form(win):
+        return f"{fname(lose)} {tr[0]} — сил было меньше."
+    if int(win.get("level", 1)) - int(lose.get("level", 1)) >= 5:
+        return "Сказалась разница в уровне."
+    return "Почти на равных."
+
+
+async def battle_run(update: Update, ctx, cmd: bool = False) -> bool:
+    """«Батл» ответом на сообщение. True — обработали, дальше не передаём."""
+    msg, chat, me = update.message, update.effective_chat, update.effective_user
+    if not cmd and (msg.text or "").strip().lower().rstrip("!") not in _BATTLE_WORDS:
+        return False
+    cs = await get_chat_settings(chat.id)
+    if cs.get("mode") in ("vanilla", "readonly") or not cs.get("allow_duels", 1):
+        return False
+    target = msg.reply_to_message.from_user if msg.reply_to_message else None
+    if not target or target.is_bot or target.id == me.id or await is_chat_banned(chat.id, me.id):
+        return True
+    a, b = await db_get(me.id), await db_get(target.id)
+    if not a or not a.get("alive"):
+        await group_invite(update, ctx, a, "сможешь сразиться")
+        return True
+    if not b or not b.get("alive"):
+        key = ("battle", chat.id, target.id)
+        if time.time() - _group_invited.get(key, 0) >= 3600:
+            _group_invited[key] = time.time()
+            await group_say(update, f"{he(target.first_name or 'Соперник')} пока без лягушки — сразиться не с кем. "
+                                      "Завести её можно за минуту.",
+                              InlineKeyboardMarkup([[btn("Завести лягушку",
+                                                         url=await bot_link(ctx.bot, chat.id))]]))
+        return True
+    now = time.time()
+    if now - _battle_last.get(me.id, 0) < BATTLE_CD:
+        await group_say(update, f"Следующий батл — через {_ex_left(_battle_last[me.id] + BATTLE_CD)}", ttl=15)
+        return True
+    _battle_last[me.id] = now
+    a, b = decay(a), decay(b)
+
+    # Уровень важен, но уход — не меньше: при равном уровне голодная проигрывает
+    # в 9 из 10, а запущенная 30-я ухоженной 12-й — в 7 из 10. Удача решает остальное
+    def base(f):
+        return (30 + int(f.get("level", 1))) * (0.4 + 0.6 * min(frog_form(f), 100) / 100)
+    ba, bb = base(a), base(b)
+    a_wins = ba * random.uniform(0.6, 1.4) >= bb * random.uniform(0.6, 1.4)
+    win, lose = (a, b) if a_wins else (b, a)
+    win_name = he(me.first_name if a_wins else target.first_name) or "?"
+    lo, hi = sorted((me.id, target.id))
+    async with aiosqlite.connect(DB_PATH) as db:
+        await db.execute("INSERT INTO chat_battles(chat_id, a, b, winner, ts) VALUES(?,?,?,?,?)",
+                         (chat.id, lo, hi, win["user_id"], now))
+        for uid, col in ((win["user_id"], "wins"), (lose["user_id"], "losses")):
+            await db.execute(f"INSERT INTO chat_members(chat_id, user_id, last_ts, {col}) VALUES(?,?,?,1) "
+                             f"ON CONFLICT(chat_id, user_id) DO UPDATE SET {col}={col}+1", (chat.id, uid, now))
+        async with db.execute("SELECT SUM(winner=?), SUM(winner=?) FROM chat_battles "
+                              "WHERE chat_id=? AND a=? AND b=?", (me.id, target.id, chat.id, lo, hi)) as c:
+            sa, sb = await c.fetchone()
+        await db.commit()
+
+    def side(user, f):
+        return f"{he(user.first_name or '?')} — {fname(f)}, ур. {f.get('level', 1)}"
+    text = (f"{_E_SWORDS} <b>Батл</b>\n{side(me, a)}\n{side(target, b)}\n\n"
+            f"Победа: <b>{win_name}</b>. {_battle_reason(win, lose, *((ba, bb) if a_wins else (bb, ba)))}")
+    if (sa or 0) + (sb or 0) > 1:
+        text += f"\nСчёт: {he(me.first_name or '?')} {sa} — {sb} {he(target.first_name or '?')}"
+    await group_say(update, text, InlineKeyboardMarkup([[btn("Своя лягушка", url=await bot_link(ctx.bot, chat.id))]]),
+                      ttl=300)
+    return True
+
+
+async def group_text_hook(update: Update, ctx: ContextTypes.DEFAULT_TYPE):
+    """Каждое сообщение в группе: отметка участника и «батл» ответом."""
+    msg, user = update.message, update.effective_user
+    if not msg or not is_group(update) or not user or user.is_bot:
+        return
+    try:
+        await chat_member_touch(update.effective_chat.id, user.id)
+    except Exception as e:
+        logger.warning("chat_member_touch: %s", e)
+    if msg.text and msg.reply_to_message and await battle_run(update, ctx):
+        raise ApplicationHandlerStop
 
 
 async def group_private_only(update: Update, ctx, cmd: str):
     link = await bot_link(ctx.bot, update.effective_chat.id)
-    await group_reply(update, f"{_GROUP_PRIVATE_CMDS[cmd]} — в личке, чтобы не засорять чат.",
-                      InlineKeyboardMarkup([[btn(f"Открыть: {_GROUP_PRIVATE_CMDS[cmd]}", url=link)]]), ttl=30)
+    await group_say(update, f"{_GROUP_PRIVATE_CMDS[cmd]} — в личке, чтобы не засорять чат.",
+                      InlineKeyboardMarkup([[btn("Открыть в личке", url=link)]]), ttl=30)
 
 
 async def group_cmd_router(update: Update, ctx: ContextTypes.DEFAULT_TYPE):
@@ -21878,11 +22096,18 @@ async def group_cmd_router(update: Update, ctx: ContextTypes.DEFAULT_TYPE):
         me = await ctx.bot.get_me()
         if target.lower() != (me.username or "").lower():
             return                       # команда другому боту
-    if cmd not in _GROUP_CARD_CMDS | _GROUP_PRIVATE_CMDS.keys() | {"daily", "help", "top"}:
+    if cmd == "kvaday":
+        cmd = "frogday"
+    if cmd not in _GROUP_CARD_CMDS | _GROUP_PRIVATE_CMDS.keys() | _GROUP_OWN_CMDS:
         return
     cs = await get_chat_settings(update.effective_chat.id)
     if cs.get("mode") in ("vanilla", "readonly") or (cmd == "start" and cs.get("ignore_start")):
         return                           # у этих режимов свои правила — обычные обработчики
+    if update.effective_user and not update.effective_user.is_bot:
+        try:
+            await chat_member_touch(update.effective_chat.id, update.effective_user.id)
+        except Exception as e:
+            logger.warning("chat_member_touch: %s", e)
     if cmd in _GROUP_CARD_CMDS:
         await group_card(update, ctx)
     elif cmd == "daily":
@@ -21891,11 +22116,29 @@ async def group_cmd_router(update: Update, ctx: ContextTypes.DEFAULT_TYPE):
         await group_help(update, ctx)
     elif cmd == "top":
         await group_top(update, ctx)
+    elif cmd == "frogday":
+        await group_frogday(update, ctx)
+    elif cmd == "vs":
+        if not msg.reply_to_message:
+            await group_say(update, "Ответь словом «батл» на сообщение того, с кем хочешь сразиться.", ttl=30)
+        elif not await battle_run(update, ctx, cmd=True):
+            await group_say(update, "Батлы в этом чате выключены.", ttl=30)
     else:
         await group_private_only(update, ctx, cmd)
     if cs.get("auto_delete_cmds", 1):
         asyncio.create_task(schedule_delete(ctx.bot, update.effective_chat.id, msg.message_id, GROUP_REPLY_TTL))
     raise ApplicationHandlerStop
+
+
+async def cmd_chat_only(update: Update, ctx: ContextTypes.DEFAULT_TYPE):
+    """/frogday и /vs в личке: это игры для чата, в группе их отвечает group_cmd_router."""
+    if is_group(update):
+        return
+    await update.message.reply_text(
+        "Лягушка дня и батлы — для чатов: там лягушками меряются с друзьями. "
+        "Добавь бота в свой чат, чтобы играть.",
+        reply_markup=InlineKeyboardMarkup([[btn("Добавить в чат",
+                                                url=f"https://t.me/{ctx.bot.username}?startgroup=add")]]))
 
 
 async def group_welcome(bot, chat_id: int):
@@ -21904,13 +22147,14 @@ async def group_welcome(bot, chat_id: int):
     try:
         await bot.send_message(
             chat_id,
-            ui_card(f"{_E_FROG} <b>Ква! Я лягушачий бот</b>",
-                    "Напишите <b>ква</b> — ваша лягушка отзовётся и принесёт монетку.\n"
-                    "/frog — показать свою лягушку · /top — квакеры чата · /help — что я умею здесь",
-                    hint="Я не спамлю: отвечаю только на «ква» и команды, мои ответы исчезают сами. "
-                         "Настройки для админов — /chatadmin"),
+            ui_card(f"{_E_FROG} <b>Привет, я лягушачий бот</b>",
+                    "У каждого здесь может быть своя лягушка. Растите их в личке, а тут меряйтесь: "
+                    "<b>батл</b> ответом на сообщение, /frogday — лягушка дня, /top — лягушки чата. "
+                    "На <b>ква</b> ваша лягушка отзовётся.",
+                    hint="Пишу только в ответ на «ква» и команды, мои ответы удаляются сами. "
+                         "Настройки — /chatadmin"),
             parse_mode=ParseMode.HTML,
-            reply_markup=InlineKeyboardMarkup([[btn("🐸 Завести лягушку", url=link)]]),
+            reply_markup=InlineKeyboardMarkup([[btn("Завести лягушку", url=link)]]),
         )
     except (BadRequest, Forbidden, TimedOut):
         pass
@@ -53000,7 +53244,10 @@ async def on_message(update: Update, ctx: ContextTypes.DEFAULT_TYPE):
             s_drop = SKINS[dropped_skin]
             await db_add_skin(user.id, dropped_skin)
             f["last_kva_skin"] = _kva_today
+            # В группе — без значков облика и редкости: ответ на ква и так в одну строку
             skin_drop_text = (
+                f"\n{_E_GIFT} Облик дня: <b>{dropped_skin}</b>, {R_NAME[s_drop['rarity']].lower()}"
+                if is_group(update) else
                 f"\n{_E_GIFT} Облик дня: {R_DOT[s_drop['rarity']]} {pemoji(dropped_skin)} "
                 f"<b>{dropped_skin}</b> · {R_NAME[s_drop['rarity']].lower()}"
             )
@@ -53131,11 +53378,9 @@ async def on_message(update: Update, ctx: ContextTypes.DEFAULT_TYPE):
         elif _retry_kb:
             _fz_kb = _retry_kb
 
-        if is_group(update):
-            await chat_kva_add(update.effective_chat.id, user.id)
         # Одна строка: имя, зарисовка, монеты. Дроп и ивенты — ниже, если есть
         reply_text = (
-            f"{_E_FROG} <b>{he(name)}</b>: <i>{log_text}</i> +{kva_coins}{coin_emoji()}"
+            f"{_E_FROG} <b>{name}</b>: <i>{log_text}</i> +{kva_coins}{coin_emoji()}"
             + skin_drop_text
             + _nft_drop_text
             + _counter_text
@@ -56940,36 +57185,18 @@ async def post_init(app: Application):
 
     # ── Меню для групп ────────────────────────────────────────────────────────
     _group_commands = [
-        BotCommand("frog",        "🐸 Посмотреть лягушку"),
-        BotCommand("mymenu",      "🎮 Меню лягушки"),
-        BotCommand("mystats",     "📊 Моя статистика"),
-        BotCommand("daily",       "📅 Ежедневный бонус"),
-        BotCommand("casino",      "🎲 Казино"),
-        BotCommand("duel",        "⚔️ Дуэль"),
-        BotCommand("battle",      "🥊 Боевой поединок"),
-        BotCommand("tournament",  "🏆 Создать турнир"),
-        BotCommand("games",       "🎮 Мини-игры"),
-        BotCommand("lottery",     "🎟 Ежедневная лотерея"),
-        BotCommand("jackpot",     "🎰 Банк казино (Джекпот)"),
-        BotCommand("giveaway",    "🎁 Розыгрыш КваКоинов"),
-        BotCommand("gift",        "🎁 Подарить КваКоины"),
-        BotCommand("feed",        "🍎 Покормить чужую лягушку"),
-        BotCommand("staya",       "🌿 Моя стая"),
-        BotCommand("staya_top",   "🏆 Рейтинг стай"),
-        BotCommand("top",         "🏆 Топ игроков"),
-        BotCommand("topw",        "📅 Топ недели по XP"),
-        BotCommand("online",      "🟢 Онлайн игроков"),
-        BotCommand("kvastat",     "🔥 Статистика NFT-ивента"),
-        BotCommand("fish",        "🎣 Рыбалка"),
-        BotCommand("pohod",       "⚔️ Поход"),
-        BotCommand("expedition",  "🗺️ Экспедиция"),
-        BotCommand("letopis",     "📜 Летопись болота"),
-        BotCommand("bond",        "💚 Болотная связь"),
-        BotCommand("sosedi",      "🏘 Соседи"),
-        BotCommand("chatadmin",   "🏘 Управление чатом"),
-        BotCommand("chatstats",   "📊 Статистика чата"),
-        BotCommand("lang",        "🌐 Language / Язык"),
-        BotCommand("help",        "❓ Помощь"),
+        # Только то, что в группе отвечает по делу; личное открывается кнопкой в личку
+        BotCommand("frog",        "Моя лягушка"),
+        BotCommand("top",         "Лягушки этого чата"),
+        BotCommand("frogday",     "Лягушка дня"),
+        BotCommand("vs",          "Батл — ответом на сообщение"),
+        BotCommand("daily",       "Ежедневный бонус"),
+        BotCommand("duel",        "Дуэль на монеты"),
+        BotCommand("ttt",         "Крестики-нолики"),
+        BotCommand("checkers",    "Шашки"),
+        BotCommand("giveaway",    "Розыгрыш монет"),
+        BotCommand("chatadmin",   "Настройки бота в чате"),
+        BotCommand("help",        "Что я умею в чате"),
     ]
     await app.bot.set_my_commands(
         _group_commands,
@@ -69609,6 +69836,9 @@ def main():
         filters.ChatType.PRIVATE & (filters.TEXT | filters.PHOTO) & ~filters.COMMAND, poll_input), group=-50)
     # Команды в группах — короткие ответы раньше обычных обработчиков
     app.add_handler(MessageHandler(filters.ChatType.GROUPS & filters.COMMAND, group_cmd_router), group=-40)
+    # Остальные сообщения в группе: кто пишет в чат (для топа и лягушки дня) и «батл» ответом
+    app.add_handler(MessageHandler(filters.ChatType.GROUPS & ~filters.COMMAND & ~filters.StatusUpdate.ALL,
+                                   group_text_hook), group=-39)
     # Слово для Кваквордла — так же: только когда игрок ждёт с открытой игрой
     app.add_handler(MessageHandler(
         filters.ChatType.PRIVATE & filters.TEXT & ~filters.COMMAND, kw_input), group=-49)
@@ -69704,6 +69934,7 @@ def main():
         app.add_handler(CommandHandler(name, handler))
 
     # Новые групповые команды
+    app.add_handler(CommandHandler(["frogday", "kvaday", "vs"], cmd_chat_only))
     app.add_handler(CommandHandler("ttt", cmd_ttt_group))
     app.add_handler(CommandHandler("ttt5", cmd_ttt5_group))
     app.add_handler(CommandHandler("giveaway",  cmd_giveaway))
