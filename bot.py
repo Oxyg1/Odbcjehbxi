@@ -5001,6 +5001,23 @@ def run_sync_migration():
             )""",
         ),
         (
+            "chat_games",
+            """CREATE TABLE IF NOT EXISTS chat_games (
+                chat_id    INTEGER PRIMARY KEY,
+                title      TEXT    DEFAULT '',
+                xp         INTEGER DEFAULT 0,
+                mood       REAL    DEFAULT 50,
+                mood_ts    REAL    DEFAULT 0,
+                day_date   TEXT    DEFAULT '',
+                day_uid    INTEGER DEFAULT 0,
+                flies      INTEGER DEFAULT 1,
+                flies_n    INTEGER DEFAULT 0,
+                flies_date TEXT    DEFAULT '',
+                fly_ts     REAL    DEFAULT 0,
+                weekly     INTEGER DEFAULT 1
+            )""",
+        ),
+        (
             "chat_kva",
             """CREATE TABLE IF NOT EXISTS chat_kva (
                 chat_id  INTEGER NOT NULL,
@@ -20713,6 +20730,7 @@ async def _handle_chatadmin_callback(q, uid: int, ctx):
         "ca_giveaway_now_", "ca_setwelcome_", "ca_setrules_",
         "ca_mode_set_", "ca_al_", "ca_wm_",
         "ca_toggle_del_friz_", "ca_cycle_friz_delay_",
+        "ca_tg_flies_", "ca_tg_weekly_",
     )
     prefix = next((p for p in _CA_PREFIXES if d.startswith(p)), None)
     if not prefix:
@@ -20733,6 +20751,7 @@ async def _handle_chatadmin_callback(q, uid: int, ctx):
         async with db.execute("SELECT chat_title FROM partner_chats WHERE chat_id=?", (cid,)) as c:
             r = await c.fetchone()
     chat_title = r[0] if r else str(cid)
+    cg = await chat_game_get(cid)
 
     async def _refresh(text: str, kb: InlineKeyboardMarkup):
         try:
@@ -20990,6 +21009,8 @@ async def _handle_chatadmin_callback(q, uid: int, ctx):
         casino = _ca_emoji(s.get("allow_casino", 1))
         lvl    = s.get("min_level_to_play", 1)
         return InlineKeyboardMarkup([
+            [btn(f"🪰 Мухи в чате: {_ca_emoji(cg.get('flies', 1))}", callback_data=f"ca_tg_flies_{cid}"),
+             btn(f"🏟 Итоги недели: {_ca_emoji(cg.get('weekly', 1))}", callback_data=f"ca_tg_weekly_{cid}")],
             [btn(f"⚔️ Дуэли: {duels}",  callback_data=f"ca_toggle_duels_{cid}"),
              btn(f"🎰 Казино: {casino}", callback_data=f"ca_toggle_casino_{cid}")],
             [btn(f"🔒 Мин. уровень для игр: {lvl} ур. →", callback_data=f"ca_cycle_minlvl_{cid}")],
@@ -21002,6 +21023,9 @@ async def _handle_chatadmin_callback(q, uid: int, ctx):
         lvl    = s.get("min_level_to_play", 1)
         return (
             f"{_E_GAMES} <b>Игры — {he(chat_title)}</b>\n\n"
+            f"🪰 Муха пролетает, когда в чате оживлённо, — не чаще {FLY_PER_DAY} раз в день: "
+            f"<b>{'вкл' if cg.get('flies', 1) else 'выкл'}</b>\n"
+            f"🏟 Итоги недели лиги чатов в понедельник: <b>{'вкл' if cg.get('weekly', 1) else 'выкл'}</b>\n"
             f"{_E_SWORDS} Дуэли: <b>{duels}</b>\n"
             f"{_E_CASINO} Казино: <b>{casino}</b>\n"
             f"🔒 Мин. уровень для игр: <b>{lvl}</b>\n\n"
@@ -21012,6 +21036,13 @@ async def _handle_chatadmin_callback(q, uid: int, ctx):
         await q.answer()
         await _refresh(_games_text(), _games_kb())
         return
+
+    if d in (f"ca_tg_flies_{cid}", f"ca_tg_weekly_{cid}"):
+        field = "flies" if d.startswith("ca_tg_flies_") else "weekly"
+        await chat_game_set(cid, **{field: 0 if cg.get(field, 1) else 1})
+        cg = await chat_game_get(cid)
+        await q.answer("✅ Сохранено")
+        await _refresh(_games_text(), _games_kb()); return
 
     if d == f"ca_toggle_duels_{cid}":
         s = await save_chat_settings(cid, allow_duels=0 if s.get("allow_duels", 1) else 1)
@@ -21702,6 +21733,7 @@ _group_invited: dict[tuple[int, int], float] = {}
 # кнопкой в личку). Групповые игры (/duel, /ttt, /checkers, /giveaway) и
 # администрирование (/chatadmin…) идут обычными обработчиками.
 _GROUP_CARD_CMDS = {"start", "frog", "mymenu", "mystats", "stats"}
+_GROUP_GAME_CMDS = {"chat", "chatfrog", "frogday", "kvaday", "league", "vs"}
 _GROUP_PRIVATE_CMDS = {
     "games": "🎮 Игры", "casino": "🎰 Казино", "lottery": "🎟 Лотерея", "jackpot": "🎰 Джекпот",
     "staya": "🌿 Стая", "staya_top": "🌿 Стаи", "sosedi": "👥 Соседи", "letopis": "📖 Летопись",
@@ -21819,9 +21851,11 @@ async def group_help(update: Update, ctx):
     await group_reply(update, ui_card(
         f"{_E_FROG} <b>Лягушка в этом чате</b>",
         "<b>ква</b> — твоя лягушка отзовётся и принесёт монетку (раз в 30 мин)\n"
-        "/frog — показать свою лягушку\n"
-        "/top — квакеры этого чата за неделю\n"
-        "/duel @ник · /ttt · /checkers — сыграть с кем-то из чата",
+        "<b>батл</b> ответом на сообщение — сразиться лягушками\n"
+        "/chat — лягушка чата: растёт от ваших ква, даёт бонус всем\n"
+        "/frogday — выбрать лягушку дня 👑\n"
+        "/top — квакеры чата · /league — лига чатов\n"
+        "/frog — твоя лягушка · /ttt · /checkers — игры на двоих",
         hint="Уход, игры и магазин — в личке. Мои ответы сами исчезают через 2 минуты"),
         InlineKeyboardMarkup([[btn("🐸 Открыть игру", url=link)]]), ttl=300)
 
@@ -21840,24 +21874,10 @@ async def chat_kva_add(chat_id: int, uid: int):
 
 
 async def group_top(update: Update, ctx):
-    chat = update.effective_chat
-    async with aiosqlite.connect(DB_PATH) as db:
-        db.row_factory = aiosqlite.Row
-        async with db.execute(
-            "SELECT k.user_id, k.n, f.frog_name, f.first_name, f.level FROM chat_kva k "
-            "JOIN frogs f ON f.user_id=k.user_id WHERE k.chat_id=? AND k.wk=? "
-            "ORDER BY k.n DESC, f.level DESC LIMIT 10", (chat.id, _kva_week())) as c:
-            rows = [dict(r) for r in await c.fetchall()]
-    link = await bot_link(ctx.bot, chat.id)
-    if not rows:
-        await group_reply(update, f"{_E_TROPHY} На этой неделе тут ещё никто не квакал. Напиши <b>ква</b> 🐸",
-                          InlineKeyboardMarkup([[btn("🐸 Завести лягушку", url=link)]]))
-        return
-    medals = ["🥇", "🥈", "🥉"]
-    lines = [f"{medals[i] if i < 3 else f'{i + 1}.'} {he(r['frog_name'] or r['first_name'] or '?')}"
-             f"{SEP}{ui_plural(r['n'], 'ква', 'ква', 'ква')}{SEP}ур. {r['level']}" for i, r in enumerate(rows)]
-    await group_reply(update, ui_card(f"{_E_TROPHY} <b>Квакеры чата за неделю</b>", "\n".join(lines)),
-                      InlineKeyboardMarkup([[btn("🐸 Моя лягушка", url=link)]]), ttl=300)
+    await group_reply(update, await chat_top_text(update.effective_chat.id),
+                      InlineKeyboardMarkup([[btn("🐸 Лягушка чата", callback_data=f"g|hub|{update.effective_chat.id}"),
+                                             btn("🏟 Лига чатов", callback_data=f"g|league|{update.effective_chat.id}")]]),
+                      ttl=300)
 
 
 async def group_private_only(update: Update, ctx, cmd: str):
@@ -21878,7 +21898,7 @@ async def group_cmd_router(update: Update, ctx: ContextTypes.DEFAULT_TYPE):
         me = await ctx.bot.get_me()
         if target.lower() != (me.username or "").lower():
             return                       # команда другому боту
-    if cmd not in _GROUP_CARD_CMDS | _GROUP_PRIVATE_CMDS.keys() | {"daily", "help", "top"}:
+    if cmd not in _GROUP_CARD_CMDS | _GROUP_PRIVATE_CMDS.keys() | _GROUP_GAME_CMDS | {"daily", "help", "top"}:
         return
     cs = await get_chat_settings(update.effective_chat.id)
     if cs.get("mode") in ("vanilla", "readonly") or (cmd == "start" and cs.get("ignore_start")):
@@ -21891,11 +21911,38 @@ async def group_cmd_router(update: Update, ctx: ContextTypes.DEFAULT_TYPE):
         await group_help(update, ctx)
     elif cmd == "top":
         await group_top(update, ctx)
+    elif cmd in ("chat", "chatfrog", "swamp_chat"):
+        text, kb = await chat_hub_view(ctx.bot, update.effective_chat.id, update.effective_chat.title or "")
+        await group_reply(update, text, kb, ttl=300)
+    elif cmd in ("frogday", "kvaday"):
+        await update.message.reply_text(await frogday_pick(update.effective_chat.id,
+                                                           update.effective_chat.title or ""),
+                                        parse_mode=ParseMode.HTML)
+    elif cmd == "league":
+        await group_reply(update, await league_text(update.effective_chat.id), ttl=300)
+    elif cmd == "vs":
+        if not await battle_run(update, ctx):
+            await group_reply(update, "⚔️ Ответь на сообщение соперника словом <b>батл</b> или /vs", ttl=30)
     else:
         await group_private_only(update, ctx, cmd)
     if cs.get("auto_delete_cmds", 1):
         asyncio.create_task(schedule_delete(ctx.bot, update.effective_chat.id, msg.message_id, GROUP_REPLY_TTL))
     raise ApplicationHandlerStop
+
+
+async def cmd_chat_games_private(update: Update, ctx: ContextTypes.DEFAULT_TYPE):
+    """/chat, /frogday, /league, /vs в личке: это игры для групп."""
+    if is_group(update):
+        return                      # в группе их отвечает group_cmd_router
+    cmd = (update.message.text or "").split()[0][1:].split("@")[0].lower()
+    if cmd == "league":
+        await update.message.reply_text(await league_text(), parse_mode=ParseMode.HTML)
+        return
+    await update.message.reply_text(
+        "🎉 Это игра для чатов: лягушка чата, лягушка дня, батлы и лига чатов. "
+        "Добавь бота в свой чат — и играйте вместе.",
+        reply_markup=InlineKeyboardMarkup([[btn("➕ Добавить в свой чат",
+                                                url=f"https://t.me/{ctx.bot.username}?startgroup=add")]]))
 
 
 async def group_welcome(bot, chat_id: int):
@@ -21905,8 +21952,10 @@ async def group_welcome(bot, chat_id: int):
         await bot.send_message(
             chat_id,
             ui_card(f"{_E_FROG} <b>Ква! Я лягушачий бот</b>",
-                    "Напишите <b>ква</b> — ваша лягушка отзовётся и принесёт монетку.\n"
-                    "/frog — показать свою лягушку · /top — квакеры чата · /help — что я умею здесь",
+                    "Напишите <b>ква</b> — ваша лягушка отзовётся и принесёт монетку. "
+                    "У чата будет своя общая лягушка: она растёт от ваших «ква» и даёт бонус всем.\n"
+                    "⚔️ <b>батл</b> ответом на сообщение · 👑 /frogday · 🏟 /league — "
+                    "ваш чат против других",
                     hint="Я не спамлю: отвечаю только на «ква» и команды, мои ответы исчезают сами. "
                          "Настройки для админов — /chatadmin"),
             parse_mode=ParseMode.HTML,
@@ -21914,6 +21963,398 @@ async def group_welcome(bot, chat_id: int):
         )
     except (BadRequest, Forbidden, TimedOut):
         pass
+
+
+# ══════════════════════════════════════════════════════════════════════════════
+# 🎉 ИГРЫ ЧАТА — то, во что чат играет вместе
+# ══════════════════════════════════════════════════════════════════════════════
+# Участнику чата интересно то, что происходит со всеми и на глазах у всех:
+#   🐸 лягушка чата — общий питомец, растёт от каждого «ква», её уровень
+#      прибавляет монеты к «ква» всем участникам;
+#   👑 лягушка дня — раз в день, с упоминанием победителя;
+#   ⚔️ батл — ответом на сообщение «батл»: лягушки сражаются сразу; у кого
+#      лягушки нет — тут же приглашение (главный вирусный вход);
+#   🪰 муха — пролетает, когда в чате оживлённо: кто первый нажал, тот поймал;
+#   🏟 лига чатов — чаты соревнуются по «ква» за неделю, в понедельник итоги.
+# Муху и итоги недели админ выключает в /chatadmin → Игры.
+CHAT_FROG_XP = [0, 30, 100, 250, 500, 1000, 2000, 4000, 7000, 11000, 16000]
+CHAT_FROG_MAX_BONUS = 10            # монет к «ква» с уровня лягушки чата
+FROGDAY_REWARD = 50
+BATTLE_CD = 10 * 60
+BATTLE_REWARD = 5
+FLY_PER_DAY = 3
+FLY_GAP = 2 * 3600
+FLY_TTL = 180
+FLY_MIN_MSGS, FLY_MIN_USERS, FLY_CHANCE = 12, 3, 1 / 12
+LEAGUE_PRIZES = (100, 60, 30)
+_battle_last: dict[int, float] = {}
+_chat_activity: dict[int, list[tuple[float, int]]] = {}
+_chat_flies: dict[str, dict] = {}
+_BATTLE_WORDS = {"батл", "баттл", "батл!", "/vs", "vs"}
+
+
+async def chat_game_get(chat_id: int, title: str = "") -> dict:
+    async with aiosqlite.connect(DB_PATH) as db:
+        db.row_factory = aiosqlite.Row
+        async with db.execute("SELECT * FROM chat_games WHERE chat_id=?", (chat_id,)) as c:
+            row = await c.fetchone()
+        if not row:
+            await db.execute("INSERT OR IGNORE INTO chat_games(chat_id, title) VALUES(?,?)", (chat_id, title or ""))
+            await db.commit()
+            async with db.execute("SELECT * FROM chat_games WHERE chat_id=?", (chat_id,)) as c:
+                row = await c.fetchone()
+    g = dict(row)
+    if title and g.get("title") != title:
+        await chat_game_set(chat_id, title=title)
+        g["title"] = title
+    return g
+
+
+async def chat_game_set(chat_id: int, **kw):
+    async with aiosqlite.connect(DB_PATH) as db:
+        await db.execute(f"UPDATE chat_games SET {', '.join(k + '=?' for k in kw)} WHERE chat_id=?",
+                         (*kw.values(), chat_id))
+        await db.commit()
+
+
+def chat_frog_level(xp: int) -> int:
+    return sum(1 for t in CHAT_FROG_XP[1:] if xp >= t)
+
+
+def chat_frog_mood(g: dict, now: float | None = None) -> float:
+    """Настроение лягушки чата: −4 в час без «ква», +15 за каждое."""
+    now = time.time() if now is None else now
+    ts = float(g.get("mood_ts") or 0) or now         # новая лягушка чата — без «долгов» с 1970 года
+    return max(0.0, float(50 if g.get("mood") is None else g["mood"]) - 4 * (now - ts) / 3600)
+
+
+async def chat_frog_feed(chat_id: int, title: str, xp: int) -> tuple[int, bool]:
+    """Опыт лягушке чата. Возвращает (уровень, вырос ли)."""
+    g = await chat_game_get(chat_id, title)
+    before = chat_frog_level(g.get("xp") or 0)
+    now = time.time()
+    await chat_game_set(chat_id, xp=(g.get("xp") or 0) + xp,
+                        mood=min(100.0, chat_frog_mood(g, now) + 15 * xp), mood_ts=now)
+    after = chat_frog_level((g.get("xp") or 0) + xp)
+    return after, after > before
+
+
+def chat_frog_title(g: dict) -> str:
+    return f"Лягушка «{he((g.get('title') or 'чата')[:30])}»"
+
+
+def _mood_word(m: float) -> str:
+    return "😊 довольна" if m >= 60 else "😐 заскучала" if m >= 25 else "😢 давно не слышала ква"
+
+
+def _user_link(uid: int, name: str) -> str:
+    return f'<a href="tg://user?id={uid}">{he(name)}</a>'
+
+
+async def league_rows(wk: str | None = None) -> list[dict]:
+    async with aiosqlite.connect(DB_PATH) as db:
+        db.row_factory = aiosqlite.Row
+        async with db.execute(
+            "SELECT k.chat_id, SUM(k.n) AS n, COUNT(*) AS players, COALESCE(g.title, '') AS title "
+            "FROM chat_kva k LEFT JOIN chat_games g ON g.chat_id=k.chat_id WHERE k.wk=? "
+            "GROUP BY k.chat_id ORDER BY n DESC", (wk or _kva_week(),)) as c:
+            return [dict(r) for r in await c.fetchall()]
+
+
+async def chat_hub_view(bot, chat_id: int, title: str) -> tuple[str, InlineKeyboardMarkup]:
+    g = await chat_game_get(chat_id, title)
+    xp = g.get("xp") or 0
+    lvl = chat_frog_level(xp)
+    nxt = CHAT_FROG_XP[lvl + 1] if lvl + 1 < len(CHAT_FROG_XP) else None
+    lines = [f"{_E_FROG} <b>{chat_frog_title(g)}</b>{SEP}ур. {lvl}{SEP}{_mood_word(chat_frog_mood(g))}"]
+    if nxt:
+        lo = CHAT_FROG_XP[lvl]
+        fill = int((xp - lo) / (nxt - lo) * 8)
+        lines.append(f"<code>{'█' * fill}{'░' * (8 - fill)}</code> ещё {nxt - xp} ква до ур. {lvl + 1}")
+    lines.append(f"Бонус чату: <b>+{min(lvl, CHAT_FROG_MAX_BONUS)}🪙</b> к каждому ква" if lvl
+                 else "С 1-го уровня — бонус к каждому ква в чате")
+    if g.get("day_date") == datetime.now(ST_TZ).date().isoformat() and g.get("day_uid"):
+        df = await db_get(g["day_uid"])
+        lines.append(f"👑 Лягушка дня: <b>{he(fname(df) if df else '?')}</b>")
+    rows = await league_rows()
+    place = next((i for i, r in enumerate(rows, 1) if r["chat_id"] == chat_id), None)
+    if place:
+        lines.append(f"🏟 Лига чатов: <b>{place}-е</b> место из {len(rows)} на этой неделе")
+    kb = InlineKeyboardMarkup([
+        [btn("👑 Лягушка дня", callback_data=f"g|day|{chat_id}"),
+         btn("🏆 Квакеры", callback_data=f"g|top|{chat_id}")],
+        [btn("🏟 Лига чатов", callback_data=f"g|league|{chat_id}"),
+         btn("🐸 Моя лягушка", url=await bot_link(bot, chat_id))],
+    ])
+    return ui_card("\n".join(lines),
+                   hint="Растёт от каждого «ква». Ответь на сообщение словом «батл» — сразитесь лягушками"), kb
+
+
+async def frogday_pick(chat_id: int, title: str) -> str:
+    """Выбор лягушки дня: текст для чата."""
+    g = await chat_game_get(chat_id, title)
+    today = datetime.now(ST_TZ).date().isoformat()
+    if g.get("day_date") == today and g.get("day_uid"):
+        df = await db_get(g["day_uid"])
+        return f"👑 Сегодня лягушка дня уже выбрана — <b>{he(fname(df) if df else '?')}</b>. Завтра — новая."
+    d = datetime.now(ST_TZ).date()
+    weeks = {_kva_week()} | {f"{(d - timedelta(days=7 * i)).isocalendar()[0]}-"
+                             f"{(d - timedelta(days=7 * i)).isocalendar()[1]:02d}" for i in (1, 2)}
+    async with aiosqlite.connect(DB_PATH) as db:
+        async with db.execute(
+            f"SELECT DISTINCT k.user_id FROM chat_kva k JOIN frogs f ON f.user_id=k.user_id "
+            f"WHERE k.chat_id=? AND f.alive=1 AND COALESCE(f.banned,0)=0 "
+            f"AND k.wk IN ({','.join('?' * len(weeks))})", (chat_id, *weeks)) as c:
+            pool = [r[0] for r in await c.fetchall()]
+    if len(pool) < 2:
+        return f"👑 Для лягушки дня нужно хотя бы двое квакеров в чате. Напишите <b>ква</b> 🐸"
+    uid = random.choice(pool)
+    f = await db_get(uid)
+    if not f:
+        return "👑 Болото задумалось. Попробуйте ещё раз"
+    f["coins"] = f.get("coins", 0) + FROGDAY_REWARD
+    await db_save(f)
+    await chat_game_set(chat_id, day_date=today, day_uid=uid)
+    intro = random.choice([
+        "🔮 Болото долго думало…", "🥁 Барабанная дробь из камышей…",
+        "🌫 Над водой поднялся туман и сложился в имя…", "📜 Старая черепаха сверилась со свитком…",
+    ])
+    return (f"{intro}\n👑 <b>Лягушка дня</b> — {_user_link(uid, fname(f))}! "
+            f"Корона до полуночи и +{FROGDAY_REWARD}🪙")
+
+
+async def battle_run(update: Update, ctx) -> bool:
+    """«Батл» ответом на сообщение. True — обработали (дальше не передаём)."""
+    msg = update.message
+    text = (msg.text or "").strip().lower()
+    if text.split("@")[0] not in _BATTLE_WORDS or not msg.reply_to_message:
+        return False
+    target = msg.reply_to_message.from_user
+    me = update.effective_user
+    if not target or target.is_bot or target.id == me.id:
+        return True
+    link = await bot_link(ctx.bot, update.effective_chat.id)
+    a, b = await db_get(me.id), await db_get(target.id)
+    if not a or not a.get("alive"):
+        await kva_no_frog(update, ctx, a)
+        return True
+    if not b or not b.get("alive"):
+        await group_reply(update, f"⚔️ {he(target.first_name or 'Соперник')} без лягушки — сразиться не с кем. "
+                                  "Заведи свою, и сыграем!",
+                          InlineKeyboardMarkup([[btn("🐸 Завести лягушку", url=link)]]))
+        return True
+    now = time.time()
+    if now - _battle_last.get(me.id, 0) < BATTLE_CD:
+        await kva_not_ready(update, ctx, 0)
+        return True
+    _battle_last[me.id] = now
+    a, b = decay(a), decay(b)
+
+    def power(f):
+        return (int(f.get("level", 1)) + int(f.get("happiness", 0)) // 10 + int(f.get("health", 0)) // 10
+                + random.randint(0, 20))
+    pa, pb = power(a), power(b)
+    win, lose = (a, b) if pa >= pb else (b, a)
+    win["coins"] = win.get("coins", 0) + BATTLE_REWARD
+    await db_save(win)
+    lvl, up = await chat_frog_feed(update.effective_chat.id, update.effective_chat.title or "", 2)
+    move = random.choice(["прыгнула выше", "квакнула громче", "первой поймала муху",
+                          "дальше выстрелила языком", "дольше просидела под водой"])
+    text = (f"⚔️ <b>{he(fname(a))}</b> vs <b>{he(fname(b))}</b>\n"
+            f"🏆 <b>{he(fname(win))}</b> {move} ({max(pa, pb)} против {min(pa, pb)}) · +{BATTLE_REWARD}🪙")
+    if up:
+        text += f"\n🎉 {chat_frog_title(await chat_game_get(update.effective_chat.id))} выросла до ур. {lvl}!"
+    await group_reply(update, text, ttl=300)
+    return True
+
+
+def _activity_hit(chat_id: int, uid: int, now: float) -> bool:
+    """Оживлённо ли в чате: столько-то сообщений от стольких-то людей за 10 минут."""
+    log = [(t, u) for t, u in _chat_activity.get(chat_id, []) if now - t < 600]
+    log.append((now, uid))
+    _chat_activity[chat_id] = log[-200:]
+    return len(log) >= FLY_MIN_MSGS and len({u for _, u in log}) >= FLY_MIN_USERS
+
+
+async def fly_maybe(update: Update, ctx):
+    chat = update.effective_chat
+    now = time.time()
+    if not _activity_hit(chat.id, update.effective_user.id, now) or random.random() > FLY_CHANCE:
+        return
+    g = await chat_game_get(chat.id, chat.title or "")
+    today = datetime.now(ST_TZ).date().isoformat()
+    n_today = (g.get("flies_n") or 0) if g.get("flies_date") == today else 0
+    if not g.get("flies", 1) or n_today >= FLY_PER_DAY or now - float(g.get("fly_ts") or 0) < FLY_GAP:
+        return
+    cs = await get_chat_settings(chat.id)
+    if cs.get("mode") in ("vanilla", "readonly"):
+        return
+    await chat_game_set(chat.id, flies_n=n_today + 1, flies_date=today, fly_ts=now)
+    fid = f"{chat.id % 100000}{int(now) % 100000}"
+    reward = random.randint(10, 40)
+    try:
+        sent = await ctx.bot.send_message(
+            chat.id, "🪰 <b>Над чатом пролетает муха!</b> Кто первый — тот и поймал",
+            parse_mode=ParseMode.HTML,
+            reply_markup=InlineKeyboardMarkup([[btn("🪰 Поймать", callback_data=f"g|fly|{fid}")]]))
+    except (BadRequest, Forbidden, TimedOut):
+        return
+    _chat_flies[fid] = {"chat": chat.id, "msg": sent.message_id, "reward": reward, "caught": 0}
+
+    async def _expire():
+        await asyncio.sleep(FLY_TTL)
+        fl = _chat_flies.pop(fid, None)
+        if fl and not fl["caught"]:
+            try:
+                await ctx.bot.delete_message(chat.id, sent.message_id)
+            except (BadRequest, Forbidden, TimedOut):
+                pass
+    asyncio.create_task(_expire())
+
+
+async def group_text_hook(update: Update, ctx: ContextTypes.DEFAULT_TYPE):
+    """Каждое сообщение в группе: оживлённость (для мухи) и «батл» ответом."""
+    if not update.message or not is_group(update) or not update.effective_user:
+        return
+    if update.message.text and update.message.reply_to_message and await battle_run(update, ctx):
+        raise ApplicationHandlerStop
+    try:
+        await fly_maybe(update, ctx)
+    except Exception as e:
+        logger.warning("fly_maybe: %s", e)
+
+
+async def group_game_cb(update: Update, ctx: ContextTypes.DEFAULT_TYPE):
+    """Кнопки игр чата — их нажимает кто угодно из чата."""
+    q = update.callback_query
+    _, action, arg = (q.data.split("|") + ["", ""])[:3]
+    user = q.from_user
+    if action == "fly":
+        fl = _chat_flies.get(arg)
+        if not fl or fl["caught"]:
+            await q.answer("Муха уже улетела")
+            return
+        f = await db_get(user.id)
+        if not f or not f.get("alive"):
+            await q.answer(f"Чтобы ловить мух, нужна лягушка — заведи её в личке у @{ctx.bot.username}",
+                           show_alert=True)
+            return
+        fl["caught"] = user.id
+        f["coins"] = f.get("coins", 0) + fl["reward"]
+        await db_save(f)
+        await chat_frog_feed(fl["chat"], q.message.chat.title or "", 3)
+        await q.answer(f"🪰 Поймал(а)! +{fl['reward']}🪙")
+        try:
+            await q.message.edit_text(f"🪰 Муху поймал(а) <b>{he(fname(f))}</b> · +{fl['reward']}🪙",
+                                      parse_mode=ParseMode.HTML)
+        except (BadRequest, Forbidden, TimedOut):
+            pass
+        asyncio.create_task(schedule_delete(ctx.bot, fl["chat"], fl["msg"], 60))
+        _chat_flies.pop(arg, None)
+        return
+    try:
+        chat_id = int(arg)
+    except ValueError:
+        await q.answer()
+        return
+    title = q.message.chat.title or ""
+    if action == "day":
+        await q.answer()
+        try:
+            await ctx.bot.send_message(chat_id, await frogday_pick(chat_id, title), parse_mode=ParseMode.HTML)
+        except (BadRequest, Forbidden, TimedOut):
+            pass
+        return
+    if action in ("top", "league"):
+        await q.answer()
+        text = await (chat_top_text(chat_id) if action == "top" else league_text(chat_id))
+        try:
+            await q.message.edit_text(text, parse_mode=ParseMode.HTML, reply_markup=InlineKeyboardMarkup([[
+                btn("◀️ Лягушка чата", callback_data=f"g|hub|{chat_id}")]]))
+        except (BadRequest, Forbidden, TimedOut):
+            pass
+        return
+    if action == "hub":
+        await q.answer()
+        text, kb = await chat_hub_view(ctx.bot, chat_id, title)
+        try:
+            await q.message.edit_text(text, parse_mode=ParseMode.HTML, reply_markup=kb)
+        except (BadRequest, Forbidden, TimedOut):
+            pass
+        return
+    await q.answer()
+
+
+async def chat_top_text(chat_id: int) -> str:
+    async with aiosqlite.connect(DB_PATH) as db:
+        db.row_factory = aiosqlite.Row
+        async with db.execute(
+            "SELECT k.user_id, k.n, f.frog_name, f.first_name, f.level FROM chat_kva k "
+            "JOIN frogs f ON f.user_id=k.user_id WHERE k.chat_id=? AND k.wk=? "
+            "ORDER BY k.n DESC, f.level DESC LIMIT 10", (chat_id, _kva_week())) as c:
+            rows = [dict(r) for r in await c.fetchall()]
+    if not rows:
+        return f"{_E_TROPHY} На этой неделе тут ещё никто не квакал. Напишите <b>ква</b> 🐸"
+    g = await chat_game_get(chat_id)
+    crown = g.get("day_uid") if g.get("day_date") == datetime.now(ST_TZ).date().isoformat() else 0
+    medals = ["🥇", "🥈", "🥉"]
+    lines = [f"{medals[i] if i < 3 else f'{i + 1}.'} {he(r['frog_name'] or r['first_name'] or '?')}"
+             f"{' 👑' if r['user_id'] == crown else ''}{SEP}{r['n']} ква{SEP}ур. {r['level']}"
+             for i, r in enumerate(rows)]
+    return ui_card(f"{_E_TROPHY} <b>Квакеры чата за неделю</b>", "\n".join(lines))
+
+
+async def league_text(chat_id: int = 0) -> str:
+    rows = await league_rows()
+    if not rows:
+        return "🏟 <b>Лига чатов</b>\nНа этой неделе ещё никто не квакал."
+    medals = ["🥇", "🥈", "🥉"]
+    lines = [f"{medals[i] if i < 3 else f'{i + 1}.'} {'<b>' if r['chat_id'] == chat_id else ''}"
+             f"{he((r['title'] or 'Чат')[:28])}{'</b>' if r['chat_id'] == chat_id else ''}{SEP}{r['n']} ква"
+             for i, r in enumerate(rows[:10])]
+    place = next((i for i, r in enumerate(rows, 1) if r["chat_id"] == chat_id), None)
+    if place and place > 10:
+        lines.append(f"…\n{place}. <b>этот чат</b>")
+    return ui_card("🏟 <b>Лига чатов · неделя</b>", "\n".join(lines),
+                   hint="В понедельник тройке лучших чатов — монеты каждому квакеру: "
+                        + " / ".join(f"{p}🪙" for p in LEAGUE_PRIZES))
+
+
+async def job_chat_league_week(ctx: ContextTypes.DEFAULT_TYPE):
+    """Понедельник: итоги прошлой недели в каждый чат, где квакали, и призы тройке."""
+    d = datetime.now(ST_TZ).date() - timedelta(days=7)
+    wk = f"{d.isocalendar()[0]}-{d.isocalendar()[1]:02d}"
+    rows = [r for r in await league_rows(wk) if r["n"] >= 5]
+    for place, r in enumerate(rows, 1):
+        cid = r["chat_id"]
+        g = await chat_game_get(cid)
+        prize = LEAGUE_PRIZES[place - 1] if place <= len(LEAGUE_PRIZES) else 0
+        async with aiosqlite.connect(DB_PATH) as db:
+            async with db.execute("SELECT user_id, n FROM chat_kva WHERE chat_id=? AND wk=? ORDER BY n DESC",
+                                  (cid, wk)) as c:
+                members = await c.fetchall()
+        if prize:
+            for uid, _n in members:
+                f = await db_get(uid)
+                if f and f.get("alive"):
+                    f["coins"] = f.get("coins", 0) + prize
+                    await db_save(f)
+        if not g.get("weekly", 1) or not await chat_allows_announce(cid, level="major"):
+            continue
+        best = await db_get(members[0][0]) if members else None
+        lines = [f"Ква за неделю: <b>{r['n']}</b>{SEP}{place}-е место в лиге из {len(rows)}"]
+        if best:
+            lines.append(f"👑 Главный квакер — <b>{he(fname(best))}</b>, {members[0][1]} ква")
+        lines.append(f"{_E_FROG} {chat_frog_title(g)} — ур. {chat_frog_level(g.get('xp') or 0)}")
+        if prize:
+            lines.append(f"🎁 За {place}-е место каждому квакеру +{prize}🪙")
+        try:
+            await ctx.bot.send_message(cid, ui_card("🏟 <b>Итоги недели</b>", "\n".join(lines),
+                                                    hint="Новая неделя началась — пишите ква 🐸"),
+                                       parse_mode=ParseMode.HTML)
+        except (BadRequest, Forbidden, TimedOut):
+            pass
+        await asyncio.sleep(0.1)
 
 
 # ══════════════════════════════════════════
@@ -53131,11 +53572,23 @@ async def on_message(update: Update, ctx: ContextTypes.DEFAULT_TYPE):
         elif _retry_kb:
             _fz_kb = _retry_kb
 
+        chat_up_text = ""
         if is_group(update):
             await chat_kva_add(update.effective_chat.id, user.id)
+            # Лягушка чата: растёт от каждого ква, её уровень — бонус всем
+            c_lvl, c_up = await chat_frog_feed(update.effective_chat.id, update.effective_chat.title or "", 1)
+            if c_lvl:
+                c_bonus = min(c_lvl, CHAT_FROG_MAX_BONUS)
+                kva_coins += c_bonus
+                f["coins"] += c_bonus
+                await db_save(f)
+            if c_up:
+                chat_up_text = (f"\n🎉 Лягушка чата выросла до ур. {c_lvl} — теперь "
+                                f"+{min(c_lvl, CHAT_FROG_MAX_BONUS)}🪙 к каждому ква в чате!")
         # Одна строка: имя, зарисовка, монеты. Дроп и ивенты — ниже, если есть
         reply_text = (
             f"{_E_FROG} <b>{he(name)}</b>: <i>{log_text}</i> +{kva_coins}{coin_emoji()}"
+            + chat_up_text
             + skin_drop_text
             + _nft_drop_text
             + _counter_text
@@ -57006,6 +57459,9 @@ async def post_init(app: Application):
     app.job_queue.run_daily(job_weekly_top,
         time=dt_time(20, 0, 0, tzinfo=timezone.utc), days=(6,), name="weekly_top")
     # Сброс xp_week — понедельник 00:01 UTC
+    # Лига чатов: итоги недели — понедельник 10:07 МСК
+    app.job_queue.run_daily(job_chat_league_week,
+        time=dt_time(7, 7, 0, tzinfo=timezone.utc), days=(1,), name="chat_league_week")  # PTB: 0 — воскресенье
     app.job_queue.run_daily(job_reset_xp_week,
         time=dt_time(0, 1, 0, tzinfo=timezone.utc), days=(0,), name="reset_xp_week")
     # Сброс xp_month — каждый день 00:02 UTC (но функция применяется только 1-го числа)
@@ -69609,6 +70065,10 @@ def main():
         filters.ChatType.PRIVATE & (filters.TEXT | filters.PHOTO) & ~filters.COMMAND, poll_input), group=-50)
     # Команды в группах — короткие ответы раньше обычных обработчиков
     app.add_handler(MessageHandler(filters.ChatType.GROUPS & filters.COMMAND, group_cmd_router), group=-40)
+    # Каждое сообщение в группе: «батл» ответом и оживлённость для мухи
+    app.add_handler(MessageHandler(
+        filters.ChatType.GROUPS & (filters.TEXT | filters.Sticker.ALL | filters.PHOTO) & ~filters.COMMAND,
+        group_text_hook), group=-39)
     # Слово для Кваквордла — так же: только когда игрок ждёт с открытой игрой
     app.add_handler(MessageHandler(
         filters.ChatType.PRIVATE & filters.TEXT & ~filters.COMMAND, kw_input), group=-49)
@@ -69755,6 +70215,8 @@ def main():
     app.add_handler(CommandHandler("fix_adventures_all", cmd_fix_adventures_all))
     app.add_handler(CommandHandler("givesub",      cmd_givesub))
     app.add_handler(CommandHandler("m",            cmd_m_new))
+    for _gc in ("chat", "chatfrog", "frogday", "kvaday", "league", "vs"):
+        app.add_handler(CommandHandler(_gc, cmd_chat_games_private))
     app.add_handler(CommandHandler("staya_top",    cmd_staya_top))
     app.add_handler(CommandHandler("staya",        cmd_staya))
     app.add_handler(CommandHandler("sosedi",       cmd_sosedi))
@@ -69820,6 +70282,7 @@ def main():
     # перехватил роутер NFT. Общий обработчик — всегда последним.
     for _pattern, _router in (
         (r"^ob_",                                    onboard_router),
+        (r"^g\|",                                   group_game_cb),
         (r"^(admin|ca_|cs_|nft_approve|nft_reject)", admin_router),
         (r"^gacha",                                  gacha_router),
         (r"^nft_",                                   nft_router),
