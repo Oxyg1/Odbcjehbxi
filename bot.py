@@ -19308,11 +19308,65 @@ async def _run_chat_auto_giveaway(chat_id: int, fund: int, ctx):
         print(f"⚠️ Auto-giveaway error: {e}")
 
 
+# Когда последний раз нажимали кнопку под сообщением: (chat_id, message_id) → ts.
+# Пишет msg_touch_on_update — первым делом на каждое нажатие.
+_msg_touched: dict[tuple[int, int], float] = {}
+# Сообщения, которые удалять нельзя: результат, который должен висеть.
+_msg_keep: set[tuple[int, int]] = set()
+
+
+async def msg_touch_on_update(update: Update, ctx: ContextTypes.DEFAULT_TYPE) -> None:
+    """Отмечает нажатие кнопки под сообщением — его удаление откладывается."""
+    q = update.callback_query
+    if q and q.message:
+        if len(_msg_touched) > 20000:
+            cutoff = time.time() - 3600
+            for k in [k for k, v in _msg_touched.items() if v < cutoff]:
+                _msg_touched.pop(k, None)
+        _msg_touched[(q.message.chat.id, q.message.message_id)] = time.time()
+
+
+def keep_message(chat_id: int, message_id: int) -> None:
+    """Снять сообщение с автоудаления: итог, который должен остаться в чате."""
+    _msg_keep.add((chat_id, message_id))
+
+
 async def schedule_delete(
-    bot, chat_id: int, message_id: int, delay: int = GROUP_AUTO_DELETE_SEC
+    bot, chat_id: int, message_id: int, delay: int = GROUP_AUTO_DELETE_SEC,
+    force: bool = False,
 ):
-    """Удаляет сообщение бота через delay секунд (только в группах)."""
+    """
+    Удаляет сообщение через delay секунд.
+
+    Раньше таймер шёл от отправки, и сообщение с кнопками пропадало посреди
+    игры: «Турнир открыт» с «Вступить» — через 5 минут, даже если набор шёл,
+    вызов на батл — пока соперник думал. Теперь delay отсчитывается от
+    последнего нажатия кнопки под ним.
+
+    В группе смотрит настройку чата «автоудаление»: раньше её слушали только
+    ответы на «ква» и короткие ответы, а турниры, топы, дуэли и анонсы
+    удалялись и при выключенной. force=True — удалить всё равно (режим
+    «ваниль», где бот обещает не оставлять следов).
+    """
+    key = (chat_id, message_id)
+    start = time.time()
     await asyncio.sleep(delay)
+    while True:
+        touched = _msg_touched.get(key, 0)
+        if touched <= start:
+            break
+        start = touched
+        await asyncio.sleep(max(1.0, touched + delay - time.time()))
+    if key in _msg_keep:
+        _msg_keep.discard(key)
+        return
+    if chat_id < 0 and not force:
+        try:
+            if not (await get_chat_settings(chat_id)).get("auto_delete_enabled", 1):
+                return
+        except Exception as e:
+            logger.warning("schedule_delete: настройки чата %s: %s", chat_id, e)
+    _msg_touched.pop(key, None)
     try:
         await bot.delete_message(chat_id=chat_id, message_id=message_id)
     except (BadRequest, Forbidden, TimedOut):
@@ -19444,7 +19498,7 @@ async def vanilla_reply(
         except Exception as _e:
             logger.exception("подавлено исключение: %s", _e)
         # Планируем удаление ответа
-        asyncio.create_task(schedule_delete(ctx.bot, msg.chat_id, msg.message_id, delay))
+        asyncio.create_task(schedule_delete(ctx.bot, msg.chat_id, msg.message_id, delay, force=True))
     except (BadRequest, Forbidden, TimedOut):
         pass
 
@@ -19468,7 +19522,7 @@ async def vanilla_redirect(
             await update.message.delete()
         except Exception as _e:
             logger.exception("подавлено исключение: %s", _e)
-        asyncio.create_task(schedule_delete(ctx.bot, msg.chat_id, msg.message_id, 15))
+        asyncio.create_task(schedule_delete(ctx.bot, msg.chat_id, msg.message_id, 15, force=True))
     except (BadRequest, Forbidden, TimedOut):
         pass
 
@@ -19535,11 +19589,7 @@ async def _auto_delete(bot, chat_id: int, message_id: int, importance: str = MSG
         MSG_HIGH:   settings.get("delay_high",   300),
     }
     delay = delay_map.get(importance, settings.get("delay_medium", 120))
-    await asyncio.sleep(delay)
-    try:
-        await bot.delete_message(chat_id=chat_id, message_id=message_id)
-    except (BadRequest, Forbidden, TimedOut):
-        pass
+    await schedule_delete(bot, chat_id, message_id, delay)
 
 
 async def send_group_msg(
@@ -53282,10 +53332,13 @@ async def on_message(update: Update, ctx: ContextTypes.DEFAULT_TYPE):
                 asyncio.create_task(
                     schedule_delete(_friz_bot, _friz_chat_id, _friz_sent.message_id, _friz_delay)
                 )
-                # Сообщение пользователя — только если у бота есть право удалять
+                # Сообщение пользователя — только если оно и есть «фриз»,
+                # а не фраза со словом («кто знает, когда фриз кончится?»),
+                # и если у бота есть право удалять
+                _friz_only = _re.sub(r'[^\w]', '', text_lower) in ("фриз", "фризз")
                 try:
                     _friz_me = await _friz_bot.get_chat_member(_friz_chat_id, _friz_bot.id)
-                    if getattr(_friz_me, "can_delete_messages", False):
+                    if _friz_only and getattr(_friz_me, "can_delete_messages", False):
                         asyncio.create_task(
                             schedule_delete(_friz_bot, _friz_chat_id, update.message.message_id, _friz_delay)
                         )
@@ -56926,7 +56979,7 @@ async def job_lottery_draw(ctx: ContextTypes.DEFAULT_TYPE):
     )
 
     # Объявляем в общем чате
-    await announce(ctx.bot, result_msg)
+    await announce(ctx.bot, result_msg, delete_after=0)   # итоги розыгрыша должны висеть
 
     # Уведомляем ВСЕХ участников в личку (победителей и проигравших)
     winner_uids = {w_uid for w_uid, _ in winners}
@@ -70005,6 +70058,8 @@ def main():
     app = builder.build()
     # Статистика: самый первый обработчик видит каждый апдейт и ничего не блокирует
     app.add_handler(TypeHandler(Update, st_on_update), group=-100)
+    # Нажатие кнопки откладывает автоудаление сообщения (schedule_delete)
+    app.add_handler(TypeHandler(Update, msg_touch_on_update), group=-99)
     # Ввод в конструктор опроса: раньше общего обработчика сообщений и
     # останавливает его, только когда админ что-то вводит в опрос
     app.add_handler(MessageHandler(
