@@ -27342,10 +27342,106 @@ async def _seetg_extract_kissedfrog(gift: dict) -> tuple[str | None, str | None,
     return str(num), model_name, owner_name
 
 
+async def tg_profile_kissedfrogs(bot, user_id: int) -> list[dict] | None:
+    """
+    KissedFrog, выставленные в профиле игрока, — прямо из Telegram (getUserGifts).
+
+    Раньше владельца проверяли только через See.tg: нужен был ключ, игрок
+    должен был быть привязан к сайту, а скрытый там профиль уводил заявку
+    в ручную проверку. Telegram отдаёт подарки профиля сам — с номером,
+    моделью, фоном, узором и редкостью. Видны только подарки, которые
+    игрок показывает в профиле; скрытые бот не видит.
+
+    Возвращает [{num, model, pattern, backdrop, *_r}], [] — в профиле их нет,
+    None — Telegram не ответил (тогда пробуем See.tg).
+    """
+    found: list[dict] = []
+    offset = None
+    try:
+        for _ in range(20):                   # до 2000 подарков — с запасом
+            page = await bot.get_user_gifts(
+                user_id,
+                exclude_unlimited=True,
+                exclude_limited_upgradable=True,
+                exclude_limited_non_upgradable=True,
+                offset=offset,
+                limit=100,
+            )
+            for og in page.gifts:
+                g = getattr(og, "gift", None)
+                name = getattr(g, "name", "") or ""
+                if not name.lower().startswith("kissedfrog-") or getattr(g, "is_burned", False):
+                    continue
+                found.append({
+                    "num":        str(g.number),
+                    "model":      g.model.name if g.model else "",
+                    "pattern":    g.symbol.name if g.symbol else "",
+                    "backdrop":   g.backdrop.name if g.backdrop else "",
+                    "model_r":    g.model.rarity_per_mille if g.model else None,
+                    "pattern_r":  g.symbol.rarity_per_mille if g.symbol else None,
+                    "backdrop_r": g.backdrop.rarity_per_mille if g.backdrop else None,
+                })
+            offset = page.next_offset
+            if not offset:
+                break
+    except TelegramError as e:
+        logger.warning("getUserGifts uid=%s: %s", user_id, e)
+        return None
+    return found
+
+
+async def nft_attrs_remember(gift: dict) -> None:
+    """Атрибуты гифта из профиля — в тот же кэш, что заполняет See.tg."""
+    data = {k: gift.get(k) for k in
+            ("model", "pattern", "backdrop", "model_r", "pattern_r", "backdrop_r")}
+    _NFT_ATTRS_MEM[gift["num"]] = data
+    await db_setting(f"nft_attrs_{gift['num']}", json.dumps(data, ensure_ascii=False))
+
+
+async def nft_claim_from_profile(user, gift: dict, bot) -> str:
+    """
+    Гифт виден в профиле игрока — значит, он его. Записываем без админа.
+
+    Прежний владелец в боте (гифт продали или передали) снимается через
+    nft_unlink — как это делала админская /nft_unlink. Свои висящие заявки
+    на тот же номер убираем: подтверждённая запись их заменяет.
+    Возвращает "added" или "already".
+    """
+    num, model = gift["num"], gift["model"]
+    async with aiosqlite.connect(DB_PATH) as db:
+        async with db.execute(
+            "SELECT id, user_id, verified FROM nft_frogs WHERE nft_number=?", (num,)
+        ) as c:
+            rows = await c.fetchall()
+    if any(uid == user.id and ver == 1 for _, uid, ver in rows):
+        return "already"
+    for rid, uid, ver in rows:
+        if uid != user.id:
+            await nft_unlink(rid, bot)
+    async with aiosqlite.connect(DB_PATH) as db:
+        await db.execute(
+            "DELETE FROM nft_frogs WHERE user_id=? AND nft_number=? AND verified<>1",
+            (user.id, num),
+        )
+        await db.execute(
+            "INSERT INTO nft_frogs(user_id,nft_url,nft_number,model_name,owner_name,verified,added_at)"
+            " VALUES(?,?,?,?,?,1,?)",
+            (user.id, f"https://t.me/nft/KissedFrog-{num}", num, model,
+             user.first_name or "", time.time()),
+        )
+        await db.commit()
+    await nft_attrs_remember(gift)
+    await db_add_skin(user.id, model)
+    await plog(user.id, "nft_profile", f"KissedFrog #{num} {model} — из профиля")
+    return "added"
+
+
 async def cmd_nft(update: Update, ctx: ContextTypes.DEFAULT_TYPE):
     """
-    /nft — сканирует ВСЕ KissedFrog у игрока через See.tg API и добавляет разом.
-    /nft https://t.me/nft/KissedFrog-XXXX — добавляет конкретную NFT (одиночный режим).
+    /nft — находит все KissedFrog в профиле игрока (getUserGifts) и добавляет
+           разом; если в профиле пусто — пробует See.tg.
+    /nft https://t.me/nft/KissedFrog-XXXX — одна NFT: сначала профиль, затем
+           See.tg и страница t.me, иначе — заявка админу.
     """
     user = update.effective_user
     f = await db_get(user.id)
@@ -27369,7 +27465,35 @@ async def cmd_nft(update: Update, ctx: ContextTypes.DEFAULT_TYPE):
         number = m.group(2)
         nft_url = f"https://t.me/nft/{nft_slug}"
 
-        # Проверяем не занята ли уже
+        msg = await update.message.reply_text(
+            f"{_E_SEARCH} <i>Проверяю подарки в твоём профиле...</i>", parse_mode=ParseMode.HTML
+        )
+
+        # Сначала — профиль в самом Telegram: подарок там, значит он твой
+        profile = await tg_profile_kissedfrogs(ctx.bot, user.id) or []
+        mine = next((g for g in profile if g["num"] == number), None)
+        if mine and mine["model"] in SKINS:
+            model_name = mine["model"]
+            if await nft_claim_from_profile(user, mine, ctx.bot) == "already":
+                try:
+                    await msg.edit_text("✅ Эта KissedFrog уже твоя в боте.")
+                except (BadRequest, Forbidden, TimedOut):
+                    pass
+                return
+            await ach_grant(user.id, "nft_owner", ctx.bot)
+            try:
+                await msg.edit_text(
+                    f"{_E_CHECK} <b>Нашёл в твоём профиле</b>\n\n"
+                    f"{_E_CORAL} KissedFrog #{number}\n"
+                    f"🎨 Облик: <b>{model_name}</b> {pemoji(model_name)} разблокирован!\n\n"
+                    f"Надень через 👗 Облики → /frog",
+                    parse_mode=ParseMode.HTML,
+                )
+            except (BadRequest, Forbidden, TimedOut):
+                pass
+            return
+
+        # В профиле не нашли — дальше по-старому. Не занята ли уже
         async with aiosqlite.connect(DB_PATH) as db:
             async with db.execute(
                 "SELECT user_id, verified FROM nft_frogs WHERE nft_number=?", (number,)
@@ -27378,15 +27502,18 @@ async def cmd_nft(update: Update, ctx: ContextTypes.DEFAULT_TYPE):
         if existing:
             uid_ex, ver_ex = existing
             if ver_ex == 1 and uid_ex != user.id:
-                await update.message.reply_text("❌ Эта KissedFrog уже зарегистрирована другим пользователем.")
+                await msg.edit_text(
+                    "❌ Эта KissedFrog записана за другим игроком.\n\n"
+                    "Если она теперь твоя — покажи её в профиле Telegram "
+                    "и повтори /nft."
+                )
                 return
             elif uid_ex == user.id and ver_ex == 0:
-                await update.message.reply_text("⏳ Заявка уже отправлена, ждёт проверки администратора.")
+                await msg.edit_text(
+                    "⏳ Заявка уже ждёт проверки.\n\n"
+                    "Быстрее: покажи подарок в профиле Telegram и повтори /nft."
+                )
                 return
-
-        msg = await update.message.reply_text(
-            f"{_E_SEARCH} <i>Проверяю NFT через See.tg API...</i>", parse_mode=ParseMode.HTML
-        )
 
         # Пробуем See.tg API
         seetg_gift = await seetg_get_gift_by_url(nft_url)
@@ -27497,7 +27624,9 @@ async def cmd_nft(update: Update, ctx: ContextTypes.DEFAULT_TYPE):
             await msg.edit_text(
                 f"⏳ <b>Заявка отправлена на ручную проверку</b>\n\n"
                 f"{_E_CORAL} KissedFrog #{number}\n{model_info}\n\n"
-                f"<i>Администратор проверит и добавит облик вручную.\n{reason}</i>",
+                f"<i>Администратор проверит и добавит облик вручную.\n{reason}</i>\n\n"
+                f"Быстрее: покажи подарок в профиле Telegram и повтори /nft — "
+                f"бот подтвердит сам.",
                 parse_mode=ParseMode.HTML,
             )
         except (BadRequest, Forbidden, TimedOut):
@@ -27508,16 +27637,34 @@ async def cmd_nft(update: Update, ctx: ContextTypes.DEFAULT_TYPE):
     # РЕЖИМ 2: без аргументов — сканируем ВСЕ KissedFrog через See.tg
     # ══════════════════════════════════════════════════════════════════
     msg = await update.message.reply_text(
-        f"{_E_SEARCH} <i>Ищу все твои KissedFrog через See.tg API...</i>",
+        f"{_E_SEARCH} <i>Ищу KissedFrog в твоём профиле...</i>",
         parse_mode=ParseMode.HTML,
     )
 
-    # Загружаем все гифты пользователя по slug KissedFrog через see.tg
-    # seetg_get_gifts_by_owner сначала получает UUID владельца, затем запрашивает гифты
-    kissedfrog_gifts = await seetg_get_gifts_by_owner(user.id, slug="KissedFrog", limit=50)
+    # Сначала — профиль в самом Telegram. Это и есть проверка владельца:
+    # подарок в профиле у того, кому принадлежит.
+    profile = await tg_profile_kissedfrogs(ctx.bot, user.id) or []
+    found: list[tuple[str, str | None, str]] = []
+    from_profile_added: list[tuple[str, str]] = []
+    from_profile_done: list[str] = []
+    for g in profile:
+        if g["model"] in SKINS:
+            if await nft_claim_from_profile(user, g, ctx.bot) == "added":
+                from_profile_added.append((g["num"], g["model"]))
+            else:
+                from_profile_done.append(g["num"])
+        else:
+            # Модели нет среди обликов бота — пусть посмотрит админ
+            await nft_attrs_remember(g)
+            found.append((g["num"], g["model"], user.first_name or ""))
+
+    # Запасной путь — See.tg: если в профиле пусто или Telegram не ответил
+    kissedfrog_gifts = []
+    if not profile:
+        kissedfrog_gifts = await seetg_get_gifts_by_owner(user.id, slug="KissedFrog", limit=50)
 
     # Фолбэк: пробуем через seetg_request напрямую с telegram_id как recipient
-    if not kissedfrog_gifts:
+    if not profile and not kissedfrog_gifts and SEETG_TGAUTH:
         all_gifts_raw = await seetg_request(
             "/api/gifts",
             {
@@ -27533,13 +27680,19 @@ async def cmd_nft(update: Update, ctx: ContextTypes.DEFAULT_TYPE):
         elif isinstance(all_gifts_raw, dict):
             kissedfrog_gifts = all_gifts_raw.get("results") or all_gifts_raw.get("gifts") or []
 
-    if not kissedfrog_gifts:
+    for gift in kissedfrog_gifts:
+        num, model_name, owner_name = await _seetg_extract_kissedfrog(gift)
+        if num is not None:
+            found.append((num, model_name, owner_name or ""))
+
+    if not found and not profile:
         try:
             await msg.edit_text(
                 f"{_E_NFT} <b>KissedFrog NFT</b>\n\n"
-                "See.tg не нашёл KissedFrog на твоём аккаунте.\n\n"
-                "Убедись, что твой Telegram ID привязан к See.tg, "
-                "или добавь жабу вручную:\n"
+                "В твоём профиле нет KissedFrog.\n\n"
+                "Покажи подарок в профиле: открой его в Telegram → "
+                "«Показать в профиле». Потом снова /nft.\n\n"
+                "Или пришли ссылку на жабу:\n"
                 "<code>/nft https://t.me/nft/KissedFrog-XXXX</code>",
                 parse_mode=ParseMode.HTML,
             )
@@ -27556,15 +27709,11 @@ async def cmd_nft(update: Update, ctx: ContextTypes.DEFAULT_TYPE):
     already_registered = {str(r[0]): r[1] for r in rows}  # {number: verified}
 
     # Обрабатываем каждый найденный гифт
-    added_skins: list[tuple[str, str]] = []     # [(number, model_name)]
+    added_skins: list[tuple[str, str]] = list(from_profile_added)  # [(number, model_name)]
     pending_review: list[tuple[str, str]] = []  # [(number, model_name or "?")]
-    already_done: list[str] = []                # номера, которые уже в БД
+    already_done: list[str] = list(from_profile_done)  # номера, которые уже в БД
 
-    for gift in kissedfrog_gifts:
-        num, model_name, owner_name = await _seetg_extract_kissedfrog(gift)
-        if num is None:
-            continue
-
+    for num, model_name, owner_name in found:
         # Пропускаем уже обработанные
         if num in already_registered:
             already_done.append(num)
