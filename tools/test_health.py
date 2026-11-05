@@ -71,7 +71,33 @@ async def main():
     f = run_hours(f, 24)
     ok(f["health"] == 0, "а за 2,5 суток — нет")
 
-    print("3. Подсказка в карточке")
+    print("3. Уход раз в день и восстановление")
+    def daily(f, days, stats):
+        for h in range(days * 24):
+            if h % 24 == 0:
+                for k in stats:
+                    f[k] = 100
+            f = run_hours(f, 1)
+            if not f["alive"]:
+                return f, h + 1
+        return f, None
+    full = ["hunger", "happiness", "cleanliness", "energy"]
+    f, died = daily(frog(), 10, full)
+    ok(died is None and f["health"] >= 80, f"полный уход раз в сутки — 10 дней живая ({f['health']}, {died})")
+    f, died = daily(frog(), 10, ["hunger"])
+    ok(died is not None and died > 60, f"только кормить мало, но не за двое суток ({died} ч)")
+    f = run_hours(frog(health=50), 10)
+    ok(f["health"] == 60, f"уход в порядке — здоровье растёт на 1 в час ({f['health']})")
+    f = run_hours(frog(health=50, hunger=20), 10, keep={"hunger": 20})
+    ok(f["health"] < 50, "пока есть запущенный параметр — не растёт, а падает")
+    f = run_hours(frog(health=99), 5)
+    ok(f["health"] == 100, "выше 100 не поднимается")
+    f = run_hours(frog(health=0, alive=0), 5)
+    ok(f["health"] == 0, "мёртвая не оживает сама")
+    f = run_hours(frog(hunger=100), 24)
+    ok(f["hunger"] > 0, f"полной сытости хватает на сутки ({f['hunger']})")
+
+    print("4. Подсказка в карточке")
     ok(B.health_note(frog()) == "", "всё хорошо — подсказки нет")
     n = B.health_note(frog(hunger=10, cleanliness=20))
     ok("голодная" in n and "грязная" in n, f"называет причины: {n}")

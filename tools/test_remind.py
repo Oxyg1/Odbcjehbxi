@@ -250,6 +250,21 @@ async def main():
     to = [c for c, *_ in bot.sent]
     ok(401 not in to, "«расклеилась» больше не шлётся — это теперь ежедневное")
     ok(402 in to, "«голодает» (0%) — шлётся")
+    ok((await B.db_get(402)).get("starve_alerted") == 1, "и помечается, что уже написали")
+    # Через 7 часов голод всё тот же — второй раз не пишем
+    x_db("UPDATE frogs SET last_remind=? WHERE user_id=402", _time.time() - 7 * 3600)
+    uncache()
+    bot2 = FakeBot()
+    B.db_all_alive = only
+    try:
+        await B.job_reminders(types.SimpleNamespace(bot=bot2))
+    finally:
+        B.db_all_alive = real
+    ok(402 not in [c for c, *_ in bot2.sent], "«голодает» второй раз за тот же голод — не шлётся")
+    g = await B.db_get(402)
+    g["hunger"] = 50
+    g = B.decay(g)
+    ok(not g.get("starve_alerted"), "поела — отметка снята, следующий голод снова напомнит")
     ok(all(seg[0] >= 7 for seg in B._WINBACK_SEGMENTS), "winback начинается с 7 дней")
 
     print()

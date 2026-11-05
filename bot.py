@@ -4409,6 +4409,8 @@ def run_sync_migration():
         # JSON вида {"hunger": 0.62, "energy": 0.15, …}. Без него частые
         # вызовы decay() отбрасывали остаток, и показатели замирали.
         ("decay_frac",         "TEXT    DEFAULT ''"),
+        # 1 — о том, что сытость на нуле, уже написали. Снимается, когда поела
+        ("starve_alerted",     "INTEGER DEFAULT 0"),
         # ── Счётчики достижений ───────────────────────────
         # Условия на эти поля были в ach_check с самого начала, а колонок не
         # было: значение всегда читалось нулём, и 8 достижений не выдавались
@@ -17733,12 +17735,16 @@ _STAYA_BOOST_CACHE: dict[int, dict] = {}
 # всё равно сдвигался на now — прошедшее время просто выбрасывалось. Показатель
 # с множителем меньше единицы не падал вообще: чистота и энергия у активного
 # игрока стояли на 100 вечно.
+#
+# Сытость — 4 в час: полная держится сутки. При 7 она кончалась за 14 часов,
+# и уход раз в день, который обещает знакомство, не спасал — лягушка
+# голодала каждую ночь и умирала на третий день.
 DECAY_RATES = {
-    "hunger":      7.0,
+    "hunger":      4.0,
     "happiness":   7.0,
     "cleanliness": 7.0 * 0.4,
     "energy":      7.0 * 0.3,
-    "health":      7.0 * 0.5,      # только при нулевом голоде
+    "health":      3.5,            # только при нулевом голоде
     "overfeed":    OVERFEED_COOL_PER_H,   # не показатель: так переваривается лишнее
 }
 
@@ -17752,6 +17758,9 @@ DECAY_RATES = {
 # не падает.
 HEALTH_LOW, HEALTH_VERYLOW = 30, 10
 HEALTH_RATE_LOW, HEALTH_RATE_VERYLOW = 0.3, 0.6
+# Пока уход в порядке (всё выше HEALTH_LOW), здоровье понемногу возвращается.
+# Без этого любой пропуск копился до смерти: само оно не росло никогда.
+HEALTH_REGEN = 1.0
 HEALTH_NEGLECT = {
     "hunger":      "голодная",
     "happiness":   "грустит",
@@ -17804,7 +17813,8 @@ def _decay_frac_load(f: dict) -> dict:
     # Доля по определению меньше единицы; всё прочее — мусор, и копить его
     # нельзя: подпорченное значение иначе списало бы показатель разом.
     return {k: v for k, v in data.items()
-            if k in DECAY_RATES and isinstance(v, (int, float)) and 0 <= v < 1}
+            if (k in DECAY_RATES or k == "health_regen")
+            and isinstance(v, (int, float)) and 0 <= v < 1}
 
 
 def _decay_frac_store(f: dict, frac: dict) -> None:
@@ -17880,8 +17890,18 @@ def decay(f: dict) -> dict:
     h_rate, _ = health_drain(f)
     if h_rate:
         f["health"] = max(0, f["health"] - _take("health", h_rate / DECAY_RATES["health"] * health_mult))
+        frac.pop("health_regen", None)
     else:
         frac.pop("health", None)      # уход в порядке — счётчик урона обнуляем
+        if f.get("alive") and f["health"] < 100:
+            due = frac.get("health_regen", 0.0) + hours * HEALTH_REGEN
+            f["health"] = min(100, f["health"] + int(due))
+            frac["health_regen"] = due - int(due)
+        else:
+            frac.pop("health_regen", None)
+    # Поела — следующий голод снова заслуживает одного напоминания
+    if f["hunger"] > 0 and f.get("starve_alerted"):
+        f["starve_alerted"] = 0
     # Обжорство проходит само: живот переваривает лишнее
     if f.get("overfeed_total", 0) > 0:
         f["overfeed_total"] = max(0, f["overfeed_total"] - _take("overfeed", 1.0))
@@ -18652,7 +18672,7 @@ async def onboard_finish(q, f: dict, ctx) -> None:
     text = ui_card(
         status_text(f),
         f"{_E_LEAF} Шкалы падают сами.\n"
-        f"Заходи раз в день — покормить\nи забрать бонус.",
+        f"Заходи раз в день — позаботиться\nи забрать бонус.",
     )
     try:
         await q.message.edit_text(
@@ -54946,14 +54966,18 @@ async def job_reminders(ctx: ContextTypes.DEFAULT_TYPE):
                 style="primary", icon_id=ICON_CARE)
         ]])
 
-        # ── Критично: HP < 10% или голод = 0 → не чаще раза в 6 ч, и не
-        # сразу после ежедневного напоминания — оно уже позвало ──
-        if ((hp < 10 or hunger == 0) and now - last_r > 6 * 3600
+        # ── Критично: HP < 10% — не чаще раза в 6 ч; голод = 0 — один раз,
+        # пока не поест. Раньше «голодает» приходило каждые 6 часов, утром и
+        # вечером, и игра ощущалась как лягушка, которая вечно подыхает.
+        # И не сразу после ежедневного напоминания — оно уже позвало ──
+        dying = hp < 10 and now - last_r > 6 * 3600
+        starving = hunger == 0 and not f.get("starve_alerted")
+        if ((dying or starving)
                 and now - (f.get("remind_at", 0) or 0) > 3 * 3600):
             # Кнопка теперь делает всё на месте, поэтому «срочно зайди» из
             # текстов убрано: указание никуда не идти уже неверно, а гнать
             # человека паникой ради возврата — ровно то, чего гайд не велит.
-            if hp < 10:
+            if dying:
                 text = (
                     f"{_E_HEART} <b>{name} при смерти</b>\n\n"
                     f"Здоровье: <b>{hp}%</b>. На нуле — умрёт."
@@ -54982,6 +55006,8 @@ async def job_reminders(ctx: ContextTypes.DEFAULT_TYPE):
                 reply_markup=kb,
             )
             f["last_remind"] = now
+            if f.get("hunger", 100) == 0:
+                f["starve_alerted"] = 1
             updated_frogs.append(f)
         except (Forbidden, Exception):
             pass
