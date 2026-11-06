@@ -4411,6 +4411,17 @@ def run_sync_migration():
         ("decay_frac",         "TEXT    DEFAULT ''"),
         # 1 — о том, что сытость на нуле, уже написали. Снимается, когда поела
         ("starve_alerted",     "INTEGER DEFAULT 0"),
+        # ── Болотный клуб ─────────────────────────────────
+        ("club_until",         "REAL    DEFAULT 0"),   # до когда работает (оплата или пробные дни)
+        ("club_months",        "INTEGER DEFAULT 0"),   # стаж: оплаченных месяцев подряд
+        ("club_since",         "REAL    DEFAULT 0"),
+        ("club_charge_id",     "TEXT    DEFAULT ''"),  # первое списание — им отменяют продление
+        ("club_canceled",      "INTEGER DEFAULT 0"),   # продление выключено
+        ("club_spin_day",      "TEXT    DEFAULT ''"),
+        ("club_warned",        "REAL    DEFAULT 0"),   # письмо «завтра продление» за этот срок
+        ("club_lapse_note",    "REAL    DEFAULT 0"),   # письмо «клуб закончился» за этот срок
+        ("club_stats",         "TEXT    DEFAULT ''"),  # итог месяца: крутки, легендарные
+        ("trial_club_used",    "INTEGER DEFAULT 0"),
         # ── Счётчики достижений ───────────────────────────
         # Условия на эти поля были в ach_check с самого начала, а колонок не
         # было: значение всегда читалось нулём, и 8 достижений не выдавались
@@ -5281,6 +5292,10 @@ def run_sync_migration():
         poll_sync_migration(conn)
     except Exception as _e:
         logger.exception("poll_sync_migration: %s", _e)
+    try:
+        pay_sync_migration(conn)
+    except Exception as _e:
+        logger.exception("pay_sync_migration: %s", _e)
     # Котлы, раздутые старым пассивным доходом без потолка, — до потолка
     try:
         cur = conn.execute("UPDATE stayas SET cauldron=? WHERE cauldron>?",
@@ -6986,6 +7001,9 @@ def check_overfeed(f: dict) -> bool:
     """Возвращает True если лягушка умерла от переедания и обновляет поля.
     Стрик при смерти от переедания НЕ сбрасывается — это несчастный случай, не забывчивость.
     """
+    if f.get("overfeed_total", 0) >= OVERFEED_DEATH_THRESHOLD and f.get("alive", 0) and club_on(f):
+        f["overfeed_total"] = OVERFEED_DEATH_THRESHOLD - 1     # клуб: не лопнет, но живот полон
+        return False
     if f.get("overfeed_total", 0) >= OVERFEED_DEATH_THRESHOLD and f.get("alive", 0):
         _saved_streak = f.get("streak", 0)  # сохраняем стрик
         f["alive"] = 0
@@ -8526,6 +8544,8 @@ async def handle_interactive_event_choice(query, uid: int, event_id: str, choice
     frog = _apply_choice_rewards(frog, choice)
     if choice.get("is_lucky"):
         frog["total_iev_lucky"] = frog.get("total_iev_lucky", 0) + 1
+    if frog.get("health", 100) <= 0 and frog.get("alive") and club_on(frog):
+        frog["health"] = 1                                # клуб: событие не убивает
     if frog.get("health", 100) <= 0 and frog.get("alive"):
         frog["alive"] = 0
         frog["died_at"] = time.time()
@@ -14933,6 +14953,55 @@ async def purchase_log(uid: int, sku: str, stars: int) -> None:
     asyncio.create_task(plog(uid, "buy", f"{sku} за {stars}⭐"))
 
 
+# ── Учёт платежей ────────────────────────────────────────────────────────────
+# Раньше покупка оседала только в дневных счётчиках и в журнале действий,
+# который чистится через 7 дней: кто платил повторно и что было после покупки,
+# узнать было нельзя. Теперь каждая оплата — строка с номером списания
+# Telegram. Номер же защищает от двойного зачёта, если Telegram пришлёт
+# тот же платёж ещё раз.
+
+def pay_sync_migration(conn) -> None:
+    conn.executescript(
+        """
+        CREATE TABLE IF NOT EXISTS payments (
+            charge_id       TEXT PRIMARY KEY,
+            user_id         INTEGER NOT NULL,
+            ts              REAL    NOT NULL,
+            payload         TEXT    DEFAULT '',
+            stars           INTEGER DEFAULT 0,
+            recurring       INTEGER DEFAULT 0,
+            first_recurring INTEGER DEFAULT 0,
+            sub_until       REAL    DEFAULT 0
+        );
+        CREATE INDEX IF NOT EXISTS idx_payments_user ON payments(user_id, ts);
+        CREATE INDEX IF NOT EXISTS idx_payments_ts   ON payments(ts);
+        """
+    )
+    conn.commit()
+
+
+async def payment_record(uid: int, sp) -> bool:
+    """
+    Записать оплату. False — этот платёж уже был записан (повтор от Telegram),
+    тогда второй раз ничего не начисляем.
+    """
+    charge = getattr(sp, "telegram_payment_charge_id", "") or ""
+    if not charge:                       # без номера сверять не с чем — пропускаем
+        charge = f"nocharge:{uid}:{time.time():.6f}"
+    exp = getattr(sp, "subscription_expiration_date", None)
+    async with aiosqlite.connect(DB_PATH) as db:
+        cur = await db.execute(
+            "INSERT OR IGNORE INTO payments(charge_id,user_id,ts,payload,stars,recurring,"
+            "first_recurring,sub_until) VALUES(?,?,?,?,?,?,?,?)",
+            (charge, uid, time.time(), sp.invoice_payload or "", int(sp.total_amount or 0),
+             1 if getattr(sp, "is_recurring", False) else 0,
+             1 if getattr(sp, "is_first_recurring", False) else 0,
+             exp.timestamp() if exp else 0),
+        )
+        await db.commit()
+        return cur.rowcount > 0
+
+
 async def funnel_bump(step) -> None:
     """
     Отметить прохождение шага знакомства.
@@ -17915,6 +17984,11 @@ def decay(f: dict) -> dict:
         if now - f.get("last_warning", 0) > 6 * 3600:
             f["last_warning"] = now
             f["_need_warning"] = True
+    # ── Клуб: не умирает, пока клуб работает ──────
+    if f["health"] <= 0 and f.get("alive") and club_on(f, now):
+        f["health"] = 1
+        frac.pop("health", None)
+        _decay_frac_store(f, frac)
     # ── Смерть ────────────────────────────────────
     if f["health"] <= 0 and f["alive"]:
         f["alive"] = 0
@@ -17937,12 +18011,10 @@ async def levelup(f: dict, bot=None) -> list[tuple]:
             await db_add_skin(f["user_id"], reward)
             gained.append((f["level"], reward))
         # XP в котёл стаи теперь начисляется через add_xp (10% от каждого XP)
-        # 🏪 Пробник Трудяги на 10-м уровне
+        # 10-й уровень — пробные дни клуба
         if f["level"] == 10 and bot:
-            asyncio.create_task(grant_trial(
-                f["user_id"], 2, 2, bot=bot,
-                reason="Квакуся выросла и хочет попробовать себя на Болотном Рынке! 2 дня бесплатно 🏪"
-            ))
+            asyncio.create_task(club_grant_trial(
+                f["user_id"], 2, bot=bot, reason="Подарок за 10-й уровень."))
     # Проверяем реферальные этапы при апгрейде уровня
     if bot:
         await check_referral_stages(f, bot)
@@ -18257,6 +18329,9 @@ def dead_kb(f: dict) -> InlineKeyboardMarkup:
                          style="success" if f.get("coins", 0) >= cost else None)])
     rows.append([btn("Мгновенно · 15 Stars", callback_data="revive_stars",
                      style="primary", icon_id=ICON_STARS)])
+    # Клуб возвращает сразу и дальше не даёт умереть — у 97% игроков игра
+    # выглядит как этот экран, и разовое воскрешение их не удерживает
+    rows.append([btn("🌿 Вернуть в клубе", callback_data="club|menu")])
     rows.append([btn("⚔️ Испытание — бесплатно", callback_data="trial_start")])
     return InlineKeyboardMarkup(rows)
 
@@ -18816,6 +18891,8 @@ def main_kb(f: dict, is_group: bool = False, sacrifice_active: bool = False,
     # Временные события. Порядок фиксирован: сначала то, что закончится
     # раньше и требует действия, потом фоновое — чтобы кнопки не прыгали.
     event_btns = []
+    if not is_group and club_spin_ready(f):
+        event_btns.append(btn("🎁 Клубная крутка", callback_data="club|spin", style="success"))
     if freeze_active:
         event_btns.append(btn("Фриз-ивент", callback_data="fz_dashboard", style="primary"))
     if sacrifice_active:
@@ -21811,6 +21888,7 @@ _GROUP_PRIVATE_CMDS = {
     "exp": "Экспедиции", "cooldowns": "Откаты", "rename": "Смена имени", "revive": "Воскрешение",
     "heal": "Лечение", "referral": "Приглашения", "topw": "Топ недели",
     "topm": "Топ месяца", "online": "Онлайн", "donate": "Поддержка проекта",
+    "club": "Болотный клуб", "subscribe": "Болотный клуб", "trial": "Болотный клуб",
 }
 # Что не так с лягушкой — словами, а не пятью значками с числами
 _FROG_TROUBLES = (("hunger", "голодная"), ("health", "болеет"), ("energy", "уставшая"),
@@ -21929,6 +22007,9 @@ def group_frog_text(f: dict, st: dict | None = None) -> str:
     rec = chat_record(st) if st else ""
     if rec:
         lines.append(f"В этом чате: {rec}")
+    note = club_chat_note(f)
+    if note:
+        lines.append(f"В Болотном клубе {note[len('в клубе '):]}")
     return "\n".join(lines)
 
 
@@ -21986,7 +22067,8 @@ async def chat_frogs(chat_id: int, days: int) -> list[dict]:
     async with aiosqlite.connect(DB_PATH) as db:
         db.row_factory = aiosqlite.Row
         async with db.execute(
-            "SELECT m.user_id, m.wins, m.losses, m.days, f.first_name, f.frog_name, f.level, f.xp "
+            "SELECT m.user_id, m.wins, m.losses, m.days, f.first_name, f.frog_name, f.level, f.xp, "
+            "f.club_until, f.club_months "
             "FROM chat_members m JOIN frogs f ON f.user_id=m.user_id "
             "WHERE m.chat_id=? AND m.last_ts>? AND f.alive=1 "
             "AND COALESCE(f.banned,0)=0 AND COALESCE(f.is_bot,0)=0 "
@@ -22007,7 +22089,8 @@ async def group_top(update: Update, ctx):
     def line(i, r):
         rec = ", ".join(p for p in (
             ui_plural(r["wins"], "победа", "победы", "побед") if r["wins"] else "",
-            ui_plural(r["days"], "корона", "короны", "корон") if r["days"] else "") if p)
+            ui_plural(r["days"], "корона", "короны", "корон") if r["days"] else "",
+            club_chat_note(r)) if p)
         return ui_line(f"{i}. {_member_name(r)}", f"ур. {r['level']}", rec)
 
     lines = [line(i, r) for i, r in enumerate(rows[:10], 1)]
@@ -22054,7 +22137,8 @@ async def group_frogday(update: Update, ctx):
     frog = f" и {he(r['frog_name'])}" if r.get("frog_name") else ""
     try:
         await update.message.reply_text(
-            f"{_E_CROWN} <b>Лягушка дня</b> — {who}{frog}, ур. {r['level']}\n"
+            f"{_E_CROWN} <b>Лягушка дня</b> — {who}{frog}, ур. {r['level']}"
+            + (f", {club_chat_note(r)}" if club_chat_note(r) else "") + "\n"
             + ("Первая корона в этом чате." if n == 1 else f"{n}-я корона в этом чате."),
             parse_mode=ParseMode.HTML)
     except (BadRequest, Forbidden, TimedOut):
@@ -27984,22 +28068,17 @@ async def cmd_buy(update: Update, ctx: ContextTypes.DEFAULT_TYPE):
     boost_mult_b = await boost_get_mult()
     stars_mult_b = boost_mult_b.get("stars", 1.0) if boost_mult_b else 1.0
     is_newbie_b  = f.get("stars_spent", 0) == 0
-    sub_on       = f.get("subscription_until", 0) > now_buy and f.get("subscription_type", 0) > 0
-    trial_used   = f.get("trial_worker_used", 0)
     inv          = await inv_get(user.id)
     ticket_count = inv.get("gacha_ticket", 0)
 
     # ── Раздел 1: Подписки — самое ценное, всегда вверху ─────────────
     sub_rows = []
-    if sub_on:
-        kind_buy = sub_active(f)
-        until_buy = datetime.fromtimestamp(f["subscription_until"], ST_TZ).strftime("%d.%m")
-        sub_rows.append([btn(f"{SUB_ICON[kind_buy]} {SUB_NAME[kind_buy]} до {until_buy}", callback_data="shop_sub")])
+    if club_member(f, now_buy):
+        icon_b, tier_b = club_tier(int(f.get("club_months") or 1))
+        sub_rows.append([btn(f"{icon_b} Болотный клуб · {tier_b}", callback_data="club|menu")])
     else:
-        if not trial_used:
-            sub_rows.append([btn(f"🎁 {SUB_TRIAL_DAYS} дня Трудяги бесплатно", callback_data="sub_trial_worker",
-                                 style="success")])
-        sub_rows.append([btn("⭐ Подписки: автоуход и Трудяга", callback_data="shop_sub")])
+        sub_rows.append([btn(f"🌿 Болотный клуб · {CLUB_STARS}⭐ в месяц", callback_data="club|menu",
+                             style="primary")])
 
     # ── Раздел 2: КваКоины ────────────────────────────────────────────
     coin_rows = []
@@ -28028,9 +28107,9 @@ async def cmd_buy(update: Update, ctx: ContextTypes.DEFAULT_TYPE):
     # ── Текст ─────────────────────────────────────────────────────────
     rate_note  = f"  ✨ Буст ×{stars_mult_b:.1f}" if stars_mult_b > 1.0 else ""
     ticket_str = f" · {_E_COSMETIC}{ui_plural(ticket_count, 'билет', 'билета', 'билетов')}" if ticket_count else ""
-    sub_hint   = "" if sub_on else (
-        f"\n\n🛡️ <b>Автоуход</b> — лягушка не голодает, пока тебя нет · {SUB_NANNY_STARS}⭐/мес"
-        f"\n💼 <b>Трудяга</b> — автоуход + ~{WORKER_AVG_DAY}🪙 в день · {SUB_WORKER_STARS}⭐/мес"
+    sub_hint   = "" if club_member(f, now_buy) else (
+        f"\n\n🌿 <b>Болотный клуб</b> — автоуход, лягушка не умирает, клубная крутка каждый день"
+        f" · {CLUB_STARS}⭐/мес"
     )
 
     text = (
@@ -28181,39 +28260,10 @@ async def cmd_adminsecretgift(update: Update, ctx: ContextTypes.DEFAULT_TYPE):
     )
 
 
-async def cmd_subscribe(update: Update, ctx: ContextTypes.DEFAULT_TYPE):
-    """/subscribe (/sub) — подписки: Автоуход и Трудяга"""
-    if not await group_cmd_guard(update, "subscribe", ctx):
-        return
-    f = await db_get(update.effective_user.id)
-    if not f:
-        await update.message.reply_text("Сначала /start 🐸")
-        return
-    text, kb = subs_view(f)
-    await update.message.reply_text(text, parse_mode=ParseMode.HTML, reply_markup=kb)
-
-
-async def cmd_trial(update: Update, ctx: ContextTypes.DEFAULT_TYPE):
-    """/trial — пробный период Трудяги (один раз)"""
-    if not await group_cmd_guard(update, "trial", ctx):
-        return
-    user = update.effective_user
-    f = await db_get(user.id)
-    if not f:
-        await update.message.reply_text("Сначала /start 🐸")
-        return
-    if f.get("banned", 0):
-        return
-    if await grant_trial(user.id, 2, SUB_TRIAL_DAYS, bot=ctx.bot):
-        f = await db_get(user.id) or f
-    elif not sub_active(f):
-        await update.message.reply_text("Пробный период уже был — дальше по подписке.")
-    text, kb = subs_view(f)
-    await update.message.reply_text(text, parse_mode=ParseMode.HTML, reply_markup=kb)
-
-
 async def cmd_broadcast_sub(update: Update, ctx: ContextTypes.DEFAULT_TYPE):
-    """/broadcast_sub — персонализированная рассылка про подписку с именем лягушки каждого игрока"""
+    """/broadcast_sub — рассылка про Болотный клуб, с именем лягушки каждого игрока.
+    Живым — про присмотр и крутки, мёртвым — что лягушка вернётся сразу.
+    Только тем, кто заходил за 60 дней и ещё не в клубе."""
     user = update.effective_user
     if user.id not in ADMIN_IDS:
         return
@@ -28222,15 +28272,18 @@ async def cmd_broadcast_sub(update: Update, ctx: ContextTypes.DEFAULT_TYPE):
     async with aiosqlite.connect(DB_PATH) as db:
         db.row_factory = aiosqlite.Row
         async with db.execute(
-            "SELECT user_id, frog_name, first_name FROM frogs WHERE alive=1 AND banned=0"
+            "SELECT user_id, frog_name, first_name, alive FROM frogs WHERE COALESCE(banned,0)=0 "
+            "AND COALESCE(is_bot,0)=0 AND last_seen > ? AND COALESCE(club_until,0) < ?",
+            (time.time() - 60 * 86400, time.time()),
         ) as c:
             players = [dict(r) for r in await c.fetchall()]
+    club_url = await club_invoice_link(ctx.bot)
 
     sent = 0
     failed = 0
     t_start = time.time()
     status_msg = await update.message.reply_text(
-        f"📢 Рассылка про подписку {len(players)} игрокам..."
+        f"📢 Рассылка про клуб {len(players)} игрокам..."
     )
     sem_bs = asyncio.Semaphore(20)
 
@@ -28238,29 +28291,26 @@ async def cmd_broadcast_sub(update: Update, ctx: ContextTypes.DEFAULT_TYPE):
         nonlocal sent, failed
         name = p.get("frog_name") or p.get("first_name") or "Квакуся"
         name_esc = he(name)
-        text = (
-            
-            f"Пока ты кормил <b>{name_esc}</b> — мы кое-что приготовили 👇\n\n"
-            f"<b>Теперь {name_esc} может сама о себе позаботиться.</b>\n\n"
-            f"🛡️ <b>Автоуход</b> — \n"
-            f"Автоуход кормит, моет и укладывает спать <b>{name_esc}</b> пока ты занят.\n"
-            f"Никаких смертей от забывчивости.\n\n"
-            f"🏪 <b>Трудяга</b> — \n"
-            f"<b>{name_esc}</b> ходит на <b>Болотный Рынок</b> и каждый вечер\n"
-            f"приносит домой <b>400–700{_E_COIN}</b>.\n"
-            f"Дожди, ярмарки, богатые тритоны — каждый день своя история {_E_LEAF}\n\n"
-            "\n"
-            f"{_E_GIFT} Хочешь попробовать? <b>3 дня Трудяги — бесплатно</b>\n\n"
-            f"👉 /trial — забрать пробный период\n"
-            f"👉 /subscribe — посмотреть все тарифы"
-        )
+        if p.get("alive"):
+            first = (f"🛡️ Пока тебя нет, {name_esc} под присмотром: автоуход кормит, моет и "
+                     f"укладывает её, а умереть она не может.")
+        else:
+            first = f"✨ {name_esc} вернётся сразу, как вступишь, — со всеми показателями на 100%."
+        text = "\n\n".join((
+            f"🌿 <b>Болотный клуб</b>",
+            first,
+            "🎁 Каждый день — клубная крутка без обычных обликов. Легендарный — в среднем раз в месяц.",
+            "🌱 → 🌿 → 🍀 → 🌳 Стаж растёт каждый месяц, его видно в чатах.",
+            f"<i>{CLUB_STARS}⭐ в месяц, продлевается само. Отменить — в любой момент в /club.</i>",
+        ))
         async with sem_bs:
             try:
                 await ctx.bot.send_message(
                     p["user_id"], text, parse_mode=ParseMode.HTML,
-                    reply_markup=InlineKeyboardMarkup([[
-                        btn("🎁 Забрать 3 дня бесплатно", callback_data="sub_trial_worker"),
-                    ]]),
+                    reply_markup=InlineKeyboardMarkup([
+                        [btn(f"Вступить · {CLUB_STARS}⭐", url=club_url, style="primary")],
+                        [btn("Подробнее", callback_data="club|menu")],
+                    ]),
                 )
                 sent += 1
             except Exception:
@@ -36042,6 +36092,7 @@ async def cb_guard(update: Update, ctx: ContextTypes.DEFAULT_TYPE):
         "sub_toggle_auto",  # пауза автозаботы — личная настройка
         "sub_buy_",         # покупка подписки — личная
         "sub_renew",        # продление подписки — личная
+        "club|",            # Болотный клуб — у каждого свой
         "iev|",             # интерактивные события — каждый за свою лягушку
         "iev_",             # обратная совместимость со старым форматом
         "legend_status",    # статус легенды — каждый смотрит свой вклад
@@ -39657,7 +39708,7 @@ async def shop_router(update: Update, ctx: ContextTypes.DEFAULT_TYPE):
     # ── МАГАЗИН ЕДЫ ────────────────────────────────
     if d == "shop_sub":
         await q.answer()
-        await plaza_show(q, subs_view(f))
+        await plaza_show(q, await club_view(f, ctx.bot))
         return
     if d == "shop_food":
         await q.answer()
@@ -40741,134 +40792,21 @@ async def shop_router(update: Update, ctx: ContextTypes.DEFAULT_TYPE):
                 except (BadRequest, Forbidden):
                     pass
         return
-    # ─── УПРАВЛЕНИЕ ПОДПИСКОЙ ────────────────────────────────────────────────
+    # ─── Старые подписки → клуб ──────────────────────────────────────────────
+    # Автоуход и Трудяга больше не продаются отдельно. Кнопки остались в старых
+    # сообщениях (оффер «640⭐ со скидкой», «Няня · неделя») — все открывают клуб.
+    # Счета по ним выставлялись с ошибками: месячный автоуход уходил по цене
+    # недельного (50⭐), продление Трудяги — за 640⭐ при цене 350⭐.
     if d == "sub_toggle_auto":
         f["subscription_auto"] = 0 if f.get("subscription_auto", 1) else 1
         await db_save(f)
         await q.answer("▶️ Автоуход включён" if f["subscription_auto"] else
                        "⏸ Автоуход на паузе — не забывай кормить сам")
-        await plaza_show(q, subs_view(f))
+        await plaza_show(q, await club_view(f, ctx.bot))
         return
-    if d == "sub_trial_nanny":
-        if not await grant_trial(uid, 1, 3, bot=ctx.bot):
-            await q.answer("Пробный период уже был", show_alert=True)
-            return
-        await q.answer("🎁 3 дня автоухода — включено!")
-        await plaza_show(q, subs_view(await db_get(uid) or f))
-        return
-    if d == "sub_trial_worker":
-        # Кнопка «Забрать 3 дня» прямо из рассылки
-        if f.get("trial_worker_used", 0):
-            await q.answer("😔 Пробный период уже был использован.", show_alert=True)
-            return
-        granted = await grant_trial(uid, 2, SUB_TRIAL_DAYS, bot=ctx.bot)
-        if not granted:
-            await q.answer("Пробный период уже был", show_alert=True)
-            return
-        await q.answer(f"🎁 {SUB_TRIAL_DAYS} дня Трудяги — включено!")
-        await plaza_show(q, subs_view(await db_get(uid) or f))
-        return
-    # ── Офферные кнопки со скидкой (после истечения подписки) ─────────────────
-    if d in ("sub_renewal_offer_worker", "sub_renewal_offer_nanny"):
-        offer_key = f"sub_offer_{uid}"
-        offer = ctx.bot_data.get(offer_key)
-        is_worker = d == "sub_renewal_offer_worker"
-
-        # Проверяем не истёк ли 1-часовой оффер
-        if not offer or time.time() > offer.get("ends", 0):
-            await q.answer("⏰ Предложение истекло. Оформи по обычной цене.", show_alert=True)
-            # Показываем обычную кнопку
-            try:
-                await q.message.edit_reply_markup(reply_markup=InlineKeyboardMarkup([[
-                    btn(
-                        "🏪 Продлить по обычной цене",
-                        callback_data="sub_buy_worker" if is_worker else "sub_buy_nanny",
-                    )
-                ]]))
-            except (BadRequest, Forbidden, TimedOut):
-                pass
-            return
-
-        sale_price = offer.get("price", 640 if is_worker else 160)
-        sub_name = "💼 Трудяга — 30 дней" if is_worker else "🛡️ Автоуход — 30 дней"
-        description = (
-            "Автоуход + 400–700🪙/день с Болотного Рынка 🐸"
-            if is_worker else
-            "Автоматический уход за лягушкой — кормление, купание, сон 🐸"
-        )
-        sub_type_str = "worker" if is_worker else "nanny"
-        try:
-            await ctx.bot.send_invoice(
-                chat_id=uid,
-                title=f"🔥 {sub_name} (скидка!)",
-                description=description,
-                payload=f"subscription_{sub_type_str}_30_offer",
-                currency="XTR",
-                prices=[LabeledPrice(label=f"🔥 {sub_name}", amount=sale_price)],
-            )
-            await q.answer()
-            # Удаляем оффер чтобы не применить дважды
-            ctx.bot_data.pop(offer_key, None)
-        except Exception as _e:
-            await q.answer((f"Ошибка: {_e}")[:200], show_alert=True)
-        return
-    if d == "sub_buy_nanny_7":
-        # 7-дневный пакет Няни — низкий порог входа
-        pkg_idx = next(
-            (i for i, p in enumerate(STAR_PACKAGES)
-             if p.get("subscription") == "nanny" and p.get("days") == 7),
-            None,
-        )
-        if pkg_idx is None:
-            await q.answer("Пакет не найден.", show_alert=True)
-            return
-        pkg = STAR_PACKAGES[pkg_idx]
-        try:
-            await ctx.bot.send_invoice(
-                chat_id=uid,
-                title="🛡️ Автоуход — 7 дней",
-                description="Автоматический уход за лягушкой — кормление, купание, сон 🐸",
-                payload="subscription_nanny_7",
-                currency="XTR",
-                prices=[LabeledPrice(label="🛡️ Автоуход — 7 дней", amount=pkg["stars"])],
-            )
-            await q.answer()
-        except Exception as _e:
-            await q.answer((f"Ошибка: {_e}")[:200], show_alert=True)
-        return
-    if d in ("sub_buy_nanny", "sub_buy_worker", "sub_renew"):
-        # Отправляем инвойс на нужный тариф
-        is_worker = d == "sub_buy_worker" or (
-            d == "sub_renew" and f.get("subscription_type", 0) == 2
-        )
-        pkg_idx = next(
-            (i for i, p in enumerate(STAR_PACKAGES)
-             if p.get("subscription") == ("worker" if is_worker else "nanny")),
-            None,
-        )
-        if pkg_idx is None:
-            await q.answer("Ошибка: тариф не найден.", show_alert=True)
-            return
-        pkg = STAR_PACKAGES[pkg_idx]
-        sub_name = "💼 Трудяга — 30 дней" if is_worker else "🛡️ Автоуход — 30 дней"
-        description = (
-            "Автоуход + 400–700🪙/день с Болотного Рынка 🐸"
-            if is_worker else
-            "Автоматический уход за лягушкой — кормление, купание, сон 🐸"
-        )
-        sub_type_str = "worker" if is_worker else "nanny"
-        try:
-            await ctx.bot.send_invoice(
-                chat_id=uid,
-                title=sub_name,
-                description=description,
-                payload=f"subscription_{sub_type_str}_30",
-                currency="XTR",
-                prices=[LabeledPrice(label=sub_name, amount=pkg["stars"])],
-            )
-            await q.answer()
-        except Exception as _e:
-            await q.answer((f"Ошибка отправки счёта: {_e}")[:200], show_alert=True)
+    if d.startswith(("sub_trial", "sub_renewal_offer", "sub_buy_", "sub_renew")):
+        await q.answer()
+        await plaza_show(q, await club_view(f, ctx.bot))
         return
     # Ветка не нашлась — отдаём общему обработчику.
     await on_callback(update, ctx)
@@ -43469,8 +43407,8 @@ async def _on_callback_main(update: Update, ctx: ContextTypes.DEFAULT_TYPE):
     if d == "menu_shop":
         await q.answer()
         now_ms = time.time()
-        sub_active_ms = f.get("subscription_until", 0) > now_ms and f.get("subscription_type", 0) > 0
-        sub_lbl = "✅ Подписка активна" if sub_active_ms else "⭐ Подписки"
+        sub_lbl = (f"{club_tier(int(f.get('club_months') or 1))[0]} Мой клуб" if club_member(f, now_ms)
+                   else "🌿 Болотный клуб")
         # Показываем кнопку сезонных обликов только если они активны
         _active_seasons = get_active_seasonal()
         _shop_rows = [
@@ -43484,7 +43422,7 @@ async def _on_callback_main(update: Update, ctx: ContextTypes.DEFAULT_TYPE):
             ],
             [
                 btn("🔨 Крафт", callback_data="craft_menu", icon_id="5836997023554870252"),
-                btn(sub_lbl, callback_data="shop_sub"),
+                btn(sub_lbl, callback_data="club|menu"),
             ],
             # В магазине это была ссылка прямо в каталог лотов. Тому, кто ещё не
             # знает, что такое KissedFrog, сначала нужен ответ «зачем», а уже
@@ -51301,16 +51239,55 @@ async def _on_callback_main(update: Update, ctx: ContextTypes.DEFAULT_TYPE):
 # ══════════════════════════════════════════
 # 💳 STARS ПЛАТЁЖ
 # ══════════════════════════════════════════
+async def precheckout_problem(uid: int, payload: str) -> str:
+    """
+    Почему эту оплату принимать нельзя. Пусто — можно.
+
+    Проверки стояли после списания: игрок платил за «Новичка» второй раз и
+    получал «пакет недоступен» — звёзды ушли, монет нет. До оплаты Telegram
+    сам покажет причину и ничего не спишет.
+    """
+    f = await db_get(uid)
+    if payload.startswith("coins_"):
+        try:
+            pkg = STAR_PACKAGES[int(payload.split("_")[1])]
+        except (ValueError, IndexError):
+            return "Этого пакета больше нет. Открой магазин заново."
+        if pkg.get("newbie") and f and f.get("stars_spent", 0) > 0:
+            return "Пакет «Новичок» — только для первой покупки."
+        if pkg.get("daily_deal") and await db_setting(f"deal_{uid}") == today_str():
+            return "Предложение дня уже куплено сегодня. Завтра будет новое."
+    if payload == CLUB_PAYLOAD and f and club_on(f) and f.get("club_months", 0) >= 1:
+        if f.get("club_canceled"):
+            return "Клуб уже оплачен. Включи продление в /club — второй раз платить не нужно."
+        return "Ты уже в клубе — второй раз платить не нужно."
+    return ""
+
+
 async def pre_checkout(update: Update, ctx: ContextTypes.DEFAULT_TYPE):
-    await update.pre_checkout_query.answer(ok=True)
+    q = update.pre_checkout_query
+    try:
+        problem = await precheckout_problem(q.from_user.id, q.invoice_payload or "")
+    except Exception as e:                 # проверка не должна ронять оплату
+        logger.warning("pre_checkout uid=%s: %s", q.from_user.id, e)
+        problem = ""
+    if problem:
+        await q.answer(ok=False, error_message=problem)
+    else:
+        await q.answer(ok=True)
 
 
 async def successful_payment(update: Update, ctx: ContextTypes.DEFAULT_TYPE):
     user = update.effective_user
-    payload = update.message.successful_payment.invoice_payload
-    stars_paid = update.message.successful_payment.total_amount
+    sp = update.message.successful_payment
+    payload = sp.invoice_payload
+    stars_paid = sp.total_amount
+    if not await payment_record(user.id, sp):
+        logger.warning("Повтор платежа %s от %s — пропущен", sp.telegram_payment_charge_id, user.id)
+        return
     f = await db_get(user.id)
     if not f:
+        logger.error("Оплата %s⭐ (%s) от %s без лягушки", stars_paid, payload, user.id)
         return
     if not f.get("stars_spent"):
         st_count("payer_new")
@@ -51583,12 +51560,7 @@ async def successful_payment(update: Update, ctx: ContextTypes.DEFAULT_TYPE):
         return
 
     if payload == "revive_stars_instant":
-        f["alive"]   = 1
-        f["health"]  = 100
-        f["hunger"]  = 100
-        f["happiness"] = 100
-        f["death_reason"] = ""
-        f["trial_active"] = 0
+        frog_revive(f)
         f["stars_spent"] = f.get("stars_spent", 0) + stars_paid
         await db_save(f)
         await _pay_ref_commission(user.id, stars_paid)
@@ -51634,6 +51606,11 @@ async def successful_payment(update: Update, ctx: ContextTypes.DEFAULT_TYPE):
                 f"🌸 <b>Сезонный облик!</b> {user.first_name} купил {sdata_p['emoji']} {sname_p}",
                 admin_only=True,
             )
+        return
+
+    if payload == CLUB_PAYLOAD:
+        await club_on_payment(update, ctx, f, sp)
+        await _pay_ref_commission(user.id, stars_paid)
         return
 
     if payload.startswith("subscription_"):
@@ -51761,10 +51738,8 @@ async def successful_payment(update: Update, ctx: ContextTypes.DEFAULT_TYPE):
         pkg = STAR_PACKAGES[pkg_idx]
     except Exception:
         return
-    # Проверка на новичковый пакет
-    if pkg.get("newbie") and f.get("stars_spent", 0) > 0:
-        await update.message.reply_text("❌ Ошибка: пакет «Новичок» недоступен.")
-        return
+    # «Новичок» проверяется до оплаты (precheckout_problem). Если звёзды
+    # всё же списаны — монеты положены: отказ после оплаты был бы кражей.
     # Отмечаем использование ежедневного предложения
     if pkg.get("daily_deal"):
         await db_setting(f"deal_{user.id}", today_str())
@@ -54793,85 +54768,47 @@ async def job_adventure_tick(ctx: ContextTypes.DEFAULT_TYPE):
 
 async def job_sub_expiry_offer(ctx: ContextTypes.DEFAULT_TYPE):
     """
-    Каждый час ищет подписки которые истекли 0–2 часа назад
-    и шлёт персональный оффер со скидкой на 1 час.
+    Раз в час: у кого закончился старый Автоуход или Трудяга — одно письмо
+    про клуб.
+
+    Раньше здесь был «оффер на час»: «~~800~~ → 640⭐, скидка 20%» при цене
+    Трудяги 350⭐, хранился в памяти и пропадал при перезапуске, а
+    приходил только тем, у кого лягушка жива. Теперь — без фальшивых скидок
+    и таймеров, в том числе тем, у кого лягушка умерла: клуб вернёт её.
     """
     now = time.time()
-    # Ловим истёкшие в последние 7 дней (чтобы при деплое тоже срабатывало)
-    window_start = now - 7 * 86400
-    window_end   = now
-
     async with aiosqlite.connect(DB_PATH) as db:
         async with db.execute(
-            "SELECT user_id, subscription_type, last_sub_offer FROM frogs "
-            "WHERE alive=1 AND subscription_type > 0 "
-            "AND subscription_until BETWEEN ? AND ? "
-            "AND (last_sub_offer IS NULL OR last_sub_offer = 0 OR last_sub_offer < subscription_until)",
-            (window_start, window_end),
+            "SELECT user_id FROM frogs WHERE subscription_type > 0 "
+            "AND subscription_until BETWEEN ? AND ? AND COALESCE(club_until,0) <= ? "
+            "AND (last_sub_offer IS NULL OR last_sub_offer < subscription_until)",
+            (now - 7 * 86400, now, now),
         ) as c:
-            rows = await c.fetchall()
-
-    for row in rows:
-        uid_exp, sub_type, _ = row
+            uids = [r[0] for r in await c.fetchall()]
+    for uid_exp in uids:
         try:
             f = await db_get(uid_exp)
             if not f:
                 continue
-
-            frog_name = f.get("frog_name") or f.get("first_name") or "Квакуся"
-            is_worker = sub_type >= 2
-            offer_ends = now + 3600  # оффер живёт 1 час
-
-            if is_worker:
-                orig_price  = 800   # обычная цена Трудяги
-                sale_price  = 640   # скидка 20%
-                sub_name    = "💼 Трудяга"
-                benefit     = "400–700🪙 каждый вечер + автоуход"
-                cb_buy      = "sub_renewal_offer_worker"
-            else:
-                orig_price  = 200   # обычная цена Няни (как в STAR_PACKAGES)
-                sale_price  = 160   # скидка 20%
-                sub_name    = "🛡️ Автоуход"
-                benefit     = "автоматический уход пока ты занят"
-                cb_buy      = "sub_renewal_offer_nanny"
-
-            save = orig_price - sale_price
-            pct  = int(save / orig_price * 100)
-
-            # Сохраняем время оффера и его дедлайн в bot_data
-            ctx.bot_data[f"sub_offer_{uid_exp}"] = {
-                "ends": offer_ends,
-                "type": "worker" if is_worker else "nanny",
-                "price": sale_price,
-            }
-
-            # Обновляем last_sub_offer
+            kind = int(f.get("subscription_type") or 0)
             f["last_sub_offer"] = now
             await db_save(f)
-
-            text = (
-                f"⏰ <b>Подписка {sub_name} закончилась!</b>\n\n"
-                f"🐸 <b>{he(frog_name)}</b> скучает без заботы...\n\n"
-                f"🔥 <b>Специальное предложение — только 1 час!</b>\n"
-                f"<s>{orig_price}</s>{_E_STARS} → <b>{sale_price}{_E_STARS}</b> "
-                f"<i>(скидка {pct}%, экономия {save}{_E_STARS})</i>\n\n"
-                f"✅ {benefit}\n\n"
-                f"⏱ Предложение истекает через <b>60 минут</b>!"
-            )
+            name = he(fname(f))
+            lines = [f"{SUB_ICON.get(kind, '')} <b>{SUB_NAME.get(kind, 'Подписка')} закончилась</b>"]
+            if f.get("alive"):
+                lines.append(f"Автоуход выключен — {name} снова на тебе.")
+            else:
+                lines.append(f"{name} не дождалась. Вступишь в клуб — вернётся сразу, со всеми показателями на 100%.")
+            lines.append(f"🌿 <b>Болотный клуб</b> — автоуход, лягушка не умирает, клубная крутка каждый день "
+                         f"и стаж, который видно в чатах. {CLUB_STARS}⭐ в месяц, продлевается само, "
+                         f"отменить — в любой момент.")
             kb = InlineKeyboardMarkup([
-                [btn(
-                    f"🔥 Продлить за {sale_price}⭐ (скидка {pct}%)",
-                    callback_data=cb_buy,
-                )],
-                [btn(
-                    f"💸 Обычная цена ({orig_price}{_E_STARS})",
-                    callback_data="sub_buy_worker" if is_worker else "sub_buy_nanny",
-                )],
+                [btn(f"Вступить · {CLUB_STARS}⭐", url=await club_invoice_link(ctx.bot), style="primary")],
+                [btn("Что даёт клуб", callback_data="club|menu")],
             ])
-            await ctx.bot.send_message(uid_exp, text,
-                                       parse_mode=ParseMode.HTML, reply_markup=kb)
-            logger.info("sub_expiry_offer uid=%s type=%s price=%s",
-                        uid_exp, sub_type, sale_price)
+            await ctx.bot.send_message(uid_exp, "\n\n".join(lines), parse_mode=ParseMode.HTML, reply_markup=kb)
+        except (BadRequest, Forbidden, TimedOut):
+            pass
         except Exception as _e:
             logger.warning("sub_expiry_offer uid=%s: %s", uid_exp, _e)
         await asyncio.sleep(0.3)
@@ -55803,10 +55740,10 @@ async def job_background_decay(ctx: ContextTypes.DEFAULT_TYPE):
                         uid_dec,
                         f"🍖 <b>Твоя лягушка голодна!</b>\n\n"
                         f"Голод: <b>{f.get('hunger', 0)}%</b>\n\n"
-                        f"<i>Если некогда следить — автоуход покормит её, пока ты занят.</i>",
+                        f"<i>Если некогда следить — в Болотном клубе автоуход покормит её, пока ты занят.</i>",
                         parse_mode=ParseMode.HTML,
                         reply_markup=InlineKeyboardMarkup([[
-                            btn(f"🛡️ Автоуход · неделя · {sub_price('nanny', 7)}⭐", callback_data="sub_buy_nanny_7"),
+                            btn("🌿 Болотный клуб", callback_data="club|menu"),
                         ]])
                     )
                 except (BadRequest, Forbidden, TimedOut):
@@ -55833,9 +55770,10 @@ async def job_background_decay(ctx: ContextTypes.DEFAULT_TYPE):
                     )
                     death_kb = None
                     if not _has_sub_death:
-                        death_msg += "\n\n<i>С автоуходом она бы не голодала, пока тебя нет.</i>"
+                        death_msg += ("\n\n<i>В Болотном клубе она вернётся сразу, а дальше "
+                                      "не умрёт, пока ты в клубе.</i>")
                         death_kb = InlineKeyboardMarkup([[
-                            btn(f"🛡️ Автоуход · неделя · {sub_price('nanny', 7)}⭐", callback_data="sub_buy_nanny_7"),
+                            btn("🌿 Болотный клуб", callback_data="club|menu"),
                         ]])
                     await ctx.bot.send_message(
                         uid_dec,
@@ -56048,60 +55986,566 @@ def worker_day_text(f: dict) -> str:
     return "⏳ Выйдет на работу сегодня в 7:00" if hour < 7 else "💤 Отдыхает — следующий выход завтра в 7:00"
 
 
-def subs_view(f: dict, back: str = "menu_shop") -> tuple[str, InlineKeyboardMarkup]:
+# ══════════════════════════════════════════════════════════════════════════
+# 🌿 БОЛОТНЫЙ КЛУБ — подписка, которую Telegram продлевает сам
+# ══════════════════════════════════════════════════════════════════════════
+# Почему так. Автоуход и Трудяга продавались разовым счётом: месяц кончился —
+# плати заново, а «оффер продления» просил 640⭐ за Трудягу при цене 350⭐.
+# Повторно за 30 дней заплатили двое. Монеты, которые давала Трудяга, никому
+# не нужны: у живых игроков медиана 2 191🪙, пакеты монет не покупают вовсе.
+#
+# Клуб монет не даёт. Он даёт то, чего не купить в игре:
+#   • автоуход — лягушка под присмотром, пока тебя нет;
+#   • лягушка не умирает, пока ты в клубе, а мёртвая при вступлении
+#     возвращается сразу (у 9 из 10 самых платящих лягушка мертва);
+#   • клубную крутку раз в день — без обычных обликов, легендарный в
+#     среднем раз в месяц: повод заходить и маленькое «ого» каждый день;
+#   • стаж: 🌱 Росток → 🌿 Побег → 🍀 Клевер → 🌳 Дуб. Его видно в чатах,
+#     а пропуск продления дольше 3 дней сбрасывает его — повод не уходить.
+#
+# Оплата — подписка Telegram Stars (subscription_period = 30 дней): списание
+# каждый месяц без участия бота. Отменить можно в /club в два нажатия или в
+# настройках Telegram; клуб тогда доработает оплаченный срок.
+
+CLUB_STARS   = 149
+CLUB_PERIOD  = 30 * 86400          # Telegram принимает ровно 30 дней
+CLUB_PAYLOAD = "club_m1"
+CLUB_GRACE   = 3 * 86400           # столько после конца стаж ещё жив
+CLUB_BUFFER  = 12 * 3600           # продление приходит около даты — без разрыва
+CLUB_TRIAL_DAYS = 3
+CLUB_TIERS = [                      # с какого месяца, значок, название
+    (6, "🌳", "Дуб"),
+    (3, "🍀", "Клевер"),
+    (2, "🌿", "Побег"),
+    (1, "🌱", "Росток"),
+]
+_MONTHS_GEN = ["января", "февраля", "марта", "апреля", "мая", "июня", "июля",
+               "августа", "сентября", "октября", "ноября", "декабря"]
+
+
+def ru_date(ts: float) -> str:
+    """«6 декабря» по Москве."""
+    d = datetime.fromtimestamp(ts, ST_TZ)
+    return f"{d.day} {_MONTHS_GEN[d.month - 1]}"
+
+
+def club_on(f: dict, now: float | None = None) -> bool:
+    """Клуб работает: оплаченный срок или пробные дни."""
+    now = time.time() if now is None else now
+    return (f.get("club_until") or 0) > now
+
+
+def club_member(f: dict, now: float | None = None) -> bool:
+    """Платный участник (у пробника стажа нет)."""
+    return club_on(f, now) and (f.get("club_months") or 0) >= 1
+
+
+def club_tier(months: int) -> tuple[str, str]:
+    for since, icon, name in CLUB_TIERS:
+        if months >= since:
+            return icon, name
+    return "", ""
+
+
+def club_next_tier(months: int) -> tuple[int, str, str] | None:
+    """Через сколько месяцев следующая ступень и какая."""
+    for since, icon, name in reversed(CLUB_TIERS):
+        if since > months:
+            return since - months, icon, name
+    return None
+
+
+def club_chat_note(r: dict, now: float | None = None) -> str:
+    """Стаж для групп — словами: в чатах бот не ставит смайлы."""
+    if not club_member(r, now):
+        return ""
+    return f"в клубе {int(r.get('club_months') or 1)}-й месяц"
+
+
+def club_stats(f: dict) -> dict:
+    try:
+        st = json.loads(f.get("club_stats") or "{}")
+    except ValueError:
+        st = {}
+    return st if isinstance(st, dict) else {}
+
+
+def club_sync_care(f: dict, now: float | None = None) -> None:
+    """
+    Клуб включает автоуход через обычные поля подписки — тогда всё, что
+    проверяет «есть ли присмотр» (автоуход, напоминания, экран смерти),
+    работает и для клуба. Оплаченную Трудягу не трогаем: её срок не
+    продлеваем даром, присмотр перейдёт на клуб, когда она закончится.
+    """
+    now = time.time() if now is None else now
+    if not club_on(f, now) or sub_active(f, now) == 2:
+        return
+    if (f.get("subscription_until") or 0) <= now:
+        f["auto_care_stats"] = json.dumps({"since": now})
+        f["subscription_auto"] = 1
+    f["subscription_type"] = 1
+    f["subscription_until"] = max(f.get("subscription_until") or 0, f["club_until"])
+
+
+def frog_revive(f: dict, now: float | None = None) -> None:
+    """
+    Воскресить со всеми показателями на 100%.
+
+    Отметка затухания — на «сейчас». Без этого первый же расчёт списывал всё
+    время, что лягушка была мёртвой, и оплаченное воскрешение убивало её
+    снова.
+    """
+    now = time.time() if now is None else now
+    f.update({
+        "alive": 1, "health": 100, "hunger": 100, "happiness": 100,
+        "cleanliness": 100, "energy": 100, "death_reason": "",
+        "last_decay": now, "decay_frac": "", "overfeed_total": 0, "starve_alerted": 0,
+    })
+    if f.get("trial_active"):
+        f["trial_active"] = 0
+        f["trial_quests"] = "[]"
+        f["trial_progress"] = "{}"
+    f["total_revives"] = (f.get("total_revives") or 0) + 1
+
+
+_club_link: dict = {"url": "", "ts": 0.0}
+
+
+async def club_invoice_link(bot) -> str:
+    """Ссылка на оплату подписки. Одна на всех — кешируется на сутки."""
+    if _club_link["url"] and time.time() - _club_link["ts"] < 86400:
+        return _club_link["url"]
+    url = await bot.create_invoice_link(
+        title="Болотный клуб",
+        description=("Автоуход, лягушка не умирает, клубная крутка каждый день и стаж, "
+                     "который видно в чатах. Продлевается раз в 30 дней, отменить можно в любой момент."),
+        payload=CLUB_PAYLOAD,
+        currency="XTR",
+        prices=[LabeledPrice("Болотный клуб · 30 дней", CLUB_STARS)],
+        subscription_period=CLUB_PERIOD,
+    )
+    _club_link.update(url=url, ts=time.time())
+    return url
+
+
+def _club_care_line(f: dict) -> str:
+    st = {}
+    try:
+        st = json.loads(f.get("auto_care_stats") or "{}")
+    except ValueError:
+        pass
+    done = [f"{w} {ui_plural(st[k], 'раз', 'раза', 'раз')}" for k, w in _CARE_WORDS.items() if st.get(k)]
+    return ", ".join(done)
+
+
+def club_day() -> str:
+    """Сутки клубной крутки — московские, как у ежедневного бонуса."""
+    return datetime.now(ST_TZ).date().isoformat()
+
+
+def club_spin_ready(f: dict) -> bool:
+    return club_on(f) and f.get("club_spin_day", "") != club_day()
+
+
+async def club_view(f: dict, bot, back: str = "menu_shop") -> tuple[str, InlineKeyboardMarkup]:
+    """Экран клуба: для участника — его клуб, для остальных — что это и сколько стоит."""
     now = time.time()
-    kind = sub_active(f, now)
-    month_coins = WORKER_AVG_DAY * 30
+    name = he(fname(f))
     rows = []
-    if kind:
-        left_d = max(1, math.ceil((f["subscription_until"] - now) / 86400))
-        until = datetime.fromtimestamp(f["subscription_until"], ST_TZ).strftime("%d.%m")
-        blocks = [f"{SUB_ICON[kind]} <b>{SUB_NAME[kind]}</b> до {until}{SEP}ещё "
-                  + ui_plural(left_d, "день", "дня", "дней")]
+    if club_on(f, now):
+        months = int(f.get("club_months") or 0)
+        icon, tier = club_tier(months)
+        end = f["club_until"] - (CLUB_BUFFER if months else 0)
+        if months:
+            head = ui_title("🌿", "Болотный клуб")
+            status = f"{icon} <b>{tier}</b>{SEP}{months}-й месяц"
+            nxt = club_next_tier(months)
+            if nxt:
+                status += f"\n<i>{nxt[1]} {nxt[2]} — через {ui_plural(nxt[0], 'месяц', 'месяца', 'месяцев')}</i>"
+            if f.get("club_canceled"):
+                pay = (f"Продление выключено — клуб работает до {ru_date(end)}.\n"
+                       f"<i>Стаж сохранится ещё 3 дня после: вернёшься — продолжится</i>")
+            else:
+                pay = f"Следующее списание — {ru_date(end)}, {CLUB_STARS}⭐"
+        else:
+            head = ui_title("🌿", "Клуб · пробные дни")
+            status = f"Пробные дни до {ru_date(end)}"
+            pay = f"Понравится — вступай: {CLUB_STARS}⭐ в месяц, стаж начнётся с первого месяца"
+        blocks = [status]
+        care = _club_care_line(f)
+        if care:
+            blocks.append("<b>Автоуход за месяц</b>\n" + ui_quote(care))
         if not f.get("subscription_auto", 1):
             blocks.append("⏸ Автоуход на паузе — лягушкой занимаешься сам")
-        try:
-            st = json.loads(f.get("auto_care_stats") or "{}")
-        except ValueError:
-            st = {}
-        done = [f"{w} {ui_plural(st[k], 'раз', 'раза', 'раз')}" for k, w in _CARE_WORDS.items() if st.get(k)]
-        if done:
-            blocks.append("<b>Автоуход уже</b>\n" + ui_quote(", ".join(done)))
-        if kind >= 2:
-            blocks.append("<b>Работа</b>\n" + worker_day_text(f))
-        price = SUB_WORKER_STARS if kind >= 2 else SUB_NANNY_STARS
-        rows.append([btn(f"🔄 Продлить на 30 дней · {price}⭐", callback_data="sub_renew", style="primary")])
-        if kind == 1:
-            rows.append([btn(f"💼 Трудяга — ещё и ~{WORKER_AVG_DAY}🪙 в день · {SUB_WORKER_STARS}⭐",
-                             callback_data="sub_buy_worker")])
+        blocks.append(pay)
+        if club_spin_ready(f):
+            rows.append([btn("🎁 Клубная крутка", callback_data="club|spin", style="success")])
+        else:
+            blocks.append("<i>Клубная крутка — завтра</i>")
+        if not months:
+            try:
+                rows.append([btn(f"Вступить · {CLUB_STARS}⭐ в месяц", url=await club_invoice_link(bot),
+                                 style="primary")])
+            except TelegramError as e:
+                logger.warning("club link: %s", e)
         rows.append([btn("▶️ Включить автоуход" if not f.get("subscription_auto", 1) else "⏸ Пауза автоухода",
-                         callback_data="sub_toggle_auto")])
-        head = ui_title("⭐", "Подписка")
-        hint = ""
-    else:
-        blocks = [
-            f"🛡️ <b>Автоуход</b>{SEP}{SUB_NANNY_STARS}⭐ в месяц\n"
-            "Лягушка не голодает и не болеет, пока тебя нет: каждые 15 минут её кормят, "
-            "развлекают, моют, укладывают и лечат. Параметры держатся на "
-            f"{AUTO_CARE_CAP}% — серия и здоровье в безопасности.",
-            f"💼 <b>Трудяга</b>{SEP}{SUB_WORKER_STARS}⭐ в месяц\n"
-            f"Всё то же + лягушка каждый день ходит на работу и приносит в среднем "
-            f"<b>{WORKER_AVG_DAY}🪙</b> (бывает до {WORKER_MAX_DAY:,}🪙). За месяц — около "
-            f"<b>{month_coins:,}🪙</b>".replace(",", " ")
-            + f": обычными пакетами столько монет стоит ~{coins_in_stars(month_coins):,}⭐.".replace(",", " "),
-        ]
-        if not f.get("trial_worker_used"):
-            rows.append([btn(f"🎁 {SUB_TRIAL_DAYS} дня Трудяги бесплатно", callback_data="sub_trial_worker",
-                             style="success")])
-        rows.append([btn(f"💼 Трудяга · {SUB_WORKER_STARS}⭐/мес", callback_data="sub_buy_worker",
-                         style="primary" if f.get("trial_worker_used") else None)])
-        rows.append([btn(f"🛡️ Автоуход · {SUB_NANNY_STARS}⭐/мес", callback_data="sub_buy_nanny"),
-                     btn(f"Неделя · {sub_price('nanny', 7)}⭐", callback_data="sub_buy_nanny_7")])
-        head = ui_title("⭐", "Подписки")
-        hint = ("Попробуй бесплатно — платить ничего не нужно, через 3 дня просто закончится"
-                if not f.get("trial_worker_used") else "Оплата звёздами Telegram, без автосписаний")
+                         callback_data="club|care")])
+        if months:
+            rows.append([btn("Включить продление", callback_data="club|resume", style="primary")]
+                        if f.get("club_canceled") else
+                        [btn("Отменить продление", callback_data="club|cancel")])
+        rows.append([btn("◀️ Назад", callback_data=back)])
+        return ui_card(head, *blocks), InlineKeyboardMarkup(rows)
+
+    # ── Не в клубе ──
+    dead = not f.get("alive")
+    blocks = [
+        f"🛡️ <b>Автоуход</b>\n{name} под присмотром: раз в 15 минут её кормят, развлекают, моют "
+        f"и укладывают — параметры держатся на {AUTO_CARE_CAP}%.",
+        f"💚 <b>Не умрёт</b>\nПока ты в клубе, {name} не погибнет — даже если пропадёшь на неделю."
+        + (f"\nА сейчас она вернётся сразу, как вступишь, — со всеми показателями на 100%." if dead else ""),
+        "🎁 <b>Клубная крутка каждый день</b>\nОбычных обликов в ней нет. Легендарный — в среднем раз в месяц.",
+        "🌱 <b>Стаж</b>\nКаждый месяц подряд — новая ступень: 🌱 Росток, 🌿 Побег, 🍀 Клевер, 🌳 Дуб. "
+        "Её видно в чатах.",
+    ]
+    old = sub_active(f, now)
+    if old:
+        until = ru_date(f["subscription_until"])
+        blocks.append(f"<i>{SUB_NAME[old]} работает до {until} — клуб можно оформить сейчас, "
+                      f"присмотр продолжится без перерыва</i>")
+    try:
+        rows.append([btn(f"🌿 Вступить · {CLUB_STARS}⭐ в месяц", url=await club_invoice_link(bot),
+                         style="primary")])
+    except TelegramError as e:
+        logger.warning("club link: %s", e)
+        rows.append([btn("Оплата недоступна — попробуй позже", callback_data="club|menu")])
+    if not dead and not f.get("trial_club_used") and not old:
+        rows.append([btn(f"{CLUB_TRIAL_DAYS} дня бесплатно", callback_data="club|trial")])
     rows.append([btn("◀️ Назад", callback_data=back)])
-    return ui_card(head, *blocks, hint=hint), InlineKeyboardMarkup(rows)
+    hint = (f"{CLUB_STARS}⭐ раз в 30 дней, продлевается само. "
+            "Отменить — в любой момент, клуб доработает оплаченный срок")
+    return ui_card(ui_title("🌿", "Болотный клуб"), *blocks, hint=hint), InlineKeyboardMarkup(rows)
+
+
+def club_welcome_text(f: dict, revived: bool, months: int, rejoined: bool) -> str:
+    name = he(fname(f))
+    icon, tier = club_tier(months)
+    end = ru_date(f["club_until"] - CLUB_BUFFER)
+    lines = [f"🌿 <b>{'С возвращением в клуб' if rejoined else 'Добро пожаловать в Болотный клуб'}</b>"]
+    if revived:
+        lines.append(f"✨ {name} снова с тобой — все показатели на 100%.")
+    lines.append(f"🛡️ {name} под присмотром: раз в 15 минут её кормят, развлекают, моют и укладывают.")
+    lines.append(f"💚 Пока ты в клубе, {name} не умрёт.")
+    lines.append("🎁 Клубная крутка — каждый день, без обычных обликов. Первая уже ждёт.")
+    if rejoined:
+        lines.append(f"{icon} Стаж сохранён: <b>{tier}</b>, {months}-й месяц.")
+    else:
+        lines.append(f"{icon} <b>{tier}</b> — первый месяц. Дальше 🌿 Побег, 🍀 Клевер и 🌳 Дуб; "
+                     "стаж видно в чатах.")
+    lines.append(f"<i>Следующее списание — {end}, {CLUB_STARS}⭐. Отменить можно в /club в любой момент.</i>")
+    return "\n\n".join(lines)
+
+
+async def club_on_payment(update: Update, ctx: ContextTypes.DEFAULT_TYPE, f: dict, sp) -> None:
+    """Первое списание, возвращение в клуб или ежемесячное продление."""
+    uid = f["user_id"]
+    now = time.time()
+    exp = sp.subscription_expiration_date
+    until = (exp.timestamp() if exp else now + CLUB_PERIOD) + CLUB_BUFFER
+    renewal = bool(sp.is_recurring) and not sp.is_first_recurring
+    months = int(f.get("club_months") or 0)
+    streak_alive = months >= 1 and (f.get("club_until") or 0) + CLUB_GRACE > now
+    old_tier = club_tier(months)
+    if renewal or streak_alive:
+        months += 1
+    else:
+        months = 1
+        f["club_since"] = now
+        f["club_stats"] = json.dumps({"since": now})
+    f["club_months"] = months
+    f["club_until"] = max(until, f.get("club_until") or 0)
+    f["club_canceled"] = 0
+    f["club_warned"] = 0
+    f["club_lapse_note"] = 0
+    if not renewal:
+        f["club_charge_id"] = sp.telegram_payment_charge_id
+    revived = not f.get("alive")
+    if revived:
+        frog_revive(f, now)
+    club_sync_care(f, now)
+    f["stars_spent"] = (f.get("stars_spent") or 0) + sp.total_amount
+    await db_save(f)
+    await purchase_log(uid, "club_renew" if renewal else "club", sp.total_amount)
+    if revived:
+        asyncio.create_task(plog(uid, "revive", "club"))
+
+    icon, tier = club_tier(months)
+    if renewal:
+        if (icon, tier) != old_tier:
+            text = (f"{icon} <b>Новая ступень клуба — {tier}</b>\n\n"
+                    f"{he(fname(f))} в клубе уже {months}-й месяц. Это видно в чатах.")
+        else:
+            text = f"🌿 Клуб продлён: {icon} {tier}, {months}-й месяц."
+        await ctx.bot.send_message(uid, text, parse_mode=ParseMode.HTML, disable_notification=True,
+                                   reply_markup=InlineKeyboardMarkup([[btn("Мой клуб", callback_data="club|menu")]]))
+    else:
+        kb = [[btn("🎁 Клубная крутка", callback_data="club|spin", style="success")],
+              [btn("Мой клуб", callback_data="club|menu")]]
+        await update.message.reply_text(club_welcome_text(f, revived, months, streak_alive),
+                                        parse_mode=ParseMode.HTML,
+                                        reply_markup=InlineKeyboardMarkup(kb))
+    await announce(ctx.bot,
+        f"🌿 <b>Клуб{' · продление' if renewal else ''}</b> {he(f.get('first_name') or '')} [{uid}] — "
+        f"{months}-й месяц, {sp.total_amount}⭐" + (" · воскрешена" if revived else ""),
+        admin_only=True)
+
+
+def club_roll() -> str:
+    """Облик без обычных: веса как в гаче, обычные и NFT исключены."""
+    items = [(k, v) for k, v in SKINS.items()
+             if v.get("chance", 0) > 0 and v["rarity"] not in ("common", "secret")]
+    return random.choices(items, weights=[v["chance"] for _, v in items], k=1)[0][0]
+
+
+async def club_spin(f: dict, bot) -> tuple[str, InlineKeyboardMarkup]:
+    """Клубная крутка: раз в сутки. Гарантия гачи считается как обычно."""
+    uid = f["user_id"]
+    f["club_spin_day"] = club_day()
+    pity = int(f.get("gacha_pity") or 0)
+    if pity >= PITY_THRESHOLD:
+        skin, _ = await roll_pity(f)
+    else:
+        skin = club_roll()
+        f["gacha_pity"] = 0 if SKINS[skin]["rarity"] in ("legendary", "mythic") else pity + 1
+    is_new = skin not in await db_coll(uid)
+    await db_add_skin(uid, skin)
+    await log_gacha_pull(uid, skin, cost=0, source="club")
+    st = club_stats(f)
+    st["spins"] = st.get("spins", 0) + 1
+    rarity = SKINS[skin]["rarity"]
+    if rarity in ("legendary", "mythic"):
+        st["legend"] = st.get("legend", 0) + 1
+    f["club_stats"] = json.dumps(st)
+    f["total_gacha"] = (f.get("total_gacha") or 0) + 1
+    add_xp(f, 20)
+    rewards = await levelup(f, bot)
+    await db_save(f)
+    asyncio.create_task(quest_update(uid, "gacha"))
+    s = SKINS[skin]
+    use_st = bool(f.get("use_static", 0))
+    lines = [f"🎁 <b>Клубная крутка</b>{' — новый облик' if is_new else ''}",
+             f"{R_DOT[rarity]} {display_skin(skin, use_st)}\n"
+             f"{R_NAME[rarity]}{SEP}<i>{GACHA_REVEAL.get(rarity, '')}</i>"]
+    for lvl, rskin in rewards:
+        lines.append(f"🎉 <b>Уровень {lvl}!</b> Облик: {display_skin(rskin, use_st)}")
+    lines.append("<i>Следующая — завтра</i>")
+    kb = [[btn(f"Надеть {skin}", callback_data=f"equip_{skin}", style="success")],
+          [btn("Мой клуб", callback_data="club|menu")]]
+    if rarity in ("legendary", "mythic"):
+        asyncio.create_task(announce(
+            bot, f"{R_DOT[rarity]} <b>{he(f.get('first_name') or '')}</b> вытянул в клубной крутке "
+                 f"{R_NAME[rarity].lower()} облик <b>{he(skin)}</b> {pemoji(skin)}", delete_after=300,
+            announce_level="major"))
+    return "\n\n".join(lines), InlineKeyboardMarkup(kb)
+
+
+async def club_set_canceled(bot, f: dict, canceled: bool) -> bool:
+    """Отменить или вернуть продление в Telegram. False — Telegram не принял."""
+    charge = f.get("club_charge_id") or ""
+    if not charge:
+        async with aiosqlite.connect(DB_PATH) as db:
+            async with db.execute(
+                "SELECT charge_id FROM payments WHERE user_id=? AND payload=? ORDER BY ts LIMIT 1",
+                (f["user_id"], CLUB_PAYLOAD)) as c:
+                row = await c.fetchone()
+        charge = row[0] if row else ""
+    if not charge:
+        return False
+    try:
+        await bot.edit_user_star_subscription(f["user_id"], charge, canceled)
+    except TelegramError as e:
+        logger.warning("club cancel=%s uid=%s: %s", canceled, f["user_id"], e)
+        return False
+    f["club_canceled"] = 1 if canceled else 0
+    await db_save(f)
+    return True
+
+
+async def club_grant_trial(uid: int, days: int = CLUB_TRIAL_DAYS, bot=None, reason: str = "") -> bool:
+    """Пробные дни клуба — один раз. Мёртвой лягушке не выдаются: вернуть её — это вступление."""
+    f = await db_get(uid)
+    if not f or f.get("trial_club_used") or not f.get("alive") or club_on(f):
+        return False
+    now = time.time()
+    f["trial_club_used"] = 1
+    f["club_until"] = now + days * 86400
+    f["club_lapse_note"] = 0
+    club_sync_care(f, now)
+    await db_save(f)
+    if bot:
+        name = he(fname(f))
+        text = "\n\n".join(x for x in (
+            f"🌿 <b>{ui_plural(days, 'день', 'дня', 'дней')} в Болотном клубе — бесплатно</b>",
+            f"🛡️ {name} под присмотром: раз в 15 минут её кормят, развлекают, моют и укладывают.",
+            f"💚 Пока идут пробные дни, {name} не умрёт.",
+            "🎁 Клубная крутка — каждый день, без обычных обликов. Первая уже ждёт.",
+            f"<i>{reason}</i>" if reason else "",
+            f"<i>Пробные дни закончатся {ru_date(f['club_until'])} сами — платить ничего не нужно.</i>",
+        ) if x)
+        try:
+            await bot.send_message(uid, text, parse_mode=ParseMode.HTML, reply_markup=InlineKeyboardMarkup([
+                [btn("🎁 Клубная крутка", callback_data="club|spin", style="success")],
+                [btn("Мой клуб", callback_data="club|menu")]]))
+        except (BadRequest, Forbidden, TimedOut):
+            pass
+    return True
+
+
+async def club_router(update: Update, ctx: ContextTypes.DEFAULT_TYPE):
+    _g = await cb_guard(update, ctx)
+    if _g is None:
+        return
+    q, uid, d, f = _g
+    act = d.split("|", 1)[1] if "|" in d else "menu"
+    if act == "spin":
+        if not club_on(f):
+            await q.answer("Клубная крутка — для участников клуба", show_alert=True)
+            await plaza_show(q, await club_view(f, ctx.bot))
+            return
+        if not club_spin_ready(f):
+            await q.answer("Сегодняшняя крутка уже была — следующая завтра", show_alert=True)
+            return
+        await q.answer()
+        await plaza_show(q, await club_spin(f, ctx.bot))
+        return
+    if act == "care":
+        f["subscription_auto"] = 0 if f.get("subscription_auto", 1) else 1
+        await db_save(f)
+        await q.answer("Автоуход включён" if f["subscription_auto"] else
+                       "Автоуход на паузе — не забывай кормить сам")
+    elif act == "trial":
+        if await club_grant_trial(uid, bot=None):
+            f = await db_get(uid) or f
+            await q.answer(f"{CLUB_TRIAL_DAYS} дня клуба — включено")
+        else:
+            await q.answer("Пробные дни уже были", show_alert=True)
+    elif act == "cancel":
+        await q.answer()
+        end = ru_date((f.get("club_until") or 0) - CLUB_BUFFER)
+        icon, tier = club_tier(int(f.get("club_months") or 0))
+        text = ui_card(ui_title("🌿", "Отменить продление?"),
+                       f"Клуб доработает оплаченный срок — до {end}. Потом:\n"
+                       f"• автоуход выключится, и лягушка снова сможет умереть;\n"
+                       f"• клубные крутки закончатся;\n"
+                       f"• стаж {icon} {tier} сохранится ещё 3 дня — вернёшься, и он продолжится.")
+        await plaza_show(q, (text, InlineKeyboardMarkup([
+            [btn("Оставить клуб", callback_data="club|menu", style="primary")],
+            [btn("Отменить продление", callback_data="club|cancel_yes")]])))
+        return
+    elif act in ("cancel_yes", "resume"):
+        want_cancel = act == "cancel_yes"
+        if await club_set_canceled(ctx.bot, f, want_cancel):
+            await q.answer("Продление отменено" if want_cancel else "Продление включено — клуб продолжится")
+        else:
+            await q.answer("Telegram не принял. Можно в настройках: Telegram → Звёзды → Подписки",
+                           show_alert=True)
+    else:
+        await q.answer()
+    await plaza_show(q, await club_view(f, ctx.bot))
+
+
+async def cmd_club(update: Update, ctx: ContextTypes.DEFAULT_TYPE):
+    """/club, /subscribe, /trial — один экран клуба (в группе — кнопкой в личку)."""
+    f = await db_get(update.effective_user.id)
+    if not f:
+        await update.message.reply_text("Сначала /start 🐸")
+        return
+    if f.get("banned", 0):
+        return
+    text, kb = await club_view(f, ctx.bot, back="menu_main")
+    await update.message.reply_text(text, parse_mode=ParseMode.HTML, reply_markup=kb)
+
+
+async def job_club(ctx: ContextTypes.DEFAULT_TYPE):
+    """
+    Раз в час:
+      • за сутки до списания — итог месяца и честное «завтра спишется» (без звука);
+      • клуб закончился — одно письмо: стаж ждёт 3 дня;
+      • Трудяга закончилась у участника — присмотр переходит на клуб.
+    """
+    now = time.time()
+    async with aiosqlite.connect(DB_PATH) as db:
+        async with db.execute(
+            "SELECT user_id FROM frogs WHERE club_until > ? OR "
+            "(club_until > 0 AND club_until <= ? AND COALESCE(club_lapse_note,0) < club_until)",
+            (now, now)) as c:
+            uids = [r[0] for r in await c.fetchall()]
+    for uid in uids:
+        try:
+            f = await db_get(uid)
+            if not f:
+                continue
+            months = int(f.get("club_months") or 0)
+            until = f.get("club_until") or 0
+            name = he(fname(f))
+            if until > now:
+                before = (f.get("subscription_type"), f.get("subscription_until"))
+                club_sync_care(f, now)
+                changed = before != (f.get("subscription_type"), f.get("subscription_until"))
+                charge_at = until - CLUB_BUFFER
+                if (months and not f.get("club_canceled") and 0 < charge_at - now <= 86400
+                        and (f.get("club_warned") or 0) < until):
+                    f["club_warned"] = until
+                    st = club_stats(f)
+                    care = _club_care_line(f)
+                    recap = [x for x in (
+                        f"автоуход {care}" if care else "",
+                        f"клубных круток — {st.get('spins', 0)}" if st.get("spins") else "",
+                        f"легендарных — {st['legend']}" if st.get("legend") else "",
+                    ) if x]
+                    icon, tier = club_tier(months + 1)
+                    text = "\n\n".join(x for x in (
+                        f"🌿 <b>Месяц в клубе</b>",
+                        ("За месяц: " + "; ".join(recap) + ".") if recap else "",
+                        f"Завтра продление — {CLUB_STARS}⭐, и начнётся {months + 1}-й месяц: {icon} {tier}.",
+                        "<i>Если клуб больше не нужен — отмени продление, он доработает до завтра.</i>",
+                    ) if x)
+                    f["club_stats"] = json.dumps({"since": now})
+                    f["auto_care_stats"] = json.dumps({"since": now})   # итог — за месяц
+                    await db_save(f)
+                    try:
+                        await ctx.bot.send_message(uid, text, parse_mode=ParseMode.HTML, disable_notification=True,
+                                                   reply_markup=InlineKeyboardMarkup([[
+                                                       btn("Мой клуб", callback_data="club|menu")]]))
+                    except (BadRequest, Forbidden, TimedOut):
+                        pass
+                elif changed:
+                    await db_save(f)
+                continue
+            # Клуб закончился — одно письмо
+            if (f.get("club_lapse_note") or 0) >= until:
+                continue
+            f["club_lapse_note"] = until
+            await db_save(f)
+            if months:
+                icon, tier = club_tier(months)
+                text = (f"🌿 <b>Клуб закончился</b>\n\n"
+                        f"Автоуход выключен — {name} снова на тебе.\n"
+                        f"Стаж {icon} <b>{tier}</b> ({months} мес.) сохранится до {ru_date(until + CLUB_GRACE)} — "
+                        f"вернёшься, и он продолжится.")
+            else:
+                text = (f"🌿 <b>Пробные дни клуба закончились</b>\n\n"
+                        f"Автоуход выключен — {name} снова на тебе. "
+                        f"Вступишь — всё вернётся, а стаж начнётся с первого месяца.")
+            try:
+                url = await club_invoice_link(ctx.bot)
+                kb = InlineKeyboardMarkup([[btn(f"Вступить · {CLUB_STARS}⭐", url=url, style="primary")],
+                                           [btn("Что даёт клуб", callback_data="club|menu")]])
+                await ctx.bot.send_message(uid, text, parse_mode=ParseMode.HTML, reply_markup=kb)
+            except (BadRequest, Forbidden, TimedOut):
+                pass
+        except Exception as e:
+            logger.warning("job_club uid=%s: %s", uid, e)
 
 
 # ── Трудяга: трёхэтапный рабочий день ────────────────────────────────────────
@@ -57393,7 +57837,7 @@ async def post_init(app: Application):
         BotCommand("mymenu",      "🎮 Главное меню"),
         BotCommand("daily",       "📅 Ежедневный бонус"),
         BotCommand("cooldowns",   "⏱ Кулдауны"),
-        BotCommand("subscribe",   "💎 Подписка"),
+        BotCommand("club",        "🌿 Болотный клуб"),
         BotCommand("buy",         "💫 Купить КваКоины за Stars"),
         BotCommand("referral",    "🔗 Реферальная программа"),
         BotCommand("stats",       "📊 Статистика"),
@@ -57559,6 +58003,7 @@ async def post_init(app: Application):
     # Отметка «бот жив» — по ней при следующем старте вычисляется простой
     app.job_queue.run_repeating(job_heartbeat, interval=120, first=60)
     app.job_queue.run_repeating(job_auto_care, interval=15 * 60, first=120)
+    app.job_queue.run_repeating(job_club, interval=3600, first=240)
     # 🏪 Трудяга — ежедневный отчёт с рынка (раз в час, но сам job проверяет 24ч кулдаун)
     app.job_queue.run_repeating(job_auto_farm, interval=3600, first=30)
     # 📬 Возврат ушедших игроков — раз в 12 часов
@@ -61548,6 +61993,7 @@ ST_FEAT_LABELS = {
 }
 
 ST_SKU_LABELS = {
+    "club": "Клуб: вступление", "club_renew": "Клуб: продление",
     "subscription": "Подписка", "revive_instant": "Воскрешение", "gacha_ticket": "Билет гачи",
     "seasonal_skin": "Облик сезона", "secretgift": "Тайный подарок",
     "exp_extra_slot": "Ещё экспедиция", "adv_extra_slot": "Ещё поход",
@@ -62343,9 +62789,58 @@ async def _sts_money(x: _StCtx) -> _StSec:
                        f"AND subscription_until<? AND {_ST_REAL}", x.now, x.now + 3 * 86400)
     auto = await x.one(f"SELECT COUNT(*) FROM frogs f WHERE subscription_type>0 AND subscription_until>? "
                        f"AND subscription_auto=1 AND {_ST_REAL}", x.now)
-    s.kv("Подписки сейчас",
+    s.kv("Старые подписки (дорабатывают срок)",
          ("Автоуход", _stn(snap["sub_nanny"])), ("Трудяга", _stn(snap["sub_worker"])),
-         ("кончаются за 3 дня", _stn(soon)), ("с автопродлением", _stn(auto)))
+         ("кончаются за 3 дня", _stn(soon)), ("автоуход не на паузе", _stn(auto)))
+
+    # ── Болотный клуб ──
+    members = await x.one(f"SELECT COUNT(*) FROM frogs f WHERE club_until>? AND club_months>=1 AND {_ST_REAL}", x.now)
+    trial = await x.one(f"SELECT COUNT(*) FROM frogs f WHERE club_until>? AND COALESCE(club_months,0)=0 "
+                        f"AND {_ST_REAL}", x.now)
+    canceled = await x.one(f"SELECT COUNT(*) FROM frogs f WHERE club_until>? AND club_months>=1 "
+                           f"AND club_canceled=1 AND {_ST_REAL}", x.now)
+    cp = await x.rows("SELECT SUM(CASE WHEN recurring=1 AND first_recurring=0 THEN 0 ELSE 1 END), "
+                      "SUM(CASE WHEN recurring=1 AND first_recurring=0 THEN 1 ELSE 0 END), SUM(stars) "
+                      "FROM payments WHERE payload=? AND ts>=?", CLUB_PAYLOAD, x.now - 30 * 86400)
+    c_new, c_ren, c_st = [v or 0 for v in cp[0]]
+    # Дожили до второго месяца: вступившие 35–120 дней назад, у кого было продление
+    coh = await x.rows(
+        "SELECT p.user_id, (SELECT COUNT(*) FROM payments q WHERE q.user_id=p.user_id AND q.payload=? "
+        "AND q.recurring=1 AND q.first_recurring=0) FROM payments p WHERE p.payload=? "
+        "AND NOT (p.recurring=1 AND p.first_recurring=0) AND p.ts BETWEEN ? AND ? GROUP BY p.user_id",
+        CLUB_PAYLOAD, CLUB_PAYLOAD, x.now - 120 * 86400, x.now - 35 * 86400)
+    c_coh, c_kept = len(coh), sum(1 for _, n in coh if n)
+    tiers = await x.rows(f"SELECT club_months FROM frogs f WHERE club_until>? AND club_months>=1 AND {_ST_REAL}", x.now)
+    by_tier: dict[str, int] = {}
+    for (mo,) in tiers:
+        ic, nm = club_tier(int(mo or 1))
+        by_tier[f"{ic} {nm}"] = by_tier.get(f"{ic} {nm}", 0) + 1
+    s.kv("Болотный клуб",
+         ("участников", _stn(members), f"продление выключили {_stn(canceled)}"),
+         ("на пробных днях", _stn(trial)),
+         ("вступили за 30 дн", _stn(c_new), f"продлений {_stn(c_ren)}"),
+         ("доход клуба 30 дн", f"{_stn(c_st)}⭐"),
+         ("дожили до 2-го месяца", f"{c_kept} из {c_coh}" if c_coh else "—",
+          _stp(c_kept, c_coh) if c_coh else "вступившие 35–120 дней назад"),
+         *[(k, _stn(v)) for k, v in by_tier.items()])
+
+    # ── Повторные платежи (таблица payments — с выкатки учёта) ──
+    pr = await x.rows("SELECT user_id, COUNT(*), MIN(ts), MAX(ts) FROM payments GROUP BY user_id")
+    if pr:
+        rep = [r for r in pr if r[1] >= 2]
+        pr30 = [r for r in pr if r[3] >= x.now - 30 * 86400]
+        rep30 = [r for r in pr30 if r[1] >= 2]
+        seen = await x.rows(f"SELECT user_id, last_seen FROM frogs f WHERE user_id IN "
+                            f"(SELECT DISTINCT user_id FROM payments)")
+        last_seen = {u: (ls or 0) for u, ls in seen}
+        gaps = sorted(max(0.0, (last_seen.get(u, 0) - mx) / 86400) for u, _, _, mx in pr)
+        med = gaps[len(gaps) // 2] if gaps else 0
+        s.kv("Повторные платежи",
+             ("платили 2+ раза", _stn(len(rep)), f"из {_stn(len(pr))} плативших"),
+             ("за 30 дн платили", _stn(len(pr30)), f"из них не впервые {_stn(len(rep30))}"),
+             ("от последней покупки до последнего захода", f"медиана {med:.0f} дн".replace(".", ",")))
+    else:
+        s.kv("Повторные платежи", ("считается", "с выкатки учёта платежей"))
     # Платившие ещё здесь? Деньги приносят единицы — важно, не ушли ли они
     pay_seen = await x.rows(
         "SELECT SUM(CASE WHEN last_seen>=? THEN 1 ELSE 0 END), SUM(CASE WHEN last_seen>=? THEN 1 ELSE 0 END), "
@@ -70228,10 +70723,11 @@ def main():
     app.add_handler(CommandHandler("bond",         cmd_bond))
     app.add_handler(CommandHandler("activate_bonus", cmd_activate_bonus))
     app.add_handler(CommandHandler("deactivate_bonus", cmd_deactivate_bonus))
-    app.add_handler(CommandHandler("subscribe",          cmd_subscribe))
-    app.add_handler(CommandHandler("sub",                cmd_subscribe))  # короткий алиас
+    app.add_handler(CommandHandler("subscribe",          cmd_club))
+    app.add_handler(CommandHandler("club",               cmd_club))
+    app.add_handler(CommandHandler("sub",                cmd_club))       # короткий алиас
     app.add_handler(CommandHandler("adminsubscription",  cmd_adminsubscription))
-    app.add_handler(CommandHandler("trial",              cmd_trial))
+    app.add_handler(CommandHandler("trial",              cmd_club))
     app.add_handler(CommandHandler("broadcast_sub",      cmd_broadcast_sub))
 
     # ── Новые игры v7 ──────────────────────────────────────────────────────
@@ -70292,6 +70788,7 @@ def main():
         (r"^kw\|",                                  kw_router),
         (r"^(casino|jackpot|menu_jackpot)",          casino_router),
         (r"^(duel|battle_|tournament)",              duel_router),
+        (r"^club\|",                                club_router),
         (r"^(shop_|buy_|market_|craft_|sub_|stars_)", shop_router),
     ):
         app.add_handler(CallbackQueryHandler(_router, pattern=_pattern))
