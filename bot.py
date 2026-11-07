@@ -21900,20 +21900,51 @@ def is_kva(text: str) -> bool:
     return any(_KVA_WORD.fullmatch(w) for w in re.findall(r"[а-яё-]+", (text or "").lower()))
 
 
-async def kva_not_ready(update: Update, ctx, left: int):
-    """Откат «ква». В группе — молча: «ещё не готово» на каждое ква и было спамом."""
-    if is_group(update):
+KVA_NOTICE_CD = 5 * 60                # «уже квакала» — не чаще раза в 5 минут на человека
+_kva_noticed: dict[tuple, float] = {}
+
+
+def kva_notice_due(chat_id: int, uid: int, kind: str) -> bool:
+    """Ответ на «ква», которое не сработало: первый — сразу, повторы чаще 5 минут — молча,
+    чтобы десять «ква» подряд не превращались в десять ответов бота."""
+    key, now = (chat_id, uid, kind), time.time()
+    if now - _kva_noticed.get(key, 0) < KVA_NOTICE_CD:
+        return False
+    if len(_kva_noticed) > 20000:
+        _kva_noticed.clear()
+    _kva_noticed[key] = now
+    return True
+
+
+async def kva_reply_ttl(chat_id: int) -> int:
+    """Сколько живут ответы на «ква» в этом чате — столько же, сколько само «ква»:
+    раз чат оставляет ответы на ква, бот не стирает и «уже квакала»."""
+    cs = await get_chat_settings(chat_id)
+    return int(cs.get("friz_delete_delay", 120) or 120) if cs.get("auto_delete_friz", 1) else 0
+
+
+async def kva_not_ready(update: Update, ctx, left: int, f: dict | None = None):
+    """Откат «ква». В группе отвечаем коротко, но не на каждое повторное «ква»."""
+    when = _ex_left(time.time() + left)
+    if not is_group(update):
+        try:
+            await update.message.reply_text(f"Лягушка отдыхает, ква снова через {when}")
+        except (BadRequest, Forbidden, TimedOut):
+            pass
         return
-    try:
-        await update.message.reply_text(f"Лягушка отдыхает, ква снова через {_ex_left(time.time() + left)}")
-    except (BadRequest, Forbidden, TimedOut):
-        pass
+    chat, user = update.effective_chat, update.effective_user
+    if not kva_notice_due(chat.id, user.id, "cd"):
+        return
+    name = fname(f) if f else "Лягушка"
+    await group_say(update, f"{_E_FROG} <b>{name}</b> уже квакала. Снова — через {when}.",
+                    ttl=await kva_reply_ttl(chat.id))
 
 
-async def group_invite(update: Update, ctx, f: dict | None, why: str):
+async def group_invite(update: Update, ctx, f: dict | None, why: str, ttl: int | None = None,
+                       cooldown: int = GROUP_INVITE_COOLDOWN):
     """Приглашение завести (или вернуть) лягушку — не чаще раза в сутки на человека и чат."""
     key = (update.effective_chat.id, update.effective_user.id)
-    if time.time() - _group_invited.get(key, 0) < GROUP_INVITE_COOLDOWN:
+    if time.time() - _group_invited.get(key, 0) < cooldown:
         return
     _group_invited[key] = time.time()
     link = await bot_link(ctx.bot, update.effective_chat.id)
@@ -21921,18 +21952,25 @@ async def group_invite(update: Update, ctx, f: dict | None, why: str):
         text, label = "Твоя лягушка умерла. Вернуть её можно в личке.", "Вернуть лягушку"
     else:
         text, label = f"Своей лягушки у тебя пока нет. Заведи — и {why}.", "Завести лягушку"
-    await group_say(update, text, InlineKeyboardMarkup([[btn(label, url=link)]]))
+    await group_say(update, text, InlineKeyboardMarkup([[btn(label, url=link)]]),
+                    ttl=GROUP_REPLY_TTL if ttl is None else ttl)
 
 
 async def kva_no_frog(update: Update, ctx, f: dict | None):
-    """«Ква» без лягушки. В группе — приглашение, это главный вход новичков из чатов."""
+    """«Ква» без живой лягушки. В группе — ответ с кнопкой в личку: это главный вход
+    новичков из чатов. Умершей лягушке отвечаем на каждое «ква» (с паузой 5 минут) —
+    молчание выглядело как поломка бота."""
     if not is_group(update):
         try:
             await update.message.reply_text("Чтобы квакать, сначала заведи лягушку: /start")
         except (BadRequest, Forbidden, TimedOut):
             pass
         return
-    await group_invite(update, ctx, f, "она будет отзываться здесь на «ква»")
+    ttl = await kva_reply_ttl(update.effective_chat.id)
+    if f:
+        await group_invite(update, ctx, f, "", ttl=ttl, cooldown=KVA_NOTICE_CD)
+    else:
+        await group_invite(update, ctx, f, "она будет отзываться здесь на «ква»", ttl=ttl)
 
 
 async def bot_link(bot, chat_id: int = 0) -> str:
@@ -53255,7 +53293,7 @@ async def on_message(update: Update, ctx: ContextTypes.DEFAULT_TYPE):
         _friz_elapsed = now_friz - _friz_last
 
         if _friz_elapsed < _friz_eff_cd:
-            await kva_not_ready(update, ctx, int(_friz_eff_cd - _friz_elapsed))
+            await kva_not_ready(update, ctx, int(_friz_eff_cd - _friz_elapsed), f)
             return
 
         # Атомарный апдейт КД (используем поле last_kva — общее с ква)
@@ -53338,7 +53376,7 @@ async def on_message(update: Update, ctx: ContextTypes.DEFAULT_TYPE):
         _kva_last = f.get("last_kva", 0)
         _kva_elapsed = now - _kva_last
         if _kva_elapsed < _kva_effective_cd:
-            await kva_not_ready(update, ctx, int(_kva_effective_cd - _kva_elapsed))
+            await kva_not_ready(update, ctx, int(_kva_effective_cd - _kva_elapsed), f)
             return
         # ── Антидюп: атомарный UPDATE с проверкой кулдауна прямо в БД ──────────
         # Если бот завис и получил несколько "ква" одновременно — все читают

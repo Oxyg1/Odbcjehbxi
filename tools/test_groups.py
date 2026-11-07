@@ -1,5 +1,5 @@
 """
-Бот в группах: только настоящее «ква», откат молча, ответы короткие и без
+Бот в группах: только настоящее «ква», на откат — «уже квакала» раз в 5 минут, ответы короткие и без
 смайлов-украшений, личное — кнопкой в личку с меткой чата, новичку —
 приглашение раз в сутки, «батл» ответом (решают уровень и уход), лягушка дня,
 /top — лягушки чата, приветствие при добавлении.
@@ -168,13 +168,21 @@ async def main():
     for w in ("квартира", "квас", "Кваквордл", "квадрат", "акваланг"):
         ok(not B.is_kva(w), f"«{w}» — не ква")
 
-    print("2. Ква в группе: коротко, повтор — молча")
+    print("2. Ква в группе: коротко; откат — «уже квакала», без спама")
     out, _ = await say(P, "ква")
     ok(len(out) == 1 and out[0][0] == "reply", "один ответ")
     ok(lines(out[0][2]) <= 2, f"не больше двух строк: {plain(out[0][2])!r}")
     ok("Ква&amp;Ко" in out[0][2] and "&amp;amp;" not in out[0][2], "имя лягушки не экранируется дважды")
     out, _ = await say(P, "ква")
-    ok(not out, f"откат — ни сообщения, ни реакции: {out}")
+    ok(len(out) == 1 and "уже квакала" in plain(out[0][2]) and "через" in plain(out[0][2]),
+       f"откат — короткий ответ, когда снова: {out and plain(out[0][2])!r}")
+    ok("Ква&amp;Ко" in out[0][2] and "&amp;amp;" not in out[0][2], "в «уже квакала» имя лягушки")
+    ok(not raw_emoji(out[0][2]), "в «уже квакала» без смайлов-украшений")
+    out, _ = await say(P, "ква")
+    ok(not out, f"третье «ква» подряд — молча, без спама: {out}")
+    B._kva_noticed.clear()
+    out, _ = await say(P, "ква")
+    ok(len(out) == 1 and "уже квакала" in plain(out[0][2]), "через 5 минут снова отвечает")
     for w in ("квартира на продажу", "квас холодный", "играю в Кваквордл"):
         out, _ = await say(P, w)
         ok(not out, f"«{w}» — бот молчит")
@@ -184,6 +192,23 @@ async def main():
     ok(len(out) == 1 and any(f"start=chat_{CHAT}" in u for u in urls(out[0][3])), f"приглашение с меткой чата: {out}")
     out, _ = await say(N, "ква")
     ok(not out, "второй раз за сутки — молча")
+
+    print("3б. Лягушка умерла — бот отвечает, а не молчит; повтор — через 5 минут")
+    D = 55
+    await make_frog(D, alive=0, health=0)
+    out, _ = await say(D, "ква")
+    ok(len(out) == 1 and "умерла" in plain(out[0][2]) and urls(out[0][3]), f"умершей — ответ с кнопкой: {out}")
+    out, _ = await say(D, "ква")
+    ok(not out, "сразу ещё раз — молча")
+    B._group_invited[(CHAT, D)] -= B.KVA_NOTICE_CD + 1
+    out, _ = await say(D, "ква")
+    ok(len(out) == 1 and "умерла" in plain(out[0][2]), "через 5 минут — снова ответ, а не тишина до завтра")
+
+    print("3в. Ответы на «ква» живут столько же, сколько само «ква»")
+    ok(await B.kva_reply_ttl(CHAT) == 120, "по умолчанию — 2 минуты, как ответ на ква")
+    await B.save_chat_settings(CHAT, auto_delete_friz=0)
+    ok(await B.kva_reply_ttl(CHAT) == 0, "чат не удаляет ква — не удаляет и «уже квакала»")
+    await B.save_chat_settings(CHAT, auto_delete_friz=1)
 
     print("4. Команды в группе — коротко, личное — в личку")
     for cmd in ("/frog", "/start", "/mystats"):
