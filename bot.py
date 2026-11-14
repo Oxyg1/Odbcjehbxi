@@ -53536,20 +53536,6 @@ async def on_message(update: Update, ctx: ContextTypes.DEFAULT_TYPE):
                     except (BadRequest, Forbidden, TimedOut):
                         pass
 
-            # ── Пасхальный подарок при броске ровно 500 ─────────────────────
-            if _roll == 500:
-                try:
-                    _easter_ok, _easter_err = await _send_gift_raw(
-                        BOT_TOKEN, user.id, "5969796561943660080",
-                        text="Со светлой Пасхой! 🐣🌸"
-                    )
-                    if _easter_ok:
-                        _nft_drop_text += "\n\n🐣 <b>Пасхальный сюрприз!</b> Бот отправил тебе подарок!"
-                    else:
-                        logger.warning("easter gift error uid=%s: %s", user.id, _easter_err)
-                except Exception as _ee:
-                    logger.warning("easter gift exception uid=%s: %s", user.id, _ee)
-
             _counter_text = f"\n\n🎲 NFT: <b>{_roll}/{NFT_KVA_TOTAL}</b>"
 
             # Записываем статистику ивента
