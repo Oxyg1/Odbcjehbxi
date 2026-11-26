@@ -31,6 +31,7 @@ import threading
 import aiosqlite
 import aiohttp
 from datetime import datetime, timedelta, timezone
+from pathlib import Path
 from telegram import (
     Update,
     CallbackQuery,
@@ -44,6 +45,7 @@ from telegram import (
     ChatMemberUpdated,
     LinkPreviewOptions,
     InlineQueryResultArticle,
+    InputMediaPhoto,
     InputTextMessageContent,
 )
 from telegram import ReactionTypeEmoji, InputSticker
@@ -14216,6 +14218,7 @@ ACHIEVEMENTS = {
     "worker_week":     {"name": "Трудяга недели",        "emoji": "🏪",  "desc": "7 рабочих дней подряд",            "cat": "special"},
     "worker_streak_30":{"name": "Трудяга месяца",        "emoji": "🥇",  "desc": "30 рабочих дней подряд",           "cat": "special"},
     "farewell_witness":{"name": "Хранитель памяти",      "emoji": "🕯️",  "desc": "Участвовал в прощальной церемонии","cat": "special", "secret": True},
+    "swamp_mail":      {"name": "Почта снова открыта",     "emoji": "✉️",  "desc": "Прочитай три письма с мельницы", "cat": "special", "secret": True},
     "all_care_master": {"name": "Мастер заботы",         "emoji": "💝",  "desc": "Все достижения по уходу открыты",  "cat": "special"},
     "all_games_master":{"name": "Мастер игр",            "emoji": "🎮",  "desc": "Все несекретные достижения игр",   "cat": "special"},
     "half_collection": {"name": "На полпути",            "emoji": "🗺️",  "desc": "Открой половину всех достижений",  "cat": "special"},
@@ -14414,6 +14417,17 @@ async def init_db():
         CREATE TABLE IF NOT EXISTS achievements (
             user_id INTEGER, ach_id TEXT, earned_at REAL,
             PRIMARY KEY (user_id, ach_id)
+        );
+        CREATE TABLE IF NOT EXISTS swamp_mail_choices (
+            user_id INTEGER NOT NULL,
+            letter INTEGER NOT NULL CHECK (letter BETWEEN 1 AND 3),
+            choice INTEGER NOT NULL CHECK (choice IN (0, 1)),
+            PRIMARY KEY (user_id, letter)
+        );
+        CREATE TABLE IF NOT EXISTS swamp_mail_subscriptions (
+            user_id INTEGER PRIMARY KEY,
+            enabled INTEGER NOT NULL DEFAULT 1,
+            notified_through INTEGER NOT NULL DEFAULT 0
         );
         -- Итоги закрытых сезонов. Пишется один раз при /seasonstart и дальше
         -- только читается: из этой таблицы берётся бейдж «Сезон N · ур.X · #Y»
@@ -18318,9 +18332,11 @@ def dead_card(f: dict) -> str:
     )
 
 
-def dead_kb(f: dict) -> InlineKeyboardMarkup:
-    """Кнопки мёртвой лягушки: только то, что её вернёт."""
+def dead_kb(f: dict, mail_open: bool = False) -> InlineKeyboardMarkup:
+    """Кнопки возвращения лягушки и доступное без воскрешения событие."""
     rows = []
+    if mail_open:
+        rows.append([btn("✉️ Болотная почта", callback_data="mail|open")])
     if not f.get("return_revival_used"):
         rows.append([btn("🌿 Вернуть бесплатно", callback_data="return_revive", style="success")])
     else:
@@ -18881,9 +18897,9 @@ def main_kb(f: dict, is_group: bool = False, sacrifice_active: bool = False,
             contest_active: bool = False, legend_pct: int | None = None,
             legend_emoji: str = "📜",
             nft_contest_active: bool = False,
-            freeze_active: bool = False) -> InlineKeyboardMarkup:
+            freeze_active: bool = False, mail_open: bool = False) -> InlineKeyboardMarkup:
     if not f.get("alive", 1) and not f.get("trial_active"):
-        return dead_kb(f)
+        return dead_kb(f, mail_open=mail_open and not is_group)
     care_ready = _care_ready(f)
     care_key = "menu_care_ready" if care_ready else "menu_care"
     care_lbl = t(care_key, f) + ("" if care_ready else " ⏳")
@@ -18891,6 +18907,8 @@ def main_kb(f: dict, is_group: bool = False, sacrifice_active: bool = False,
     # Временные события. Порядок фиксирован: сначала то, что закончится
     # раньше и требует действия, потом фоновое — чтобы кнопки не прыгали.
     event_btns = []
+    if mail_open and not is_group:
+        event_btns.append(btn("✉️ Болотная почта", callback_data="mail|open"))
     if not is_group and club_spin_ready(f):
         event_btns.append(btn("🎁 Клубная крутка", callback_data="club|spin", style="success"))
     if freeze_active:
@@ -18960,7 +18978,310 @@ async def main_kb_live(f: dict, is_group: bool = False) -> InlineKeyboardMarkup:
         legend_emoji=leg_emoji,
         nft_contest_active=bool(nft_c),
         freeze_active=freeze_on,
+        mail_open=not is_group,
     )
+
+
+# ── Болотная почта ──────────────────────────────────────────────────────────
+
+_swamp_mail_start = 0
+_SWAMP_MAIL_DELAY = 2 * 86400
+_SWAMP_MAIL_ART_DIR = Path(__file__).resolve().parent / "assets" / "swamp_mail"
+_SWAMP_MAIL_ART = (
+    (("mail-01-boot.jpg",), ("mail-01a-unlock.jpg", "mail-01b-toad.jpg")),
+    (("mail-02-stamp.jpg",), ("mail-02a-address-book.jpg", "mail-02b-snail-writes.jpg")),
+    (("mail-03a-bridge.jpg", "mail-03b-snail-door.jpg"),
+     ("mail-03c-boot-finale.jpg", "mail-03d-box-finale.jpg")),
+)
+_SWAMP_MAIL_LETTERS = (
+    (
+        "Письмо в сапоге",
+        "На крыльце стоит чужой сапог, а из голенища торчит конверт.\n\n"
+        "«Слушай, на мельнице кто-то стучит, а я одна туда не полезу. "
+        "Ключ в сапоге, ищи на самом дне. Если пойдёшь, свистни, ладно?\n\n"
+        "Жаба с третьей кочки»",
+        ("Открыть мельницу", "Позвать жабу"),
+        (
+            "Стоило повернуть ключ, как стук стих. Из-за двери спросили: «А вам отправить или получить?»",
+            "Жаба явилась с табуреткой под мышкой. «Ты открывай, а я отсюда посмотрю».",
+        ),
+    ),
+    (
+        "Последняя марка",
+        "«А, это ты. Подожди, у меня штемпель опять заело». За стойкой сидит улитка "
+        "и уговаривает штемпель отпустить конверт.\n\n"
+        "«Я тут последний день дорабатываю. У меня одна марка осталась, так что "
+        "одно письмо ещё успею отправить. Как думаешь, кому?»",
+        ("Тому, кто ждёт", "Тебе самой"),
+        (
+            "«Погоди, есть тут один у моста. Всё спрашивал, нет ли чего для него. "
+            "Я ведь даже имя его записала».",
+            "Улитка вывела своё имя и фыркнула: «Вот уж кому я точно знаю, куда доставить».",
+        ),
+    ),
+    (
+        "Обратный адрес",
+        (
+            "У моста тебя окликает лягушонок, размахивая конвертом.\n\n"
+            "«Смотри, улитка зовёт меня письма разносить! Я сказал, что согласен, "
+            "только вот куда их теперь будут приносить?»",
+            "Улитка распечатала письмо самой себе и прочитала вслух: "
+            "«Утром открой почту. Сама ведь всё равно придёшь».\n\n"
+            "Она перевернула табличку на двери и кивнула на крыльцо: "
+            "«Ну ладно. Только куда теперь класть письма?»",
+        ),
+        ("Оставить сапог у двери", "Повесить ящик"),
+        (
+            "К утру в сапоге лежали два конверта, а между ними записка: «А правый где?»",
+            "Ящик повесили криво, но улитка только махнула рукой: «Конверт в щель пролезает? Ну и ладно».",
+        ),
+    ),
+)
+
+
+def _swamp_mail_available(now: float) -> int:
+    if not _swamp_mail_start or now < _swamp_mail_start:
+        return 0
+    return min(len(_SWAMP_MAIL_LETTERS), 1 + int((now - _swamp_mail_start) // _SWAMP_MAIL_DELAY))
+
+
+async def _swamp_mail_progress(uid: int, pick: tuple[int, int] | None = None) -> dict[int, int]:
+    async with aiosqlite.connect(DB_PATH) as db:
+        if pick is not None:
+            letter, choice = pick
+            await db.execute(
+                """INSERT OR IGNORE INTO swamp_mail_choices (user_id, letter, choice)
+                   SELECT user_id, ?, ? FROM frogs
+                   WHERE user_id=? AND banned=0 AND is_bot=0
+                     AND (?=1 OR EXISTS (
+                         SELECT 1 FROM swamp_mail_choices WHERE user_id=? AND letter=?))""",
+                (letter, choice, uid, letter, uid, letter - 1),
+            )
+            if letter == len(_SWAMP_MAIL_LETTERS):
+                await db.execute(
+                    """INSERT OR IGNORE INTO achievements (user_id, ach_id, earned_at)
+                       SELECT user_id, 'swamp_mail', ? FROM swamp_mail_choices
+                       WHERE user_id=? AND letter=?""",
+                    (time.time(), uid, letter),
+                )
+        async with db.execute(
+            "SELECT letter, choice FROM swamp_mail_choices WHERE user_id=?", (uid,),
+        ) as rows:
+            choices = dict(await rows.fetchall())
+        if pick is not None:
+            await db.commit()
+    return choices
+
+
+def _swamp_mail_screen(f: dict, available: int, choices: dict[int, int],
+                       letter: int | None = None, *,
+                       subscribed: bool = False) -> tuple[str, InlineKeyboardMarkup, str | None]:
+    notify = btn(
+        "Выключить уведомления" if subscribed else "Сообщать о письмах",
+        callback_data=f"mail|notify|{int(not subscribed)}",
+    )
+    back_text = "Продолжить знакомство" if f.get("onboard_step") in ONBOARD_STEPS else "К лягушке"
+    back = btn(back_text, callback_data="mail|back")
+    if not available:
+        return ui_card(
+            ui_title("✉️", "Болотная почта"),
+            ("Напишу, когда на мельнице откроется почта." if subscribed else
+             "На мельнице ещё закрыто. Хочешь, напишу, когда будет первое письмо?"),
+        ), InlineKeyboardMarkup([[notify], [back]]), None
+
+    last = len(_SWAMP_MAIL_LETTERS)
+    furthest = min(len(choices) + 1, available)
+    letter = min(letter, furthest) if letter is not None else furthest
+    title, body, labels, endings = _SWAMP_MAIL_LETTERS[letter - 1]
+    openings, outcomes = _SWAMP_MAIL_ART[letter - 1]
+    art = openings[0]
+    if letter == last:
+        body = body[choices[letter - 1]]
+        art = openings[choices[letter - 1]]
+
+    rows = []
+    result = ""
+    hint = ""
+    if letter not in choices:
+        rows.extend([btn(label, callback_data=f"mail|pick|{letter}|{i}")]
+                     for i, label in enumerate(labels))
+    else:
+        result = endings[choices[letter]]
+        art = outcomes[choices[letter]]
+        if letter == last:
+            result += '\n\nВ достижениях — «Почта снова открыта».'
+        elif letter < available:
+            rows.append([btn("Следующее письмо", callback_data=f"mail|read|{letter + 1}", style="primary")])
+        else:
+            opens = datetime.fromtimestamp(_swamp_mail_start + letter * _SWAMP_MAIL_DELAY, ST_TZ)
+            hint = f"Следующее письмо — {opens:%d.%m} в {opens:%H:%M} МСК."
+
+    if letter > 1:
+        rows.append([btn("Предыдущее письмо", callback_data=f"mail|read|{letter - 1}")])
+    if len(choices) < last or subscribed:
+        rows.append([notify])
+    rows.append([back])
+    return ui_card(
+        ui_title("✉️", title),
+        body, result, hint=hint,
+    ), InlineKeyboardMarkup(rows), art
+
+
+async def _swamp_mail_render(message, text: str, kb: InlineKeyboardMarkup, art: str | None = None,
+                             *, edit: bool = False) -> None:
+    photo = None
+    if art:
+        try:
+            photo = (_SWAMP_MAIL_ART_DIR / art).read_bytes()
+        except OSError:
+            logger.warning("Болотная почта: не удалось прочитать %s", art)
+    markup = {"parse_mode": ParseMode.HTML, "reply_markup": kb}
+    if photo and edit:
+        await message.edit_media(InputMediaPhoto(photo, caption=text, parse_mode=ParseMode.HTML),
+                                 reply_markup=kb)
+    elif photo:
+        await message.reply_photo(photo, caption=text, disable_notification=True, **markup)
+    elif edit and not message.photo:
+        await message.edit_text(text, **markup)
+    else:
+        # Telegram позволяет добавить фото к тексту, но снять его обратно нельзя.
+        await message.reply_text(text, disable_notification=True, **markup)
+        if edit:
+            await message.delete()
+
+
+async def _swamp_mail_subscription(uid: int, enabled: bool | None = None) -> bool:
+    async with aiosqlite.connect(DB_PATH) as db:
+        if enabled is not None:
+            await db.execute(
+                """INSERT INTO swamp_mail_subscriptions (user_id, enabled)
+                   SELECT user_id, ? FROM frogs WHERE user_id=? AND banned=0 AND is_bot=0
+                   ON CONFLICT (user_id) DO UPDATE SET enabled=excluded.enabled""",
+                (int(enabled), uid),
+            )
+            await db.commit()
+        async with db.execute(
+            "SELECT enabled FROM swamp_mail_subscriptions WHERE user_id=?", (uid,),
+        ) as rows:
+            row = await rows.fetchone()
+            return bool(row and row[0])
+
+
+async def _swamp_mail_reply(message, f: dict | None) -> None:
+    if not f:
+        await message.reply_text("Заведи лягушку через /start.", disable_notification=True)
+    elif not (f.get("banned") or f.get("is_bot")):
+        uid = f["user_id"]
+        available = _swamp_mail_available(time.time())
+        screen = _swamp_mail_screen(
+            f, available, await _swamp_mail_progress(uid) if available else {},
+            subscribed=await _swamp_mail_subscription(uid),
+        )
+        await _swamp_mail_render(message, *screen)
+
+
+async def cmd_mail(update: Update, ctx: ContextTypes.DEFAULT_TYPE) -> None:
+    if update.effective_chat.type == "private":
+        await _swamp_mail_reply(update.effective_message, await db_get(update.effective_user.id))
+
+
+async def cmd_mailstart(update: Update, ctx: ContextTypes.DEFAULT_TYPE) -> None:
+    global _swamp_mail_start
+    if update.effective_chat.type != "private" or update.effective_user.id not in ADMIN_IDS:
+        return
+    now = int(time.time())
+    async with aiosqlite.connect(DB_PATH) as db:
+        cursor = await db.execute(
+            "INSERT OR IGNORE INTO settings (key, value) VALUES ('swamp_mail_started_at', ?)",
+            (str(now),),
+        )
+        opened = cursor.rowcount == 1
+        await db.commit()
+    _swamp_mail_start = int(await db_setting("swamp_mail_started_at") or 0)
+    note = "Первое письмо доступно." if opened else "Почта уже открыта."
+    await update.effective_message.reply_text(
+        f"{note}\nhttps://t.me/{ctx.bot.username}?start=mail",
+        disable_notification=True, link_preview_options=LinkPreviewOptions(is_disabled=True),
+    )
+
+
+async def swamp_mail_router(update: Update, ctx: ContextTypes.DEFAULT_TYPE) -> None:
+    q = update.callback_query
+    if update.effective_chat is None or update.effective_chat.type != "private":
+        await q.answer("Почта открывается в личке.", show_alert=True)
+        return
+    f = await db_get(q.from_user.id)
+    available = _swamp_mail_available(time.time())
+    if not f or f.get("banned") or f.get("is_bot"):
+        await q.answer("Почта недоступна.", show_alert=True)
+        return
+    await q.answer()
+    try:
+        if q.data == "mail|back":
+            step = f.get("onboard_step")
+            if step in ONBOARD_STEPS:
+                screen = onboard_screen(f, step)
+            else:
+                f["_boost_active"] = await boost_is_active()
+                screen = status_text(f), await main_kb_live(f)
+        else:
+            pick = re.fullmatch(r"mail\|pick\|([1-3])\|([01])", q.data)
+            read = re.fullmatch(r"mail\|read\|([1-3])", q.data)
+            letter = int((pick or read)[1]) if pick or read else None
+            answer = (letter, int(pick[2])) if pick and letter <= available else None
+            uid = f["user_id"]
+            toggle = re.fullmatch(r"mail\|notify\|([01])", q.data)
+            subscribed = await _swamp_mail_subscription(uid, toggle[1] == "1" if toggle else None)
+            choices = await _swamp_mail_progress(uid, answer) if available else {}
+            screen = _swamp_mail_screen(f, available, choices, letter, subscribed=subscribed)
+        await _swamp_mail_render(q.message, *screen, edit=True)
+    except (BadRequest, Forbidden, TimedOut):
+        pass
+
+
+def _swamp_mail_notice_letter(now: float) -> int:
+    letter = _swamp_mail_available(now)
+    if not letter or not 10 <= datetime.fromtimestamp(now, ST_TZ).hour < 20:
+        return 0
+    opened_at = _swamp_mail_start + (letter - 1) * _SWAMP_MAIL_DELAY
+    return letter if now - opened_at < 86400 else 0
+
+
+async def job_swamp_mail_notices(ctx: ContextTypes.DEFAULT_TYPE) -> None:
+    letter = _swamp_mail_notice_letter(time.time())
+    if not letter:
+        return
+    async with aiosqlite.connect(DB_PATH) as db:
+        async with db.execute(
+            "SELECT user_id FROM swamp_mail_subscriptions WHERE enabled=1 AND notified_through<?",
+            (letter,),
+        ) as cursor:
+            targets = await cursor.fetchall()
+        keyboard = InlineKeyboardMarkup([[btn("Открыть почту", callback_data="mail|open")]])
+        for (uid,) in targets:
+            if _swamp_mail_notice_letter(time.time()) != letter:
+                break
+            # Регистрируем попытку до Telegram, чтобы повторный запуск не дублировал письмо.
+            cursor = await db.execute(
+                """UPDATE swamp_mail_subscriptions SET notified_through=?
+                   WHERE user_id=? AND enabled=1 AND notified_through<?
+                     AND EXISTS (SELECT 1 FROM frogs WHERE user_id=? AND banned=0 AND is_bot=0)
+                     AND NOT EXISTS (
+                         SELECT 1 FROM swamp_mail_choices WHERE user_id=? AND letter=?)""",
+                (letter, uid, letter, uid, uid, letter),
+            )
+            await db.commit()
+            if cursor.rowcount != 1:
+                continue
+            try:
+                await ctx.bot.send_message(
+                    uid, "✉️ На мельнице для тебя письмо.", disable_notification=True,
+                    reply_markup=keyboard,
+                )
+            except (BadRequest, Forbidden):
+                continue
+            except TelegramError:
+                logger.warning("Болотная почта: не удалось отправить выпуск %s игроку %s", letter, uid)
 
 
 
@@ -25354,6 +25675,10 @@ async def cmd_start(update: Update, ctx: ContextTypes.DEFAULT_TYPE):
             await kw_open(update.message, ctx, f, edit=False)
             return
 
+        if arg == "mail" and f and update.effective_chat.type == "private":
+            await _swamp_mail_reply(update.message, f)
+            return
+
         # ── Приглашение в соседи: ?start=addneighbor_123456 ───────────────────
         # Доступно и новым, и существующим игрокам.
         if arg.startswith("addneighbor_"):
@@ -25502,6 +25827,10 @@ async def cmd_start(update: Update, ctx: ContextTypes.DEFAULT_TYPE):
         f["onboard_step"] = 1
         await db_save(f)
         await funnel_bump(1)
+        if (ctx.args and ctx.args[0] == "mail" and update.effective_chat.type == "private"
+                and _swamp_mail_available(time.time())):
+            await _swamp_mail_reply(update.message, f)
+            return
         _ob_extra = ""
         if referrer_id:
             _ref_f = await db_get(referrer_id)
@@ -33431,8 +33760,11 @@ async def cmd_mymenu(update: Update, ctx: ContextTypes.DEFAULT_TYPE):
         f"КД: {feed_cd}🍎 {play_cd}{_E_GAMES} {wash_cd}🛁 {sleep_cd}😴 {heal_cd}💊 {daily_cd}📅\n\n"
         f"<i>Для полного меню напиши боту: /frog</i>"
     )
+    mail_kb = (InlineKeyboardMarkup([[btn("✉️ Болотная почта", callback_data="mail|open")]])
+               if update.effective_chat.type == "private" else None)
     await group_reply(
-        update, text, parse_mode=ParseMode.HTML, link_preview_options=LinkPreviewOptions()
+        update, text, parse_mode=ParseMode.HTML, link_preview_options=LinkPreviewOptions(),
+        reply_markup=mail_kb,
     )
 
 
@@ -34097,6 +34429,8 @@ async def admin_router(update: Update, ctx: ContextTypes.DEFAULT_TYPE):
                 await db.execute("DELETE FROM frogs WHERE user_id=?", (target_uid_del,))
                 await db.execute("DELETE FROM collections WHERE user_id=?", (target_uid_del,))
                 await db.execute("DELETE FROM achievements WHERE user_id=?", (target_uid_del,))
+                await db.execute("DELETE FROM swamp_mail_choices WHERE user_id=?", (target_uid_del,))
+                await db.execute("DELETE FROM swamp_mail_subscriptions WHERE user_id=?", (target_uid_del,))
                 await db.execute("DELETE FROM daily_quests WHERE user_id=?", (target_uid_del,))
                 await db.execute("DELETE FROM nft_frogs WHERE user_id=?", (target_uid_del,))
                 try:
@@ -57733,6 +58067,7 @@ async def compensate_downtime() -> float:
 
 
 async def post_init(app: Application):
+    global _swamp_mail_start
     # Порядок важен: init_db() создаёт freeze_state только если таблицы фриза
     # уже есть, а миграция добавляет колонки только в уже созданные таблицы.
     # Поэтому миграция вызывается с двух сторон — она идемпотентна
@@ -57744,6 +58079,7 @@ async def post_init(app: Application):
     run_sync_migration()
     # ⚡ Инициализируем пул соединений ПОСЛЕ создания БД
     _db_pool.init(size=10)
+    _swamp_mail_start = int(await db_setting("swamp_mail_started_at") or 0)
     await load_nft_skins()  # загружаем NFT-облики в память
     await bars_load()       # полоски статов из премиум-эмодзи, если пак собран
     logger.info("🪸 Редкость гифтов в памяти: %d", await nft_attrs_warm())
@@ -57859,6 +58195,7 @@ async def post_init(app: Application):
         BotCommand("start",       "🐣 Начать игру"),
         BotCommand("frog",        "🐸 Моя лягушка"),
         BotCommand("mymenu",      "🎮 Главное меню"),
+        BotCommand("mail",        "✉️ Болотная почта"),
         BotCommand("daily",       "📅 Ежедневный бонус"),
         BotCommand("cooldowns",   "⏱ Кулдауны"),
         BotCommand("club",        "🌿 Болотный клуб"),
@@ -57912,6 +58249,7 @@ async def post_init(app: Application):
     app.job_queue.run_repeating(job_st_flush, interval=ST_FLUSH_S, first=ST_FLUSH_S)
     app.job_queue.run_repeating(job_st_hourly, interval=3600, first=120)
     app.job_queue.run_repeating(job_poll_tick, interval=60, first=45)
+    app.job_queue.run_repeating(job_swamp_mail_notices, interval=600, first=90)
     asyncio.create_task(poll_resume(app.bot))   # дослать опросы, начатые до перезапуска
     try:
         import signal as _signal
@@ -61982,6 +62320,7 @@ ST_FEAT_LABELS = {
     "bonus": "Бонусы", "top": "Топы", "topsponsors": "Топ спонсоров",
     "season": "Сезон", "settings": "Настройки", "lang": "Язык", "toggle": "Настройки: переключатель",
     "ob": "Знакомство", "tip": "Таверна", "iev": "Событие", "mosquito": "Комар",
+    "mail": "Болотная почта",
     "diary": "Дневник", "personality": "Характер", "horoscope": "Гороскоп",
     "farewell": "Прощание", "memory": "Память", "ref": "Рефералка",
     "referral": "Рефералка", "contest": "Конкурс", "ca": "Настройки чата",
@@ -70595,6 +70934,8 @@ def main():
     cmds = [
         ("start", cmd_start),
         ("frog", cmd_frog),
+        ("mail", cmd_mail),
+        ("mailstart", cmd_mailstart),
         ("top", cmd_top),
         ("topw", cmd_topw),
         ("topm", cmd_topm),
@@ -70810,6 +71151,7 @@ def main():
         (r"^plv\|",                                 poll_vote_router),
         (r"^lily\|",                                lily_router),
         (r"^kw\|",                                  kw_router),
+        (r"^mail\|",                                swamp_mail_router),
         (r"^(casino|jackpot|menu_jackpot)",          casino_router),
         (r"^(duel|battle_|tournament)",              duel_router),
         (r"^club\|",                                club_router),
