@@ -374,6 +374,16 @@ async def main():
                           ctx(P))
     ok(any("startgroup=add" in u for u in urls(BOT.out[-1][3])), "/frogday в личке — кнопка добавить бота в чат")
 
+    print("13. Заявка в соседи только явным обращением")
+    for text in ("+", " + "):
+        out, stopped = await say(P, text, reply_to=R)
+        ok(not out and not stopped, f"{text!r} — обычный ответ без реакции бота")
+    friendship = "SELECT pending FROM friendships WHERE user_id=? AND friend_id=?"
+    ok(db1(friendship, P, R) is None, "плюс не создаёт заявку")
+    out, _ = await say(P, "сосед", reply_to=R)
+    ok(db1(friendship, P, R) == (1,) and any(item[1] == R for item in out),
+       "явный ответ «сосед» создаёт заявку и отправляет приглашение")
+
     print()
     if FAILS:
         print(f"ОШИБОК: {len(FAILS)}")

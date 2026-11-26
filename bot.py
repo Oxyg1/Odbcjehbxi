@@ -52902,10 +52902,6 @@ async def on_message(update: Update, ctx: ContextTypes.DEFAULT_TYPE):
                 reply_u = update.message.reply_to_message.from_user
                 if reply_u and not reply_u.is_bot:
                     reply_target_id = reply_u.id
-        elif update.message.reply_to_message and txt_lower in ("сосед", "soseda", "+"):
-            reply_u = update.message.reply_to_message.from_user
-            if reply_u and not reply_u.is_bot:
-                reply_target_id = reply_u.id
 
         # Поиск в БД
         _row = None
